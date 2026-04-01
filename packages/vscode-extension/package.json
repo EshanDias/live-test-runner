@@ -1,0 +1,116 @@
+{
+  "name": "live-test-runner",
+  "displayName": "Live Test Runner",
+  "description": "Live testing on save for Jest and other frameworks",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Testing"
+  ],
+  "activationEvents": [
+    "onCommand:liveTestRunner.startTesting",
+    "onCommand:liveTestRunner.stopTesting"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "liveTestRunner.startTesting",
+        "title": "Start Testing"
+      },
+      {
+        "command": "liveTestRunner.stopTesting",
+        "title": "Stop Testing"
+      },
+      {
+        "command": "liveTestRunner.rebuildMap",
+        "title": "Rebuild Test Map"
+      },
+      {
+        "command": "liveTestRunner.refreshTests",
+        "title": "Refresh Tests"
+      },
+      {
+        "command": "liveTestRunner.selectProjectRoot",
+        "title": "Select Project Root"
+      },
+      {
+        "command": "liveTestRunner.runRelatedTests",
+        "title": "Run Related Tests"
+      }
+    ],
+    "configuration": {
+      "title": "Live Test Runner",
+      "properties": {
+        "liveTestRunner.projectRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Project root directory for testing"
+        },
+        "liveTestRunner.jestCommand": {
+          "type": "string",
+          "default": "npx jest",
+          "description": "Command to run Jest"
+        },
+        "liveTestRunner.warmupOnStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run full suite on start"
+        },
+        "liveTestRunner.useCoverageMap": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use coverage to build affected test map"
+        },
+        "liveTestRunner.testFilePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": ["**/*.test.*", "**/*.spec.*"],
+          "description": "Patterns for test files"
+        },
+        "liveTestRunner.onSaveDebounceMs": {
+          "type": "number",
+          "default": 300,
+          "description": "Debounce delay for on-save execution"
+        },
+        "liveTestRunner.showOutputOnFailure": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show output on test failure"
+        },
+        "liveTestRunner.enableTestExplorer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Test Explorer integration"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "dependencies": {
+    "@live-test-runner/core": "workspace:*",
+    "@live-test-runner/runner": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "16.x",
+    "eslint": "^8.28.0",
+    "glob": "^8.1.0",
+    "mocha": "^10.1.0",
+    "typescript": "^4.9.4",
+    "@vscode/test-electron": "^2.2.3"
+  }
+}
