@@ -107,8 +107,8 @@
     "test": "node ./out/test/runTest.js"
   },
   "dependencies": {
-    "@live-test-runner/core": "workspace:*",
-    "@live-test-runner/runner": "workspace:*"
+    "@live-test-runner/core": "*",
+    "@live-test-runner/runner": "*"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",
