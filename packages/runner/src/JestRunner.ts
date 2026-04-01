@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { TestRunner } from './TestRunner';
+import { TestRunner, TestResult } from './TestRunner';
 
 export class JestRunner implements TestRunner {
   private jestCommand: string;
@@ -31,21 +31,21 @@ export class JestRunner implements TestRunner {
     });
   }
 
-  async runFullSuite(projectRoot: string, withCoverage: boolean = false): Promise<void> {
+  async runFullSuite(projectRoot: string, withCoverage: boolean = false): Promise<TestResult> {
     const args = withCoverage ? ['--coverage', '--coverageReporters=json', '--coverageReporters=json-summary'] : [];
-    await this.runJest(args, projectRoot);
+    return this.runJest(args, projectRoot);
   }
 
-  async runTestFile(filePath: string): Promise<void> {
-    await this.runJest([filePath]);
+  async runTestFile(filePath: string): Promise<TestResult> {
+    return this.runJest([filePath]);
   }
 
-  async runTestFiles(files: string[]): Promise<void> {
-    await this.runJest(files);
+  async runTestFiles(files: string[]): Promise<TestResult> {
+    return this.runJest(files);
   }
 
-  async runRelatedTests(filePath: string): Promise<void> {
-    await this.runJest(['--findRelatedTests', filePath]);
+  async runRelatedTests(filePath: string): Promise<TestResult> {
+    return this.runJest(['--findRelatedTests', filePath]);
   }
 
   isTestFile(filePath: string): boolean {
@@ -70,20 +70,41 @@ export class JestRunner implements TestRunner {
     // Simplified: in real impl, track PIDs
   }
 
-  private async runJest(args: string[], cwd?: string): Promise<void> {
-    return new Promise((resolve, reject) => {
+  private async runJest(args: string[], cwd?: string): Promise<TestResult> {
+    return new Promise((resolve) => {
       const [cmd, ...cmdArgs] = this.jestCommand.split(' ');
       const child = spawn(cmd, [...cmdArgs, ...args], { cwd });
 
-      child.on('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`Jest failed with code ${code}`));
-        }
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (data) => {
+        stdout += data.toString();
       });
 
-      child.on('error', reject);
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('close', (code) => {
+        const passed = code === 0;
+        const output = stdout + stderr;
+        const errors = passed ? [] : [stderr || `Jest exited with code ${code}`];
+
+        resolve({
+          passed,
+          output,
+          errors
+        });
+      });
+
+      child.on('error', (error) => {
+        resolve({
+          passed: false,
+          output: '',
+          errors: [error.message]
+        });
+      });
     });
   }
 }

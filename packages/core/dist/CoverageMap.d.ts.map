@@ -1,0 +1,1 @@
+{"version":3,"file":"CoverageMap.d.ts","sourceRoot":"","sources":["../src/CoverageMap.ts"],"names":[],"mappings":"AAAA,qBAAa,WAAW;IACtB,OAAO,CAAC,GAAG,CAAuC;IAElD,iBAAiB,CAAC,YAAY,EAAE,GAAG,GAAG,IAAI;IAY1C,gBAAgB,CAAC,UAAU,EAAE,MAAM,GAAG,GAAG,CAAC,MAAM,CAAC;IAIjD,KAAK,IAAI,IAAI;CAGd"}

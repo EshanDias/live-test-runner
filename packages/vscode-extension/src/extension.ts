@@ -24,7 +24,6 @@ export function activate(context: vscode.ExtensionContext) {
   // Create test controller
   testController = vscode.tests.createTestController('liveTestRunner', 'Live Test Runner');
   testController.refreshHandler = refreshTestsHandler;
-  testController.runHandler = runTestsHandler;
   context.subscriptions.push(testController);
 
   context.subscriptions.push(
@@ -210,7 +209,7 @@ async function onSave(document: vscode.TextDocument) {
     try {
       updateStatusBar('Running…');
       outputChannel.appendLine(`[Live Test Runner] Running tests for: ${vscode.workspace.asRelativePath(document.uri)}`);
-      const result = await testSession.onSave(document.uri.fsPath, projectRoot);
+      const result = await testSession!.onSave(document.uri.fsPath, projectRoot);
       outputChannel.appendLine(result.output);
       if (result.passed) {
         outputChannel.appendLine(`[Live Test Runner] Tests passed ✅`);
@@ -223,9 +222,9 @@ async function onSave(document: vscode.TextDocument) {
         updateStatusBar('✅ Ready');
       }
     } catch (error) {
-      outputChannel.appendLine(`[Live Test Runner] Error: ${error}`);
+      outputChannel.appendLine(`[Live Test Runner] Error: ${(error as Error).message}`);
       updateStatusBar('❌ Error');
-      vscode.window.showErrorMessage(`Test execution failed: ${error}`);
+      vscode.window.showErrorMessage(`Test execution failed: ${(error as Error).message}`);
       updateStatusBar('✅ Ready');
     }
   }, debounceMs);
@@ -241,14 +240,10 @@ async function refreshTestExplorer(projectRoot: string) {
   const runner = testSession.getRunner() as JestRunner;
   const testFiles = await runner.discoverTests(projectRoot);
 
-  // Clear existing
-  testController.items.clear();
-
-  // Add test files as items
-  for (const file of testFiles) {
-    const item = testController.createTestItem(file, vscode.workspace.asRelativePath(file), vscode.Uri.file(file));
-    testController.items.add(item);
-  }
+  // Replace all items
+  testController.items.replace(testFiles.map(file => 
+    testController.createTestItem(file, vscode.workspace.asRelativePath(file), vscode.Uri.file(file))
+  ));
 }
 
 async function refreshTestsHandler(): Promise<void> {
@@ -275,26 +270,29 @@ async function runTestsHandler(request: vscode.TestRunRequest, token: vscode.Can
       return;
     }
 
-    run.started(test);
+    // Handle both TestItem and [id, TestItem] tuples
+    const testItem = Array.isArray(test) ? test[1] : test;
+
+    run.started(testItem);
 
     try {
       // Run the specific test file
-      outputChannel.appendLine(`[Live Test Runner] Running test: ${vscode.workspace.asRelativePath(vscode.Uri.file(test.id))}`);
-      const result = await runner.runTestFile(test.id);
+      outputChannel.appendLine(`[Live Test Runner] Running test: ${vscode.workspace.asRelativePath(vscode.Uri.file(testItem.id))}`);
+      const result = await runner.runTestFile(testItem.id);
       outputChannel.appendLine(result.output);
       if (result.passed) {
         outputChannel.appendLine(`[Live Test Runner] Test passed ✅`);
-        run.passed(test);
+        run.passed(testItem);
       } else {
         outputChannel.appendLine(`[Live Test Runner] Test failed ❌`);
         outputChannel.appendLine(`Errors: ${result.errors.join(', ')}`);
-        run.failed(test, new vscode.TestMessage(result.errors.join('\n')), 0);
+        run.failed(testItem, new vscode.TestMessage(result.errors.join('\n')), 0);
       }
       // Append output to the test run
       run.appendOutput(result.output);
     } catch (error) {
-      outputChannel.appendLine(`[Live Test Runner] Error: ${error}`);
-      run.failed(test, new vscode.TestMessage(error.message), 0);
+      outputChannel.appendLine(`[Live Test Runner] Error: ${(error as Error).message}`);
+      run.failed(testItem, new vscode.TestMessage((error as Error).message), 0);
     }
   }
 
