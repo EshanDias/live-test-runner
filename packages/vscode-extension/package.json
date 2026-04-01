@@ -39,6 +39,10 @@
       {
         "command": "liveTestRunner.runRelatedTests",
         "title": "Run Related Tests"
+      },
+      {
+        "command": "liveTestRunner.clearDiagnostics",
+        "title": "Clear Test Diagnostics"
       }
     ],
     "configuration": {

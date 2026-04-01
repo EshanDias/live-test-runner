@@ -1,15 +1,20 @@
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { JestRunner } from '@live-test-runner/runner';
+import { JestRunner, TestResult } from '@live-test-runner/runner';
 
 let testSession: TestSession | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let testController: vscode.TestController;
+let diagnosticCollection: vscode.DiagnosticCollection;
 
 export function activate(context: vscode.ExtensionContext) {
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBarItem.command = 'liveTestRunner.startTesting';
   updateStatusBar('Off');
+
+  // Create diagnostic collection for test errors
+  diagnosticCollection = vscode.languages.createDiagnosticCollection('liveTestRunner');
+  context.subscriptions.push(diagnosticCollection);
 
   // Create test controller
   testController = vscode.tests.createTestController('liveTestRunner', 'Live Test Runner');
@@ -24,6 +29,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.refreshTests', refreshTests),
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot', selectProjectRoot),
     vscode.commands.registerCommand('liveTestRunner.runRelatedTests', runRelatedTests),
+    vscode.commands.registerCommand('liveTestRunner.clearDiagnostics', clearDiagnostics),
     statusBarItem
   );
 
@@ -54,11 +60,15 @@ async function startTesting() {
   testSession = new TestSession(runner);
 
   try {
-    await testSession.start(projectRoot);
-    updateStatusBar('✅ Ready');
-
-    // Populate test explorer
-    await refreshTestExplorer(projectRoot);
+    const result = await testSession.start(projectRoot);
+    if (result.passed) {
+      updateStatusBar('✅ Ready');
+      // Populate test explorer
+      await refreshTestExplorer(projectRoot);
+    } else {
+      updateStatusBar('❌ Failed');
+      vscode.window.showErrorMessage(`Failed to start testing: ${result.errors.join(', ')}`);
+    }
   } catch (error) {
     updateStatusBar('❌ Failed');
     vscode.window.showErrorMessage(`Failed to start testing: ${error}`);
@@ -87,15 +97,21 @@ async function rebuildMap() {
     const runner = testSession.getRunner();
 
     // Run full suite with coverage
-    await runner.runFullSuite(projectRoot, true);
+    const result = await runner.runFullSuite(projectRoot, true);
 
-    // Rebuild the map
-    const coverageMap = testSession.getCoverageMap();
-    coverageMap.clear();
-    coverageMap.buildFromCoverage(await runner.getCoverage());
+    if (result.passed) {
+      // Rebuild the map
+      const coverageMap = testSession.getCoverageMap();
+      coverageMap.clear();
+      coverageMap.buildFromCoverage(await runner.getCoverage());
 
-    updateStatusBar('✅ Ready');
-    vscode.window.showInformationMessage('Test map rebuilt successfully');
+      updateStatusBar('✅ Ready');
+      vscode.window.showInformationMessage('Test map rebuilt successfully');
+    } else {
+      updateStatusBar('❌ Error');
+      vscode.window.showErrorMessage(`Failed to rebuild map: ${result.errors.join(', ')}`);
+      updateStatusBar('✅ Ready');
+    }
   } catch (error) {
     updateStatusBar('❌ Error');
     vscode.window.showErrorMessage(`Failed to rebuild map: ${error}`);
@@ -152,14 +168,25 @@ async function runRelatedTests() {
   try {
     updateStatusBar('Running…');
     const runner = testSession.getRunner();
-    await runner.runRelatedTests(activeEditor.document.uri.fsPath);
-    updateStatusBar('✅ Ready');
-    vscode.window.showInformationMessage('Related tests executed');
+    const result = await runner.runRelatedTests(activeEditor.document.uri.fsPath);
+    if (result.passed) {
+      updateStatusBar('✅ Ready');
+      vscode.window.showInformationMessage('Related tests executed');
+    } else {
+      updateStatusBar('❌ Failed');
+      vscode.window.showErrorMessage(`Related tests failed: ${result.errors.join(', ')}`);
+      updateStatusBar('✅ Ready');
+    }
   } catch (error) {
     updateStatusBar('❌ Error');
     vscode.window.showErrorMessage(`Failed to run related tests: ${error}`);
     updateStatusBar('✅ Ready');
   }
+}
+
+function clearDiagnostics() {
+  diagnosticCollection.clear();
+  vscode.window.showInformationMessage('Test diagnostics cleared');
 }
 
 async function onSave(document: vscode.TextDocument) {
@@ -172,8 +199,14 @@ async function onSave(document: vscode.TextDocument) {
   setTimeout(async () => {
     try {
       updateStatusBar('Running…');
-      await testSession.onSave(document.uri.fsPath, projectRoot);
-      updateStatusBar('✅ Ready');
+      const result = await testSession.onSave(document.uri.fsPath, projectRoot);
+      if (result.passed) {
+        updateStatusBar('✅ Ready');
+      } else {
+        updateStatusBar('❌ Failed');
+        vscode.window.showErrorMessage(`Tests failed: ${result.errors.join(', ')}`);
+        updateStatusBar('✅ Ready');
+      }
     } catch (error) {
       updateStatusBar('❌ Error');
       vscode.window.showErrorMessage(`Test execution failed: ${error}`);
@@ -230,8 +263,14 @@ async function runTestsHandler(request: vscode.TestRunRequest, token: vscode.Can
 
     try {
       // Run the specific test file
-      await runner.runTestFile(test.id);
-      run.passed(test);
+      const result = await runner.runTestFile(test.id);
+      if (result.passed) {
+        run.passed(test);
+      } else {
+        run.failed(test, new vscode.TestMessage(result.errors.join('\n')), 0);
+      }
+      // Append output to the test run
+      run.appendOutput(result.output);
     } catch (error) {
       run.failed(test, new vscode.TestMessage(error.message), 0);
     }
