@@ -43,6 +43,10 @@
       {
         "command": "liveTestRunner.clearDiagnostics",
         "title": "Clear Test Diagnostics"
+      },
+      {
+        "command": "liveTestRunner.showOutput",
+        "title": "Show Test Output"
       }
     ],
     "configuration": {

@@ -6,6 +6,7 @@ let testSession: TestSession | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let testController: vscode.TestController;
 let diagnosticCollection: vscode.DiagnosticCollection;
+let outputChannel: vscode.OutputChannel;
 
 export function activate(context: vscode.ExtensionContext) {
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -15,6 +16,10 @@ export function activate(context: vscode.ExtensionContext) {
   // Create diagnostic collection for test errors
   diagnosticCollection = vscode.languages.createDiagnosticCollection('liveTestRunner');
   context.subscriptions.push(diagnosticCollection);
+
+  // Create output channel for test results
+  outputChannel = vscode.window.createOutputChannel('Live Test Runner');
+  context.subscriptions.push(outputChannel);
 
   // Create test controller
   testController = vscode.tests.createTestController('liveTestRunner', 'Live Test Runner');
@@ -30,6 +35,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot', selectProjectRoot),
     vscode.commands.registerCommand('liveTestRunner.runRelatedTests', runRelatedTests),
     vscode.commands.registerCommand('liveTestRunner.clearDiagnostics', clearDiagnostics),
+    vscode.commands.registerCommand('liveTestRunner.showOutput', showOutput),
     statusBarItem
   );
 
@@ -189,6 +195,10 @@ function clearDiagnostics() {
   vscode.window.showInformationMessage('Test diagnostics cleared');
 }
 
+function showOutput() {
+  outputChannel.show();
+}
+
 async function onSave(document: vscode.TextDocument) {
   if (!testSession) return;
 
@@ -199,15 +209,21 @@ async function onSave(document: vscode.TextDocument) {
   setTimeout(async () => {
     try {
       updateStatusBar('Running…');
+      outputChannel.appendLine(`[Live Test Runner] Running tests for: ${vscode.workspace.asRelativePath(document.uri)}`);
       const result = await testSession.onSave(document.uri.fsPath, projectRoot);
+      outputChannel.appendLine(result.output);
       if (result.passed) {
+        outputChannel.appendLine(`[Live Test Runner] Tests passed ✅`);
         updateStatusBar('✅ Ready');
       } else {
+        outputChannel.appendLine(`[Live Test Runner] Tests failed ❌`);
+        outputChannel.appendLine(`Errors: ${result.errors.join(', ')}`);
         updateStatusBar('❌ Failed');
         vscode.window.showErrorMessage(`Tests failed: ${result.errors.join(', ')}`);
         updateStatusBar('✅ Ready');
       }
     } catch (error) {
+      outputChannel.appendLine(`[Live Test Runner] Error: ${error}`);
       updateStatusBar('❌ Error');
       vscode.window.showErrorMessage(`Test execution failed: ${error}`);
       updateStatusBar('✅ Ready');
@@ -263,15 +279,21 @@ async function runTestsHandler(request: vscode.TestRunRequest, token: vscode.Can
 
     try {
       // Run the specific test file
+      outputChannel.appendLine(`[Live Test Runner] Running test: ${vscode.workspace.asRelativePath(vscode.Uri.file(test.id))}`);
       const result = await runner.runTestFile(test.id);
+      outputChannel.appendLine(result.output);
       if (result.passed) {
+        outputChannel.appendLine(`[Live Test Runner] Test passed ✅`);
         run.passed(test);
       } else {
+        outputChannel.appendLine(`[Live Test Runner] Test failed ❌`);
+        outputChannel.appendLine(`Errors: ${result.errors.join(', ')}`);
         run.failed(test, new vscode.TestMessage(result.errors.join('\n')), 0);
       }
       // Append output to the test run
       run.appendOutput(result.output);
     } catch (error) {
+      outputChannel.appendLine(`[Live Test Runner] Error: ${error}`);
       run.failed(test, new vscode.TestMessage(error.message), 0);
     }
   }
