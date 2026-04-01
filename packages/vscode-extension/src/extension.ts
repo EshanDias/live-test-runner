@@ -78,11 +78,49 @@ async function rebuildMap() {
     vscode.window.showErrorMessage('Testing not started.');
     return;
   }
-  // Rebuild logic
+
+  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+  if (!projectRoot) return;
+
+  try {
+    updateStatusBar('Rebuilding…');
+    const runner = testSession.getRunner();
+
+    // Run full suite with coverage
+    await runner.runFullSuite(projectRoot, true);
+
+    // Rebuild the map
+    const coverageMap = testSession.getCoverageMap();
+    coverageMap.clear();
+    coverageMap.buildFromCoverage(await runner.getCoverage());
+
+    updateStatusBar('✅ Ready');
+    vscode.window.showInformationMessage('Test map rebuilt successfully');
+  } catch (error) {
+    updateStatusBar('❌ Error');
+    vscode.window.showErrorMessage(`Failed to rebuild map: ${error}`);
+    updateStatusBar('✅ Ready');
+  }
 }
 
 async function refreshTests() {
-  // Refresh test explorer
+  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+  if (!projectRoot) {
+    vscode.window.showErrorMessage('Please select a project root first.');
+    return;
+  }
+
+  if (!testSession) {
+    vscode.window.showErrorMessage('Testing not started.');
+    return;
+  }
+
+  try {
+    await refreshTestExplorer(projectRoot);
+    vscode.window.showInformationMessage('Tests refreshed');
+  } catch (error) {
+    vscode.window.showErrorMessage(`Failed to refresh tests: ${error}`);
+  }
 }
 
 async function selectProjectRoot() {
@@ -100,14 +138,48 @@ async function selectProjectRoot() {
 }
 
 async function runRelatedTests() {
-  // Manual run related tests
+  const activeEditor = vscode.window.activeTextEditor;
+  if (!activeEditor) {
+    vscode.window.showErrorMessage('No active file');
+    return;
+  }
+
+  if (!testSession) {
+    vscode.window.showErrorMessage('Testing not started.');
+    return;
+  }
+
+  try {
+    updateStatusBar('Running…');
+    const runner = testSession.getRunner();
+    await runner.runRelatedTests(activeEditor.document.uri.fsPath);
+    updateStatusBar('✅ Ready');
+    vscode.window.showInformationMessage('Related tests executed');
+  } catch (error) {
+    updateStatusBar('❌ Error');
+    vscode.window.showErrorMessage(`Failed to run related tests: ${error}`);
+    updateStatusBar('✅ Ready');
+  }
 }
 
 async function onSave(document: vscode.TextDocument) {
   if (!testSession) return;
 
   const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
-  await testSession.onSave(document.uri.fsPath, projectRoot);
+  const debounceMs = vscode.workspace.getConfiguration('liveTestRunner').get('onSaveDebounceMs') as number;
+
+  // Debounce on-save execution
+  setTimeout(async () => {
+    try {
+      updateStatusBar('Running…');
+      await testSession.onSave(document.uri.fsPath, projectRoot);
+      updateStatusBar('✅ Ready');
+    } catch (error) {
+      updateStatusBar('❌ Error');
+      vscode.window.showErrorMessage(`Test execution failed: ${error}`);
+      updateStatusBar('✅ Ready');
+    }
+  }, debounceMs);
 }
 
 function updateStatusBar(text: string) {
@@ -139,10 +211,31 @@ async function refreshTestsHandler(): Promise<void> {
 
 async function runTestsHandler(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
   const run = testController.createTestRun(request);
-  // Implement running tests
-  // For now, just mark as passed
-  for (const test of request.include || testController.items) {
-    run.passed(test);
+  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+
+  if (!testSession || !projectRoot) {
+    run.end();
+    return;
   }
+
+  const runner = testSession.getRunner();
+
+  for (const test of request.include || testController.items) {
+    if (token.isCancellationRequested) {
+      run.end();
+      return;
+    }
+
+    run.started(test);
+
+    try {
+      // Run the specific test file
+      await runner.runTestFile(test.id);
+      run.passed(test);
+    } catch (error) {
+      run.failed(test, new vscode.TestMessage(error.message), 0);
+    }
+  }
+
   run.end();
 }
