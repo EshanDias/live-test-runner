@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { JestRunner, TestResult } from '@live-test-runner/runner';
+import { JestRunner } from '@live-test-runner/runner';
 
 let testSession: TestSession | undefined;
 let statusBarItem: vscode.StatusBarItem;
@@ -13,19 +13,18 @@ export function activate(context: vscode.ExtensionContext) {
   statusBarItem.command = 'liveTestRunner.startTesting';
   updateStatusBar('Off');
 
-  // Create diagnostic collection for test errors
   diagnosticCollection = vscode.languages.createDiagnosticCollection('liveTestRunner');
   context.subscriptions.push(diagnosticCollection);
 
-  // Create output channel for test results
   outputChannel = vscode.window.createOutputChannel('Live Test Runner');
   context.subscriptions.push(outputChannel);
 
-  // Create test controller
   testController = vscode.tests.createTestController('liveTestRunner', 'Live Test Runner');
-  testController.refreshHandler = refreshTestsHandler;
-  testController.runHandler = runTestsHandler;
+  testController.refreshHandler = (_token: vscode.CancellationToken) => refreshTestsHandler();
   context.subscriptions.push(testController);
+  context.subscriptions.push(
+    testController.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runTestsHandler, true)
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('liveTestRunner.startTesting', startTesting),
@@ -39,12 +38,19 @@ export function activate(context: vscode.ExtensionContext) {
     statusBarItem
   );
 
-  // Listen for document saves
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(onSave)
   );
 
   statusBarItem.show();
+
+  // Auto-discover tests on startup so the Test Explorer is populated immediately
+  const initialRoot = getEffectiveProjectRoot();
+  if (initialRoot) {
+    refreshTestExplorer(initialRoot).catch(() => {
+      // Silently ignore — workspace may not have Jest set up yet
+    });
+  }
 }
 
 export function deactivate() {
@@ -53,27 +59,54 @@ export function deactivate() {
   }
 }
 
+/**
+ * Returns the project root to use:
+ *  1. The explicitly configured liveTestRunner.projectRoot setting, if set.
+ *  2. The single workspace folder, if there is exactly one open.
+ *  3. undefined — caller must prompt the user.
+ */
+function getEffectiveProjectRoot(): string | undefined {
+  const configured = vscode.workspace.getConfiguration('liveTestRunner').get<string>('projectRoot');
+  if (configured?.trim()) return configured.trim();
+
+  const folders = vscode.workspace.workspaceFolders;
+  if (folders && folders.length === 1) return folders[0].uri.fsPath;
+
+  return undefined;
+}
+
+function getJestCommand(): string {
+  return vscode.workspace.getConfiguration('liveTestRunner').get<string>('jestCommand') || 'npx jest';
+}
+
 async function startTesting() {
-  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+  const projectRoot = getEffectiveProjectRoot();
   if (!projectRoot) {
-    vscode.window.showErrorMessage('Please select a project root first.');
+    const pick = await vscode.window.showErrorMessage(
+      'No project root found. Open a single folder or configure liveTestRunner.projectRoot.',
+      'Select Project Root'
+    );
+    if (pick) await selectProjectRoot();
     return;
   }
 
   updateStatusBar('Starting…');
 
-  const runner = new JestRunner(vscode.workspace.getConfiguration('liveTestRunner').get('jestCommand') as string);
+  const runner = new JestRunner(getJestCommand());
   testSession = new TestSession(runner);
 
   try {
     const result = await testSession.start(projectRoot);
     if (result.passed) {
       updateStatusBar('✅ Ready');
-      // Populate test explorer
       await refreshTestExplorer(projectRoot);
     } else {
       updateStatusBar('❌ Failed');
-      vscode.window.showErrorMessage(`Failed to start testing: ${result.errors.join(', ')}`);
+      outputChannel.appendLine(result.output);
+      if (vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('showOutputOnFailure')) {
+        outputChannel.show(true);
+      }
+      vscode.window.showErrorMessage(`Tests failed on warm-up. See output for details.`);
     }
   } catch (error) {
     updateStatusBar('❌ Failed');
@@ -95,45 +128,35 @@ async function rebuildMap() {
     return;
   }
 
-  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+  const projectRoot = getEffectiveProjectRoot();
   if (!projectRoot) return;
 
   try {
     updateStatusBar('Rebuilding…');
     const runner = testSession.getRunner();
-
-    // Run full suite with coverage
     const result = await runner.runFullSuite(projectRoot, true);
 
     if (result.passed) {
-      // Rebuild the map
       const coverageMap = testSession.getCoverageMap();
       coverageMap.clear();
       coverageMap.buildFromCoverage(await runner.getCoverage());
-
       updateStatusBar('✅ Ready');
       vscode.window.showInformationMessage('Test map rebuilt successfully');
     } else {
-      updateStatusBar('❌ Error');
-      vscode.window.showErrorMessage(`Failed to rebuild map: ${result.errors.join(', ')}`);
+      outputChannel.appendLine(result.output);
       updateStatusBar('✅ Ready');
+      vscode.window.showErrorMessage(`Failed to rebuild map: ${result.errors.join(', ')}`);
     }
   } catch (error) {
-    updateStatusBar('❌ Error');
-    vscode.window.showErrorMessage(`Failed to rebuild map: ${error}`);
     updateStatusBar('✅ Ready');
+    vscode.window.showErrorMessage(`Failed to rebuild map: ${error}`);
   }
 }
 
 async function refreshTests() {
-  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+  const projectRoot = getEffectiveProjectRoot();
   if (!projectRoot) {
-    vscode.window.showErrorMessage('Please select a project root first.');
-    return;
-  }
-
-  if (!testSession) {
-    vscode.window.showErrorMessage('Testing not started.');
+    vscode.window.showErrorMessage('No project root configured. Open a folder or set liveTestRunner.projectRoot.');
     return;
   }
 
@@ -147,15 +170,30 @@ async function refreshTests() {
 
 async function selectProjectRoot() {
   const folders = vscode.workspace.workspaceFolders;
-  if (!folders) return;
+  if (!folders || folders.length === 0) {
+    vscode.window.showErrorMessage('No workspace folders are open.');
+    return;
+  }
 
-  const selected = await vscode.window.showQuickPick(
-    folders.map(f => f.uri.fsPath),
-    { placeHolder: 'Select project root' }
-  );
+  let selected: string | undefined;
+
+  if (folders.length === 1) {
+    selected = folders[0].uri.fsPath;
+  } else {
+    selected = await vscode.window.showQuickPick(
+      folders.map((f: vscode.WorkspaceFolder) => f.uri.fsPath),
+      { placeHolder: 'Select project root' }
+    );
+  }
 
   if (selected) {
-    await vscode.workspace.getConfiguration('liveTestRunner').update('projectRoot', selected, vscode.ConfigurationTarget.Workspace);
+    await vscode.workspace.getConfiguration('liveTestRunner').update(
+      'projectRoot',
+      selected,
+      vscode.ConfigurationTarget.Workspace
+    );
+    // Populate the Test Explorer right after selection
+    await refreshTestExplorer(selected);
   }
 }
 
@@ -175,24 +213,24 @@ async function runRelatedTests() {
     updateStatusBar('Running…');
     const runner = testSession.getRunner();
     const result = await runner.runRelatedTests(activeEditor.document.uri.fsPath);
+    outputChannel.appendLine(result.output);
     if (result.passed) {
       updateStatusBar('✅ Ready');
-      vscode.window.showInformationMessage('Related tests executed');
     } else {
-      updateStatusBar('❌ Failed');
-      vscode.window.showErrorMessage(`Related tests failed: ${result.errors.join(', ')}`);
       updateStatusBar('✅ Ready');
+      if (vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('showOutputOnFailure')) {
+        outputChannel.show(true);
+      }
+      vscode.window.showErrorMessage(`Related tests failed. See output for details.`);
     }
   } catch (error) {
-    updateStatusBar('❌ Error');
-    vscode.window.showErrorMessage(`Failed to run related tests: ${error}`);
     updateStatusBar('✅ Ready');
+    vscode.window.showErrorMessage(`Failed to run related tests: ${error}`);
   }
 }
 
 function clearDiagnostics() {
   diagnosticCollection.clear();
-  vscode.window.showInformationMessage('Test diagnostics cleared');
 }
 
 function showOutput() {
@@ -202,30 +240,29 @@ function showOutput() {
 async function onSave(document: vscode.TextDocument) {
   if (!testSession) return;
 
-  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
-  const debounceMs = vscode.workspace.getConfiguration('liveTestRunner').get('onSaveDebounceMs') as number;
+  const projectRoot = getEffectiveProjectRoot();
+  if (!projectRoot) return;
 
-  // Debounce on-save execution
+  const debounceMs = vscode.workspace.getConfiguration('liveTestRunner').get<number>('onSaveDebounceMs') ?? 300;
+
   setTimeout(async () => {
     try {
       updateStatusBar('Running…');
-      outputChannel.appendLine(`[Live Test Runner] Running tests for: ${vscode.workspace.asRelativePath(document.uri)}`);
+      outputChannel.appendLine(`\n[Live Test Runner] Running tests for: ${vscode.workspace.asRelativePath(document.uri)}`);
       const result = await testSession!.onSave(document.uri.fsPath, projectRoot);
       outputChannel.appendLine(result.output);
       if (result.passed) {
-        outputChannel.appendLine(`[Live Test Runner] Tests passed ✅`);
+        outputChannel.appendLine('[Live Test Runner] ✅ Passed');
         updateStatusBar('✅ Ready');
       } else {
-        outputChannel.appendLine(`[Live Test Runner] Tests failed ❌`);
-        outputChannel.appendLine(`Errors: ${result.errors.join(', ')}`);
-        updateStatusBar('❌ Failed');
-        vscode.window.showErrorMessage(`Tests failed: ${result.errors.join(', ')}`);
+        outputChannel.appendLine('[Live Test Runner] ❌ Failed');
         updateStatusBar('✅ Ready');
+        if (vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('showOutputOnFailure')) {
+          outputChannel.show(true);
+        }
       }
     } catch (error) {
       outputChannel.appendLine(`[Live Test Runner] Error: ${(error as Error).message}`);
-      updateStatusBar('❌ Error');
-      vscode.window.showErrorMessage(`Test execution failed: ${(error as Error).message}`);
       updateStatusBar('✅ Ready');
     }
   }, debounceMs);
@@ -235,21 +272,31 @@ function updateStatusBar(text: string) {
   statusBarItem.text = `Live Tests: ${text}`;
 }
 
+/**
+ * Populates the Test Explorer tree.
+ * Works with or without an active testSession — creates a temporary runner for
+ * discovery if no session is running.
+ */
 async function refreshTestExplorer(projectRoot: string) {
-  if (!testSession) return;
+  const runner = testSession
+    ? (testSession.getRunner() as JestRunner)
+    : new JestRunner(getJestCommand());
 
-  const runner = testSession.getRunner() as JestRunner;
-  const testFiles = await runner.discoverTests(projectRoot);
-
-  // Replace all items
-  testController.items.replace(testFiles.map(file => {
-    const relativePath = vscode.workspace.asRelativePath(file);
-    return testController.createTestItem(file, relativePath, vscode.Uri.file(file));
-  }));
+  try {
+    const testFiles = await runner.discoverTests(projectRoot);
+    testController.items.replace(
+      testFiles.map((file: string) => {
+        const relativePath = vscode.workspace.asRelativePath(file);
+        return testController.createTestItem(file, relativePath, vscode.Uri.file(file));
+      })
+    );
+  } catch (error) {
+    outputChannel.appendLine(`[Live Test Runner] Test discovery error: ${error}`);
+  }
 }
 
 async function refreshTestsHandler(): Promise<void> {
-  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+  const projectRoot = getEffectiveProjectRoot();
   if (projectRoot) {
     await refreshTestExplorer(projectRoot);
   }
@@ -257,44 +304,40 @@ async function refreshTestsHandler(): Promise<void> {
 
 async function runTestsHandler(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
   const run = testController.createTestRun(request);
-  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+  const projectRoot = getEffectiveProjectRoot();
 
-  if (!testSession || !projectRoot) {
+  if (!projectRoot) {
     run.end();
     return;
   }
 
-  const runner = testSession.getRunner();
+  // Use active session runner if available, otherwise create a temporary one
+  const runner: JestRunner = testSession
+    ? (testSession.getRunner() as JestRunner)
+    : new JestRunner(getJestCommand());
 
-  // Get all test items to run
-  const testsToRun = request.include || Array.from(testController.items).map(([_, item]) => item);
+  // Ensure runner knows the project root (needed when no session is active)
+  if (!testSession) {
+    await runner.discoverTests(projectRoot);
+  }
+
+  const testsToRun = request.include ?? Array.from(testController.items as Iterable<[string, vscode.TestItem]>).map(([_id, item]) => item);
 
   for (const testItem of testsToRun) {
-    if (token.isCancellationRequested) {
-      run.end();
-      return;
-    }
+    if (token.isCancellationRequested) break;
 
     run.started(testItem);
 
     try {
-      // Run the specific test file
-      outputChannel.appendLine(`[Live Test Runner] Running test: ${vscode.workspace.asRelativePath(vscode.Uri.file(testItem.id))}`);
       const result = await runner.runTestFile(testItem.id);
-      outputChannel.appendLine(result.output);
+      run.appendOutput(result.output.replace(/\r?\n/g, '\r\n'));
       if (result.passed) {
-        outputChannel.appendLine(`[Live Test Runner] Test passed ✅`);
         run.passed(testItem);
       } else {
-        outputChannel.appendLine(`[Live Test Runner] Test failed ❌`);
-        outputChannel.appendLine(`Errors: ${result.errors.join(', ')}`);
-        run.failed(testItem, new vscode.TestMessage(result.errors.join('\n')), 0);
+        run.failed(testItem, new vscode.TestMessage(result.errors.join('\n')));
       }
-      // Append output to the test run
-      run.appendOutput(result.output);
     } catch (error) {
-      outputChannel.appendLine(`[Live Test Runner] Error: ${(error as Error).message}`);
-      run.failed(testItem, new vscode.TestMessage((error as Error).message), 0);
+      run.failed(testItem, new vscode.TestMessage((error as Error).message));
     }
   }
 

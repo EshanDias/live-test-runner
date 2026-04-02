@@ -10,6 +10,7 @@
     "Testing"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:liveTestRunner.startTesting",
     "onCommand:liveTestRunner.stopTesting"
   ],
@@ -59,8 +60,8 @@
         },
         "liveTestRunner.jestCommand": {
           "type": "string",
-          "default": "node node_modules/jest/bin/jest.js",
-          "description": "Command to run Jest (for react-scripts projects, may need 'npx jest' with proper config)"
+          "default": "npx jest",
+          "description": "Command to run Jest (e.g. 'npx jest', 'yarn jest', or 'node_modules/.bin/jest')"
         },
         "liveTestRunner.warmupOnStart": {
           "type": "boolean",
