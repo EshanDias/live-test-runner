@@ -68,6 +68,9 @@ async function startTesting() {
   testSession = new TestSession(runner);
 
   try {
+    updateStatusBar('Discovering tests…');
+    const testFiles = await runner.discoverTests(projectRoot);
+    updateStatusBar('Running warm-up…');
     const result = await testSession.start(projectRoot);
     if (result.passed) {
       updateStatusBar('✅ Ready');

@@ -59,8 +59,8 @@
         },
         "liveTestRunner.jestCommand": {
           "type": "string",
-          "default": "jest",
-          "description": "Command to run Jest (uses local node_modules/jest/bin/jest.js by default)"
+          "default": "node node_modules/jest/bin/jest.js",
+          "description": "Command to run Jest (for react-scripts projects, may need 'npx jest' with proper config)"
         },
         "liveTestRunner.warmupOnStart": {
           "type": "boolean",
