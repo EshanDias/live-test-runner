@@ -53,10 +53,13 @@ export function deactivate() {
 }
 
 async function startTesting() {
-  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+  let projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
   if (!projectRoot) {
-    vscode.window.showErrorMessage('Please select a project root first.');
-    return;
+    await selectProjectRoot();
+    projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+    if (!projectRoot) {
+      return; // User cancelled selection
+    }
   }
 
   updateStatusBar('Starting…');

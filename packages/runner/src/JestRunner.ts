@@ -4,14 +4,19 @@ import { TestRunner, TestResult } from './TestRunner';
 export class JestRunner implements TestRunner {
   private jestCommand: string;
 
-  constructor(jestCommand: string = 'npx jest') {
-    this.jestCommand = jestCommand;
+  constructor(jestCommand: string = 'jest') {
+    // Use node to run jest directly from node_modules
+    if (jestCommand === 'jest') {
+      this.jestCommand = 'node node_modules/jest/bin/jest.js';
+    } else {
+      this.jestCommand = jestCommand;
+    }
   }
 
   async discoverTests(projectRoot: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
       const [cmd, ...args] = this.jestCommand.split(' ');
-      const child = spawn(cmd, [...args, '--listTests'], { cwd: projectRoot });
+      const child = spawn(cmd, [...args, '--listTests'], { cwd: projectRoot, shell: true });
 
       let output = '';
       child.stdout.on('data', (data) => {
@@ -73,7 +78,7 @@ export class JestRunner implements TestRunner {
   private async runJest(args: string[], cwd?: string): Promise<TestResult> {
     return new Promise((resolve) => {
       const [cmd, ...cmdArgs] = this.jestCommand.split(' ');
-      const child = spawn(cmd, [...cmdArgs, ...args], { cwd });
+      const child = spawn(cmd, [...cmdArgs, ...args], { cwd, shell: true });
 
       let stdout = '';
       let stderr = '';

@@ -10,7 +10,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "composite": true
   },
-  "exclude": ["node_modules", ".vscode-test"]
+  "references": [
+    { "path": "../core" },
+    { "path": "../runner" }
+  ],
+  "exclude": ["node_modules", ".vscode-test", "out"]
 }

@@ -59,8 +59,8 @@
         },
         "liveTestRunner.jestCommand": {
           "type": "string",
-          "default": "npx jest",
-          "description": "Command to run Jest"
+          "default": "jest",
+          "description": "Command to run Jest (uses local node_modules/jest/bin/jest.js by default)"
         },
         "liveTestRunner.warmupOnStart": {
           "type": "boolean",
@@ -99,17 +99,17 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "build": "npm run compile",
+    "vscode:prepublish": "pnpm run compile",
+    "compile": "tsc --build",
+    "build": "pnpm run compile",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"
   },
   "dependencies": {
-    "@live-test-runner/core": "*",
-    "@live-test-runner/runner": "*"
+    "@live-test-runner/core": "workspace:*",
+    "@live-test-runner/runner": "workspace:*"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",
