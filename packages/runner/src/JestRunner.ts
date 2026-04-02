@@ -4,17 +4,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 type Mode = 'script' | 'direct';
+type PackageManager = 'npm' | 'yarn' | 'pnpm';
 
 export class JestRunner implements TestRunner {
+  /**
+   * Optional explicit override for the Jest command.
+   * When empty (default), the runner auto-detects from package.json and node_modules.
+   */
   private jestCommand: string;
   private mode: Mode = 'direct';
   private projectRoot?: string;
   private child?: ChildProcessWithoutNullStreams;
 
-  // If true, we NEVER use direct jest (CRA/react-scripts needs its transform)
+  // CRA / react-scripts projects must always use the npm script — never direct jest
   private forceScript = false;
 
-  constructor(jestCommand: string = 'npx jest') {
+  constructor(jestCommand: string = '') {
     this.jestCommand = jestCommand;
   }
 
@@ -25,60 +30,52 @@ export class JestRunner implements TestRunner {
   async discoverTests(projectRoot: string): Promise<string[]> {
     this.ensureMode(projectRoot);
 
-    // Prefer authoritative discovery
+    // 1. Try via the project's own test script (most accurate — honours jest config baked into script)
     try {
       const result = await this.runJest(
         [...this.baseNonInteractiveArgs(), '--listTests', '--passWithNoTests'],
         projectRoot
       );
       if (!result.passed) throw new Error(result.errors.join('\n'));
-      return this.parseListTestsOutput(result.output);
+      const found = this.parseListTestsOutput(result.output);
+      if (found.length > 0) return found;
+      throw new Error('empty output');
     } catch (e) {
-      // CRA should not fall back to direct jest — it will break JSX transforms
+      // CRA must not fall back to direct jest — it will break JSX transforms
       if (this.forceScript) throw e;
-
-      // Fallback: direct jest listTests
-      try {
-        const result = await this.runJest(['--listTests', '--passWithNoTests'], projectRoot, 'direct');
-        if (!result.passed) throw new Error(result.errors.join('\n'));
-        return this.parseListTestsOutput(result.output);
-      } catch {
-        // Last-resort fallback: filesystem scan
-        return this.discoverTestsFromFilesystem(projectRoot);
-      }
     }
+
+    // 2. Try direct jest binary (auto-detected or user-specified)
+    try {
+      const result = await this.runJest(['--listTests', '--passWithNoTests'], projectRoot, 'direct');
+      if (!result.passed) throw new Error(result.errors.join('\n'));
+      const found = this.parseListTestsOutput(result.output);
+      if (found.length > 0) return found;
+    } catch { /* fall through */ }
+
+    // 3. Last-resort: filesystem scan
+    return this.discoverTestsFromFilesystem(projectRoot);
   }
 
   async runFullSuite(projectRoot: string, withCoverage: boolean = false): Promise<TestResult> {
     this.ensureMode(projectRoot);
-
-    // CRA projects: use scripts to guarantee transforms + correct env
-    if (this.forceScript) {
-      if (withCoverage && this.hasNpmScript(projectRoot, 'coverage')) {
-        // best: use project's coverage script
-        return this.runNpmScript(projectRoot, 'coverage');
-      }
-
-      // else: npm test -- --watchAll=false ... (safe)
-      const args = [
-        ...this.baseNonInteractiveArgs(),
-        ...(withCoverage
-          ? ['--coverage', '--coverageReporters=json', '--coverageReporters=json-summary']
-          : []),
-      ];
-      return this.runJest(args, projectRoot, 'script');
-    }
-
-    // Non-CRA: if there is a test script, run it; else direct jest
-    const args = withCoverage
+    const coverageArgs = withCoverage
       ? ['--coverage', '--coverageReporters=json', '--coverageReporters=json-summary']
       : [];
-    return this.runJest(args, projectRoot);
+
+    if (this.forceScript) {
+      // CRA: prefer dedicated coverage script if it exists
+      if (withCoverage && this.hasNpmScript(projectRoot, 'coverage')) {
+        return this.runScript(projectRoot, 'coverage');
+      }
+      return this.runJest([...this.baseNonInteractiveArgs(), ...coverageArgs], projectRoot, 'script');
+    }
+
+    return this.runJest([...this.baseNonInteractiveArgs(), ...coverageArgs], projectRoot);
   }
 
   async runTestFile(filePath: string): Promise<TestResult> {
     const cwd = this.requireProjectRoot();
-    // CRA-friendly: run by path, non-interactive
     return this.runJest(
       [...this.baseNonInteractiveArgs(), '--runTestsByPath', filePath],
       cwd
@@ -120,7 +117,7 @@ export class JestRunner implements TestRunner {
   }
 
   // -------------------------
-  // Mode / config
+  // Mode / project detection
   // -------------------------
 
   private ensureMode(projectRoot: string) {
@@ -128,25 +125,26 @@ export class JestRunner implements TestRunner {
 
     const pkg = this.readPackageJson(projectRoot);
     const testScript = (pkg?.scripts?.test ?? '') as string;
+    const hasTestScript = testScript.trim().length > 0;
 
-    const hasTestScript = typeof testScript === 'string' && testScript.trim().length > 0;
-
-    // CRA detection: react-scripts in scripts OR dependencies
+    // CRA: react-scripts in the test script or in dependencies
     const deps = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
-    const hasReactScriptsDep = typeof deps['react-scripts'] === 'string';
     const isCRA =
-      (typeof testScript === 'string' && testScript.includes('react-scripts test')) ||
-      hasReactScriptsDep;
+      testScript.includes('react-scripts test') ||
+      typeof deps['react-scripts'] === 'string';
 
     this.forceScript = isCRA;
+    this.mode = (isCRA || hasTestScript) ? 'script' : 'direct';
+  }
 
-    if (isCRA) {
-      this.mode = 'script';
-      return;
-    }
-
-    // Non-CRA: prefer script if exists, else direct
-    this.mode = hasTestScript ? 'script' : 'direct';
+  /**
+   * Detects the package manager used by the project by checking for lock files.
+   * Falls back to npm if none are found.
+   */
+  private detectPackageManager(projectRoot: string): PackageManager {
+    if (fs.existsSync(path.join(projectRoot, 'pnpm-lock.yaml'))) return 'pnpm';
+    if (fs.existsSync(path.join(projectRoot, 'yarn.lock'))) return 'yarn';
+    return 'npm';
   }
 
   private hasNpmScript(projectRoot: string, name: string): boolean {
@@ -159,13 +157,16 @@ export class JestRunner implements TestRunner {
   // -------------------------
 
   private baseNonInteractiveArgs(): string[] {
-    // Stops CRA/react-scripts prompting "Press a..." etc.
     return ['--watchAll=false'];
   }
 
-  private async runNpmScript(projectRoot: string, scriptName: string): Promise<TestResult> {
-    const cmd = this.platformCmd('npm');
-    const cmdArgs = ['run', scriptName];
+  /**
+   * Runs a named npm/yarn/pnpm script (e.g. "coverage").
+   */
+  private async runScript(projectRoot: string, scriptName: string): Promise<TestResult> {
+    const pm = this.detectPackageManager(projectRoot);
+    const cmd = this.platformCmd(pm);
+    const cmdArgs = pm === 'yarn' ? [scriptName] : ['run', scriptName];
     return this.spawnToResult(cmd, cmdArgs, projectRoot);
   }
 
@@ -173,8 +174,14 @@ export class JestRunner implements TestRunner {
     const mode = overrideMode ?? this.mode;
 
     if (mode === 'script') {
-      const cmd = this.platformCmd('npm');
-      const cmdArgs = ['run', 'test', '--', ...args];
+      // Use the project's package manager and test script, appending our jest args after '--'
+      const pm = this.detectPackageManager(cwd);
+      const cmd = this.platformCmd(pm);
+      // npm/pnpm: "run test -- ...args"
+      // yarn: "test -- ...args"  (yarn passes args through without needing 'run')
+      const cmdArgs = pm === 'yarn'
+        ? ['test', '--', ...args]
+        : ['run', 'test', '--', ...args];
       return this.spawnToResult(cmd, cmdArgs, cwd);
     }
 
@@ -183,7 +190,6 @@ export class JestRunner implements TestRunner {
   }
 
   private spawnToResult(cmd: string, cmdArgs: string[], cwd: string): Promise<TestResult> {
-    // prevent overlapping runs
     this.killProcesses();
 
     return new Promise((resolve) => {
@@ -192,7 +198,7 @@ export class JestRunner implements TestRunner {
         shell: false,
         env: {
           ...process.env,
-          CI: 'true', // extra safety: keeps CRA non-interactive
+          CI: 'true', // keeps CRA / react-scripts non-interactive
         },
       });
 
@@ -210,7 +216,7 @@ export class JestRunner implements TestRunner {
         resolve({
           passed,
           output: stdout + stderr,
-          errors: passed ? [] : [stderr || `Test failed with code ${code}`],
+          errors: passed ? [] : [stderr || `Process exited with code ${code}`],
         });
       });
 
@@ -225,28 +231,55 @@ export class JestRunner implements TestRunner {
   // Utils
   // -------------------------
 
-  private parseListTestsOutput(output: string): string[] {
-    return output
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean)
-      // keep only likely paths
-      .filter((l) => l.includes('/') || l.includes(path.sep));
-  }
-
+  /**
+   * Builds the command for direct jest execution.
+   *
+   * Priority:
+   *  1. User-specified jestCommand override (from settings)
+   *  2. node_modules/.bin/jest  (local install, most projects)
+   *  3. node_modules/jest/bin/jest.js  (legacy path)
+   *  4. npx jest  (last resort — may fail on restricted environments)
+   */
   private buildDirectCommand(extraArgs: string[]) {
-    const parts = this.splitCommand(this.jestCommand);
-    const cmdRaw = parts.shift() || 'npx';
-    const cmd = this.platformCmd(cmdRaw);
-    return { cmd, cmdArgs: [...parts, ...extraArgs] };
+    // 1. Explicit user override
+    if (this.jestCommand) {
+      const parts = this.splitCommand(this.jestCommand);
+      const cmdRaw = parts.shift() || 'node';
+      return { cmd: this.platformCmd(cmdRaw), cmdArgs: [...parts, ...extraArgs] };
+    }
+
+    const root = this.projectRoot || process.cwd();
+
+    // 2. Local .bin/jest (standard npm/yarn/pnpm install location)
+    const localBin = path.join(root, 'node_modules', '.bin', 'jest');
+    if (fs.existsSync(localBin) || fs.existsSync(localBin + '.cmd')) {
+      return { cmd: this.platformCmd(localBin), cmdArgs: extraArgs };
+    }
+
+    // 3. Legacy direct path
+    const legacyBin = path.join(root, 'node_modules', 'jest', 'bin', 'jest.js');
+    if (fs.existsSync(legacyBin)) {
+      return { cmd: 'node', cmdArgs: [legacyBin, ...extraArgs] };
+    }
+
+    // 4. Last resort
+    return { cmd: this.platformCmd('npx'), cmdArgs: ['jest', ...extraArgs] };
   }
 
-  private platformCmd(bin: string) {
+  private platformCmd(bin: string): string {
     if (process.platform === 'win32') {
       const lower = bin.toLowerCase();
       if (!lower.endsWith('.cmd') && !lower.endsWith('.exe')) return `${bin}.cmd`;
     }
     return bin;
+  }
+
+  private parseListTestsOutput(output: string): string[] {
+    return output
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .filter((l) => l.includes('/') || l.includes(path.sep));
   }
 
   private splitCommand(command: string): string[] {
@@ -260,7 +293,7 @@ export class JestRunner implements TestRunner {
 
       if (!inQuotes && (ch === '"' || ch === "'")) {
         inQuotes = true;
-        quote = ch as any;
+        quote = ch as '"' | "'";
         continue;
       }
       if (inQuotes && ch === quote) {
@@ -268,13 +301,11 @@ export class JestRunner implements TestRunner {
         quote = null;
         continue;
       }
-
       if (!inQuotes && /\s/.test(ch)) {
         if (cur) out.push(cur);
         cur = '';
         continue;
       }
-
       cur += ch;
     }
 
@@ -327,7 +358,7 @@ export class JestRunner implements TestRunner {
   }
 
   private requireProjectRoot(): string {
-    if (!this.projectRoot) throw new Error('projectRoot not set (call discoverTests(projectRoot) first).');
+    if (!this.projectRoot) throw new Error('projectRoot not set — call discoverTests(projectRoot) first.');
     return this.projectRoot;
   }
 }

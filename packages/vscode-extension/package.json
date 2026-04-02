@@ -60,8 +60,8 @@
         },
         "liveTestRunner.jestCommand": {
           "type": "string",
-          "default": "npx jest",
-          "description": "Command to run Jest (e.g. 'npx jest', 'yarn jest', or 'node_modules/.bin/jest')"
+          "default": "",
+          "description": "Override the Jest command (e.g. 'node_modules/.bin/jest'). Leave empty to auto-detect from package.json scripts and node_modules."
         },
         "liveTestRunner.warmupOnStart": {
           "type": "boolean",
