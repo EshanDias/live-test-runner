@@ -1,1 +1,0 @@
-{"version":3,"file":"SelectionPolicy.d.ts","sourceRoot":"","sources":["../src/SelectionPolicy.ts"],"names":[],"mappings":"AAAA,qBAAa,eAAe;IAC1B,MAAM,CAAC,UAAU,CAAC,QAAQ,EAAE,MAAM,EAAE,QAAQ,EAAE,MAAM,EAAE,GAAG,OAAO;IAQhE,MAAM,CAAC,eAAe,CAAC,QAAQ,EAAE,MAAM,GAAG,MAAM,EAAE;CAMnD"}
