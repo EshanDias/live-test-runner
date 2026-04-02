@@ -312,42 +312,58 @@ async function refreshTestsHandler(): Promise<void> {
 
 async function runTestsHandler(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
   const run = testController.createTestRun(request);
-  const projectRoot = getEffectiveProjectRoot();
 
-  if (!projectRoot) {
-    run.end();
-    return;
-  }
+  // run.end() MUST be called in every code path — use try/finally to guarantee it
+  try {
+    const projectRoot = getEffectiveProjectRoot();
+    if (!projectRoot) return;
 
-  // Use active session runner if available, otherwise create a temporary one
-  const runner: JestRunner = testSession
-    ? (testSession.getRunner() as JestRunner)
-    : new JestRunner(getJestCommand());
+    const logger = (msg: string) => {
+      outputChannel.appendLine(`[Live Test Runner] ${msg}`);
+      run.appendOutput(msg.replace(/\r?\n/g, '\r\n') + '\r\n');
+    };
 
-  // Ensure runner knows the project root (needed when no session is active)
-  if (!testSession) {
-    await runner.discoverTests(projectRoot);
-  }
+    // Use the active session runner (already has logger + projectRoot set),
+    // or create a temporary one for sidebar runs that happen before Start Testing
+    const runner: JestRunner = testSession
+      ? (testSession.getRunner() as JestRunner)
+      : new JestRunner(getJestCommand(), logger);
 
-  const testsToRun = request.include ?? Array.from(testController.items as Iterable<[string, vscode.TestItem]>).map(([_id, item]) => item);
-
-  for (const testItem of testsToRun) {
-    if (token.isCancellationRequested) break;
-
-    run.started(testItem);
-
-    try {
-      const result = await runner.runTestFile(testItem.id);
-      run.appendOutput(result.output.replace(/\r?\n/g, '\r\n'));
-      if (result.passed) {
-        run.passed(testItem);
-      } else {
-        run.failed(testItem, new vscode.TestMessage(result.errors.join('\n')));
+    // For a temporary runner, discoverTests sets the projectRoot internally
+    if (!testSession) {
+      try {
+        await runner.discoverTests(projectRoot);
+      } catch {
+        // discoverTests failing just means projectRoot won't be set via that path;
+        // runTestFile will throw its own clear error if needed
       }
-    } catch (error) {
-      run.failed(testItem, new vscode.TestMessage((error as Error).message));
     }
-  }
 
-  run.end();
+    const testsToRun = request.include
+      ?? Array.from(testController.items as Iterable<[string, vscode.TestItem]>).map(([_id, item]) => item);
+
+    for (const testItem of testsToRun) {
+      if (token.isCancellationRequested) {
+        run.skipped(testItem);
+        continue;
+      }
+
+      run.started(testItem);
+      outputChannel.appendLine(`\n[Live Test Runner] Running: ${vscode.workspace.asRelativePath(testItem.uri!)}`);
+
+      try {
+        const result = await runner.runTestFile(testItem.id);
+        if (result.passed) {
+          run.passed(testItem);
+        } else {
+          run.failed(testItem, new vscode.TestMessage(result.errors.join('\n')));
+        }
+      } catch (error) {
+        run.errored(testItem, new vscode.TestMessage((error as Error).message));
+      }
+    }
+  } finally {
+    // Guaranteed to run — this is what stops the spinner
+    run.end();
+  }
 }
