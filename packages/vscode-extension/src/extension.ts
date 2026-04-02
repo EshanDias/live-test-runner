@@ -24,6 +24,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Create test controller
   testController = vscode.tests.createTestController('liveTestRunner', 'Live Test Runner');
   testController.refreshHandler = refreshTestsHandler;
+  testController.runHandler = runTestsHandler;
   context.subscriptions.push(testController);
 
   context.subscriptions.push(
@@ -241,9 +242,10 @@ async function refreshTestExplorer(projectRoot: string) {
   const testFiles = await runner.discoverTests(projectRoot);
 
   // Replace all items
-  testController.items.replace(testFiles.map(file => 
-    testController.createTestItem(file, vscode.workspace.asRelativePath(file), vscode.Uri.file(file))
-  ));
+  testController.items.replace(testFiles.map(file => {
+    const relativePath = vscode.workspace.asRelativePath(file);
+    return testController.createTestItem(file, relativePath, vscode.Uri.file(file));
+  }));
 }
 
 async function refreshTestsHandler(): Promise<void> {
@@ -264,14 +266,14 @@ async function runTestsHandler(request: vscode.TestRunRequest, token: vscode.Can
 
   const runner = testSession.getRunner();
 
-  for (const test of request.include || testController.items) {
+  // Get all test items to run
+  const testsToRun = request.include || Array.from(testController.items).map(([_, item]) => item);
+
+  for (const testItem of testsToRun) {
     if (token.isCancellationRequested) {
       run.end();
       return;
     }
-
-    // Handle both TestItem and [id, TestItem] tuples
-    const testItem = Array.isArray(test) ? test[1] : test;
 
     run.started(testItem);
 
