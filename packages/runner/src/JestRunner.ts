@@ -83,8 +83,13 @@ export class JestRunner implements TestRunner {
   }
 
   async runFullSuite(projectRoot: string, withCoverage: boolean = false): Promise<TestResult> {
-    const args = withCoverage ? ['--coverage', '--coverageReporters=json', '--coverageReporters=json-summary'] : [];
-    return this.runJest(args, projectRoot);
+    if (this.useTestScript) {
+      // For test scripts, run without additional args to avoid config conflicts
+      return this.runJest([], projectRoot);
+    } else {
+      const args = withCoverage ? ['--coverage', '--coverageReporters=json', '--coverageReporters=json-summary'] : [];
+      return this.runJest(args, projectRoot);
+    }
   }
 
   async runTestFile(filePath: string): Promise<TestResult> {
