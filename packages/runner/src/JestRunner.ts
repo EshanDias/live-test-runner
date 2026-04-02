@@ -194,25 +194,41 @@ export class JestRunner implements TestRunner {
   private spawnToResult(cmd: string, cmdArgs: string[], cwd: string): Promise<TestResult> {
     this.killProcesses();
 
+    // Fail fast with a clear message rather than a cryptic EINVAL from spawn
+    if (!fs.existsSync(cwd)) {
+      return Promise.resolve({
+        passed: false,
+        output: '',
+        errors: [`Project root does not exist: ${cwd}`],
+      });
+    }
+
     return new Promise((resolve) => {
+      // On Windows, .cmd/.bat files cannot be executed without a shell
+      const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cmd);
+
       const child = spawn(cmd, cmdArgs, {
         cwd,
-        shell: false,
-        stdio: ['ignore', 'pipe', 'pipe'], // ignore stdin — prevents interactive prompts
+        shell: useShell,
         env: {
           ...process.env,
           CI: 'true',       // CRA / react-scripts: suppresses watch menu
-          FORCE_COLOR: '0', // disable color codes in output we parse
+          FORCE_COLOR: '0', // strip ANSI codes from captured output
         },
       });
 
       this.child = child;
 
+      // Close stdin immediately — the child gets EOF, which prevents watch-mode
+      // and interactive prompts without needing the 'ignore' stdio option
+      // (which causes EINVAL on some platforms)
+      child.stdin?.end();
+
       let stdout = '';
       let stderr = '';
 
-      child.stdout.on('data', (d) => (stdout += d.toString()));
-      child.stderr.on('data', (d) => (stderr += d.toString()));
+      child.stdout?.on('data', (d) => (stdout += d.toString()));
+      child.stderr?.on('data', (d) => (stderr += d.toString()));
 
       child.on('close', (code) => {
         this.child = undefined;
