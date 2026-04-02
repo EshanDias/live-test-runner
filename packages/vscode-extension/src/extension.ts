@@ -92,24 +92,34 @@ async function startTesting() {
 
   updateStatusBar('Starting…');
 
-  const runner = new JestRunner(getJestCommand());
+  // Show the output panel immediately so the user can follow progress
+  outputChannel.show(true);
+  outputChannel.appendLine('');
+  outputChannel.appendLine(`[Live Test Runner] ── Starting ──────────────────────────`);
+  outputChannel.appendLine(`[Live Test Runner] Project root : ${projectRoot}`);
+  outputChannel.appendLine(`[Live Test Runner] Jest command : ${getJestCommand() || '(auto-detect)'}`);
+
+  const logger = (msg: string) => outputChannel.appendLine(`[Live Test Runner] ${msg}`);
+  const runner = new JestRunner(getJestCommand(), logger);
   testSession = new TestSession(runner);
 
   try {
+    outputChannel.appendLine(`[Live Test Runner] Discovering tests…`);
+    // discoverTests is called inside testSession.start — log before the warmup
     const result = await testSession.start(projectRoot);
+    outputChannel.appendLine(`[Live Test Runner] Warmup run complete — ${result.passed ? 'passed ✅' : 'failed ❌'}`);
+
     if (result.passed) {
       updateStatusBar('✅ Ready');
       await refreshTestExplorer(projectRoot);
     } else {
       updateStatusBar('❌ Failed');
       outputChannel.appendLine(result.output);
-      if (vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('showOutputOnFailure')) {
-        outputChannel.show(true);
-      }
       vscode.window.showErrorMessage(`Tests failed on warm-up. See output for details.`);
     }
   } catch (error) {
     updateStatusBar('❌ Failed');
+    outputChannel.appendLine(`[Live Test Runner] Error: ${error}`);
     vscode.window.showErrorMessage(`Failed to start testing: ${error}`);
   }
 }

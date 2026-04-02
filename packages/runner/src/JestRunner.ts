@@ -15,12 +15,14 @@ export class JestRunner implements TestRunner {
   private mode: Mode = 'direct';
   private projectRoot?: string;
   private child?: ChildProcess;
+  private logger: (msg: string) => void;
 
   // CRA / react-scripts projects must always use the npm script — never direct jest
   private forceScript = false;
 
-  constructor(jestCommand: string = '') {
+  constructor(jestCommand: string = '', logger: (msg: string) => void = () => {}) {
     this.jestCommand = jestCommand;
+    this.logger = logger;
   }
 
   // -------------------------
@@ -202,6 +204,8 @@ export class JestRunner implements TestRunner {
         errors: [`Project root does not exist: ${cwd}`],
       });
     }
+
+    this.logger(`> ${cmd} ${cmdArgs.join(' ')}`);
 
     return new Promise((resolve) => {
       // On Windows, .cmd/.bat files cannot be executed without a shell
