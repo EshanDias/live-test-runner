@@ -1,120 +1,89 @@
-import { spawn } from 'child_process';
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { TestRunner, TestResult } from './TestRunner';
 import * as fs from 'fs';
 import * as path from 'path';
 
+type ExecMode = 'script' | 'direct';
+
 export class JestRunner implements TestRunner {
   private jestCommand: string;
-  private useTestScript: boolean = false;
+  private mode: ExecMode = 'direct';
+  private projectRoot?: string;
+  private child?: ChildProcessWithoutNullStreams;
 
-  constructor(jestCommand: string = 'node node_modules/jest/bin/jest.js') {
+  constructor(jestCommand: string = 'npx jest') {
     this.jestCommand = jestCommand;
   }
 
   async discoverTests(projectRoot: string): Promise<string[]> {
-    // Try to read package.json to see if there's a test script
-    const packageJsonPath = path.join(projectRoot, 'package.json');
-    if (fs.existsSync(packageJsonPath)) {
+    this.projectRoot = projectRoot;
+
+    const pkg = this.readPackageJson(projectRoot);
+    const testScript = pkg?.scripts?.test as string | undefined;
+
+    // If there's a test script, prefer it (CRA/react-scripts etc),
+    // BUT still use --listTests (source of truth).
+    if (testScript) {
+      this.mode = 'script';
       try {
-        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-        if (packageJson.scripts && packageJson.scripts.test) {
-          this.useTestScript = true;
-        }
-      } catch (e) {
-        // Ignore
+        return await this.discoverTestsViaScript(projectRoot);
+      } catch {
+        // fall through to direct jest
       }
     }
 
-    if (this.useTestScript) {
-      // For projects with test scripts, scan filesystem for test files
+    this.mode = 'direct';
+    try {
+      return await this.discoverTestsWithJest(projectRoot);
+    } catch {
+      // last resort fallback (not ideal, but better than nothing)
       return this.discoverTestsFromFilesystem(projectRoot);
-    } else {
-      // Use direct Jest
-      return this.discoverTestsWithJest(projectRoot);
     }
-  }
-
-  private async discoverTestsWithJest(projectRoot: string): Promise<string[]> {
-    return new Promise((resolve, reject) => {
-      const [cmd, ...args] = this.jestCommand.split(' ');
-      const child = spawn(cmd, [...args, '--listTests'], { cwd: projectRoot, shell: true });
-
-      let output = '';
-      child.stdout.on('data', (data) => {
-        output += data.toString();
-      });
-
-      child.on('close', (code) => {
-        if (code === 0) {
-          const files = output.trim().split('\n').filter(line => line.trim());
-          resolve(files);
-        } else {
-          reject(new Error(`Jest listTests failed with code ${code}`));
-        }
-      });
-
-      child.on('error', reject);
-    });
-  }
-
-  private async discoverTestsFromFilesystem(projectRoot: string): Promise<string[]> {
-    const testFiles: string[] = [];
-    
-    function scanDir(dir: string) {
-      try {
-        const items = fs.readdirSync(path.join(projectRoot, dir));
-        for (const item of items) {
-          const fullPath = path.join(dir, item);
-          const itemPath = path.join(projectRoot, fullPath);
-          const stat = fs.statSync(itemPath);
-          if (stat.isDirectory() && !item.startsWith('.') && item !== 'node_modules' && item !== 'build' && item !== 'dist') {
-            scanDir(fullPath);
-          } else if (stat.isFile() && (item.includes('.test.') || item.includes('.spec.'))) {
-            testFiles.push(itemPath);
-          }
-        }
-      } catch (e) {
-        // Ignore permission errors etc.
-      }
-    }
-    
-    scanDir('');
-    return testFiles;
   }
 
   async runFullSuite(projectRoot: string, withCoverage: boolean = false): Promise<TestResult> {
-    if (this.useTestScript) {
-      // For test scripts, run without additional args to avoid config conflicts
-      return this.runJest([], projectRoot);
-    } else {
-      const args = withCoverage ? ['--coverage', '--coverageReporters=json', '--coverageReporters=json-summary'] : [];
-      return this.runJest(args, projectRoot);
-    }
+    this.projectRoot = projectRoot;
+
+    const base = this.baseNonInteractiveArgs();
+    const cov = withCoverage
+      ? ['--coverage', '--coverageReporters=json', '--coverageReporters=json-summary']
+      : [];
+
+    return this.runJest([...base, ...cov], projectRoot);
   }
 
   async runTestFile(filePath: string): Promise<TestResult> {
-    return this.runJest([filePath]);
+    const cwd = this.requireProjectRoot();
+
+    // Use --runTestsByPath for CRA reliability
+    const args = [...this.baseNonInteractiveArgs(), '--runTestsByPath', filePath];
+    return this.runJest(args, cwd);
   }
 
   async runTestFiles(files: string[]): Promise<TestResult> {
-    return this.runJest(files);
+    const cwd = this.requireProjectRoot();
+
+    // Run multiple files reliably
+    const args = [...this.baseNonInteractiveArgs(), '--runTestsByPath', ...files];
+    return this.runJest(args, cwd);
   }
 
   async runRelatedTests(filePath: string): Promise<TestResult> {
-    return this.runJest(['--findRelatedTests', filePath]);
+    const cwd = this.requireProjectRoot();
+
+    const args = [...this.baseNonInteractiveArgs(), '--findRelatedTests', filePath];
+    return this.runJest(args, cwd);
   }
 
   isTestFile(filePath: string): boolean {
-    // Use patterns from settings, but for now simple check
     return filePath.includes('.test.') || filePath.includes('.spec.');
   }
 
   async getCoverage(): Promise<any> {
-    // Read the coverage file generated
-    // Simplified: assume coverage/coverage.json exists
-    const fs = require('fs');
-    const path = require('path');
-    const coveragePath = path.join(process.cwd(), 'coverage', 'coverage.json');
+    const cwd = this.requireProjectRoot();
+
+    // Jest writes this when using --coverageReporters=json
+    const coveragePath = path.join(cwd, 'coverage', 'coverage-final.json');
     if (fs.existsSync(coveragePath)) {
       return JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
     }
@@ -122,57 +91,237 @@ export class JestRunner implements TestRunner {
   }
 
   killProcesses(): void {
-    // Kill any running jest processes
-    // Simplified: in real impl, track PIDs
+    if (this.child && !this.child.killed) {
+      try {
+        this.child.kill('SIGTERM');
+      } catch {
+        // ignore
+      }
+    }
+    this.child = undefined;
+  }
+
+  // ------------------------
+  // Internals
+  // ------------------------
+
+  private async discoverTestsViaScript(projectRoot: string): Promise<string[]> {
+    // CRA: ensure non-interactive so it doesn't prompt ("Press a...")
+    const args = [...this.baseNonInteractiveArgs(), '--listTests', '--passWithNoTests'];
+    const result = await this.runJest(args, projectRoot);
+    if (!result.passed) throw new Error('listTests via script failed');
+    return this.parseListTestsOutput(result.output);
+  }
+
+  private async discoverTestsWithJest(projectRoot: string): Promise<string[]> {
+    return new Promise((resolve, reject) => {
+      const { cmd, cmdArgs } = this.buildDirectCommand(['--listTests', '--passWithNoTests']);
+
+      const child = this.spawnTracked(cmd, cmdArgs, projectRoot);
+
+      let output = '';
+      let err = '';
+
+      child.stdout.on('data', (d) => (output += d.toString()));
+      child.stderr.on('data', (d) => (err += d.toString()));
+
+      child.on('close', (code) => {
+        this.child = undefined;
+        if (code === 0) resolve(this.parseListTestsOutput(output));
+        else reject(new Error(err || `Jest --listTests failed (${code})`));
+      });
+
+      child.on('error', (e) => {
+        this.child = undefined;
+        reject(e);
+      });
+    });
+  }
+
+  private discoverTestsFromFilesystem(projectRoot: string): string[] {
+    const testFiles: string[] = [];
+
+    const scanDir = (dir: string) => {
+      let items: string[] = [];
+      try {
+        items = fs.readdirSync(path.join(projectRoot, dir));
+      } catch {
+        return;
+      }
+
+      for (const item of items) {
+        const rel = path.join(dir, item);
+        const abs = path.join(projectRoot, rel);
+
+        let stat: fs.Stats;
+        try {
+          stat = fs.statSync(abs);
+        } catch {
+          continue;
+        }
+
+        if (stat.isDirectory()) {
+          if (
+            item.startsWith('.') ||
+            item === 'node_modules' ||
+            item === 'build' ||
+            item === 'dist' ||
+            item === 'out' ||
+            item === 'coverage'
+          ) {
+            continue;
+          }
+          scanDir(rel);
+        } else if (stat.isFile()) {
+          if (item.includes('.test.') || item.includes('.spec.')) {
+            testFiles.push(abs);
+          }
+        }
+      }
+    };
+
+    scanDir('');
+    return testFiles;
   }
 
   private async runJest(args: string[], cwd?: string): Promise<TestResult> {
+    const runCwd = cwd ?? this.requireProjectRoot();
+
     return new Promise((resolve) => {
       let cmd: string;
       let cmdArgs: string[];
 
-      if (this.useTestScript) {
-        // Use npm run test -- <args>
-        cmd = 'npm';
+      if (this.mode === 'script') {
+        // npm run test -- <args>
+        cmd = this.platformCmd('npm');
         cmdArgs = ['run', 'test', '--', ...args];
       } else {
-        // Use direct jest command
-        [cmd, ...cmdArgs] = this.jestCommand.split(' ');
-        cmdArgs = [...cmdArgs, ...args];
+        const built = this.buildDirectCommand(args);
+        cmd = built.cmd;
+        cmdArgs = built.cmdArgs;
       }
 
-      const child = spawn(cmd, cmdArgs, { cwd, shell: true });
+      const child = this.spawnTracked(cmd, cmdArgs, runCwd);
 
       let stdout = '';
       let stderr = '';
 
-      child.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      child.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
+      child.stdout.on('data', (d) => (stdout += d.toString()));
+      child.stderr.on('data', (d) => (stderr += d.toString()));
 
       child.on('close', (code) => {
+        this.child = undefined;
         const passed = code === 0;
         const output = stdout + stderr;
         const errors = passed ? [] : [stderr || `Test failed with code ${code}`];
 
-        resolve({
-          passed,
-          output,
-          errors
-        });
+        resolve({ passed, output, errors });
       });
 
       child.on('error', (err) => {
-        resolve({
-          passed: false,
-          output: '',
-          errors: [err.message]
-        });
+        this.child = undefined;
+        resolve({ passed: false, output: '', errors: [err.message] });
       });
     });
+  }
+
+  private spawnTracked(cmd: string, cmdArgs: string[], cwd: string) {
+    // kill any previous run before starting a new one
+    this.killProcesses();
+
+    const child = spawn(cmd, cmdArgs, {
+      cwd,
+      shell: false, // IMPORTANT: avoid PowerShell .ps1 shims + quoting hell
+      env: {
+        ...process.env,
+        CI: 'true', // makes CRA/jest non-interactive
+      },
+    });
+
+    this.child = child;
+    return child;
+  }
+
+  private baseNonInteractiveArgs(): string[] {
+    // prevents CRA/react-scripts prompting; safe for normal Jest too
+    return ['--watchAll=false'];
+  }
+
+  private parseListTestsOutput(output: string): string[] {
+    return output
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      // some runners echo extra lines; keep only paths that look like files
+      .filter((l) => l.includes(path.sep) || l.includes('/'));
+  }
+
+  private buildDirectCommand(extraArgs: string[]) {
+    const parts = this.splitCommand(this.jestCommand);
+    const cmdRaw = parts.shift() || 'npx';
+    const cmd = this.platformCmd(cmdRaw);
+    const cmdArgs = [...parts, ...extraArgs];
+    return { cmd, cmdArgs };
+  }
+
+  private platformCmd(bin: string) {
+    // Avoid PowerShell script execution policy issues on Windows.
+    if (process.platform === 'win32') {
+      if (!bin.toLowerCase().endsWith('.cmd') && !bin.toLowerCase().endsWith('.exe')) {
+        return `${bin}.cmd`;
+      }
+    }
+    return bin;
+  }
+
+  private splitCommand(command: string): string[] {
+    // Splits by spaces but preserves quoted substrings.
+    // Example: 'node "C:\\path with spaces\\jest.js"' => [node, C:\path with spaces\jest.js]
+    const out: string[] = [];
+    let cur = '';
+    let inQuotes = false;
+    let quoteChar: '"' | "'" | null = null;
+
+    for (let i = 0; i < command.length; i++) {
+      const ch = command[i];
+
+      if ((ch === '"' || ch === "'") && !inQuotes) {
+        inQuotes = true;
+        quoteChar = ch as any;
+        continue;
+      }
+
+      if (inQuotes && ch === quoteChar) {
+        inQuotes = false;
+        quoteChar = null;
+        continue;
+      }
+
+      if (!inQuotes && /\s/.test(ch)) {
+        if (cur) out.push(cur);
+        cur = '';
+        continue;
+      }
+
+      cur += ch;
+    }
+
+    if (cur) out.push(cur);
+    return out;
+  }
+
+  private readPackageJson(projectRoot: string): any | undefined {
+    const p = path.join(projectRoot, 'package.json');
+    if (!fs.existsSync(p)) return undefined;
+    try {
+      return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch {
+      return undefined;
+    }
+  }
+
+  private requireProjectRoot(): string {
+    if (!this.projectRoot) throw new Error('projectRoot not set. Call discoverTests(projectRoot) first.');
+    return this.projectRoot;
   }
 }
