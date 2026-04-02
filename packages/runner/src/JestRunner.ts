@@ -1,4 +1,4 @@
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import { TestRunner, TestResult } from './TestRunner';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -14,7 +14,7 @@ export class JestRunner implements TestRunner {
   private jestCommand: string;
   private mode: Mode = 'direct';
   private projectRoot?: string;
-  private child?: ChildProcessWithoutNullStreams;
+  private child?: ChildProcess;
 
   // CRA / react-scripts projects must always use the npm script — never direct jest
   private forceScript = false;
@@ -157,7 +157,9 @@ export class JestRunner implements TestRunner {
   // -------------------------
 
   private baseNonInteractiveArgs(): string[] {
-    return ['--watchAll=false'];
+    // --watchAll=false: overrides --watch if baked into the project's test script
+    // --forceExit: prevents Jest from hanging after tests complete
+    return ['--watchAll=false', '--forceExit'];
   }
 
   /**
@@ -196,9 +198,11 @@ export class JestRunner implements TestRunner {
       const child = spawn(cmd, cmdArgs, {
         cwd,
         shell: false,
+        stdio: ['ignore', 'pipe', 'pipe'], // ignore stdin — prevents interactive prompts
         env: {
           ...process.env,
-          CI: 'true', // keeps CRA / react-scripts non-interactive
+          CI: 'true',       // CRA / react-scripts: suppresses watch menu
+          FORCE_COLOR: '0', // disable color codes in output we parse
         },
       });
 
