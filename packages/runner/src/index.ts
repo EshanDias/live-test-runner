@@ -1,2 +1,2 @@
 export { TestRunner, TestResult } from './TestRunner';
-export { JestRunner } from './JestRunner';
+export { JestRunner, JestTestCaseResult, JestFileResult, JestJsonResult } from './JestRunner';

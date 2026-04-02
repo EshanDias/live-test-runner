@@ -33,6 +33,12 @@ export class TestSession {
     return this.isActive;
   }
 
+  /** Marks the session active without running a warmup. Used when the caller
+   *  drives the warmup run directly (e.g. to get structured JSON results). */
+  activate(): void {
+    this.isActive = true;
+  }
+
   async onSave(filePath: string, projectRoot: string): Promise<TestResult> {
     if (!this.isActive) {
       return { passed: true, output: '', errors: [] };
