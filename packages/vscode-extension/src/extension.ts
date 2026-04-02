@@ -53,13 +53,10 @@ export function deactivate() {
 }
 
 async function startTesting() {
-  let projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
+  const projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
   if (!projectRoot) {
-    await selectProjectRoot();
-    projectRoot = vscode.workspace.getConfiguration('liveTestRunner').get('projectRoot') as string;
-    if (!projectRoot) {
-      return; // User cancelled selection
-    }
+    vscode.window.showErrorMessage('Please select a project root first.');
+    return;
   }
 
   updateStatusBar('Starting…');
@@ -68,9 +65,6 @@ async function startTesting() {
   testSession = new TestSession(runner);
 
   try {
-    updateStatusBar('Discovering tests…');
-    const testFiles = await runner.discoverTests(projectRoot);
-    updateStatusBar('Running warm-up…');
     const result = await testSession.start(projectRoot);
     if (result.passed) {
       updateStatusBar('✅ Ready');
