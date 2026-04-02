@@ -114,7 +114,6 @@ async function startTesting() {
       await refreshTestExplorer(projectRoot);
     } else {
       updateStatusBar('❌ Failed');
-      outputChannel.appendLine(result.output);
       vscode.window.showErrorMessage(`Tests failed on warm-up. See output for details.`);
     }
   } catch (error) {
@@ -260,7 +259,6 @@ async function onSave(document: vscode.TextDocument) {
       updateStatusBar('Running…');
       outputChannel.appendLine(`\n[Live Test Runner] Running tests for: ${vscode.workspace.asRelativePath(document.uri)}`);
       const result = await testSession!.onSave(document.uri.fsPath, projectRoot);
-      outputChannel.appendLine(result.output);
       if (result.passed) {
         outputChannel.appendLine('[Live Test Runner] ✅ Passed');
         updateStatusBar('✅ Ready');

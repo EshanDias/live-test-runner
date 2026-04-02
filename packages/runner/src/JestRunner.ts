@@ -231,8 +231,16 @@ export class JestRunner implements TestRunner {
       let stdout = '';
       let stderr = '';
 
-      child.stdout?.on('data', (d) => (stdout += d.toString()));
-      child.stderr?.on('data', (d) => (stderr += d.toString()));
+      child.stdout?.on('data', (d) => {
+        const chunk = d.toString();
+        stdout += chunk;
+        this.logger(chunk.trimEnd());
+      });
+      child.stderr?.on('data', (d) => {
+        const chunk = d.toString();
+        stderr += chunk;
+        this.logger(chunk.trimEnd());
+      });
 
       child.on('close', (code) => {
         this.child = undefined;
