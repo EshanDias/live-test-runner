@@ -43,7 +43,7 @@ export function activate(context: vscode.ExtensionContext) {
   statusBarItem.show();
 
   // Raw output channel (ANSI)
-  outputChannel = vscode.window.createOutputChannel('Live Test Runner (ANSI)', 'ansi');
+  outputChannel = vscode.window.createOutputChannel('Live Test Runner');
 
   // Core state
   resultStore   = new ResultStore();
@@ -143,7 +143,7 @@ async function startTesting() {
   log(`Project root : ${projectRoot}`);
   log(`Jest command : ${getJestCommand() || '(auto-detect)'}`);
 
-  const runner = new JestRunner(getJestCommand(), (msg) => outputChannel.appendLine(msg));
+  const runner = new JestRunner(getJestCommand(), (msg) => outputChannel.appendLine(stripAnsi(msg)));
   testSession = new TestSession(runner);
 
   try {
@@ -256,7 +256,7 @@ async function runFiles(filePaths: string[], projectRoot: string): Promise<void>
 
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, filePaths.length) }, async () => {
-      const poolRunner = new JestRunner(getJestCommand(), (msg) => outputChannel.appendLine(msg));
+      const poolRunner = new JestRunner(getJestCommand(), (msg) => outputChannel.appendLine(stripAnsi(msg)));
       poolRunner.setProjectRoot(projectRoot);
 
       while (true) {
