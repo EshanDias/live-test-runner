@@ -2,6 +2,31 @@ import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
 import { JestRunner, JestFileResult } from '@live-test-runner/runner';
 
+// ANSI colour helpers — used only in run.appendOutput() (Test Results panel).
+// The Output Channel gets plain text via stripAnsi().
+const C = {
+  reset:  '\u001b[0m',
+  bold:   '\u001b[1m',
+  green:  '\u001b[92m',
+  yellow: '\u001b[33m',
+  red:    '\u001b[31m',
+  cyan:   '\u001b[36m',
+};
+
+/** Strips all ANSI escape sequences — used before writing to the Output Channel. */
+const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '');
+
+/** Cyan "[Live Test Runner]" prefix for the Test Results panel. */
+const LTR = `${C.cyan}[Live Test Runner]${C.reset}`;
+/** Plain prefix for the Output Channel. */
+const LTR_PLAIN = '[Live Test Runner]';
+
+function colorDuration(ms: number): string {
+  if (ms >= 10_000) return `${C.red}${C.bold}${ms}ms ⚠${C.reset}`;
+  if (ms >= 3_000)  return `${C.yellow}${ms}ms${C.reset}`;
+  return `${C.green}${ms}ms${C.reset}`;
+}
+
 let testSession: TestSession | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let testController: vscode.TestController;
@@ -16,7 +41,8 @@ export function activate(context: vscode.ExtensionContext) {
   diagnosticCollection = vscode.languages.createDiagnosticCollection('liveTestRunner');
   context.subscriptions.push(diagnosticCollection);
 
-  outputChannel = vscode.window.createOutputChannel('Live Test Runner');
+  // 'ansi' tells VS Code to render ANSI escape sequences as colours (requires VS Code ≥ 1.69)
+  outputChannel = vscode.window.createOutputChannel('Live Test Runner (ANSI)', 'ansi');
   context.subscriptions.push(outputChannel);
 
   testController = vscode.tests.createTestController('liveTestRunner', 'Live Test Runner');
@@ -42,12 +68,21 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidSaveTextDocument(onSave)
   );
 
-  statusBarItem.show();
+  // Clear session when workspace changes to prevent cross-window cache issues
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      if (testSession) {
+        testSession.stop();
+        testSession = undefined;
+        updateStatusBar('Off');
+        testController.items.replace([]);
+        diagnosticCollection.clear();
+        outputChannel.clear();
+      }
+    })
+  );
 
-  const initialRoot = getEffectiveProjectRoot();
-  if (initialRoot) {
-    refreshTestExplorer(initialRoot).catch(() => {});
-  }
+  statusBarItem.show();
 }
 
 export function deactivate() {
@@ -73,7 +108,7 @@ function updateStatusBar(text: string) {
 }
 
 function log(msg: string) {
-  outputChannel.appendLine(`[Live Test Runner] ${msg}`);
+  outputChannel.appendLine(`${LTR_PLAIN} ${msg}`);
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────────
@@ -89,60 +124,46 @@ async function startTesting() {
     return;
   }
 
+  // Stop any previous session cleanly
+  if (testSession) { testSession.stop(); testSession = undefined; }
+
   outputChannel.show(true);
   outputChannel.appendLine('');
   log('── Starting ──────────────────────────────────────────');
   log(`Project root : ${projectRoot}`);
   log(`Jest command : ${getJestCommand() || '(auto-detect)'}`);
 
-  const logger = (msg: string) => outputChannel.appendLine(msg);
-  const runner = new JestRunner(getJestCommand(), logger);
+  const runner = new JestRunner(getJestCommand(), (msg) => outputChannel.appendLine(msg));
   testSession = new TestSession(runner);
 
   try {
-    // Step 1 — discover test files
     updateStatusBar('Discovering…');
     log('Discovering tests…');
-    const testFiles = await runner.discoverTests(projectRoot);
-    log(`Found ${testFiles.length} test file(s)`);
+
+    // refreshTestExplorer calls runner.discoverTests which sets projectRoot on the runner
     await refreshTestExplorer(projectRoot);
 
-    // Step 2 — warmup: full suite run with coverage + JSON results
-    updateStatusBar('Running…');
-    log('Running warmup suite…');
-    const jsonResult = await runner.runFullSuiteJson(projectRoot, true);
+    const allItems = Array.from(
+      testController.items as Iterable<[string, vscode.TestItem]>
+    ).map(([_id, item]) => item);
 
-    // Step 3 — build coverage map
-    const coverageData = await runner.getCoverage();
-    testSession.getCoverageMap().buildFromCoverage(coverageData);
+    log(`Found ${allItems.length} test file(s)`);
+
+    if (allItems.length === 0) {
+      log('No test files found.');
+      updateStatusBar('✅ Ready');
+      testSession.activate();
+      return;
+    }
+
+    // Activate the session so on-save triggers work immediately
     testSession.activate();
 
-    // Step 4 — update status bar with pass/fail counts
-    if (jsonResult.passed) {
-      updateStatusBar(`✅ ${jsonResult.numPassedTests} passed`);
-      log(`Warmup complete — ${jsonResult.numPassedTests} passed ✅`);
-    } else {
-      updateStatusBar(`❌ ${jsonResult.numFailedTests} failed`);
-      log(`Warmup complete — ${jsonResult.numFailedTests} failed ❌`);
-      if (vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('showOutputOnFailure')) {
-        outputChannel.show(true);
-      }
-    }
-
-    // Step 5 — populate sidebar with warmup results
-    if (jsonResult.fileResults.length > 0) {
-      const warmupRun = testController.createTestRun(new vscode.TestRunRequest(), 'Warmup', false);
-      try {
-        for (const fileResult of jsonResult.fileResults) {
-          const fileItem = findOrCreateFileItem(fileResult.testFilePath);
-          if (!fileItem) continue;
-          warmupRun.started(fileItem);
-          applyFileResult(warmupRun, fileItem, fileResult);
-        }
-      } finally {
-        warmupRun.end();
-      }
-    }
+    // Run all tests through the same shared handler — same as on-save and manual sidebar runs
+    await runTestsHandler(
+      new vscode.TestRunRequest(allItems),
+      new vscode.CancellationTokenSource().token
+    );
 
   } catch (error) {
     updateStatusBar('❌ Error');
@@ -245,26 +266,42 @@ function clearDiagnostics() { diagnosticCollection.clear(); }
 function showOutput() { outputChannel.show(); }
 
 async function onSave(document: vscode.TextDocument) {
-  if (!testSession) return;
-  const projectRoot = getEffectiveProjectRoot();
-  if (!projectRoot) return;
+  if (!testSession?.isTestingActive()) return;
 
   const debounceMs = vscode.workspace.getConfiguration('liveTestRunner').get<number>('onSaveDebounceMs') ?? 300;
 
   setTimeout(async () => {
+    if (!testSession) return; // session may have been stopped during the debounce window
+
     try {
-      updateStatusBar('Running…');
-      log(`\nRunning tests for: ${vscode.workspace.asRelativePath(document.uri)}`);
-      const result = await testSession!.onSave(document.uri.fsPath, projectRoot);
-      if (result.passed) {
-        updateStatusBar('✅ Ready');
-        log('✅ Passed');
+      const runner = testSession.getRunner() as JestRunner;
+      let testItems: vscode.TestItem[];
+
+      if (runner.isTestFile(document.uri.fsPath)) {
+        // Saved a test file — run just that file
+        const item = findOrCreateFileItem(document.uri.fsPath);
+        testItems = item ? [item] : [];
       } else {
-        updateStatusBar('✅ Ready');
-        if (vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('showOutputOnFailure')) {
-          outputChannel.show(true);
+        // Saved a source file — use coverage map if available, otherwise run everything
+        const affected = testSession.getCoverageMap().getAffectedTests(document.uri.fsPath);
+        if (affected.size > 0) {
+          testItems = Array.from(affected)
+            .map(f => findOrCreateFileItem(f))
+            .filter((i): i is vscode.TestItem => i !== undefined);
+        } else {
+          testItems = Array.from(
+            testController.items as Iterable<[string, vscode.TestItem]>
+          ).map(([_id, item]) => item);
         }
       }
+
+      if (testItems.length === 0) return;
+
+      await runTestsHandler(
+        new vscode.TestRunRequest(testItems),
+        new vscode.CancellationTokenSource().token
+      );
+
     } catch (error) {
       updateStatusBar('✅ Ready');
       log(`Error: ${(error as Error).message}`);
@@ -300,59 +337,106 @@ async function refreshTestsHandler(): Promise<void> {
 async function runTestsHandler(request: vscode.TestRunRequest, token: vscode.CancellationToken): Promise<void> {
   const run = testController.createTestRun(request);
 
+  // Output channel gets plain text; Test Results panel gets ANSI colours.
+  const logger = (msg: string) => {
+    outputChannel.appendLine(stripAnsi(msg));
+    run.appendOutput(msg.replace(/\r?\n/g, '\r\n') + '\r\n');
+  };
+
+  let numPassed = 0;
+  let numFailed = 0;
+
   try {
     const projectRoot = getEffectiveProjectRoot();
     if (!projectRoot) return;
 
-    const logger = (msg: string) => {
-      outputChannel.appendLine(msg);
-      run.appendOutput(msg.replace(/\r?\n/g, '\r\n') + '\r\n');
-    };
-
-    const runner: JestRunner = testSession
-      ? (testSession.getRunner() as JestRunner)
-      : new JestRunner(getJestCommand(), logger);
-
-    if (!testSession) {
-      try { await runner.discoverTests(projectRoot); } catch { /* projectRoot set via fallback */ }
-    }
-
     const testsToRun = request.include
       ?? Array.from(testController.items as Iterable<[string, vscode.TestItem]>).map(([_id, item]) => item);
 
-    for (const fileItem of testsToRun) {
-      if (token.isCancellationRequested) { run.skipped(fileItem); continue; }
+    if (token.isCancellationRequested) {
+      testsToRun.forEach(item => run.skipped(item));
+      return;
+    }
 
-      run.started(fileItem);
-      updateStatusBar('Running…');
-      log(`\nRunning: ${vscode.workspace.asRelativePath(fileItem.uri!)}`);
+    // Mark every file as running upfront — sidebar shows spinners for all files immediately
+    for (const item of testsToRun) {
+      run.started(item);
+    }
 
-      try {
-        const jsonResult = await runner.runTestFileJson(fileItem.id);
+    const totalStart = Date.now();
+    logger(`${LTR} Running ${testsToRun.length} test file(s)…`);
+    updateStatusBar(`Running… 0/${testsToRun.length}`);
 
-        // Clear and rebuild children for this file based on actual results
-        fileItem.children.replace([]);
+    // Concurrency pool — 5 Jest processes running at the same time.
+    // Each slot pulls the next file off the queue and resolves results immediately,
+    // so the sidebar updates one file at a time as each finishes rather than in bulk.
+    const CONCURRENCY = 3;
+    const queue = [...testsToRun];
+    let completed = 0;
 
-        if (jsonResult.fileResults.length > 0) {
-          applyFileResult(run, fileItem, jsonResult.fileResults[0]);
-        } else {
-          // No file results (e.g. compile error before Jest could list tests)
-          const msg = jsonResult.errors.join('\n') || 'No test results returned';
-          run.errored(fileItem, new vscode.TestMessage(msg));
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, testsToRun.length) }, async () => {
+        // Each pool slot gets its own JestRunner so processes don't clobber each other
+        const poolRunner = new JestRunner(getJestCommand(), logger);
+        poolRunner.setProjectRoot(projectRoot);
+
+        while (true) {
+          if (token.isCancellationRequested) break;
+
+          // queue.shift() is safe — JS is single-threaded, no race condition
+          const fileItem = queue.shift();
+          if (!fileItem) break;
+
+          const relPath = vscode.workspace.asRelativePath(fileItem.uri!);
+
+          try {
+            const jsonResult = await poolRunner.runTestFileJson(fileItem.id);
+            fileItem.children.replace([]);
+
+            // Each runTestFileJson call targets exactly one file, so fileResults[0] is always
+            // the result for this file — no path matching needed (which breaks on Windows due
+            // to Jest normalising paths differently from VS Code).
+            const fileResult = jsonResult.fileResults[0];
+
+            if (fileResult) {
+              applyFileResult(run, fileItem, fileResult);
+              const statusTag = fileResult.status === 'passed'
+                ? `${C.green}${C.bold}PASS${C.reset}`
+                : `${C.red}${C.bold}FAIL${C.reset}`;
+              const dur = fileResult.duration;
+              const durationStr = dur != null && dur > 0 ? ` ${colorDuration(dur)}` : '';
+              logger(`${LTR} ${statusTag} ${relPath}${durationStr}`);
+              if (fileResult.status === 'passed') { numPassed++; } else { numFailed++; }
+            } else {
+              const msg = jsonResult.errors.join('\n') || 'No results returned for this file';
+              run.errored(fileItem, new vscode.TestMessage(msg));
+              logger(`${LTR} ${C.red}${C.bold}ERROR${C.reset} ${relPath}: ${msg}`);
+              numFailed++;
+            }
+          } catch (error) {
+            run.errored(fileItem, new vscode.TestMessage((error as Error).message));
+            logger(`${LTR} ${C.red}ERROR${C.reset} ${relPath}: ${(error as Error).message}`);
+            numFailed++;
+          }
+
+          completed++;
+          updateStatusBar(`Running… ${completed}/${testsToRun.length}`);
         }
-      } catch (error) {
-        run.errored(fileItem, new vscode.TestMessage((error as Error).message));
-      }
+      })
+    );
+
+    // Skip anything left if cancelled mid-run
+    queue.forEach(item => run.skipped(item));
+
+    logger(`${LTR} Finished in ${colorDuration(Date.now() - totalStart)}`);
+
+    if (numFailed > 0) {
+      updateStatusBar(`❌ ${numFailed} failed, ${numPassed} passed`);
+    } else if (numPassed > 0) {
+      updateStatusBar(`✅ ${numPassed} passed`);
     }
 
-    // Update status bar with final state
-    const allItems = request.include
-      ?? Array.from(testController.items as Iterable<[string, vscode.TestItem]>).map(([_id, item]) => item);
-    if (testSession?.isTestingActive()) {
-      updateStatusBar('✅ Ready');
-    } else if (allItems.length > 0) {
-      updateStatusBar('✅ Ready');
-    }
+    vscode.commands.executeCommand('testing.showMostRecentOutput');
 
   } finally {
     run.end();

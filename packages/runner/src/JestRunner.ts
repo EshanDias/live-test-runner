@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { TestRunner, TestResult } from './TestRunner';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 type Mode = 'script' | 'direct';
@@ -23,6 +24,8 @@ export interface JestFileResult {
   testCases: JestTestCaseResult[];
   /** Populated when the file itself fails to compile/parse */
   failureMessage?: string;
+  /** Total execution time for this file in milliseconds */
+  duration?: number;
 }
 
 export interface JestJsonResult {
@@ -53,6 +56,16 @@ export class JestRunner implements TestRunner {
   constructor(jestCommand: string = '', logger: (msg: string) => void = () => {}) {
     this.jestCommand = jestCommand;
     this.logger = logger;
+  }
+
+  /** Replace the logger at runtime (e.g. to wire a TestRun's appendOutput into live output). */
+  setLogger(logger: (msg: string) => void) {
+    this.logger = logger;
+  }
+
+  /** Set the project root directly (also detects CRA / script mode). */
+  setProjectRoot(root: string) {
+    this.ensureMode(root);
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -127,6 +140,73 @@ export class JestRunner implements TestRunner {
     const cwd = this.requireProjectRoot();
     return this.runWithJsonCapture(
       [...this.baseNonInteractiveArgs(), '--json', '--runTestsByPath', filePath],
+      cwd
+    );
+  }
+
+  /** Runs multiple test files in a single Jest invocation (parallel workers).
+   *  Automatically chunks into multiple invocations if the command line would exceed
+   *  the Windows 8191-character limit. Chunk results are merged transparently. */
+  async runTestFilesJson(filePaths: string[]): Promise<JestJsonResult> {
+    if (filePaths.length === 0) return this.emptyJsonResult(true, []);
+    if (filePaths.length === 1) return this.runTestFileJson(filePaths[0]);
+
+    const chunks = this.chunkByCommandLineLength(filePaths);
+    const cwd = this.requireProjectRoot();
+
+    if (chunks.length === 1) {
+      return this.runWithJsonCapture(
+        [...this.baseNonInteractiveArgs(), '--json', '--runTestsByPath', ...filePaths],
+        cwd
+      );
+    }
+
+    // Run each chunk sequentially and merge results
+    const results: JestJsonResult[] = [];
+    for (const chunk of chunks) {
+      results.push(await this.runWithJsonCapture(
+        [...this.baseNonInteractiveArgs(), '--json', '--runTestsByPath', ...chunk],
+        cwd
+      ));
+    }
+    return this.mergeJsonResults(results);
+  }
+
+  private chunkByCommandLineLength(filePaths: string[], maxCharsForPaths = 5500): string[][] {
+    const chunks: string[][] = [];
+    let current: string[] = [];
+    let currentLen = 0;
+
+    for (const fp of filePaths) {
+      const len = fp.length + 1; // +1 for space separator
+      if (current.length > 0 && currentLen + len > maxCharsForPaths) {
+        chunks.push(current);
+        current = [];
+        currentLen = 0;
+      }
+      current.push(fp);
+      currentLen += len;
+    }
+    if (current.length > 0) chunks.push(current);
+    return chunks;
+  }
+
+  private mergeJsonResults(results: JestJsonResult[]): JestJsonResult {
+    return {
+      passed: results.every(r => r.passed),
+      numPassedTests:  results.reduce((s, r) => s + r.numPassedTests,  0),
+      numFailedTests:  results.reduce((s, r) => s + r.numFailedTests,  0),
+      numPendingTests: results.reduce((s, r) => s + r.numPendingTests, 0),
+      fileResults: results.flatMap(r => r.fileResults),
+      errors:      results.flatMap(r => r.errors),
+    };
+  }
+
+  /** Runs --findRelatedTests for a source file and returns structured results. */
+  async runRelatedTestsJson(filePath: string): Promise<JestJsonResult> {
+    const cwd = this.requireProjectRoot();
+    return this.runWithJsonCapture(
+      [...this.baseNonInteractiveArgs(), '--json', '--findRelatedTests', filePath],
       cwd
     );
   }
@@ -234,13 +314,18 @@ export class JestRunner implements TestRunner {
   }
 
   /**
-   * Runs Jest with --json. stderr (readable test output) is streamed live to
-   * the logger. stdout (JSON) is captured and parsed after the process exits.
+   * Runs Jest with --json --outputFile=<tmpfile>. stderr (readable test output) is streamed
+   * live to the logger. JSON is read from the temp file after the process exits — this is
+   * immune to Windows pipe-buffering issues that can cause stdout capture to lose data.
    */
   private async runWithJsonCapture(args: string[], cwd: string): Promise<JestJsonResult> {
     if (!fs.existsSync(cwd)) {
       return this.emptyJsonResult(false, [`Project root does not exist: ${cwd}`]);
     }
+
+    // Unique temp file per invocation so concurrent runners never collide
+    const tmpFile = path.join(os.tmpdir(), `jest-results-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    const argsWithOutput = [...args, `--outputFile=${tmpFile}`];
 
     let cmd: string;
     let cmdArgs: string[];
@@ -249,10 +334,10 @@ export class JestRunner implements TestRunner {
       const pm = this.detectPackageManager(cwd);
       cmd = this.platformCmd(pm);
       cmdArgs = pm === 'yarn'
-        ? ['test', '--', ...args]
-        : ['run', 'test', '--', ...args];
+        ? ['test', '--', ...argsWithOutput]
+        : ['run', 'test', '--', ...argsWithOutput];
     } else {
-      const direct = this.buildDirectCommand(args);
+      const direct = this.buildDirectCommand(argsWithOutput);
       cmd = direct.cmd;
       cmdArgs = direct.cmdArgs;
     }
@@ -260,7 +345,7 @@ export class JestRunner implements TestRunner {
     this.logger(`> ${cmd} ${cmdArgs.join(' ')}`);
     this.killProcesses();
 
-    const { passed, jsonOutput, stderr } = await new Promise<{passed: boolean, jsonOutput: string, stderr: string}>((resolve) => {
+    const { passed, stderr } = await new Promise<{ passed: boolean; stderr: string }>((resolve) => {
       const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cmd);
 
       const child = spawn(cmd, cmdArgs, {
@@ -272,29 +357,47 @@ export class JestRunner implements TestRunner {
       this.child = child;
       child.stdin?.end();
 
-      let jsonOutput = '';
       let stderr = '';
+      let exitCode: number | null = null;
+      let stderrEnded = !child.stderr;
+      let resolved = false;
 
-      // stdout = JSON results (captured for parsing)
-      child.stdout?.on('data', (d) => { jsonOutput += d.toString(); });
+      const maybeResolve = () => {
+        if (resolved || exitCode === null || !stderrEnded) return;
+        resolved = true;
+        this.child = undefined;
+        resolve({ passed: exitCode === 0, stderr });
+      };
 
-      // stderr = human-readable test output (stream live to logger)
+      // stdout is not used — JSON goes to the temp file
+      child.stdout?.resume();
+
       child.stderr?.on('data', (d) => {
         const chunk = d.toString();
         stderr += chunk;
         this.logger(chunk.trimEnd());
       });
+      child.stderr?.on('end', () => { stderrEnded = true; maybeResolve(); });
 
-      child.on('close', (code) => {
-        this.child = undefined;
-        resolve({ passed: code === 0, jsonOutput, stderr });
-      });
+      child.on('exit', (code) => { exitCode = code ?? 1; maybeResolve(); });
 
       child.on('error', (err) => {
+        if (resolved) return;
+        resolved = true;
         this.child = undefined;
-        resolve({ passed: false, jsonOutput: '', stderr: err.message });
+        resolve({ passed: false, stderr: err.message });
       });
     });
+
+    // Read JSON from the temp file — reliable even on Windows
+    let jsonOutput = '';
+    try {
+      if (fs.existsSync(tmpFile)) {
+        jsonOutput = fs.readFileSync(tmpFile, 'utf8');
+      }
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch { /* ignore cleanup errors */ }
+    }
 
     return this.parseJestJson(passed, jsonOutput, stderr);
   }
@@ -326,29 +429,42 @@ export class JestRunner implements TestRunner {
 
       let stdout = '';
       let stderr = '';
+      let exitCode: number | null = null;
+      let stdoutEnded = !child.stdout;
+      let stderrEnded = !child.stderr;
+      let resolved = false;
+
+      const maybeResolve = () => {
+        if (resolved || exitCode === null || !stdoutEnded || !stderrEnded) return;
+        resolved = true;
+        this.child = undefined;
+        const passed = exitCode === 0;
+        resolve({
+          passed,
+          output: stdout + stderr,
+          errors: passed ? [] : [stderr || `Process exited with code ${exitCode}`],
+        });
+      };
 
       child.stdout?.on('data', (d) => {
         const chunk = d.toString();
         stdout += chunk;
         this.logger(chunk.trimEnd());
       });
+      child.stdout?.on('end', () => { stdoutEnded = true; maybeResolve(); });
+
       child.stderr?.on('data', (d) => {
         const chunk = d.toString();
         stderr += chunk;
         this.logger(chunk.trimEnd());
       });
+      child.stderr?.on('end', () => { stderrEnded = true; maybeResolve(); });
 
-      child.on('close', (code) => {
-        this.child = undefined;
-        const passed = code === 0;
-        resolve({
-          passed,
-          output: stdout + stderr,
-          errors: passed ? [] : [stderr || `Process exited with code ${code}`],
-        });
-      });
+      child.on('exit', (code) => { exitCode = code ?? 1; maybeResolve(); });
 
       child.on('error', (err) => {
+        if (resolved) return;
+        resolved = true;
         this.child = undefined;
         resolve({ passed: false, output: '', errors: [err.message] });
       });
@@ -365,19 +481,24 @@ export class JestRunner implements TestRunner {
         numPassedTests: json.numPassedTests ?? 0,
         numFailedTests: json.numFailedTests ?? 0,
         numPendingTests: json.numPendingTests ?? 0,
-        fileResults: (json.testResults ?? []).map((fr: any): JestFileResult => ({
-          testFilePath: fr.testFilePath ?? '',
-          status: fr.status === 'passed' ? 'passed' : 'failed',
-          failureMessage: fr.failureMessage || undefined,
-          testCases: (fr.testResults ?? []).map((tc: any): JestTestCaseResult => ({
+        fileResults: (json.testResults ?? []).map((fr: any): JestFileResult => {
+          const testCases = (fr.testResults ?? []).map((tc: any): JestTestCaseResult => ({
             ancestorTitles: tc.ancestorTitles ?? [],
             title: tc.title ?? '',
             fullName: tc.fullName ?? '',
             status: tc.status ?? 'failed',
             duration: tc.duration,
             failureMessages: tc.failureMessages ?? [],
-          })),
-        })),
+          }));
+          const duration = testCases.reduce((sum: number, tc: JestTestCaseResult) => sum + (tc.duration || 0), 0);
+          return {
+            testFilePath: fr.testFilePath ?? '',
+            status: fr.status === 'passed' ? 'passed' : 'failed',
+            failureMessage: fr.failureMessage || undefined,
+            testCases,
+            duration: duration > 0 ? duration : undefined,
+          };
+        }),
         errors: passed ? [] : [stderr || 'Tests failed'],
       };
     } catch {
