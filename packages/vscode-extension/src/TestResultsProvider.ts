@@ -24,7 +24,9 @@ export class TestResultsProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'src', 'webview')],
+      localResourceRoots: [
+        vscode.Uri.joinPath(this.extensionUri, 'src', 'webview'),
+      ],
     };
 
     webviewView.webview.html = this._buildHtml(webviewView.webview);
@@ -61,6 +63,7 @@ export class TestResultsProvider implements vscode.WebviewViewProvider {
             fileId: msg.fileId,
             suiteId: msg.suiteId,
             testId: msg.testId,
+            fullName: msg.fullName,
           });
           break;
         case 'open-file':
@@ -69,8 +72,10 @@ export class TestResultsProvider implements vscode.WebviewViewProvider {
           }
           break;
         case 'cmd':
-          if (msg.command === 'start') vscode.commands.executeCommand('liveTestRunner.startTesting');
-          else if (msg.command === 'stop') vscode.commands.executeCommand('liveTestRunner.stopTesting');
+          if (msg.command === 'start')
+            vscode.commands.executeCommand('liveTestRunner.startTesting');
+          else if (msg.command === 'stop')
+            vscode.commands.executeCommand('liveTestRunner.stopTesting');
           break;
       }
     });
@@ -89,9 +94,17 @@ export class TestResultsProvider implements vscode.WebviewViewProvider {
     this._sendScopedData(fileId, suiteId, testId);
   }
 
-  private _sendScopedData(fileId: string, suiteId?: string, testId?: string): void {
+  private _sendScopedData(
+    fileId: string,
+    suiteId?: string,
+    testId?: string,
+  ): void {
     const outputLines = this.store.getOutputLines(fileId, suiteId, testId);
-    const failureMessages = this.store.getFailureMessages(fileId, suiteId, testId);
+    const failureMessages = this.store.getFailureMessages(
+      fileId,
+      suiteId,
+      testId,
+    );
     this.view?.webview.postMessage({
       type: 'scope-changed',
       fileId,
@@ -111,14 +124,18 @@ export class TestResultsProvider implements vscode.WebviewViewProvider {
 
   private _buildHtml(webview: vscode.Webview): string {
     const webviewDir = vscode.Uri.joinPath(this.extensionUri, 'src', 'webview');
-    const stylesUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'styles.css'));
-    const testListLayoutUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'testListLayout.js'));
+    const stylesUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(webviewDir, 'styles.css'),
+    );
+    const testListLayoutUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(webviewDir, 'testListLayout.js'),
+    );
     const nonce = getNonce();
     const cspSource = webview.cspSource;
 
     let html = fs.readFileSync(
       path.join(this.extensionUri.fsPath, 'src', 'webview', 'results.html'),
-      'utf8'
+      'utf8',
     );
 
     return html
@@ -131,7 +148,8 @@ export class TestResultsProvider implements vscode.WebviewViewProvider {
 
 function getNonce(): string {
   let text = '';
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const chars =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   for (let i = 0; i < 32; i++) {
     text += chars.charAt(Math.floor(Math.random() * chars.length));
   }

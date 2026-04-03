@@ -8,15 +8,15 @@
 
 /* Duration thresholds ────────────────────────────────────────────────────── */
 const THRESHOLDS = {
-  test:  [100, 500],   // ms: [amber, red]
+  test: [100, 500], // ms: [amber, red]
   suite: [500, 2000],
-  file:  [1000, 5000],
+  file: [1000, 5000],
 };
 
 function durationClass(ms, level) {
   if (ms == null) return '';
   const [amber, red] = THRESHOLDS[level] ?? THRESHOLDS.test;
-  if (ms > red)   return 'slow';
+  if (ms > red) return 'slow';
   if (ms > amber) return 'moderate';
   return 'fast';
 }
@@ -24,21 +24,36 @@ function durationClass(ms, level) {
 function durationTooltip(ms, level) {
   if (ms == null) return '';
   const [amber, red] = THRESHOLDS[level] ?? THRESHOLDS.test;
-  if (ms > red)   return 'Slow — consider mocking heavy I/O';
+  if (ms > red) return 'Slow — consider mocking heavy I/O';
   if (ms > amber) return 'Could be improved';
   return 'Fast';
 }
 
+// humanTime.ts
 function durationLabel(ms) {
   if (ms == null) return '';
-  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${ms}ms`;
+  if (ms < 1000) return `${ms}ms`;
+
+  const sec = Math.floor(ms / 1000);
+  const min = Math.floor(sec / 60);
+  const hr = Math.floor(min / 60);
+
+  const seconds = sec % 60;
+  const minutes = min % 60;
+  const hours = hr;
+
+  const parts = [];
+  if (hours) parts.push(`${hours}h`);
+  if (minutes) parts.push(`${minutes}m`);
+  if (seconds || parts.length === 0) parts.push(`${seconds}s`);
+
+  return parts.join(' ');
 }
 
 const STATUS_ICON = {
   running: '<span class="status-running">⟳</span>',
-  passed:  '<span class="status-passed">✓</span>',
-  failed:  '<span class="status-failed">✗</span>',
+  passed: '<span class="status-passed">✓</span>',
+  failed: '<span class="status-failed">✗</span>',
   skipped: '<span class="status-skipped">—</span>',
   pending: '<span class="status-pending">○</span>',
 };
@@ -52,9 +67,9 @@ class TestListLayout {
   constructor(container, vscodeApi) {
     this.container = container;
     this.vscode = vscodeApi;
-    this.data = [];            // array of FileResult (plain objects, from toJSON())
-    this.query = '';           // active search filter
-    this.selectedId = null;   // selected row key
+    this.data = []; // array of FileResult (plain objects, from toJSON())
+    this.query = ''; // active search filter
+    this.selectedId = null; // selected row key
     this.selectedFileId = null; // fileId of the selected row (any level)
     this.expanded = new Set(); // expanded file/suite IDs
     this.failuresOnly = false;
@@ -67,7 +82,7 @@ class TestListLayout {
     // Auto-expand all files so suites and tests are visible by default
     for (const file of files) {
       this.expanded.add(file.fileId);
-      for (const suite of (file.suites ?? [])) {
+      for (const suite of file.suites ?? []) {
         this.expanded.add(suite.suiteId);
       }
     }
@@ -76,7 +91,7 @@ class TestListLayout {
 
   /** Update a single file's data in-place and re-render. */
   updateFile(fileData) {
-    const idx = this.data.findIndex(f => f.fileId === fileData.fileId);
+    const idx = this.data.findIndex((f) => f.fileId === fileData.fileId);
     if (idx >= 0) {
       this.data[idx] = fileData;
     } else {
@@ -84,7 +99,7 @@ class TestListLayout {
     }
     // Auto-expand the file and its suites whenever it's updated
     this.expanded.add(fileData.fileId);
-    for (const suite of (fileData.suites ?? [])) {
+    for (const suite of fileData.suites ?? []) {
       this.expanded.add(suite.suiteId);
     }
     this._render();
@@ -108,7 +123,7 @@ class TestListLayout {
   expandAll() {
     for (const file of this.data) {
       this.expanded.add(file.fileId);
-      for (const suite of (file.suites ?? [])) {
+      for (const suite of file.suites ?? []) {
         this.expanded.add(suite.suiteId);
       }
     }
@@ -118,17 +133,29 @@ class TestListLayout {
   scrollToFirstFailure() {
     // Give the render a tick to flush, then scroll
     setTimeout(() => {
-      const failedRow = Array.from(this.container.querySelectorAll('.test-row.level-file'))
-        .find(row => row.querySelector('.status-failed'));
-      if (failedRow) failedRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const failedRow = Array.from(
+        this.container.querySelectorAll('.test-row.level-file'),
+      ).find((row) => row.querySelector('.status-failed'));
+      if (failedRow)
+        failedRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
   }
 
   /** Mark a single file as running (partial rerun) without wiping other files. */
-  markFileRunning(fileId) {
-    const file = this.data.find(f => f.fileId === fileId);
+  markFileRunning(fileId, suiteId = null, testId = null) {
+    const file = this.data.find((f) => f.fileId === fileId);
     if (file) {
       file.status = 'running';
+      if (suiteId) {
+        const suite = file.suites?.find((s) => s.suiteId === suiteId);
+        if (suite) {
+          suite.status = 'running';
+          if (testId) {
+            const test = suite.tests?.find((t) => t.testId === testId);
+            if (test) test.status = 'running';
+          }
+        }
+      }
       this._render();
     }
   }
@@ -155,10 +182,17 @@ class TestListLayout {
   }
 
   _render() {
-    let filtered = this.query ? this.data.filter(f => this._fileMatches(f)) : this.data;
-    if (this.failuresOnly) filtered = filtered.filter(f => f.status === 'failed' || f.status === 'running');
+    let filtered = this.query
+      ? this.data.filter((f) => this._fileMatches(f))
+      : this.data;
+    if (this.failuresOnly)
+      filtered = filtered.filter(
+        (f) => f.status === 'failed' || f.status === 'running',
+      );
 
-    this.container.innerHTML = filtered.map(f => this._renderFile(f)).join('');
+    this.container.innerHTML = filtered
+      .map((f) => this._renderFile(f))
+      .join('');
     this._attachListeners();
   }
 
@@ -169,15 +203,19 @@ class TestListLayout {
     const durClass = durationClass(file.duration, 'file');
     const durTip = durationTooltip(file.duration, 'file');
     const sel = this.selectedId === file.fileId ? 'selected' : '';
-    const toggle = isExpanded ? '<span class="row-toggle expanded">▶</span>' : '<span class="row-toggle">▶</span>';
+    const toggle = isExpanded
+      ? '<span class="row-toggle expanded">▶</span>'
+      : '<span class="row-toggle">▶</span>';
 
     // Suites named '(root)' are a synthetic wrapper for top-level tests written
     // without a describe() block — render their tests directly under the file.
-    const children = file.suites.map(s =>
-      s.name === '(root)'
-        ? s.tests.map(t => this._renderTest(file, s, t)).join('')
-        : this._renderSuite(file, s)
-    ).join('');
+    const children = file.suites
+      .map((s) =>
+        s.name === '(root)'
+          ? s.tests.map((t) => this._renderTest(file, s, t)).join('')
+          : this._renderSuite(file, s),
+      )
+      .join('');
 
     return `
       <div class="test-row level-file ${sel}"
@@ -202,11 +240,16 @@ class TestListLayout {
     const durClass = durationClass(suite.duration, 'suite');
     const durTip = durationTooltip(suite.duration, 'suite');
     const sel = this.selectedId === suite.suiteId ? 'selected' : '';
-    const toggle = suite.tests.length > 0
-      ? (isExpanded ? '<span class="row-toggle expanded">▶</span>' : '<span class="row-toggle">▶</span>')
-      : '<span class="row-toggle"></span>';
+    const toggle =
+      suite.tests.length > 0
+        ? isExpanded
+          ? '<span class="row-toggle expanded">▶</span>'
+          : '<span class="row-toggle">▶</span>'
+        : '<span class="row-toggle"></span>';
 
-    const children = suite.tests.map(t => this._renderTest(file, suite, t)).join('');
+    const children = suite.tests
+      .map((t) => this._renderTest(file, suite, t))
+      .join('');
 
     return `
       <div class="test-row level-suite ${sel}"
@@ -218,7 +261,8 @@ class TestListLayout {
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
         <button class="row-open" title="Open file" data-open-path="${esc(file.filePath)}">↗</button>
         <button class="row-rerun" title="Rerun suite" data-rerun="suite"
-                data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}">▶</button>
+                data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}"
+                data-full-name="${esc(suite.name)}">▶</button>
       </div>
       <div class="children ${isExpanded ? 'expanded' : ''}" data-children="${esc(suite.suiteId)}">
         ${children}
@@ -248,10 +292,11 @@ class TestListLayout {
   }
 
   _attachListeners() {
-    this.container.querySelectorAll('.test-row').forEach(row => {
+    this.container.querySelectorAll('.test-row').forEach((row) => {
       row.addEventListener('click', (e) => {
         // Don't handle rerun/open button clicks here
-        if (e.target.closest('.row-rerun') || e.target.closest('.row-open')) return;
+        if (e.target.closest('.row-rerun') || e.target.closest('.row-open'))
+          return;
 
         const id = row.dataset.id;
         const scope = row.dataset.scope;
@@ -261,7 +306,9 @@ class TestListLayout {
 
         // Toggle expand for file/suite rows
         if (scope !== 'test') {
-          const childEl = this.container.querySelector(`[data-children="${CSS.escape(id)}"]`);
+          const childEl = this.container.querySelector(
+            `[data-children="${CSS.escape(id)}"]`,
+          );
           if (childEl) {
             const isNowExpanded = !childEl.classList.contains('expanded');
             childEl.classList.toggle('expanded', isNowExpanded);
@@ -273,27 +320,51 @@ class TestListLayout {
         }
 
         // Highlight selected row
-        this.container.querySelectorAll('.test-row').forEach(r => r.classList.remove('selected'));
+        this.container
+          .querySelectorAll('.test-row')
+          .forEach((r) => r.classList.remove('selected'));
         row.classList.add('selected');
         this.selectedId = id;
         this.selectedFileId = fileId;
 
-        this.vscode.postMessage({ type: 'select', scope, fileId, suiteId, testId });
+        this.vscode.postMessage({
+          type: 'select',
+          scope,
+          fileId,
+          suiteId,
+          testId,
+        });
       });
     });
 
-    this.container.querySelectorAll('.row-rerun').forEach(btn => {
+    this.container.querySelectorAll('.row-rerun').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const { rerun: scope, file: fileId, suite: suiteId, test: testId, fullName } = btn.dataset;
-        this.vscode.postMessage({ type: 'rerun', scope, fileId, suiteId, testId, fullName });
+        const {
+          rerun: scope,
+          file: fileId,
+          suite: suiteId,
+          test: testId,
+          fullName: fullName,
+        } = btn.dataset;
+        this.vscode.postMessage({
+          type: 'rerun',
+          scope,
+          fileId,
+          suiteId,
+          testId,
+          fullName,
+        });
       });
     });
 
-    this.container.querySelectorAll('.row-open').forEach(btn => {
+    this.container.querySelectorAll('.row-open').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.vscode.postMessage({ type: 'open-file', filePath: btn.dataset.openPath });
+        this.vscode.postMessage({
+          type: 'open-file',
+          filePath: btn.dataset.openPath,
+        });
       });
     });
   }
@@ -301,7 +372,11 @@ class TestListLayout {
 
 function esc(str) {
   if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 // Export for use via <script> tag (no bundler)

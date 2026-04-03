@@ -38,7 +38,7 @@ export class ResultParser {
               fullName: tc.fullName ?? "",
               status: tc.status ?? "failed",
               // Backfill duration from stderr when JSON omits it
-              duration: tc.duration ?? stderrDurations.get(tc.fullName ?? tc.title ?? ""),
+              duration: this.computeTestCaseDuration(tc, stderrDurations),
               failureMessages: this.stripStackTraces(tc.failureMessages) ?? [],
             }),
           );
@@ -71,7 +71,9 @@ export class ResultParser {
       // Multi-file run: attribute each stderr entry to the file whose path
       //   appears in the entry's origin field. Entries with no matching file
       //   are attached to the first file with empty console output (best effort).
-      const anyMissingConsole = fileResults.some(fr => fr.consoleOutput.length === 0);
+      const anyMissingConsole = fileResults.some(
+        (fr) => fr.consoleOutput.length === 0,
+      );
       if (anyMissingConsole) {
         const stderrEntries = this.parseConsoleFromStderr(stderr);
         if (stderrEntries.length > 0) {
@@ -83,16 +85,21 @@ export class ResultParser {
             fileResults.forEach((fr, idx) => {
               // Index by full path and basename so origin substrings match
               pathIndex.set(fr.testFilePath, idx);
-              pathIndex.set(fr.testFilePath.replace(/\\/g, '/'), idx);
+              pathIndex.set(fr.testFilePath.replace(/\\/g, "/"), idx);
             });
 
             const buckets: JestConsoleEntry[][] = fileResults.map(() => []);
-            let fallbackIdx = fileResults.findIndex(fr => fr.consoleOutput.length === 0);
+            let fallbackIdx = fileResults.findIndex(
+              (fr) => fr.consoleOutput.length === 0,
+            );
 
             for (const entry of stderrEntries) {
               let matched = false;
               for (const [fp, idx] of pathIndex) {
-                if (entry.origin.includes(fp) || fp.includes(entry.origin.split(':')[0])) {
+                if (
+                  entry.origin.includes(fp) ||
+                  fp.includes(entry.origin.split(":")[0])
+                ) {
                   buckets[idx].push(entry);
                   matched = true;
                   break;
@@ -193,15 +200,27 @@ export class ResultParser {
   private parseDurationsFromStderr(stderr: string): Map<string, number> {
     const map = new Map<string, number>();
     // Matches: leading whitespace, status symbol (✓ ✕ ✗ ○ ●), test name, then (N ms) or (N s)
-    const LINE_RE = /^\s+[✓✕✗○●×]\s+(.+?)\s+\((\d+(?:\.\d+)?)\s*(ms|s)\)\s*$/;
+    // Use \S+ for the status symbol — avoids depending on specific Unicode codepoints
+    // that may differ across Jest versions, terminals, or ANSI stripping artefacts.
+    const LINE_RE = /^\s+\S+\s+(.+?)\s+\((\d+(?:\.\d+)?)\s*(ms|s)\)\s*$/;
+    const ANSI_RE = /\x1B\[[0-9;]*m/g;
     for (const line of stderr.split(/\r?\n/)) {
-      const m = line.match(LINE_RE);
+      // Strip ANSI codes before matching — Jest wraps symbols and names in color codes
+      const clean = line.replace(ANSI_RE, "");
+      const m = clean.match(LINE_RE);
       if (!m) continue;
-      // Strip trailing ANSI codes or bracket annotations like "[FAILING]"
-      const name = m[1].replace(/\x1B\[[0-9;]*m/g, '').replace(/\s*\[.*?\]\s*$/, '').trim();
+      // Strip bracket annotations like "[FAILING]"
+      const name = m[1].replace(/\s*\[.*?\]\s*$/, "").trim();
       const value = parseFloat(m[2]);
-      const ms = m[3] === 's' ? Math.round(value * 1000) : Math.round(value);
-      if (name && ms >= 0) map.set(name, ms);
+      const ms = m[3] === "s" ? Math.round(value * 1000) : Math.round(value);
+      if (name && ms >= 0) {
+        // A user may add these intentionally to test names, so keep both versions in the map for lookup later.
+        const nameWithAnnotation = m[1].trim();
+        if (name !== nameWithAnnotation) {
+          map.set(nameWithAnnotation, ms);
+        }
+        map.set(name, ms);
+      }
     }
     return map;
   }
@@ -217,6 +236,19 @@ export class ResultParser {
     if (fromCases > 0) return fromCases;
     if (fr.endTime && fr.startTime) return fr.endTime - fr.startTime;
     return 0;
+  }
+
+  private computeTestCaseDuration(
+    tc: JestTestCaseResult,
+    stderrDurations: Map<string, number>,
+  ): number {
+    let duration = tc.duration ?? 0;
+    if (duration === 0) {
+      const fromStderr =
+        stderrDurations.get(tc.fullName) ?? stderrDurations.get(tc.title) ?? 0;
+      duration = fromStderr;
+    }
+    return duration;
   }
 
   /**

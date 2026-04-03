@@ -170,17 +170,12 @@
         // Partial rerun (save / rerun button) — mark only affected files as
         // running without wiping the rest of the results tree
         for (const fileId of (msg.fileIds ?? [])) {
-          list.markFileRunning(fileId);
+          list.markFileRunning(fileId, msg.suiteId, msg.testId);
         }
         break;
 
       case 'full-file-result':
         list.updateFile(msg.file);
-        // If this file is the currently selected scope, refresh Column 2 logs
-        if (list.selectedFileId === msg.file.fileId && msg.file.outputLines?.length) {
-          currentLogs = msg.file.outputLines;
-          renderLogs();
-        }
         break;
 
       case 'scope-changed':

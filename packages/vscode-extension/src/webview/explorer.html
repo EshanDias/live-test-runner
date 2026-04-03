@@ -138,8 +138,7 @@
     summaryPassed.textContent = passed != null ? passed : '—';
     summaryFailed.textContent = failed != null ? failed : '—';
     if (durationMs != null) {
-      const s = (durationMs / 1000).toFixed(1);
-      summaryDuration.textContent = `Completed in ${s}s`;
+      summaryDuration.textContent = `Completed in ${durationLabel(durationMs)}`;
       summaryDuration.style.display = '';
     } else {
       summaryDuration.style.display = 'none';
@@ -223,6 +222,12 @@
         applySessionState(msg.sessionActive !== false ? 'watching' : 'idle');
         updateSummary(msg.total, msg.passed, msg.failed, Date.now() - runStartTime);
         if (msg.failed > 0) list.scrollToFirstFailure();
+        break;
+
+      case 'files-rerunning':
+        for (const fileId of (msg.fileIds ?? [])) {
+          list.markFileRunning(fileId, msg.suiteId, msg.testId);
+        }
         break;
 
       case 'file-started':

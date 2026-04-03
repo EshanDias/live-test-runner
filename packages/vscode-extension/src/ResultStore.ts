@@ -5,7 +5,12 @@
  * All IDs are stable string keys derived from file path / suite name / test name.
  */
 
-export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
+export type TestStatus =
+  | 'pending'
+  | 'running'
+  | 'passed'
+  | 'failed'
+  | 'skipped';
 
 export type OutputLevel = 'log' | 'info' | 'warn' | 'error';
 
@@ -15,7 +20,7 @@ export interface OutputLine {
 }
 
 export interface TestCaseResult {
-  testId: string;       // `${fileId}::${suiteId}::${testName}`
+  testId: string; // `${fileId}::${suiteId}::${testName}`
   name: string;
   /** Jest fullName — ancestor suite titles + test title, used for --testNamePattern */
   fullName: string;
@@ -26,17 +31,18 @@ export interface TestCaseResult {
 }
 
 export interface SuiteResult {
-  suiteId: string;      // `${fileId}::${suiteName}`
+  suiteId: string; // `${fileId}::${suiteName}`
   name: string;
   status: TestStatus;
   duration?: number;
   tests: Map<string, TestCaseResult>;
+  outputLines: OutputLine[];
 }
 
 export interface FileResult {
-  fileId: string;       // absolute file path
+  fileId: string; // absolute file path
   filePath: string;
-  name: string;         // relative display name
+  name: string; // relative display name
   status: TestStatus;
   duration?: number;
   /** Console output captured during this file's run (from Jest --json `console` array) */
@@ -78,7 +84,12 @@ export class ResultStore {
     file.duration = duration;
   }
 
-  suiteStarted(fileId: string, suiteId: string, name: string): void {
+  suiteStarted(
+    fileId: string,
+    suiteId: string,
+    name: string,
+    outputLines?: OutputLine[],
+  ): void {
     const file = this.files.get(fileId);
     if (!file) return;
     file.suites.set(suiteId, {
@@ -86,17 +97,30 @@ export class ResultStore {
       name,
       status: 'running',
       tests: new Map(),
+      outputLines: outputLines ?? [],
     });
   }
 
-  suiteResult(fileId: string, suiteId: string, status: TestStatus, duration?: number): void {
+  suiteResult(
+    fileId: string,
+    suiteId: string,
+    status: TestStatus,
+    duration?: number,
+  ): void {
     const suite = this.files.get(fileId)?.suites.get(suiteId);
     if (!suite) return;
     suite.status = status;
     suite.duration = duration;
   }
 
-  testStarted(fileId: string, suiteId: string, testId: string, name: string, fullName: string): void {
+  testStarted(
+    fileId: string,
+    suiteId: string,
+    testId: string,
+    name: string,
+    fullName: string,
+    outputLines?: OutputLine[],
+  ): void {
     const suite = this.files.get(fileId)?.suites.get(suiteId);
     if (!suite) return;
     suite.tests.set(testId, {
@@ -104,7 +128,7 @@ export class ResultStore {
       name,
       fullName,
       status: 'running',
-      outputLines: [],
+      outputLines: outputLines ?? [],
       failureMessages: [],
     });
   }
@@ -115,7 +139,7 @@ export class ResultStore {
     testId: string,
     status: TestStatus,
     duration?: number,
-    failureMessages: string[] = []
+    failureMessages: string[] = [],
   ): void {
     const test = this.files.get(fileId)?.suites.get(suiteId)?.tests.get(testId);
     if (!test) return;
@@ -134,7 +158,11 @@ export class ResultStore {
     return this.files.get(fileId)?.suites.get(suiteId);
   }
 
-  getTest(fileId: string, suiteId: string, testId: string): TestCaseResult | undefined {
+  getTest(
+    fileId: string,
+    suiteId: string,
+    testId: string,
+  ): TestCaseResult | undefined {
     return this.files.get(fileId)?.suites.get(suiteId)?.tests.get(testId);
   }
 
@@ -142,8 +170,16 @@ export class ResultStore {
     return Array.from(this.files.values());
   }
 
-  getSummary(): { total: number; passed: number; failed: number; running: number } {
-    let total = 0, passed = 0, failed = 0, running = 0;
+  getSummary(): {
+    total: number;
+    passed: number;
+    failed: number;
+    running: number;
+  } {
+    let total = 0,
+      passed = 0,
+      failed = 0,
+      running = 0;
     for (const file of this.files.values()) {
       for (const suite of file.suites.values()) {
         for (const test of suite.tests.values()) {
@@ -164,17 +200,20 @@ export class ResultStore {
   getOutputLines(
     fileId: string,
     suiteId?: string,
-    testId?: string
+    testId?: string,
   ): OutputLine[] {
     const file = this.files.get(fileId);
-    if (!file) return [];
+    let lines: OutputLine[] = [];
+    if (!file) return lines;
 
     if (testId && suiteId) {
       // Per-test lines if available, fall back to file-level console output
-      const testLines = file.suites.get(suiteId)?.tests.get(testId)?.outputLines ?? [];
-      return testLines.length > 0 ? testLines : file.outputLines;
+      lines = file.suites.get(suiteId)?.tests.get(testId)?.outputLines ?? [];
     }
-    // Suite or file scope — return file-level console output
+    if (suiteId) {
+      lines = file.suites.get(suiteId)?.outputLines ?? [];
+    }
+
     return file.outputLines;
   }
 
@@ -182,7 +221,7 @@ export class ResultStore {
   getFailureMessages(
     fileId: string,
     suiteId?: string,
-    testId?: string
+    testId?: string,
   ): string[] {
     const file = this.files.get(fileId);
     if (!file) return [];
@@ -193,27 +232,27 @@ export class ResultStore {
     if (suiteId) {
       const suite = file.suites.get(suiteId);
       if (!suite) return [];
-      return Array.from(suite.tests.values()).flatMap(t => t.failureMessages);
+      return Array.from(suite.tests.values()).flatMap((t) => t.failureMessages);
     }
-    return Array.from(file.suites.values()).flatMap(s =>
-      Array.from(s.tests.values()).flatMap(t => t.failureMessages)
+    return Array.from(file.suites.values()).flatMap((s) =>
+      Array.from(s.tests.values()).flatMap((t) => t.failureMessages),
     );
   }
 
   /** Serialises the full tree to a plain object safe to post to a webview. */
   toJSON(): object {
-    const files = Array.from(this.files.values()).map(f => ({
+    const files = Array.from(this.files.values()).map((f) => ({
       fileId: f.fileId,
       filePath: f.filePath,
       name: f.name,
       status: f.status,
       duration: f.duration,
-      suites: Array.from(f.suites.values()).map(s => ({
+      suites: Array.from(f.suites.values()).map((s) => ({
         suiteId: s.suiteId,
         name: s.name,
         status: s.status,
         duration: s.duration,
-        tests: Array.from(s.tests.values()).map(t => ({
+        tests: Array.from(s.tests.values()).map((t) => ({
           testId: t.testId,
           name: t.name,
           fullName: t.fullName,
