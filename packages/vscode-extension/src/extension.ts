@@ -104,7 +104,8 @@ async function startTesting() {
 
   if (testSession) { testSession.stop(); testSession = undefined; }
 
-  outputChannel.show(true);
+  // Focus the Live Test Results panel; keep the output channel for logging only
+  vscode.commands.executeCommand('liveTestRunner.results.focus');
   outputChannel.appendLine('');
   outputChannel.appendLine(`[Live Test Runner] Starting — ${projectRoot}`);
 
@@ -292,6 +293,10 @@ function broadcastFileResult(filePath: string): void {
 }
 
 // ── Map JestFileResult into ResultStore ───────────────────────────────────────
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1B\[[0-9;]*m/g;
+function stripAnsi(s: string): string { return s.replace(ANSI_RE, ''); }
+
 function applyFileResultToStore(filePath: string, fileResult: JestFileResult): void {
   const suiteCounters = new Map<string, number>();
 
@@ -314,8 +319,6 @@ function applyFileResultToStore(filePath: string, fileResult: JestFileResult): v
       tc.status === 'failed'  ? 'failed'  :
       tc.status === 'skipped' ? 'skipped' : 'pending';
 
-    // eslint-disable-next-line no-control-regex
-    const stripAnsi = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, '');
     const cleanMessages = (tc.failureMessages ?? []).map(stripAnsi);
     resultStore.testResult(filePath, suiteId, testId, status, tc.duration, cleanMessages);
   }
@@ -332,11 +335,9 @@ function applyFileResultToStore(filePath: string, fileResult: JestFileResult): v
   }
 
   // Map Jest console entries to OutputLine[] and store at file level
-  // eslint-disable-next-line no-control-regex
-  const ansiRe = /\x1B\[[0-9;]*m/g;
   if (fileResult.consoleOutput && fileResult.consoleOutput.length > 0) {
     const outputLines = fileResult.consoleOutput.map(entry => ({
-      text: entry.message.replace(ansiRe, ''),
+      text: stripAnsi(entry.message),
       level: (entry.type === 'warn' ? 'warn' : entry.type === 'log' ? 'log' : 'info') as 'log' | 'info' | 'warn',
     }));
     resultStore.fileOutput(filePath, outputLines);
