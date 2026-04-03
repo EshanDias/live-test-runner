@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src {{cspSource}} 'nonce-{{nonce}}';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{stylesUri}}">
+  <title>Live Test Runner</title>
+</head>
+<body>
+<div class="explorer-layout">
+
+  <!-- Coverage gauge (Phase 1: placeholder) -->
+  <div class="coverage-section">
+    <div class="coverage-label">
+      <span>Code Coverage</span>
+      <span class="coming-soon" title="Coming in a future release">coming soon</span>
+    </div>
+    <div class="coverage-bar-track">
+      <div class="coverage-bar-fill" id="coverageFill"></div>
+    </div>
+    <div class="coverage-explore-btn" title="Code coverage explorer — coming soon">
+      Explore Coverage ›
+    </div>
+  </div>
+
+  <!-- Run progress (shown only during a run) -->
+  <div class="run-progress" id="runProgress">Running — 0 / 0 files complete</div>
+
+  <!-- Summary table -->
+  <div class="summary-section">
+    <div class="summary-table">
+      <div class="summary-cell total">
+        <div class="label">Total</div>
+        <div class="value" id="summaryTotal">—</div>
+      </div>
+      <div class="summary-cell passed">
+        <div class="label">Passed</div>
+        <div class="value" id="summaryPassed">—</div>
+      </div>
+      <div class="summary-cell failed">
+        <div class="label">Failed</div>
+        <div class="value" id="summaryFailed">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search bar -->
+  <div class="search-section">
+    <input class="search-input" id="searchInput" type="text" placeholder="🔍 Search tests…" autocomplete="off">
+    <button class="search-clear" id="searchClear" title="Clear search">✕</button>
+  </div>
+
+  <!-- Test list -->
+  <div class="test-list" id="testList"></div>
+
+</div>
+
+<script nonce="{{nonce}}" src="{{testListLayoutUri}}"></script>
+<script nonce="{{nonce}}">
+  const vscode = acquireVsCodeApi();
+  const list = new TestListLayout(document.getElementById('testList'), vscode);
+
+  // Summary elements
+  const summaryTotal  = document.getElementById('summaryTotal');
+  const summaryPassed = document.getElementById('summaryPassed');
+  const summaryFailed = document.getElementById('summaryFailed');
+  const runProgress   = document.getElementById('runProgress');
+
+  let totalFiles = 0;
+  let completedFiles = 0;
+
+  function updateSummary(total, passed, failed) {
+    summaryTotal.textContent  = total  != null ? total  : '—';
+    summaryPassed.textContent = passed != null ? passed : '—';
+    summaryFailed.textContent = failed != null ? failed : '—';
+  }
+
+  // Search
+  const searchInput = document.getElementById('searchInput');
+  const searchClear = document.getElementById('searchClear');
+
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value;
+    searchClear.classList.toggle('visible', q.length > 0);
+    list.setQuery(q);
+  });
+
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    searchClear.classList.remove('visible');
+    list.setQuery('');
+  });
+
+  // Messages from extension
+  window.addEventListener('message', (event) => {
+    const msg = event.data;
+    switch (msg.type) {
+
+      case 'init':
+        // Full state on (re-)connect
+        list.setData(msg.files ?? []);
+        updateSummary(msg.total, msg.passed, msg.failed);
+        break;
+
+      case 'run-started':
+        totalFiles = msg.fileCount ?? 0;
+        completedFiles = 0;
+        runProgress.textContent = `Running — 0 / ${totalFiles} files complete`;
+        runProgress.classList.add('visible');
+        updateSummary(null, null, null);
+        break;
+
+      case 'run-finished':
+        runProgress.classList.remove('visible');
+        updateSummary(msg.total, msg.passed, msg.failed);
+        break;
+
+      case 'file-started':
+        list.updateFile({
+          fileId: msg.fileId,
+          filePath: msg.filePath,
+          name: msg.name,
+          status: 'running',
+          suites: [],
+        });
+        break;
+
+      case 'file-result':
+        completedFiles++;
+        runProgress.textContent = `Running — ${completedFiles} / ${totalFiles} files complete`;
+        // Update just the status/duration on the existing file entry
+        list.updateFile({ ...list.data.find(f => f.fileId === msg.fileId), status: msg.status, duration: msg.duration });
+        break;
+
+      case 'full-file-result':
+        // Extension sends this after a file completes with full suite/test tree
+        completedFiles++;
+        runProgress.textContent = `Running — ${completedFiles} / ${totalFiles} files complete`;
+        list.updateFile(msg.file);
+        updateSummary(msg.total, msg.passed, msg.failed);
+        break;
+
+      case 'scope-changed':
+        list.setSelected(msg.fileId, msg.suiteId, msg.testId);
+        break;
+
+      case 'coverage-update':
+        document.getElementById('coverageFill').style.width = `${msg.percent}%`;
+        break;
+    }
+  });
+
+  // Signal readiness
+  vscode.postMessage({ type: 'ready' });
+</script>
+</body>
+</html>

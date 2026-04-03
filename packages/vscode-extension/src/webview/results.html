@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src {{cspSource}} 'nonce-{{nonce}}';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{stylesUri}}">
+  <title>Test Results</title>
+  <style>
+    body { overflow: hidden; }
+    .resize-handle { width: 4px; cursor: col-resize; background: transparent; flex-shrink: 0; }
+    .resize-handle:hover { background: var(--vscode-focusBorder); }
+  </style>
+</head>
+<body>
+<div class="results-layout" id="layout">
+
+  <!-- Column 1: Test List -->
+  <div class="col-list" id="colList">
+    <div class="col-header">Tests</div>
+    <div class="search-section" style="padding: 4px 8px;">
+      <input class="search-input" id="searchInput" type="text" placeholder="🔍 Filter…" autocomplete="off">
+      <button class="search-clear" id="searchClear" title="Clear">✕</button>
+    </div>
+    <div class="test-list" id="testList" style="flex:1; overflow-y:auto;"></div>
+  </div>
+
+  <div class="resize-handle" id="resizeHandle1"></div>
+
+  <!-- Column 2: Logs -->
+  <div class="col-logs" id="colLogs">
+    <div class="log-tabs">
+      <div class="log-tab active" id="tabInfo" data-tab="info">Info</div>
+      <div class="log-tab" id="tabWarn" data-tab="warn">Warnings</div>
+    </div>
+    <div class="log-content" id="logContent">
+      <div class="empty-state">Select a test to view output</div>
+    </div>
+  </div>
+
+  <div class="resize-handle" id="resizeHandle2"></div>
+
+  <!-- Column 3: Errors -->
+  <div class="col-errors" id="colErrors">
+    <div class="col-header">Errors</div>
+    <div class="error-content" id="errorContent">
+      <div class="empty-state">No errors</div>
+    </div>
+  </div>
+
+</div>
+
+<script nonce="{{nonce}}" src="{{testListLayoutUri}}"></script>
+<script nonce="{{nonce}}">
+  const vscode = acquireVsCodeApi();
+  const list = new TestListLayout(document.getElementById('testList'), vscode);
+
+  let activeTab = 'info';
+  let currentLogs = [];   // { text, level }[]
+  let currentErrors = []; // string[]
+  let autoScroll = true;
+
+  // ── Log tabs ───────────────────────────────────────────────────────────────
+  document.querySelectorAll('.log-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      activeTab = tab.dataset.tab;
+      renderLogs();
+    });
+  });
+
+  function renderLogs() {
+    const el = document.getElementById('logContent');
+    const lines = activeTab === 'warn'
+      ? currentLogs.filter(l => l.level === 'warn')
+      : currentLogs.filter(l => l.level === 'info');
+
+    if (lines.length === 0) {
+      el.innerHTML = `<div class="empty-state">${activeTab === 'warn' ? 'No warnings' : 'No output'}</div>`;
+      return;
+    }
+    el.innerHTML = lines.map(l =>
+      `<div class="${l.level === 'warn' ? 'log-line-warn' : ''}">${escHtml(l.text)}</div>`
+    ).join('');
+
+    if (autoScroll) el.scrollTop = el.scrollHeight;
+  }
+
+  function renderErrors() {
+    const el = document.getElementById('errorContent');
+    if (currentErrors.length === 0) {
+      el.innerHTML = '<div class="empty-state">No errors for this selection</div>';
+      return;
+    }
+    el.innerHTML = currentErrors.map(m => `<div class="error-block">${escHtml(m)}</div>`).join('');
+  }
+
+  // Lock auto-scroll when user scrolls up
+  const logContent = document.getElementById('logContent');
+  logContent.addEventListener('scroll', () => {
+    const atBottom = logContent.scrollHeight - logContent.scrollTop - logContent.clientHeight < 40;
+    autoScroll = atBottom;
+  });
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+  const searchInput = document.getElementById('searchInput');
+  const searchClear = document.getElementById('searchClear');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value;
+    searchClear.classList.toggle('visible', q.length > 0);
+    list.setQuery(q);
+  });
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    searchClear.classList.remove('visible');
+    list.setQuery('');
+  });
+
+  // ── Column resize ──────────────────────────────────────────────────────────
+  function makeResizable(handle, leftEl) {
+    let startX, startWidth;
+    handle.addEventListener('mousedown', e => {
+      startX = e.clientX;
+      startWidth = leftEl.offsetWidth;
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp, { once: true });
+    });
+    function onMove(e) {
+      const delta = e.clientX - startX;
+      const newW = Math.max(120, startWidth + delta);
+      leftEl.style.width = newW + 'px';
+      leftEl.style.flex = 'none';
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+    }
+  }
+  makeResizable(document.getElementById('resizeHandle1'), document.getElementById('colList'));
+  makeResizable(document.getElementById('resizeHandle2'), document.getElementById('colLogs'));
+
+  // ── Messages from extension ────────────────────────────────────────────────
+  window.addEventListener('message', (event) => {
+    const msg = event.data;
+    switch (msg.type) {
+
+      case 'init':
+        list.setData(msg.files ?? []);
+        break;
+
+      case 'run-started':
+        currentLogs = [];
+        currentErrors = [];
+        renderLogs();
+        renderErrors();
+        list.setData([]);
+        break;
+
+      case 'full-file-result':
+        list.updateFile(msg.file);
+        break;
+
+      case 'scope-changed':
+        list.setSelected(msg.fileId, msg.suiteId, msg.testId);
+        // Extension sends scoped logs + errors alongside scope-changed
+        if (msg.outputLines)      currentLogs   = msg.outputLines;
+        if (msg.failureMessages)  currentErrors = msg.failureMessages;
+        autoScroll = true;
+        renderLogs();
+        renderErrors();
+        break;
+
+      case 'test-output':
+        // Streaming output for a running test — append only if it matches scope
+        currentLogs.push({ text: msg.line, level: msg.level ?? 'info' });
+        renderLogs();
+        break;
+    }
+  });
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  vscode.postMessage({ type: 'ready' });
+</script>
+</body>
+</html>
