@@ -5,8 +5,24 @@
       "name": "Run Extension",
       "type": "extensionHost",
       "request": "launch",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-extension"],
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-extension"
+      ],
       "outFiles": ["${workspaceFolder}/packages/vscode-extension/out/**/*.js"]
+    },
+    {
+      "name": "Attach to Runner",
+      "type": "node",
+      "request": "attach",
+      "port": 9229, // default Node inspect port
+      "restart": true,
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Extension + Runner",
+      "configurations": ["Run Extension", "Attach to Runner"]
     }
   ]
 }

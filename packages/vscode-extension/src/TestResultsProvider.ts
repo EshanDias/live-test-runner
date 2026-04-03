@@ -63,6 +63,15 @@ export class TestResultsProvider implements vscode.WebviewViewProvider {
             testId: msg.testId,
           });
           break;
+        case 'open-file':
+          if (msg.filePath) {
+            vscode.window.showTextDocument(vscode.Uri.file(msg.filePath));
+          }
+          break;
+        case 'cmd':
+          if (msg.command === 'start') vscode.commands.executeCommand('liveTestRunner.startTesting');
+          else if (msg.command === 'stop') vscode.commands.executeCommand('liveTestRunner.stopTesting');
+          break;
       }
     });
   }

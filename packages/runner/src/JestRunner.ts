@@ -647,10 +647,14 @@ export class JestRunner implements TestRunner {
               failureMessages: this.minimal(tc.failureMessages) ?? [],
             }),
           );
-          const duration = testCases.reduce(
+          let fileDuration = testCases.reduce(
             (sum: number, tc: JestTestCaseResult) => sum + (tc.duration || 0),
             0,
           );
+          fileDuration =
+            fileDuration === 0 && fr.endTime && fr.startTime
+              ? fr.endTime - fr.startTime
+              : 0;
           const consoleOutput: JestConsoleEntry[] = (fr.console ?? []).map(
             (c: any) => ({
               message: String(c.message ?? ""),
@@ -664,7 +668,7 @@ export class JestRunner implements TestRunner {
             failureMessage: fr.failureMessage || undefined,
             testCases,
             consoleOutput,
-            duration: duration > 0 ? duration : undefined,
+            duration: fileDuration > 0 ? fileDuration : undefined,
           };
         },
       );

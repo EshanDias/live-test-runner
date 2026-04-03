@@ -57,6 +57,7 @@ class TestListLayout {
     this.selectedId = null;   // selected row key
     this.selectedFileId = null; // fileId of the selected row (any level)
     this.expanded = new Set(); // expanded file/suite IDs
+    this.failuresOnly = false;
     this._render();
   }
 
@@ -94,6 +95,35 @@ class TestListLayout {
     this._render();
   }
 
+  setFailuresOnly(on) {
+    this.failuresOnly = on;
+    this._render();
+  }
+
+  collapseAll() {
+    this.expanded.clear();
+    this._render();
+  }
+
+  expandAll() {
+    for (const file of this.data) {
+      this.expanded.add(file.fileId);
+      for (const suite of (file.suites ?? [])) {
+        this.expanded.add(suite.suiteId);
+      }
+    }
+    this._render();
+  }
+
+  scrollToFirstFailure() {
+    // Give the render a tick to flush, then scroll
+    setTimeout(() => {
+      const failedRow = Array.from(this.container.querySelectorAll('.test-row.level-file'))
+        .find(row => row.querySelector('.status-failed'));
+      if (failedRow) failedRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+  }
+
   setSelected(fileId, suiteId, testId) {
     this.selectedId = testId ?? suiteId ?? fileId ?? null;
     this.selectedFileId = fileId ?? null;
@@ -116,9 +146,8 @@ class TestListLayout {
   }
 
   _render() {
-    const filtered = this.query
-      ? this.data.filter(f => this._fileMatches(f))
-      : this.data;
+    let filtered = this.query ? this.data.filter(f => this._fileMatches(f)) : this.data;
+    if (this.failuresOnly) filtered = filtered.filter(f => f.status === 'failed' || f.status === 'running');
 
     this.container.innerHTML = filtered.map(f => this._renderFile(f)).join('');
     this._attachListeners();
@@ -143,6 +172,7 @@ class TestListLayout {
         <span class="row-status">${icon}</span>
         <span class="row-name" title="${esc(file.filePath)}">${esc(file.name)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
+        <button class="row-open" title="Open file" data-open-path="${esc(file.filePath)}">↗</button>
         <button class="row-rerun" title="Rerun file" data-rerun="file" data-file="${esc(file.fileId)}">▶</button>
       </div>
       <div class="children ${isExpanded ? 'expanded' : ''}" data-children="${esc(file.fileId)}">
@@ -171,6 +201,7 @@ class TestListLayout {
         <span class="row-status">${icon}</span>
         <span class="row-name">${esc(suite.name)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
+        <button class="row-open" title="Open file" data-open-path="${esc(file.filePath)}">↗</button>
         <button class="row-rerun" title="Rerun suite" data-rerun="suite"
                 data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}">▶</button>
       </div>
@@ -194,6 +225,7 @@ class TestListLayout {
         <span class="row-status">${icon}</span>
         <span class="row-name">${esc(test.name)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
+        <button class="row-open" title="Open file" data-open-path="${esc(file.filePath)}">↗</button>
         <button class="row-rerun" title="Rerun test" data-rerun="test"
                 data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}" data-test="${esc(test.testId)}">▶</button>
       </div>`;
@@ -202,8 +234,8 @@ class TestListLayout {
   _attachListeners() {
     this.container.querySelectorAll('.test-row').forEach(row => {
       row.addEventListener('click', (e) => {
-        // Don't handle rerun button clicks here
-        if (e.target.closest('.row-rerun')) return;
+        // Don't handle rerun/open button clicks here
+        if (e.target.closest('.row-rerun') || e.target.closest('.row-open')) return;
 
         const id = row.dataset.id;
         const scope = row.dataset.scope;
@@ -239,6 +271,13 @@ class TestListLayout {
         e.stopPropagation();
         const { rerun: scope, file: fileId, suite: suiteId, test: testId } = btn.dataset;
         this.vscode.postMessage({ type: 'rerun', scope, fileId, suiteId, testId });
+      });
+    });
+
+    this.container.querySelectorAll('.row-open').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.vscode.postMessage({ type: 'open-file', filePath: btn.dataset.openPath });
       });
     });
   }

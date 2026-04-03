@@ -125,6 +125,7 @@ async function startTesting() {
     }
 
     testSession.activate();
+    broadcast({ type: 'session-started' });
     await runFiles(testFiles, projectRoot);
 
   } catch (error) {
@@ -136,6 +137,7 @@ async function startTesting() {
 function stopTesting() {
   if (testSession) { testSession.stop(); testSession = undefined; }
   updateStatusBar('Off');
+  broadcast({ type: 'session-stopped' });
 }
 
 async function selectProjectRoot() {
@@ -250,7 +252,7 @@ async function runFiles(filePaths: string[], projectRoot: string): Promise<void>
   outputChannel.appendLine(`[Live Test Runner] Finished in ${Date.now() - totalStart}ms`);
 
   const summary = resultStore.getSummary();
-  broadcast({ type: 'run-finished', total: summary.total, passed: summary.passed, failed: summary.failed });
+  broadcast({ type: 'run-finished', total: summary.total, passed: summary.passed, failed: summary.failed, sessionActive: !!testSession?.isTestingActive() });
 
   if (numFailed > 0) {
     updateStatusBar(`❌ ${numFailed} failed, ${numPassed} passed`);
