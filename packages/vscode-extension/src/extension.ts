@@ -314,7 +314,10 @@ function applyFileResultToStore(filePath: string, fileResult: JestFileResult): v
       tc.status === 'failed'  ? 'failed'  :
       tc.status === 'skipped' ? 'skipped' : 'pending';
 
-    resultStore.testResult(filePath, suiteId, testId, status, tc.duration, tc.failureMessages ?? []);
+    // eslint-disable-next-line no-control-regex
+    const stripAnsi = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, '');
+    const cleanMessages = (tc.failureMessages ?? []).map(stripAnsi);
+    resultStore.testResult(filePath, suiteId, testId, status, tc.duration, cleanMessages);
   }
 
   // Roll up suite statuses
@@ -329,9 +332,11 @@ function applyFileResultToStore(filePath: string, fileResult: JestFileResult): v
   }
 
   // Map Jest console entries to OutputLine[] and store at file level
+  // eslint-disable-next-line no-control-regex
+  const ansiRe = /\x1B\[[0-9;]*m/g;
   if (fileResult.consoleOutput && fileResult.consoleOutput.length > 0) {
     const outputLines = fileResult.consoleOutput.map(entry => ({
-      text: entry.message,
+      text: entry.message.replace(ansiRe, ''),
       level: (entry.type === 'warn' ? 'warn' : entry.type === 'log' ? 'log' : 'info') as 'log' | 'info' | 'warn',
     }));
     resultStore.fileOutput(filePath, outputLines);
