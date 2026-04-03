@@ -6,6 +6,7 @@ import {
   TestStatus,
   OutputLevel,
   OutputLine,
+  ScopedOutput,
 } from './ResultStore';
 import { SelectionState } from './SelectionState';
 import { TestExplorerProvider } from './TestExplorerProvider';
@@ -408,7 +409,6 @@ function broadcastFileResult(filePath: string): void {
       name: fileData.name,
       status: fileData.status,
       duration: fileData.duration,
-      outputLines: fileData.outputLines,
       suites: Array.from(fileData.suites.values()).map((s) => ({
         suiteId: s.suiteId,
         name: s.name,
@@ -443,6 +443,10 @@ function applyFileResultToStore(
   selectedSuiteId?: string,
   selectedTestId?: string,
 ): void {
+  // Track which suites and tests were touched for scoped output assignment
+  const touchedSuiteIds = new Set<string>();
+  let touchedTestId: string | undefined;
+
   for (const tc of fileResult.testCases) {
     const suiteKey = tc.ancestorTitles.join(' > ') || '(root)';
     const suiteId = `${filePath}::${suiteKey}`;
@@ -450,13 +454,9 @@ function applyFileResultToStore(
     if (!!selectedSuiteId && suiteId !== selectedSuiteId) continue;
 
     if (!resultStore.getSuite(filePath, suiteId)) {
-      resultStore.suiteStarted(
-        filePath,
-        suiteId,
-        suiteKey,
-        selectedSuiteId === suiteId ? getConsoleOutput(fileResult) : undefined,
-      );
+      resultStore.suiteStarted(filePath, suiteId, suiteKey);
     }
+    touchedSuiteIds.add(suiteId);
 
     // Use fullName as the stable key — positional counters break single-test reruns
     // because only the rerun test appears in the result, resetting the counter.
@@ -470,8 +470,8 @@ function applyFileResultToStore(
       testId,
       tc.title,
       tc.fullName || tc.title,
-      selectedTestId === testId ? getConsoleOutput(fileResult) : undefined,
     );
+    touchedTestId = testId;
 
     const status: TestStatus =
       tc.status === 'passed'
@@ -506,9 +506,38 @@ function applyFileResultToStore(
     }
   }
 
-  // Map Jest console entries to OutputLine[] and store at file level
-  if (fileResult.consoleOutput && fileResult.consoleOutput.length > 0) {
-    resultStore.fileOutput(filePath, getConsoleOutput(fileResult));
+  // Store console output at the appropriate scope
+  const consoleLines = fileResult.consoleOutput?.length
+    ? fileResult.consoleOutput
+    : [];
+  const now = Date.now();
+
+  if (selectedTestId && touchedTestId) {
+    // Single-test rerun: store output at test (and its suite) scope
+    const suiteId = [...touchedSuiteIds][0];
+    if (suiteId) {
+      const scopedOutput: ScopedOutput = {
+        lines: buildOutputLines(consoleLines, now),
+        capturedAt: now,
+      };
+      resultStore.setSuiteOutput(filePath, suiteId, scopedOutput);
+      resultStore.setTestOutput(filePath, suiteId, touchedTestId, scopedOutput);
+    }
+  } else if (selectedSuiteId && touchedSuiteIds.size > 0) {
+    // Suite-level rerun: store output at suite scope
+    const suiteId = [...touchedSuiteIds][0];
+    if (suiteId) {
+      resultStore.setSuiteOutput(filePath, suiteId, {
+        lines: buildOutputLines(consoleLines, now),
+        capturedAt: now,
+      });
+    }
+  } else {
+    // Full file run: store output at file scope only
+    resultStore.setFileOutput(filePath, {
+      lines: buildOutputLines(consoleLines, now),
+      capturedAt: now,
+    });
   }
 
   resultStore.fileResult(
@@ -518,8 +547,11 @@ function applyFileResultToStore(
   );
 }
 
-const getConsoleOutput = (fileResult: JestFileResult): OutputLine[] =>
-  fileResult.consoleOutput.map((entry) => ({
+function buildOutputLines(
+  entries: JestFileResult['consoleOutput'],
+  timestamp: number,
+): OutputLine[] {
+  return entries.map((entry) => ({
     text: stripAnsi(entry.message),
     level: (entry.type === 'warn'
       ? 'warn'
@@ -528,4 +560,6 @@ const getConsoleOutput = (fileResult: JestFileResult): OutputLine[] =>
         : entry.type === 'log'
           ? 'log'
           : 'info') as OutputLevel,
+    timestamp,
   }));
+}

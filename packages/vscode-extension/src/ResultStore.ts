@@ -17,7 +17,16 @@ export type OutputLevel = 'log' | 'info' | 'warn' | 'error';
 export interface OutputLine {
   text: string;
   level: OutputLevel;
+  timestamp: number;
 }
+
+export interface ScopedOutput {
+  lines: OutputLine[];
+  /** Date.now() when this batch was stored. null = never run at this scope. */
+  capturedAt: number | null;
+}
+
+const EMPTY_OUTPUT: ScopedOutput = { lines: [], capturedAt: null };
 
 export interface TestCaseResult {
   testId: string; // `${fileId}::${suiteId}::${testName}`
@@ -26,7 +35,7 @@ export interface TestCaseResult {
   fullName: string;
   status: TestStatus;
   duration?: number;
-  outputLines: OutputLine[];
+  output: ScopedOutput;
   failureMessages: string[];
 }
 
@@ -36,7 +45,7 @@ export interface SuiteResult {
   status: TestStatus;
   duration?: number;
   tests: Map<string, TestCaseResult>;
-  outputLines: OutputLine[];
+  output: ScopedOutput;
 }
 
 export interface FileResult {
@@ -46,7 +55,7 @@ export interface FileResult {
   status: TestStatus;
   duration?: number;
   /** Console output captured during this file's run (from Jest --json `console` array) */
-  outputLines: OutputLine[];
+  output: ScopedOutput;
   suites: Map<string, SuiteResult>;
 }
 
@@ -65,16 +74,9 @@ export class ResultStore {
       filePath,
       name,
       status: 'running',
-      outputLines: [],
+      output: { lines: [], capturedAt: null },
       suites: new Map(),
     });
-  }
-
-  /** Store file-level console output captured by Jest (cannot be scoped to individual tests). */
-  fileOutput(fileId: string, lines: OutputLine[]): void {
-    const file = this.files.get(fileId);
-    if (!file) return;
-    file.outputLines = lines;
   }
 
   fileResult(fileId: string, status: TestStatus, duration?: number): void {
@@ -84,12 +86,7 @@ export class ResultStore {
     file.duration = duration;
   }
 
-  suiteStarted(
-    fileId: string,
-    suiteId: string,
-    name: string,
-    outputLines?: OutputLine[],
-  ): void {
+  suiteStarted(fileId: string, suiteId: string, name: string): void {
     const file = this.files.get(fileId);
     if (!file) return;
     file.suites.set(suiteId, {
@@ -97,7 +94,7 @@ export class ResultStore {
       name,
       status: 'running',
       tests: new Map(),
-      outputLines: outputLines ?? [],
+      output: { lines: [], capturedAt: null },
     });
   }
 
@@ -119,7 +116,6 @@ export class ResultStore {
     testId: string,
     name: string,
     fullName: string,
-    outputLines?: OutputLine[],
   ): void {
     const suite = this.files.get(fileId)?.suites.get(suiteId);
     if (!suite) return;
@@ -128,7 +124,7 @@ export class ResultStore {
       name,
       fullName,
       status: 'running',
-      outputLines: outputLines ?? [],
+      output: { lines: [], capturedAt: null },
       failureMessages: [],
     });
   }
@@ -146,6 +142,48 @@ export class ResultStore {
     test.status = status;
     test.duration = duration;
     test.failureMessages = failureMessages;
+  }
+
+  // ── Scoped output setters ──────────────────────────────────────────────────
+
+  setFileOutput(fileId: string, output: ScopedOutput): void {
+    const file = this.files.get(fileId);
+    if (!file) return;
+    file.output = output;
+  }
+
+  setSuiteOutput(fileId: string, suiteId: string, output: ScopedOutput): void {
+    const suite = this.files.get(fileId)?.suites.get(suiteId);
+    if (!suite) return;
+    suite.output = output;
+  }
+
+  setTestOutput(
+    fileId: string,
+    suiteId: string,
+    testId: string,
+    output: ScopedOutput,
+  ): void {
+    const test = this.files.get(fileId)?.suites.get(suiteId)?.tests.get(testId);
+    if (!test) return;
+    test.output = output;
+  }
+
+  // ── Scoped output getters ──────────────────────────────────────────────────
+
+  getFileOutput(fileId: string): ScopedOutput {
+    return this.files.get(fileId)?.output ?? EMPTY_OUTPUT;
+  }
+
+  getSuiteOutput(fileId: string, suiteId: string): ScopedOutput {
+    return this.files.get(fileId)?.suites.get(suiteId)?.output ?? EMPTY_OUTPUT;
+  }
+
+  getTestOutput(fileId: string, suiteId: string, testId: string): ScopedOutput {
+    return (
+      this.files.get(fileId)?.suites.get(suiteId)?.tests.get(testId)?.output ??
+      EMPTY_OUTPUT
+    );
   }
 
   // ── Queries ────────────────────────────────────────────────────────────────
@@ -193,52 +231,6 @@ export class ResultStore {
     return { total, passed, failed, running };
   }
 
-  /** Returns output lines scoped to the given selection.
-   *  Console output is captured at file level by Jest JSON, so file/suite scope returns
-   *  file.outputLines. Test scope returns the test's own outputLines (populated via testOutput()).
-   */
-  getOutputLines(
-    fileId: string,
-    suiteId?: string,
-    testId?: string,
-  ): OutputLine[] {
-    const file = this.files.get(fileId);
-    let lines: OutputLine[] = [];
-    if (!file) return lines;
-
-    if (testId && suiteId) {
-      // Per-test lines if available, fall back to file-level console output
-      lines = file.suites.get(suiteId)?.tests.get(testId)?.outputLines ?? [];
-    }
-    if (suiteId) {
-      lines = file.suites.get(suiteId)?.outputLines ?? [];
-    }
-
-    return file.outputLines;
-  }
-
-  /** Returns all failure messages scoped to the given selection. */
-  getFailureMessages(
-    fileId: string,
-    suiteId?: string,
-    testId?: string,
-  ): string[] {
-    const file = this.files.get(fileId);
-    if (!file) return [];
-
-    if (testId && suiteId) {
-      return file.suites.get(suiteId)?.tests.get(testId)?.failureMessages ?? [];
-    }
-    if (suiteId) {
-      const suite = file.suites.get(suiteId);
-      if (!suite) return [];
-      return Array.from(suite.tests.values()).flatMap((t) => t.failureMessages);
-    }
-    return Array.from(file.suites.values()).flatMap((s) =>
-      Array.from(s.tests.values()).flatMap((t) => t.failureMessages),
-    );
-  }
-
   /** Serialises the full tree to a plain object safe to post to a webview. */
   toJSON(): object {
     const files = Array.from(this.files.values()).map((f) => ({
@@ -259,7 +251,7 @@ export class ResultStore {
           status: t.status,
           duration: t.duration,
           failureMessages: t.failureMessages,
-          // outputLines omitted from full tree — fetched on demand via scope-changed
+          // output omitted — fetched on demand via scope-logs
         })),
       })),
     }));
