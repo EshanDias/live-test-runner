@@ -612,6 +612,22 @@ export class JestRunner implements TestRunner {
 
   // ── Utils ──────────────────────────────────────────────────────────────────
 
+  private minimal(failureMessages: string[] = []) {
+    try {
+      return failureMessages.map((msg) => {
+        const lines = msg.split("\n");
+        const stackIndex = lines.findIndex((line) =>
+          line.trim().startsWith("at "),
+        );
+        return lines
+          .slice(0, stackIndex === -1 ? lines.length : stackIndex)
+          .join("\n");
+      });
+    } catch (error) {
+      return [];
+    }
+  }
+
   private parseJestJson(
     passed: boolean,
     raw: string,
@@ -628,7 +644,7 @@ export class JestRunner implements TestRunner {
               fullName: tc.fullName ?? "",
               status: tc.status ?? "failed",
               duration: tc.duration,
-              failureMessages: tc.failureMessages ?? [],
+              failureMessages: this.minimal(tc.failureMessages) ?? [],
             }),
           );
           const duration = testCases.reduce(
