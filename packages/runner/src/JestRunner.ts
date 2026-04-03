@@ -62,8 +62,14 @@ export class JestRunner implements TestRunner {
     ];
 
     const result = await this.executor.run({ binary, args, cwd });
-    if (!result.passed && result.stderr) {
-      // Non-zero exit from --listTests is not always fatal; try parsing anyway
+
+    // A config validation error means Jest rejected the config file entirely.
+    // The output contains error prose, not file paths — abort immediately so we
+    // don't parse Jest's error text as test file paths (Bug 3).
+    if (!result.passed && this.isJestValidationError(result.stderr)) {
+      throw new Error(
+        `[JestRunner] Jest config validation failed:\n${result.stderr.trim()}`,
+      );
     }
 
     const found = this.parser.parseListTestsOutput(result.stdout + '\n' + result.stderr);
@@ -262,6 +268,14 @@ export class JestRunner implements TestRunner {
     }
     if (current.length > 0) chunks.push(current);
     return chunks;
+  }
+
+  private isJestValidationError(stderr: string): boolean {
+    return (
+      stderr.includes('Validation Error') ||
+      stderr.includes('Unknown option') ||
+      stderr.includes('https://jestjs.io/docs/configuration')
+    );
   }
 
   private discoverFromFilesystem(projectRoot: string): string[] {

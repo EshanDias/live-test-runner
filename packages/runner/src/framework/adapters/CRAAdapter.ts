@@ -1,10 +1,10 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import { execFileSync } from 'child_process';
-import { Framework } from '../../types';
-import { FrameworkAdapter } from './FrameworkAdapter';
-import { readPackageJson } from './JestAdapter';
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+import { execFileSync } from "child_process";
+import { Framework } from "../../types";
+import { FrameworkAdapter } from "./FrameworkAdapter";
+import { readPackageJson } from "./JestAdapter";
 
 /**
  * Handles Create React App (react-scripts) projects.
@@ -23,7 +23,7 @@ import { readPackageJson } from './JestAdapter';
  * package.json changes).
  */
 export class CRAAdapter implements FrameworkAdapter {
-  readonly framework: Framework = 'cra';
+  readonly framework: Framework = "cra";
 
   /** key: projectRoot, value: { configJson, pkgMtime, tmpFilePath } */
   private configCache = new Map<string, CachedConfig>();
@@ -34,13 +34,13 @@ export class CRAAdapter implements FrameworkAdapter {
     const pkg = readPackageJson(projectRoot);
     if (!pkg) return false;
 
-    const deps = { ...pkg.dependencies, ...pkg.devDependencies } as Record<string, string>;
-    const testScript = (pkg.scripts?.test ?? '') as string;
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies } as Record<
+      string,
+      string
+    >;
+    const testScript = (pkg.scripts?.test ?? "") as string;
 
-    return (
-      'react-scripts' in deps ||
-      testScript.includes('react-scripts test')
-    );
+    return "react-scripts" in deps || testScript.includes("react-scripts test");
   }
 
   // ── Binary resolution ──────────────────────────────────────────────────────
@@ -55,31 +55,31 @@ export class CRAAdapter implements FrameworkAdapter {
     // 1. Jest bundled inside react-scripts (most reliable for CRA)
     const craJest = path.join(
       projectRoot,
-      'node_modules',
-      'react-scripts',
-      'node_modules',
-      '.bin',
-      'jest',
+      "node_modules",
+      "react-scripts",
+      "node_modules",
+      ".bin",
+      "jest",
     );
-    if (fs.existsSync(craJest) || fs.existsSync(craJest + '.cmd')) {
+    if (fs.existsSync(craJest) || fs.existsSync(craJest + ".cmd")) {
       return platformCmd(craJest);
     }
 
     // 2. Project-level jest (newer CRA versions install jest as a peer dep)
-    const localJest = path.join(projectRoot, 'node_modules', '.bin', 'jest');
-    if (fs.existsSync(localJest) || fs.existsSync(localJest + '.cmd')) {
+    const localJest = path.join(projectRoot, "node_modules", ".bin", "jest");
+    if (fs.existsSync(localJest) || fs.existsSync(localJest + ".cmd")) {
       return platformCmd(localJest);
     }
 
     // 3. jest.js inside react-scripts (fallback if .bin symlink is missing)
     const craJestJs = path.join(
       projectRoot,
-      'node_modules',
-      'react-scripts',
-      'node_modules',
-      'jest',
-      'bin',
-      'jest.js',
+      "node_modules",
+      "react-scripts",
+      "node_modules",
+      "jest",
+      "bin",
+      "jest.js",
     );
     if (fs.existsSync(craJestJs)) {
       return craJestJs; // invoke via `node <path>`
@@ -87,7 +87,7 @@ export class CRAAdapter implements FrameworkAdapter {
 
     throw new Error(
       `[CRAAdapter] Cannot locate Jest binary for CRA project at: ${projectRoot}\n` +
-      'Ensure react-scripts is installed in node_modules.',
+        "Ensure react-scripts is installed in node_modules.",
     );
   }
 
@@ -132,16 +132,16 @@ export class CRAAdapter implements FrameworkAdapter {
   private extractConfigJson(projectRoot: string): string {
     const reactScriptsBin = path.join(
       projectRoot,
-      'node_modules',
-      'react-scripts',
-      'bin',
-      'react-scripts.js',
+      "node_modules",
+      "react-scripts",
+      "bin",
+      "react-scripts.js",
     );
 
     if (!fs.existsSync(reactScriptsBin)) {
       throw new Error(
         `[CRAAdapter] react-scripts not found at: ${reactScriptsBin}\n` +
-        'Run npm install inside your project first.',
+          "Run npm install inside your project first.",
       );
     }
 
@@ -149,16 +149,16 @@ export class CRAAdapter implements FrameworkAdapter {
     try {
       stdout = execFileSync(
         process.execPath, // node — always available, no global dependency
-        [reactScriptsBin, 'test', '--showConfig', '--passWithNoTests'],
+        [reactScriptsBin, "test", "--showConfig", "--passWithNoTests"],
         {
           cwd: projectRoot,
           env: {
             ...process.env,
-            NODE_ENV: 'test',
-            BABEL_ENV: 'test',
-            CI: 'true',
+            NODE_ENV: "test",
+            BABEL_ENV: "test",
+            CI: "true",
           },
-          encoding: 'utf8',
+          encoding: "utf8",
           // Cap at 30s — showConfig should be fast; if it hangs something is wrong
           timeout: 30_000,
         },
@@ -182,9 +182,9 @@ export class CRAAdapter implements FrameworkAdapter {
    */
   private parseShowConfigOutput(stdout: string): string {
     // The output may have preamble text before the JSON. Find the first '{'.
-    const jsonStart = stdout.indexOf('{');
+    const jsonStart = stdout.indexOf("{");
     if (jsonStart === -1) {
-      throw new Error('[CRAAdapter] --showConfig produced no JSON output.');
+      throw new Error("[CRAAdapter] --showConfig produced no JSON output.");
     }
 
     const raw = JSON.parse(stdout.slice(jsonStart));
@@ -192,10 +192,12 @@ export class CRAAdapter implements FrameworkAdapter {
     // Jest v27+ wraps results in { configs: [...], globalConfig: {...} }
     const projectConfig = Array.isArray(raw.configs) ? raw.configs[0] : raw;
     if (!projectConfig) {
-      throw new Error('[CRAAdapter] --showConfig JSON did not contain a project config.');
+      throw new Error(
+        "[CRAAdapter] --showConfig JSON did not contain a project config.",
+      );
     }
 
-    return JSON.stringify(projectConfig, null, 2);
+    return JSON.stringify(sanitizeJestConfig(projectConfig), null, 2);
   }
 
   /**
@@ -206,13 +208,13 @@ export class CRAAdapter implements FrameworkAdapter {
   private writeTempConfig(projectRoot: string, configJson: string): string {
     const hash = simpleHash(projectRoot);
     const tmpFilePath = path.join(os.tmpdir(), `ltr-cra-config-${hash}.json`);
-    fs.writeFileSync(tmpFilePath, configJson, 'utf8');
+    fs.writeFileSync(tmpFilePath, configJson, "utf8");
     return tmpFilePath;
   }
 
   private getPackageJsonMtime(projectRoot: string): number {
     try {
-      return fs.statSync(path.join(projectRoot, 'package.json')).mtimeMs;
+      return fs.statSync(path.join(projectRoot, "package.json")).mtimeMs;
     } catch {
       return 0;
     }
@@ -228,11 +230,58 @@ interface CachedConfig {
 }
 
 function platformCmd(bin: string): string {
-  if (process.platform === 'win32') {
+  if (process.platform === "win32") {
     const lower = bin.toLowerCase();
-    if (!lower.endsWith('.cmd') && !lower.endsWith('.exe')) return `${bin}.cmd`;
+    if (!lower.endsWith(".cmd") && !lower.endsWith(".exe")) return `${bin}.cmd`;
   }
   return bin;
+}
+
+/**
+ * Keys that appear in --showConfig output but are NOT valid Jest config options.
+ * Passing them to Jest causes a "Unknown option" Validation Error.
+ */
+const INVALID_JEST_CONFIG_KEYS: ReadonlySet<string> = new Set(['cwd', 'name', 'id']);
+
+/**
+ * Normalises the raw config object extracted from react-scripts --showConfig:
+ *
+ * 1. Strips keys that are not valid Jest config options (e.g. `cwd`).
+ * 2. Normalises `moduleNameMapper` and `transform` from Jest's internal
+ *    array-of-tuples format back to the plain-object format Jest expects
+ *    when passed via --config:
+ *
+ *      [[pattern, replacement], ...]  →  { pattern: replacement, ... }
+ */
+function sanitizeJestConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(config)) {
+    if (INVALID_JEST_CONFIG_KEYS.has(key)) continue;
+
+    if (key === 'moduleNameMapper' || key === 'transform') {
+      result[key] = normalizeTupleMap(value);
+    } else {
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Jest internally serialises mapper/transform as arrays of 2-element tuples.
+ * When writing a config file for --config, Jest expects a plain object.
+ * Returns the value unchanged if it is already an object (or not an array).
+ */
+function normalizeTupleMap(value: unknown): unknown {
+  if (
+    Array.isArray(value) &&
+    value.every((item) => Array.isArray(item) && item.length >= 2)
+  ) {
+    return Object.fromEntries(value.map(([k, v]: [string, unknown]) => [k, v]));
+  }
+  return value;
 }
 
 /** Simple djb2-style hash for stable temp file naming — not cryptographic. */
