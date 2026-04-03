@@ -27,7 +27,7 @@
       "panel": [
         {
           "id": "liveTestRunnerPanel",
-          "title": "Test Results",
+          "title": "Live Test Results",
           "icon": "$(checklist)"
         }
       ]
@@ -44,7 +44,7 @@
         {
           "type": "webview",
           "id": "liveTestRunner.results",
-          "name": "Test Results"
+          "name": "Live Test Results"
         }
       ]
     },
