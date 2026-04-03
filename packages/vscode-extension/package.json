@@ -2,7 +2,7 @@
   "name": "live-test-runner",
   "displayName": "Live Test Runner",
   "description": "Live testing on save for Jest and other frameworks",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -11,43 +11,63 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:liveTestRunner.startTesting",
-    "onCommand:liveTestRunner.stopTesting"
+    "onView:liveTestRunner.explorer",
+    "onView:liveTestRunner.results"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "liveTestRunnerContainer",
+          "title": "Live Test Runner",
+          "icon": "$(beaker)"
+        }
+      ],
+      "panel": [
+        {
+          "id": "liveTestRunnerPanel",
+          "title": "Live Test Results",
+          "icon": "$(checklist)"
+        }
+      ]
+    },
+    "views": {
+      "liveTestRunnerContainer": [
+        {
+          "type": "webview",
+          "id": "liveTestRunner.explorer",
+          "name": "Test Explorer"
+        }
+      ],
+      "liveTestRunnerPanel": [
+        {
+          "type": "webview",
+          "id": "liveTestRunner.results",
+          "name": "Live Test Results"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "liveTestRunner.startTesting",
-        "title": "Start Testing"
+        "title": "Start Testing",
+        "category": "Live Test Runner"
       },
       {
         "command": "liveTestRunner.stopTesting",
-        "title": "Stop Testing"
-      },
-      {
-        "command": "liveTestRunner.rebuildMap",
-        "title": "Rebuild Test Map"
-      },
-      {
-        "command": "liveTestRunner.refreshTests",
-        "title": "Refresh Tests"
+        "title": "Stop Testing",
+        "category": "Live Test Runner"
       },
       {
         "command": "liveTestRunner.selectProjectRoot",
-        "title": "Select Project Root"
-      },
-      {
-        "command": "liveTestRunner.runRelatedTests",
-        "title": "Run Related Tests"
-      },
-      {
-        "command": "liveTestRunner.clearDiagnostics",
-        "title": "Clear Test Diagnostics"
+        "title": "Select Project Root",
+        "category": "Live Test Runner"
       },
       {
         "command": "liveTestRunner.showOutput",
-        "title": "Show Test Output"
+        "title": "Show Raw Output",
+        "category": "Live Test Runner"
       }
     ],
     "configuration": {
@@ -63,15 +83,15 @@
           "default": "",
           "description": "Override the Jest command (e.g. 'node_modules/.bin/jest'). Leave empty to auto-detect from package.json scripts and node_modules."
         },
-        "liveTestRunner.warmupOnStart": {
-          "type": "boolean",
-          "default": true,
-          "description": "Run full suite on start"
+        "liveTestRunner.onSaveDebounceMs": {
+          "type": "number",
+          "default": 300,
+          "description": "Debounce delay in milliseconds before running tests on save"
         },
-        "liveTestRunner.useCoverageMap": {
+        "liveTestRunner.showOutputOnFailure": {
           "type": "boolean",
           "default": true,
-          "description": "Use coverage to build affected test map"
+          "description": "Show raw output channel when tests fail"
         },
         "liveTestRunner.testFilePatterns": {
           "type": "array",
@@ -79,22 +99,7 @@
             "type": "string"
           },
           "default": ["**/*.test.*", "**/*.spec.*"],
-          "description": "Patterns for test files"
-        },
-        "liveTestRunner.onSaveDebounceMs": {
-          "type": "number",
-          "default": 300,
-          "description": "Debounce delay for on-save execution"
-        },
-        "liveTestRunner.showOutputOnFailure": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show output on test failure"
-        },
-        "liveTestRunner.enableTestExplorer": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable Test Explorer integration"
+          "description": "Glob patterns for test files"
         }
       }
     }
@@ -104,9 +109,7 @@
     "compile": "tsc --build",
     "build": "pnpm run compile",
     "watch": "tsc -watch -p ./",
-    "pretest": "pnpm run compile && pnpm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "lint": "eslint src --ext ts"
   },
   "dependencies": {
     "@live-test-runner/core": "workspace:*",
@@ -114,13 +117,8 @@
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",
-    "@types/glob": "^8.1.0",
-    "@types/mocha": "^10.0.1",
     "@types/node": "16.x",
-    "eslint": "^8.28.0",
-    "glob": "^8.1.0",
-    "mocha": "^10.1.0",
     "typescript": "^4.9.4",
-    "@vscode/test-electron": "^2.2.3"
+    "eslint": "^8.28.0"
   }
 }

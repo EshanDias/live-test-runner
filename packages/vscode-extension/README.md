@@ -1,82 +1,69 @@
 # Live Test Runner
 
-Live Test Runner is a VS Code extension that provides live testing on save for Jest and other testing frameworks. It runs tests automatically when you save files, giving you fast feedback during development.
+A VS Code extension that runs your Jest tests automatically on save and presents results in a clean, purpose-built UI — no native Test Explorer API required.
 
 ## Features
 
-- **On-save testing**: Automatically run tests when you save source or test files
-- **Session-based**: Only runs when explicitly started, no background activity
-- **Test Explorer integration**: View and run tests from VS Code's Test Explorer
-- **Coverage-based mapping**: Uses test coverage to determine which tests to run for source file changes
-- **Monorepo support**: Select different project roots for testing
-- **Framework extensible**: Currently supports Jest, with plans for Vite, Playwright, etc.
-
-## Installation
-
-Install from the VS Code Marketplace: [Live Test Runner](https://marketplace.visualstudio.com/items?itemName=live-test-runner)
+- **On-save testing** — tests re-run automatically whenever you save a file
+- **Custom Test Explorer** — sidebar panel showing file → suite → test hierarchy with status icons, durations, and color coding
+- **Live Test Results panel** — three-column view: test list, console output (tabbed by level), and error details
+- **Smart Jest detection** — auto-detects standard Jest and Create React App / react-scripts projects; respects `package.json` scripts and local `node_modules`
+- **Session management** — explicit Start / Stop / Rerun controls; nothing runs in the background until you start a session
+- **Summary bar** — live total / passed / failed counts with elapsed time after each run
+- **Failures-only filter** — hide passing tests to focus on what's broken
+- **Search** — filter the test tree by name in real time
+- **Collapse / Expand all** — keyboard-friendly tree controls
+- **Per-row actions** — rerun a single file, suite, or test; open the source file in the editor
+- **Duration indicators** — color-coded fast / moderate / slow badges at every level
+- **Status bar** — quick-glance summary of the last run
 
 ## Quick Start
 
-1. Open your project in VS Code
-2. Select the project root: `Ctrl+Shift+P` > "Live Test Runner: Select Project Root"
-3. Start testing: `Ctrl+Shift+P` > "Live Test Runner: Start Testing"
-4. Save a file and watch tests run automatically!
+1. Open a Jest project in VS Code
+2. Click the beaker icon in the Activity Bar to open **Live Test Runner**
+3. Click **▶ Start Testing** — the extension discovers test files, runs them all, and begins watching for saves
+4. Edit a test or source file, save, and watch the results update live
 
 ## Commands
 
-- **Start Testing**: Begins the testing session with a full test run and coverage analysis
-- **Stop Testing**: Ends the session and stops all automatic testing
-- **Rebuild Test Map**: Re-runs the full suite to rebuild the coverage map
-- **Refresh Tests**: Updates the Test Explorer with current test files
-- **Select Project Root**: Choose the directory containing your test configuration
-- **Run Related Tests**: Manually run tests related to the current file
+| Command | Description |
+|---------|-------------|
+| `Live Test Runner: Start Testing` | Discover and run all tests, then start watching |
+| `Live Test Runner: Stop Testing` | Stop the session |
+| `Live Test Runner: Select Project Root` | Choose a project root in a multi-folder workspace |
+| `Live Test Runner: Show Raw Output` | Open the raw Jest output channel |
 
 ## Configuration
 
-Configure settings in VS Code Settings (`Ctrl+,`) under "Extensions > Live Test Runner":
-
-- `projectRoot`: Path to your project root (set via command)
-- `jestCommand`: Command to run Jest (default: "npx jest")
-- `warmupOnStart`: Run full suite when starting (default: true)
-- `useCoverageMap`: Build affected test map from coverage (default: true)
-- `testFilePatterns`: Glob patterns for test files (default: ["**/*.test.*", "**/*.spec.*"])
-- `onSaveDebounceMs`: Delay before running tests on save (default: 300)
-- `showOutputOnFailure`: Show test output when tests fail (default: true)
-- `enableTestExplorer`: Enable Test Explorer integration (default: true)
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `liveTestRunner.projectRoot` | `""` | Project root directory (auto-detected for single-folder workspaces) |
+| `liveTestRunner.jestCommand` | `""` | Override Jest command (e.g. `node_modules/.bin/jest`). Leave empty to auto-detect. |
+| `liveTestRunner.onSaveDebounceMs` | `300` | Delay in ms before running tests after a save |
 
 ## Status Bar
 
-The status bar shows the current state:
-- `Live Tests: Off` - Testing not active
-- `Live Tests: Starting…` - Initializing
-- `Live Tests: ✅ Ready` - Active and ready
-- `Live Tests: ❌ Failed` - Error during startup
-
-Click the status bar item to access quick actions.
-
-## How It Works
-
-1. **Start Testing** runs your full test suite with coverage enabled
-2. Coverage data builds a map of which tests cover which source files
-3. When you save a test file, that file runs
-4. When you save a source file, affected tests run (from the map or Jest's related tests)
+| Text | Meaning |
+|------|---------|
+| `Live Tests: Off` | No session active |
+| `Live Tests: Discovering…` | Finding test files |
+| `Live Tests: Running… N/M` | Run in progress |
+| `Live Tests: ✅ N passed` | Last run passed |
+| `Live Tests: ❌ N failed, M passed` | Last run had failures |
 
 ## Supported Frameworks
 
-- **Jest** (primary, fully supported)
-- **Vite** (planned)
-- **Playwright** (planned)
+- **Jest** — fully supported, including Create React App / react-scripts projects
+- More frameworks planned for v2.1.0
 
-## Troubleshooting
+## Known Limitations
 
-- **Tests not running on save**: Ensure testing is started and project root is set
-- **Wrong tests running**: Try "Rebuild Test Map" to refresh coverage data
-- **Performance issues**: Increase `onSaveDebounceMs` or disable coverage mapping
-- **Monorepo issues**: Use "Select Project Root" for each project
+- Rerunning a suite or individual test reruns the whole file (Jest limitation without a custom reporter — planned for v2.1.0)
+- Line-number anchoring when opening test files is not yet available
 
 ## Contributing
 
-Found a bug or have a feature request? Please file an issue on [GitHub](https://github.com/your-repo/live-test-runner).
+File issues and feature requests at [GitHub](https://github.com/eshandias/live-test-runner).
 
 ## License
 
