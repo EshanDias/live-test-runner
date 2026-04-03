@@ -25,6 +25,9 @@ export interface TestRunner {
   /** Run multiple test files in one invocation and return merged structured results. */
   runTestFilesJson(filePaths: string[]): Promise<JestJsonResult>;
 
+  /** Run a single named test within a file using --testNamePattern. */
+  runTestCaseJson(filePath: string, testFullName: string): Promise<JestJsonResult>;
+
   /** Run tests related to a source file (e.g. --findRelatedTests) and return structured results. */
   runRelatedTestsJson(filePath: string): Promise<JestJsonResult>;
 

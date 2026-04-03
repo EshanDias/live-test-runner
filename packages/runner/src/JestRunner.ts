@@ -172,6 +172,31 @@ export class JestRunner implements TestRunner {
     return this.parser.merge(results);
   }
 
+  async runTestCaseJson(filePath: string, testFullName: string): Promise<JestJsonResult> {
+    const projectRoot = this.requireProjectRoot();
+    const adapter = this.requireAdapter();
+
+    const binary = this.resolveBinary(adapter, projectRoot);
+    const prefixArgs = this.resolvePrefixArgs();
+    const configArgs = await this.resolveConfigArgs(adapter, projectRoot);
+    // Escape regex special chars in the test name so it matches literally
+    const escapedName = testFullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const args = [
+      ...prefixArgs,
+      ...configArgs,
+      ...adapter.getExtraArgs(projectRoot),
+      ...this.baseArgs(),
+      '--json',
+      '--runTestsByPath',
+      filePath,
+      '--testNamePattern',
+      `^${escapedName}$`,
+    ];
+
+    const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture({ binary, args, cwd: projectRoot });
+    return this.parser.parse(passed, jsonOutput, stderr);
+  }
+
   async runRelatedTestsJson(filePath: string): Promise<JestJsonResult> {
     const projectRoot = this.requireProjectRoot();
     const adapter = this.requireAdapter();

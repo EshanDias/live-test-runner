@@ -24,6 +24,11 @@ export class ResultParser {
   parse(passed: boolean, raw: string, stderr: string): JestJsonResult {
     try {
       const json = JSON.parse(raw);
+      // Parse per-test durations from stderr once — used as fallback below.
+      // Jest ≤27 (and some CRA builds) emit null for tc.duration in JSON but
+      // do print "(X ms)" next to each test name in human-readable stderr.
+      const stderrDurations = this.parseDurationsFromStderr(stderr);
+
       const fileResults: JestFileResult[] = (json.testResults ?? []).map(
         (fr: any): JestFileResult => {
           const testCases = (fr.testResults ?? fr.assertionResults ?? []).map(
@@ -32,7 +37,8 @@ export class ResultParser {
               title: tc.title ?? "",
               fullName: tc.fullName ?? "",
               status: tc.status ?? "failed",
-              duration: tc.duration,
+              // Backfill duration from stderr when JSON omits it
+              duration: tc.duration ?? stderrDurations.get(tc.fullName ?? tc.title ?? ""),
               failureMessages: this.stripStackTraces(tc.failureMessages) ?? [],
             }),
           );
@@ -172,6 +178,32 @@ export class ResultParser {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Parses per-test durations from Jest's human-readable stderr output.
+   *
+   * Jest prints lines like:
+   *   "    ✓ test name (3 ms)"
+   *   "    ✕ test name [FAILING] (67 ms)"
+   *
+   * Returns a Map of fullName/title → duration in ms.
+   * Used as a fallback when tc.duration is null in the JSON (Jest ≤27 / CRA).
+   */
+  private parseDurationsFromStderr(stderr: string): Map<string, number> {
+    const map = new Map<string, number>();
+    // Matches: leading whitespace, status symbol (✓ ✕ ✗ ○ ●), test name, then (N ms) or (N s)
+    const LINE_RE = /^\s+[✓✕✗○●×]\s+(.+?)\s+\((\d+(?:\.\d+)?)\s*(ms|s)\)\s*$/;
+    for (const line of stderr.split(/\r?\n/)) {
+      const m = line.match(LINE_RE);
+      if (!m) continue;
+      // Strip trailing ANSI codes or bracket annotations like "[FAILING]"
+      const name = m[1].replace(/\x1B\[[0-9;]*m/g, '').replace(/\s*\[.*?\]\s*$/, '').trim();
+      const value = parseFloat(m[2]);
+      const ms = m[3] === 's' ? Math.round(value * 1000) : Math.round(value);
+      if (name && ms >= 0) map.set(name, ms);
+    }
+    return map;
   }
 
   private computeFileDuration(

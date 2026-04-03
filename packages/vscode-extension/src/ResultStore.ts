@@ -17,6 +17,8 @@ export interface OutputLine {
 export interface TestCaseResult {
   testId: string;       // `${fileId}::${suiteId}::${testName}`
   name: string;
+  /** Jest fullName — ancestor suite titles + test title, used for --testNamePattern */
+  fullName: string;
   status: TestStatus;
   duration?: number;
   outputLines: OutputLine[];
@@ -94,12 +96,13 @@ export class ResultStore {
     suite.duration = duration;
   }
 
-  testStarted(fileId: string, suiteId: string, testId: string, name: string): void {
+  testStarted(fileId: string, suiteId: string, testId: string, name: string, fullName: string): void {
     const suite = this.files.get(fileId)?.suites.get(suiteId);
     if (!suite) return;
     suite.tests.set(testId, {
       testId,
       name,
+      fullName,
       status: 'running',
       outputLines: [],
       failureMessages: [],
@@ -213,6 +216,7 @@ export class ResultStore {
         tests: Array.from(s.tests.values()).map(t => ({
           testId: t.testId,
           name: t.name,
+          fullName: t.fullName,
           status: t.status,
           duration: t.duration,
           failureMessages: t.failureMessages,

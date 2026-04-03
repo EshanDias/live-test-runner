@@ -242,7 +242,8 @@ class TestListLayout {
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
         <button class="row-open" title="Open file" data-open-path="${esc(file.filePath)}">↗</button>
         <button class="row-rerun" title="Rerun test" data-rerun="test"
-                data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}" data-test="${esc(test.testId)}">▶</button>
+                data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}" data-test="${esc(test.testId)}"
+                data-full-name="${esc(test.fullName ?? test.name)}">▶</button>
       </div>`;
   }
 
@@ -284,8 +285,8 @@ class TestListLayout {
     this.container.querySelectorAll('.row-rerun').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const { rerun: scope, file: fileId, suite: suiteId, test: testId } = btn.dataset;
-        this.vscode.postMessage({ type: 'rerun', scope, fileId, suiteId, testId });
+        const { rerun: scope, file: fileId, suite: suiteId, test: testId, fullName } = btn.dataset;
+        this.vscode.postMessage({ type: 'rerun', scope, fileId, suiteId, testId, fullName });
       });
     });
 

@@ -167,9 +167,30 @@ async function selectProjectRoot() {
   }
 }
 
-async function rerunScope(args: { scope: string; fileId: string; suiteId?: string; testId?: string }) {
+async function rerunScope(args: { scope: string; fileId: string; suiteId?: string; testId?: string; fullName?: string }) {
   const projectRoot = getProjectRoot();
   if (!projectRoot) return;
+
+  if (args.scope === 'test' && args.fullName) {
+    // Run only the specific test case using --testNamePattern
+    const runner = new JestRunner(getJestCommand(), (msg) => outputChannel.appendLine(msg));
+    runner.setProjectRoot(projectRoot);
+    broadcast({ type: 'files-rerunning', fileIds: [args.fileId] });
+    updateStatusBar('Running… 1/1');
+    try {
+      const jsonResult = await runner.runTestCaseJson(args.fileId, args.fullName);
+      const fileResult = jsonResult.fileResults[0];
+      if (fileResult) {
+        applyFileResultToStore(args.fileId, fileResult);
+      }
+    } catch (error) {
+      outputChannel.appendLine(`[Live Test Runner] Error: ${(error as Error).message}`);
+    }
+    broadcastFileResult(args.fileId);
+    updateStatusBar('✅ Ready');
+    return;
+  }
+
   await runFiles([args.fileId], projectRoot);
 }
 
@@ -293,6 +314,7 @@ function broadcastFileResult(filePath: string): void {
         tests: Array.from(s.tests.values()).map(t => ({
           testId: t.testId,
           name: t.name,
+          fullName: t.fullName,
           status: t.status,
           duration: t.duration,
           failureMessages: t.failureMessages,
@@ -325,7 +347,7 @@ function applyFileResultToStore(filePath: string, fileResult: JestFileResult): v
     suiteCounters.set(suiteId, count);
     const testId = `${suiteId}::${tc.fullName || tc.title}::${count}`;
 
-    resultStore.testStarted(filePath, suiteId, testId, tc.title);
+    resultStore.testStarted(filePath, suiteId, testId, tc.title, tc.fullName || tc.title);
 
     const status: TestStatus =
       tc.status === 'passed'  ? 'passed'  :
