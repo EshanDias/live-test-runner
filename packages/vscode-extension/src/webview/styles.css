@@ -342,7 +342,8 @@ body {
 .row-duration.slow { color: var(--vscode-charts-red, #f44336); }
 
 .row-rerun,
-.row-open {
+.row-open,
+.row-copy {
   flex-shrink: 0;
   background: none;
   border: 1px solid transparent;
@@ -357,13 +358,15 @@ body {
 }
 
 .test-row:hover .row-rerun,
-.test-row:hover .row-open {
+.test-row:hover .row-open,
+.test-row:hover .row-copy {
   opacity: 1;
   pointer-events: auto;
 }
 
 .row-rerun:hover,
-.row-open:hover {
+.row-open:hover,
+.row-copy:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2));
   border-color: var(--vscode-toolbar-hoverOutline, transparent);
   color: var(--vscode-foreground);

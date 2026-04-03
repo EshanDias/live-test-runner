@@ -129,6 +129,11 @@
     btnStop.classList.toggle('hidden', state !== 'watching');
     btnStopRun.classList.toggle('hidden', state !== 'running');
     watchIndicator.classList.toggle('hidden', state !== 'watching');
+    // Restore start button in case it was put into a loading state
+    if (state === 'idle') {
+      btnStart.disabled = false;
+      btnStart.textContent = '▶ Start Testing';
+    }
     updateListCount();
   }
 
@@ -170,7 +175,11 @@
   });
 
   // ── Action buttons ────────────────────────────────────────────────────────────
-  btnStart.addEventListener('click', () => vscode.postMessage({ type: 'cmd', command: 'start' }));
+  btnStart.addEventListener('click', () => {
+    btnStart.disabled = true;
+    btnStart.textContent = '⟳ Starting…';
+    vscode.postMessage({ type: 'cmd', command: 'start' });
+  });
   btnRerun.addEventListener('click', () => vscode.postMessage({ type: 'cmd', command: 'start' }));
   btnStop.addEventListener('click', () => vscode.postMessage({ type: 'cmd', command: 'stop' }));
   btnStopRun.addEventListener('click', () => vscode.postMessage({ type: 'cmd', command: 'stop' }));

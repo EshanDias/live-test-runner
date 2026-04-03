@@ -141,6 +141,14 @@ class TestListLayout {
     }, 50);
   }
 
+  /** Scroll the selected row into view (no-op if already visible). */
+  scrollToSelected() {
+    setTimeout(() => {
+      const selected = this.container.querySelector('.test-row.selected');
+      if (selected) selected.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+  }
+
   /** Mark a single file as running (partial rerun) without wiping other files. */
   markFileRunning(fileId, suiteId = null, testId = null) {
     const file = this.data.find((f) => f.fileId === fileId);
@@ -164,6 +172,7 @@ class TestListLayout {
     this.selectedId = testId ?? suiteId ?? fileId ?? null;
     this.selectedFileId = fileId ?? null;
     this._render();
+    this.scrollToSelected();
   }
 
   _matches(name) {
@@ -225,8 +234,9 @@ class TestListLayout {
         <span class="row-status">${icon}</span>
         <span class="row-name" title="${esc(file.filePath)}">${esc(file.name)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
-        <button class="row-open" title="Open file" data-open-path="${esc(file.filePath)}">↗</button>
-        <button class="row-rerun" title="Rerun file" data-rerun="file" data-file="${esc(file.fileId)}">▶</button>
+        <button class="row-copy"  title="Copy file name"  data-copy-name="${esc(file.name)}">⎘</button>
+        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}">↗</button>
+        <button class="row-rerun" title="Rerun file"      data-rerun="file" data-file="${esc(file.fileId)}">▶</button>
       </div>
       <div class="children ${isExpanded ? 'expanded' : ''}" data-children="${esc(file.fileId)}">
         ${children}
@@ -259,8 +269,9 @@ class TestListLayout {
         <span class="row-status">${icon}</span>
         <span class="row-name">${esc(suite.name)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
-        <button class="row-open" title="Open file" data-open-path="${esc(file.filePath)}">↗</button>
-        <button class="row-rerun" title="Rerun suite" data-rerun="suite"
+        <button class="row-copy"  title="Copy suite name" data-copy-name="${esc(suite.name)}">⎘</button>
+        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}">↗</button>
+        <button class="row-rerun" title="Rerun suite"     data-rerun="suite"
                 data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}"
                 data-full-name="${esc(suite.name)}">▶</button>
       </div>
@@ -284,8 +295,9 @@ class TestListLayout {
         <span class="row-status">${icon}</span>
         <span class="row-name">${esc(test.name)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
-        <button class="row-open" title="Open file" data-open-path="${esc(file.filePath)}">↗</button>
-        <button class="row-rerun" title="Rerun test" data-rerun="test"
+        <button class="row-copy"  title="Copy test name"  data-copy-name="${esc(test.name)}">⎘</button>
+        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}">↗</button>
+        <button class="row-rerun" title="Rerun test"      data-rerun="test"
                 data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}" data-test="${esc(test.testId)}"
                 data-full-name="${esc(test.fullName ?? test.name)}">▶</button>
       </div>`;
@@ -294,9 +306,12 @@ class TestListLayout {
   _attachListeners() {
     this.container.querySelectorAll('.test-row').forEach((row) => {
       row.addEventListener('click', (e) => {
-        // Don't handle rerun/open button clicks here
-        if (e.target.closest('.row-rerun') || e.target.closest('.row-open'))
-          return;
+        // Ignore action button clicks — they have their own handlers
+        if (
+          e.target.closest('.row-rerun') ||
+          e.target.closest('.row-open') ||
+          e.target.closest('.row-copy')
+        ) return;
 
         const id = row.dataset.id;
         const scope = row.dataset.scope;
@@ -304,8 +319,8 @@ class TestListLayout {
         const suiteId = row.dataset.suite;
         const testId = row.dataset.test;
 
-        // Toggle expand for file/suite rows
-        if (scope !== 'test') {
+        // Toggle expand/collapse ONLY when the arrow toggle is clicked
+        if (scope !== 'test' && e.target.closest('.row-toggle')) {
           const childEl = this.container.querySelector(
             `[data-children="${CSS.escape(id)}"]`,
           );
@@ -317,9 +332,10 @@ class TestListLayout {
             if (isNowExpanded) this.expanded.add(id);
             else this.expanded.delete(id);
           }
+          // Arrow click still selects the row — fall through to select logic
         }
 
-        // Highlight selected row
+        // Highlight selected row and notify extension
         this.container
           .querySelectorAll('.test-row')
           .forEach((r) => r.classList.remove('selected'));
@@ -327,44 +343,38 @@ class TestListLayout {
         this.selectedId = id;
         this.selectedFileId = fileId;
 
-        this.vscode.postMessage({
-          type: 'select',
-          scope,
-          fileId,
-          suiteId,
-          testId,
-        });
+        this.vscode.postMessage({ type: 'select', scope, fileId, suiteId, testId });
       });
     });
 
     this.container.querySelectorAll('.row-rerun').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const {
-          rerun: scope,
-          file: fileId,
-          suite: suiteId,
-          test: testId,
-          fullName: fullName,
-        } = btn.dataset;
-        this.vscode.postMessage({
-          type: 'rerun',
-          scope,
-          fileId,
-          suiteId,
-          testId,
-          fullName,
-        });
+        const { rerun: scope, file: fileId, suite: suiteId, test: testId, fullName } = btn.dataset;
+        this.vscode.postMessage({ type: 'rerun', scope, fileId, suiteId, testId, fullName });
       });
     });
 
     this.container.querySelectorAll('.row-open').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.vscode.postMessage({
-          type: 'open-file',
-          filePath: btn.dataset.openPath,
-        });
+        this.vscode.postMessage({ type: 'open-file', filePath: btn.dataset.openPath });
+      });
+    });
+
+    this.container.querySelectorAll('.row-copy').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const name = btn.dataset.copyName;
+        navigator.clipboard.writeText(name).then(() => {
+          const orig = btn.textContent;
+          btn.textContent = '✓';
+          btn.style.color = 'var(--vscode-charts-green, #4caf50)';
+          setTimeout(() => {
+            btn.textContent = orig;
+            btn.style.color = '';
+          }, 1000);
+        }).catch(() => {});
       });
     });
   }
