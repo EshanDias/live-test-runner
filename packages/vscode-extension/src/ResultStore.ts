@@ -106,12 +106,6 @@ export class ResultStore {
     });
   }
 
-  testOutput(fileId: string, suiteId: string, testId: string, text: string, level: OutputLevel): void {
-    const test = this.files.get(fileId)?.suites.get(suiteId)?.tests.get(testId);
-    if (!test) return;
-    test.outputLines.push({ text, level });
-  }
-
   testResult(
     fileId: string,
     suiteId: string,

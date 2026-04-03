@@ -162,7 +162,13 @@ class TestListLayout {
     const sel = this.selectedId === file.fileId ? 'selected' : '';
     const toggle = isExpanded ? '<span class="row-toggle expanded">▶</span>' : '<span class="row-toggle">▶</span>';
 
-    const children = file.suites.map(s => this._renderSuite(file, s)).join('');
+    // Suites named '(root)' are a synthetic wrapper for top-level tests written
+    // without a describe() block — render their tests directly under the file.
+    const children = file.suites.map(s =>
+      s.name === '(root)'
+        ? s.tests.map(t => this._renderTest(file, s, t)).join('')
+        : this._renderSuite(file, s)
+    ).join('');
 
     return `
       <div class="test-row level-file ${sel}"

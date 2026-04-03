@@ -238,10 +238,15 @@ function platformCmd(bin: string): string {
 }
 
 /**
- * Keys that appear in --showConfig output but are NOT valid Jest config options.
- * Passing them to Jest causes a "Unknown option" Validation Error.
+ * Keys that appear in --showConfig output but are NOT valid Jest config options,
+ * or that we must override to ensure correct behaviour when running Jest directly.
+ *
+ * - cwd / name / id: internal Jest fields not accepted via --config
+ * - silent: react-scripts sets this to suppress console output; removing it lets
+ *   console.log / warn / error / info appear in the Jest JSON `console` array
+ *   and in stderr so our parser can surface them in the UI.
  */
-const INVALID_JEST_CONFIG_KEYS: ReadonlySet<string> = new Set(['cwd', 'name', 'id']);
+const INVALID_JEST_CONFIG_KEYS: ReadonlySet<string> = new Set(['cwd', 'name', 'id', 'silent']);
 
 /**
  * Normalises the raw config object extracted from react-scripts --showConfig:

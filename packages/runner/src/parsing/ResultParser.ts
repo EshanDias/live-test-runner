@@ -1,10 +1,10 @@
-import * as path from 'path';
+import * as path from "path";
 import {
   JestJsonResult,
   JestFileResult,
   JestTestCaseResult,
   JestConsoleEntry,
-} from '../types';
+} from "../types";
 
 /**
  * Parses the JSON output produced by `jest --json --outputFile=<file>` into
@@ -29,9 +29,9 @@ export class ResultParser {
           const testCases = (fr.testResults ?? fr.assertionResults ?? []).map(
             (tc: any): JestTestCaseResult => ({
               ancestorTitles: tc.ancestorTitles ?? [],
-              title: tc.title ?? '',
-              fullName: tc.fullName ?? '',
-              status: tc.status ?? 'failed',
+              title: tc.title ?? "",
+              fullName: tc.fullName ?? "",
+              status: tc.status ?? "failed",
               duration: tc.duration,
               failureMessages: this.stripStackTraces(tc.failureMessages) ?? [],
             }),
@@ -41,15 +41,15 @@ export class ResultParser {
 
           const consoleOutput: JestConsoleEntry[] = (fr.console ?? []).map(
             (c: any): JestConsoleEntry => ({
-              message: String(c.message ?? ''),
-              type: String(c.type ?? 'log'),
-              origin: String(c.origin ?? ''),
+              message: String(c.message ?? ""),
+              type: String(c.type ?? "log"),
+              origin: String(c.origin ?? ""),
             }),
           );
 
           return {
-            testFilePath: fr.testFilePath ?? '',
-            status: fr.status === 'passed' ? 'passed' : 'failed',
+            testFilePath: fr.testFilePath ?? "",
+            status: fr.status === "passed" ? "passed" : "failed",
             failureMessage: fr.failureMessage || undefined,
             testCases,
             consoleOutput,
@@ -58,10 +58,52 @@ export class ResultParser {
         },
       );
 
-      // react-scripts omits fr.console from JSON — fall back to parsing stderr.
-      // For single-file runs this correctly attributes all console entries.
-      if (fileResults.length === 1 && fileResults[0].consoleOutput.length === 0) {
-        fileResults[0].consoleOutput = this.parseConsoleFromStderr(stderr);
+      // Jest ≤27 omits the `console` array from JSON (react-scripts included).
+      // Fall back to parsing the human-readable console blocks from stderr.
+      //
+      // Single-file run: attribute everything to the one file.
+      // Multi-file run: attribute each stderr entry to the file whose path
+      //   appears in the entry's origin field. Entries with no matching file
+      //   are attached to the first file with empty console output (best effort).
+      const anyMissingConsole = fileResults.some(fr => fr.consoleOutput.length === 0);
+      if (anyMissingConsole) {
+        const stderrEntries = this.parseConsoleFromStderr(stderr);
+        if (stderrEntries.length > 0) {
+          if (fileResults.length === 1) {
+            fileResults[0].consoleOutput = stderrEntries;
+          } else {
+            // Build a quick lookup: normalised file path → FileResult index
+            const pathIndex = new Map<string, number>();
+            fileResults.forEach((fr, idx) => {
+              // Index by full path and basename so origin substrings match
+              pathIndex.set(fr.testFilePath, idx);
+              pathIndex.set(fr.testFilePath.replace(/\\/g, '/'), idx);
+            });
+
+            const buckets: JestConsoleEntry[][] = fileResults.map(() => []);
+            let fallbackIdx = fileResults.findIndex(fr => fr.consoleOutput.length === 0);
+
+            for (const entry of stderrEntries) {
+              let matched = false;
+              for (const [fp, idx] of pathIndex) {
+                if (entry.origin.includes(fp) || fp.includes(entry.origin.split(':')[0])) {
+                  buckets[idx].push(entry);
+                  matched = true;
+                  break;
+                }
+              }
+              if (!matched && fallbackIdx >= 0) {
+                buckets[fallbackIdx].push(entry);
+              }
+            }
+
+            fileResults.forEach((fr, idx) => {
+              if (fr.consoleOutput.length === 0 && buckets[idx].length > 0) {
+                fr.consoleOutput = buckets[idx];
+              }
+            });
+          }
+        }
       }
 
       return {
@@ -70,10 +112,12 @@ export class ResultParser {
         numFailedTests: json.numFailedTests ?? 0,
         numPendingTests: json.numPendingTests ?? 0,
         fileResults,
-        errors: passed ? [] : [stderr || 'Tests failed'],
+        errors: passed ? [] : [stderr || "Tests failed"],
       };
     } catch {
-      return this.empty(false, [stderr || raw || 'Jest failed to produce JSON output']);
+      return this.empty(false, [
+        stderr || raw || "Jest failed to produce JSON output",
+      ]);
     }
   }
 
@@ -83,7 +127,7 @@ export class ResultParser {
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter(Boolean)
-      .filter((l) => l.includes('/') || l.includes(path.sep));
+      .filter((l) => l.includes("/") || l.includes(path.sep));
   }
 
   /** Build an empty result with the given pass/fail state and error messages. */
@@ -119,19 +163,25 @@ export class ResultParser {
   private stripStackTraces(failureMessages: string[] = []): string[] {
     try {
       return failureMessages.map((msg) => {
-        const lines = msg.split('\n');
-        const stackIndex = lines.findIndex((l) => l.trim().startsWith('at '));
+        const lines = msg.split("\n");
+        const stackIndex = lines.findIndex((l) => l.trim().startsWith("at "));
         return lines
           .slice(0, stackIndex === -1 ? lines.length : stackIndex)
-          .join('\n');
+          .join("\n");
       });
     } catch {
       return [];
     }
   }
 
-  private computeFileDuration(testCases: JestTestCaseResult[], fr: any): number {
-    const fromCases = testCases.reduce((sum, tc) => sum + (tc.duration ?? 0), 0);
+  private computeFileDuration(
+    testCases: JestTestCaseResult[],
+    fr: any,
+  ): number {
+    const fromCases = testCases.reduce(
+      (sum, tc) => sum + (tc.duration ?? 0),
+      0,
+    );
     if (fromCases > 0) return fromCases;
     if (fr.endTime && fr.startTime) return fr.endTime - fr.startTime;
     return 0;
@@ -140,26 +190,39 @@ export class ResultParser {
   /**
    * Extracts console.log/warn/error/info/debug blocks from Jest's human-readable stderr.
    *
-   * Jest stderr format per entry:
-   *   "  console.TYPE\n    <message lines>\n\n      at origin (file:line)\n"
+   * Handles two formats emitted by different Jest versions:
+   *
+   *   Jest 27+ (type on its own line):
+   *     "  console.log\n    <message lines>\n\n      at origin (file:line)\n"
+   *
+   *   Jest 26 / some CRA builds (origin on the same line as type):
+   *     "  console.log path/to/file.js:10:5\n    <message lines>\n"
    */
   parseConsoleFromStderr(stderr: string): JestConsoleEntry[] {
     const entries: JestConsoleEntry[] = [];
     const lines = stderr.split(/\r?\n/);
     let i = 0;
 
+    // Matches both "  console.log" and "  console.log src/file.js:8"
+    const HEADER_RE = /^\s+console\.(log|error|warn|info|debug)(?:\s+(.+))?$/;
+    const NEXT_HEADER_RE = /^\s+console\.(log|error|warn|info|debug)/;
+
     while (i < lines.length) {
-      const header = lines[i].match(/^\s+console\.(log|error|warn|info|debug)\s*$/);
-      if (!header) { i++; continue; }
+      const header = lines[i].match(HEADER_RE);
+      if (!header) {
+        i++;
+        continue;
+      }
 
       const type = header[1];
+      // Jest 26 puts the origin (file:line) on the header line itself
+      let origin = header[2]?.trim() ?? "";
       i++;
 
       const msgLines: string[] = [];
-      let origin = '';
 
       while (i < lines.length) {
-        if (/^\s+console\.(log|error|warn|info|debug)\s*$/.test(lines[i])) break;
+        if (NEXT_HEADER_RE.test(lines[i])) break;
         if (/^\s+at\s/.test(lines[i])) {
           if (!origin) origin = lines[i].trim();
           i++;
@@ -170,12 +233,13 @@ export class ResultParser {
         i++;
       }
 
-      while (msgLines.length > 0 && msgLines[0].trim() === '') msgLines.shift();
-      while (msgLines.length > 0 && msgLines[msgLines.length - 1].trim() === '') msgLines.pop();
+      while (msgLines.length > 0 && msgLines[0].trim() === "") msgLines.shift();
+      while (msgLines.length > 0 && msgLines[msgLines.length - 1].trim() === "")
+        msgLines.pop();
 
       if (msgLines.length > 0) {
         entries.push({
-          message: msgLines.map((l) => l.replace(/^\s{4}/, '')).join('\n'),
+          message: msgLines.map((l) => l.replace(/^\s{4}/, "")).join("\n"),
           type,
           origin,
         });
