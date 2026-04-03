@@ -1,5 +1,5 @@
 import { CoverageMap } from './CoverageMap';
-import { TestRunner, TestResult } from '@live-test-runner/runner';
+import { TestRunner } from '@live-test-runner/runner';
 
 export class TestSession {
   private coverageMap: CoverageMap;
@@ -11,17 +11,14 @@ export class TestSession {
     this.coverageMap = new CoverageMap();
   }
 
-  async start(projectRoot: string): Promise<TestResult> {
+  async start(projectRoot: string): Promise<void> {
     this.isActive = true;
-    // Discover tests
-    const testFiles = await this.runner.discoverTests(projectRoot);
-    // Warm-up run with coverage
-    const result = await this.runner.runFullSuite(projectRoot, true);
-    // Build map only if tests passed
+    // Discover tests then do a warm-up run with coverage to build the map
+    await this.runner.discoverTests(projectRoot);
+    const result = await this.runner.runFullSuiteJson(projectRoot, true);
     if (result.passed) {
       this.coverageMap.buildFromCoverage(await this.runner.getCoverage());
     }
-    return result;
   }
 
   stop(): void {
@@ -37,23 +34,6 @@ export class TestSession {
    *  drives the warmup run directly (e.g. to get structured JSON results). */
   activate(): void {
     this.isActive = true;
-  }
-
-  async onSave(filePath: string, projectRoot: string): Promise<TestResult> {
-    if (!this.isActive) {
-      return { passed: true, output: '', errors: [] };
-    }
-
-    if (this.runner.isTestFile(filePath)) {
-      return await this.runner.runTestFile(filePath);
-    } else {
-      const affectedTests = this.coverageMap.getAffectedTests(filePath);
-      if (affectedTests.size > 0) {
-        return await this.runner.runTestFiles(Array.from(affectedTests));
-      } else {
-        return await this.runner.runRelatedTests(filePath);
-      }
-    }
   }
 
   getRunner(): TestRunner {
