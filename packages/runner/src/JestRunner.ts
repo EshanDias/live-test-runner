@@ -354,7 +354,7 @@ export class JestRunner implements TestRunner {
     this.logger(`> ${cmd} ${cmdArgs.join(' ')}`);
     this.killProcesses();
 
-    const { passed, stderr } = await new Promise<{ passed: boolean; stderr: string }>((resolve) => {
+    const { passed, stdout, stderr } = await new Promise<{ passed: boolean; stdout: string; stderr: string }>((resolve) => {
       const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cmd);
 
       const child = spawn(cmd, cmdArgs, {
@@ -366,20 +366,24 @@ export class JestRunner implements TestRunner {
       this.child = child;
       child.stdin?.end();
 
+      let stdout = '';
       let stderr = '';
       let exitCode: number | null = null;
+      let stdoutEnded = !child.stdout;
       let stderrEnded = !child.stderr;
       let resolved = false;
 
       const maybeResolve = () => {
-        if (resolved || exitCode === null || !stderrEnded) return;
+        if (resolved || exitCode === null || !stdoutEnded || !stderrEnded) return;
         resolved = true;
         this.child = undefined;
-        resolve({ passed: exitCode === 0, stderr });
+        resolve({ passed: exitCode === 0, stdout, stderr });
       };
 
-      // stdout is not used — JSON goes to the temp file
-      child.stdout?.resume();
+      // Capture stdout — it carries the --json output as a fallback when --outputFile is not written
+      // (CRA/react-scripts may skip the outputFile on a bailed/failed run)
+      child.stdout?.on('data', (d) => { stdout += d.toString(); });
+      child.stdout?.on('end', () => { stdoutEnded = true; maybeResolve(); });
 
       child.stderr?.on('data', (d) => {
         const chunk = d.toString();
@@ -394,15 +398,19 @@ export class JestRunner implements TestRunner {
         if (resolved) return;
         resolved = true;
         this.child = undefined;
-        resolve({ passed: false, stderr: err.message });
+        resolve({ passed: false, stdout: '', stderr: err.message });
       });
     });
 
-    // Read JSON from the temp file — reliable even on Windows
+    // Prefer the outputFile (immune to Windows pipe buffering); fall back to captured stdout
+    // for cases where CRA skips writing the file on a bailed/failed run.
     let jsonOutput = '';
     try {
       if (fs.existsSync(tmpFile)) {
         jsonOutput = fs.readFileSync(tmpFile, 'utf8');
+      }
+      if (!jsonOutput.trim()) {
+        jsonOutput = stdout;
       }
     } finally {
       try { fs.unlinkSync(tmpFile); } catch { /* ignore cleanup errors */ }

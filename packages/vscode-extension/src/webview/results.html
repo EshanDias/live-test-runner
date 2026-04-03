@@ -34,6 +34,7 @@
       <div class="log-tab active" id="tabLogs" data-tab="log">Logs</div>
       <div class="log-tab" id="tabInfo" data-tab="info">Info</div>
       <div class="log-tab" id="tabWarn" data-tab="warn">Warn</div>
+      <div class="log-tab" id="tabError" data-tab="error">Error</div>
     </div>
     <div class="log-content" id="logContent">
       <div class="empty-state">Select a test to view output</div>
@@ -73,9 +74,10 @@
   });
 
   const EMPTY_STATE = {
-    log:  'No console.log output for this selection',
-    info: 'No info output for this selection',
-    warn: 'No warnings for this selection',
+    log:   'No console.log output for this selection',
+    info:  'No info output for this selection',
+    warn:  'No warnings for this selection',
+    error: 'No console.error output for this selection',
   };
 
   function renderLogs() {
@@ -87,7 +89,7 @@
       return;
     }
     el.innerHTML = lines.map(l => {
-      const cls = l.level === 'warn' ? 'log-line-warn' : l.level === 'info' ? 'log-line-info' : '';
+      const cls = l.level === 'warn' ? 'log-line-warn' : l.level === 'info' ? 'log-line-info' : l.level === 'error' ? 'log-line-error' : '';
       return `<div class="${cls}">${escHtml(l.text)}</div>`;
     }).join('');
 

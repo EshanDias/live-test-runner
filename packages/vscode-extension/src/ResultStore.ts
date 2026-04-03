@@ -7,7 +7,7 @@
 
 export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
 
-export type OutputLevel = 'log' | 'info' | 'warn';
+export type OutputLevel = 'log' | 'info' | 'warn' | 'error';
 
 export interface OutputLine {
   text: string;

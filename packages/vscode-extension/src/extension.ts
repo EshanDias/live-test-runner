@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { JestRunner, JestFileResult } from '@live-test-runner/runner';
 import { TestSession } from '@live-test-runner/core';
-import { ResultStore, TestStatus } from './ResultStore';
+import { ResultStore, TestStatus, OutputLevel } from './ResultStore';
 import { SelectionState } from './SelectionState';
 import { TestExplorerProvider } from './TestExplorerProvider';
 import { TestResultsProvider } from './TestResultsProvider';
@@ -338,7 +338,7 @@ function applyFileResultToStore(filePath: string, fileResult: JestFileResult): v
   if (fileResult.consoleOutput && fileResult.consoleOutput.length > 0) {
     const outputLines = fileResult.consoleOutput.map(entry => ({
       text: stripAnsi(entry.message),
-      level: (entry.type === 'warn' ? 'warn' : entry.type === 'log' ? 'log' : 'info') as 'log' | 'info' | 'warn',
+      level: (entry.type === 'warn' ? 'warn' : entry.type === 'error' ? 'error' : entry.type === 'log' ? 'log' : 'info') as OutputLevel,
     }));
     resultStore.fileOutput(filePath, outputLines);
   }
