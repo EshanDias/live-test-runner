@@ -1,5 +1,5 @@
 import { CoverageMap } from './CoverageMap';
-import { TestRunner } from '@live-test-runner/runner';
+import { TestRunner, TestResult } from '@live-test-runner/runner';
 
 export class TestSession {
   private coverageMap: CoverageMap;
@@ -11,14 +11,17 @@ export class TestSession {
     this.coverageMap = new CoverageMap();
   }
 
-  async start(projectRoot: string): Promise<void> {
+  async start(projectRoot: string): Promise<TestResult> {
     this.isActive = true;
     // Discover tests
     const testFiles = await this.runner.discoverTests(projectRoot);
     // Warm-up run with coverage
-    await this.runner.runFullSuite(projectRoot, true);
-    // Build map
-    this.coverageMap.buildFromCoverage(await this.runner.getCoverage());
+    const result = await this.runner.runFullSuite(projectRoot, true);
+    // Build map only if tests passed
+    if (result.passed) {
+      this.coverageMap.buildFromCoverage(await this.runner.getCoverage());
+    }
+    return result;
   }
 
   stop(): void {
@@ -30,17 +33,25 @@ export class TestSession {
     return this.isActive;
   }
 
-  async onSave(filePath: string, projectRoot: string): Promise<void> {
-    if (!this.isActive) return;
+  /** Marks the session active without running a warmup. Used when the caller
+   *  drives the warmup run directly (e.g. to get structured JSON results). */
+  activate(): void {
+    this.isActive = true;
+  }
+
+  async onSave(filePath: string, projectRoot: string): Promise<TestResult> {
+    if (!this.isActive) {
+      return { passed: true, output: '', errors: [] };
+    }
 
     if (this.runner.isTestFile(filePath)) {
-      await this.runner.runTestFile(filePath);
+      return await this.runner.runTestFile(filePath);
     } else {
       const affectedTests = this.coverageMap.getAffectedTests(filePath);
       if (affectedTests.size > 0) {
-        await this.runner.runTestFiles(Array.from(affectedTests));
+        return await this.runner.runTestFiles(Array.from(affectedTests));
       } else {
-        await this.runner.runRelatedTests(filePath);
+        return await this.runner.runRelatedTests(filePath);
       }
     }
   }
@@ -48,3 +59,8 @@ export class TestSession {
   getRunner(): TestRunner {
     return this.runner;
   }
+
+  getCoverageMap(): CoverageMap {
+    return this.coverageMap;
+  }
+}

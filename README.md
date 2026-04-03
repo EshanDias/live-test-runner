@@ -23,31 +23,33 @@ packages/
 ## Development Setup
 
 1. Clone the repository
-2. Install dependencies: `npm install`
-3. Build all packages: `npm run build`
-4. Open in VS Code
-5. Press F5 to launch extension development host
+2. Install dependencies: `pnpm install`
+3. Start development: `pnpm start` (starts TypeScript watch mode for the extension)
+4. Open in VS Code and press F5 to launch extension development host
 
 ## Building
 
 ```bash
 # Build all packages
-npm run build
+pnpm run build
+
+# Start development (starts TypeScript watch mode for the extension)
+pnpm start
 
 # Build individual packages
-cd packages/core && npm run build
-cd packages/runner && npm run build
-cd packages/vscode-extension && npm run compile
+cd packages/core && pnpm run build
+cd packages/runner && pnpm run build
+cd packages/vscode-extension && pnpm run compile
 ```
 
 ## Testing
 
 ```bash
 # Run tests for all packages
-npm test
+pnpm test
 
 # Run extension tests
-cd packages/vscode-extension && npm test
+cd packages/vscode-extension && pnpm test
 ```
 
 ## Adding a New Test Framework

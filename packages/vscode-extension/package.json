@@ -10,6 +10,7 @@
     "Testing"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:liveTestRunner.startTesting",
     "onCommand:liveTestRunner.stopTesting"
   ],
@@ -39,6 +40,14 @@
       {
         "command": "liveTestRunner.runRelatedTests",
         "title": "Run Related Tests"
+      },
+      {
+        "command": "liveTestRunner.clearDiagnostics",
+        "title": "Clear Test Diagnostics"
+      },
+      {
+        "command": "liveTestRunner.showOutput",
+        "title": "Show Test Output"
       }
     ],
     "configuration": {
@@ -51,8 +60,8 @@
         },
         "liveTestRunner.jestCommand": {
           "type": "string",
-          "default": "npx jest",
-          "description": "Command to run Jest"
+          "default": "",
+          "description": "Override the Jest command (e.g. 'node_modules/.bin/jest'). Leave empty to auto-detect from package.json scripts and node_modules."
         },
         "liveTestRunner.warmupOnStart": {
           "type": "boolean",
@@ -91,10 +100,11 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "vscode:prepublish": "pnpm run compile",
+    "compile": "tsc --build",
+    "build": "pnpm run compile",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "pnpm run compile && pnpm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"
   },
