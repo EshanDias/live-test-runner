@@ -53,8 +53,10 @@ export class JestRunner implements TestRunner {
     const cwd = this.requireProjectRoot();
 
     const binary = this.resolveBinary(adapter, projectRoot);
+    const prefixArgs = this.resolvePrefixArgs();
     const configArgs = await this.resolveConfigArgs(adapter, projectRoot);
     const args = [
+      ...prefixArgs,
       ...configArgs,
       ...this.baseArgs(),
       '--listTests',
@@ -85,12 +87,14 @@ export class JestRunner implements TestRunner {
     const cwd = this.requireProjectRoot();
 
     const binary = this.resolveBinary(adapter, projectRoot);
+    const prefixArgs = this.resolvePrefixArgs();
     const configArgs = await this.resolveConfigArgs(adapter, projectRoot);
     const coverageArgs = withCoverage
       ? ['--coverage', '--coverageReporters=json', '--coverageReporters=json-summary']
       : [];
 
     const args = [
+      ...prefixArgs,
       ...configArgs,
       ...adapter.getExtraArgs(projectRoot),
       ...this.baseArgs(),
@@ -107,8 +111,10 @@ export class JestRunner implements TestRunner {
     const adapter = this.requireAdapter();
 
     const binary = this.resolveBinary(adapter, projectRoot);
+    const prefixArgs = this.resolvePrefixArgs();
     const configArgs = await this.resolveConfigArgs(adapter, projectRoot);
     const args = [
+      ...prefixArgs,
       ...configArgs,
       ...adapter.getExtraArgs(projectRoot),
       ...this.baseArgs(),
@@ -129,12 +135,14 @@ export class JestRunner implements TestRunner {
     const adapter = this.requireAdapter();
 
     const binary = this.resolveBinary(adapter, projectRoot);
+    const prefixArgs = this.resolvePrefixArgs();
     const configArgs = await this.resolveConfigArgs(adapter, projectRoot);
 
     const chunks = this.chunkByCommandLineLength(filePaths);
 
     if (chunks.length === 1) {
       const args = [
+        ...prefixArgs,
         ...configArgs,
         ...adapter.getExtraArgs(projectRoot),
         ...this.baseArgs(),
@@ -150,6 +158,7 @@ export class JestRunner implements TestRunner {
     const results: JestJsonResult[] = [];
     for (const chunk of chunks) {
       const args = [
+        ...prefixArgs,
         ...configArgs,
         ...adapter.getExtraArgs(projectRoot),
         ...this.baseArgs(),
@@ -168,8 +177,10 @@ export class JestRunner implements TestRunner {
     const adapter = this.requireAdapter();
 
     const binary = this.resolveBinary(adapter, projectRoot);
+    const prefixArgs = this.resolvePrefixArgs();
     const configArgs = await this.resolveConfigArgs(adapter, projectRoot);
     const args = [
+      ...prefixArgs,
       ...configArgs,
       ...adapter.getExtraArgs(projectRoot),
       ...this.baseArgs(),
@@ -225,11 +236,18 @@ export class JestRunner implements TestRunner {
    */
   private resolveBinary(adapter: FrameworkAdapter, projectRoot: string): string {
     if (this.userJestCommand.trim()) {
-      // User override: first token is the binary, rest become extra args.
-      // We only return the binary here; extra tokens are handled by Executor.buildInvocation.
       return this.userJestCommand.trim().split(/\s+/)[0];
     }
     return adapter.resolveJestBinary(projectRoot);
+  }
+
+  /**
+   * Any tokens after the first in userJestCommand become prefix args inserted
+   * before Jest's own args. e.g. "npm test --" → binary="npm", prefix=["test","--"].
+   */
+  private resolvePrefixArgs(): string[] {
+    const tokens = this.userJestCommand.trim().split(/\s+/);
+    return tokens.length > 1 ? tokens.slice(1) : [];
   }
 
   /** Returns `['--config', '<path>']` if the adapter provides a config, or `[]`. */

@@ -124,6 +124,15 @@ class TestListLayout {
     }, 50);
   }
 
+  /** Mark a single file as running (partial rerun) without wiping other files. */
+  markFileRunning(fileId) {
+    const file = this.data.find(f => f.fileId === fileId);
+    if (file) {
+      file.status = 'running';
+      this._render();
+    }
+  }
+
   setSelected(fileId, suiteId, testId) {
     this.selectedId = testId ?? suiteId ?? fileId ?? null;
     this.selectedFileId = fileId ?? null;

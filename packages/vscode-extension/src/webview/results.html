@@ -158,11 +158,20 @@
         break;
 
       case 'run-started':
+        // Full suite run — clear everything
         currentLogs = [];
         currentErrors = [];
         renderLogs();
         renderErrors();
         list.setData([]);
+        break;
+
+      case 'files-rerunning':
+        // Partial rerun (save / rerun button) — mark only affected files as
+        // running without wiping the rest of the results tree
+        for (const fileId of (msg.fileIds ?? [])) {
+          list.markFileRunning(fileId);
+        }
         break;
 
       case 'full-file-result':

@@ -83,7 +83,13 @@ function getProjectRoot(): string | undefined {
 }
 
 function getJestCommand(): string {
-  return vscode.workspace.getConfiguration('liveTestRunner').get<string>('jestCommand') || '';
+  const cfg = vscode.workspace.getConfiguration('liveTestRunner');
+  const runMode = cfg.get<string>('runMode') ?? 'auto';
+  if (runMode === 'npm') {
+    // Delegate to "npm test" — JestRunner will invoke: npm test -- <jest args>
+    return 'npm test --';
+  }
+  return cfg.get<string>('jestCommand') || '';
 }
 
 function updateStatusBar(text: string) {
@@ -126,7 +132,7 @@ async function startTesting() {
 
     testSession.activate();
     broadcast({ type: 'session-started' });
-    await runFiles(testFiles, projectRoot);
+    await runFiles(testFiles, projectRoot, true);
 
   } catch (error) {
     updateStatusBar('❌ Error');
@@ -199,7 +205,7 @@ async function onSave(document: vscode.TextDocument) {
 }
 
 // ── Core run function ─────────────────────────────────────────────────────────
-async function runFiles(filePaths: string[], projectRoot: string): Promise<void> {
+async function runFiles(filePaths: string[], projectRoot: string, isFullSuite = false): Promise<void> {
   const CONCURRENCY = 3;
   const queue = [...filePaths];
   let completed = 0;
@@ -209,10 +215,15 @@ async function runFiles(filePaths: string[], projectRoot: string): Promise<void>
   for (const fp of filePaths) {
     const name = vscode.workspace.asRelativePath(fp);
     resultStore.fileStarted(fp, fp, name);
-    broadcast({ type: 'file-started', fileId: fp, filePath: fp, name });
   }
 
-  broadcast({ type: 'run-started', fileCount: filePaths.length });
+  if (isFullSuite) {
+    // Wipe the whole results tree for a fresh full run
+    broadcast({ type: 'run-started', fileCount: filePaths.length });
+  } else {
+    // Partial rerun — keep other files' results, just mark these as running
+    broadcast({ type: 'files-rerunning', fileIds: filePaths });
+  }
   updateStatusBar(`Running… 0/${filePaths.length}`);
 
   const totalStart = Date.now();
