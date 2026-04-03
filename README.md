@@ -33,7 +33,12 @@ packages/
         ├── ResultStore.ts                    # In-memory test result state
         ├── SelectionState.ts                 # Explorer selection tracking
         ├── TestExplorerProvider.ts           # Webview: file/suite/test tree
-        └── TestResultsProvider.ts            # Webview: detail panel
+        ├── TestResultsProvider.ts            # Webview: detail panel (3-column)
+        └── webview/
+            ├── results.html                  # Test Results panel UI
+            ├── explorer.html                 # Test Explorer sidebar UI
+            ├── testListLayout.js             # Column 1 test list renderer (shared)
+            └── styles.css                    # Shared webview styles
 ```
 
 ---
@@ -64,6 +69,20 @@ VS Code saves a file
 | In-memory config cache (CRA) | `--showConfig` takes ~2-3s; cached per session, invalidated when `package.json` changes |
 | `FrameworkAdapter` interface | Adding a new framework = one class + one entry in `ADAPTER_PRIORITY` |
 | `TestRunner` interface owns all JSON methods | Extension layer never depends on concrete runner classes |
+| `scope-logs` message separate from `scope-changed` | Selection highlight (col 1) and output data (cols 2 & 3) have different lifecycles — keeping them separate avoids double-renders and makes each concern clear |
+| Console output stored at run scope, not back-filled | Jest JSON reports console at file level only. Output is attributed to the scope that triggered the run (file/suite/test) and never fabricated for scopes that haven't run. |
+
+### Test Results Panel (3 columns)
+
+The panel is fully custom — no VS Code Test API.
+
+| Column | Content | Driven by |
+|--------|---------|-----------|
+| 1 — Tests | File/suite/test tree with status, duration, rerun button | `full-file-result` message |
+| 2 — Output | Sectioned log output scoped to selected row, filterable by level | `scope-logs` message |
+| 3 — Errors | Structured failure entries (test name + message) scoped to selected row | `scope-logs` message |
+
+See [`Plans/v2.1.0-state.md`](Plans/v2.1.0-state.md) for full detail on the scoped output system.
 
 ---
 
@@ -135,6 +154,7 @@ Settings are defined in `packages/vscode-extension/package.json` under `contribu
 |---|---|---|
 | `liveTestRunner.projectRoot` | `""` | Override project root (useful for monorepos) |
 | `liveTestRunner.jestCommand` | `""` | Override jest binary/command |
+| `liveTestRunner.runMode` | `"auto"` | `"auto"` uses resolved binary; `"npm"` delegates to `npm test --` |
 | `liveTestRunner.onSaveDebounceMs` | `300` | Debounce delay for on-save runs |
 
 ---
