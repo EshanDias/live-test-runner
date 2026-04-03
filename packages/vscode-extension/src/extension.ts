@@ -204,7 +204,9 @@ async function runFiles(filePaths: string[], projectRoot: string): Promise<void>
   let numFailed = 0;
 
   for (const fp of filePaths) {
-    resultStore.fileStarted(fp, fp, vscode.workspace.asRelativePath(fp));
+    const name = vscode.workspace.asRelativePath(fp);
+    resultStore.fileStarted(fp, fp, name);
+    broadcast({ type: 'file-started', fileId: fp, filePath: fp, name });
   }
 
   broadcast({ type: 'run-started', fileCount: filePaths.length });
@@ -268,6 +270,7 @@ function broadcastFileResult(filePath: string): void {
       name: fileData.name,
       status: fileData.status,
       duration: fileData.duration,
+      outputLines: fileData.outputLines,
       suites: Array.from(fileData.suites.values()).map(s => ({
         suiteId: s.suiteId,
         name: s.name,
@@ -323,6 +326,15 @@ function applyFileResultToStore(filePath: string, fileResult: JestFileResult): v
       const suiteDur = tests.reduce((acc, t) => acc + (t.duration ?? 0), 0);
       resultStore.suiteResult(filePath, suite.suiteId, suiteStatus, suiteDur);
     }
+  }
+
+  // Map Jest console entries to OutputLine[] and store at file level
+  if (fileResult.consoleOutput && fileResult.consoleOutput.length > 0) {
+    const outputLines = fileResult.consoleOutput.map(entry => ({
+      text: entry.message,
+      level: (entry.type === 'warn' ? 'warn' : entry.type === 'log' ? 'log' : 'info') as 'log' | 'info' | 'warn',
+    }));
+    resultStore.fileOutput(filePath, outputLines);
   }
 
   resultStore.fileResult(filePath, fileResult.status === 'passed' ? 'passed' : 'failed', fileResult.duration);

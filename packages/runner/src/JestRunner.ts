@@ -18,10 +18,19 @@ export interface JestTestCaseResult {
   failureMessages: string[];
 }
 
+export interface JestConsoleEntry {
+  message: string;
+  /** Jest console type: 'log' | 'warn' | 'error' | 'info' | 'debug' | etc. */
+  type: string;
+  origin: string;
+}
+
 export interface JestFileResult {
   testFilePath: string;
   status: 'passed' | 'failed';
   testCases: JestTestCaseResult[];
+  /** Console output captured during this file's run */
+  consoleOutput: JestConsoleEntry[];
   /** Populated when the file itself fails to compile/parse */
   failureMessage?: string;
   /** Total execution time for this file in milliseconds */
@@ -491,11 +500,17 @@ export class JestRunner implements TestRunner {
             failureMessages: tc.failureMessages ?? [],
           }));
           const duration = testCases.reduce((sum: number, tc: JestTestCaseResult) => sum + (tc.duration || 0), 0);
+          const consoleOutput: JestConsoleEntry[] = (fr.console ?? []).map((c: any) => ({
+            message: String(c.message ?? ''),
+            type: String(c.type ?? 'log'),
+            origin: String(c.origin ?? ''),
+          }));
           return {
             testFilePath: fr.testFilePath ?? '',
             status: fr.status === 'passed' ? 'passed' : 'failed',
             failureMessage: fr.failureMessage || undefined,
             testCases,
+            consoleOutput,
             duration: duration > 0 ? duration : undefined,
           };
         }),

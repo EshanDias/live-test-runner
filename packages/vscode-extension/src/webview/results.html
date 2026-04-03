@@ -28,11 +28,12 @@
 
   <div class="resize-handle" id="resizeHandle1"></div>
 
-  <!-- Column 2: Logs -->
+  <!-- Column 2: Live Test Results output -->
   <div class="col-logs" id="colLogs">
     <div class="log-tabs">
-      <div class="log-tab active" id="tabInfo" data-tab="info">Info</div>
-      <div class="log-tab" id="tabWarn" data-tab="warn">Warnings</div>
+      <div class="log-tab active" id="tabLogs" data-tab="log">Logs</div>
+      <div class="log-tab" id="tabInfo" data-tab="info">Info</div>
+      <div class="log-tab" id="tabWarn" data-tab="warn">Warn</div>
     </div>
     <div class="log-content" id="logContent">
       <div class="empty-state">Select a test to view output</div>
@@ -56,8 +57,8 @@
   const vscode = acquireVsCodeApi();
   const list = new TestListLayout(document.getElementById('testList'), vscode);
 
-  let activeTab = 'info';
-  let currentLogs = [];   // { text, level }[]
+  let activeTab = 'log';
+  let currentLogs = [];   // { text, level }[]  level: 'log' | 'info' | 'warn'
   let currentErrors = []; // string[]
   let autoScroll = true;
 
@@ -71,19 +72,24 @@
     });
   });
 
+  const EMPTY_STATE = {
+    log:  'No console.log output for this selection',
+    info: 'No info output for this selection',
+    warn: 'No warnings for this selection',
+  };
+
   function renderLogs() {
     const el = document.getElementById('logContent');
-    const lines = activeTab === 'warn'
-      ? currentLogs.filter(l => l.level === 'warn')
-      : currentLogs.filter(l => l.level === 'info');
+    const lines = currentLogs.filter(l => l.level === activeTab);
 
     if (lines.length === 0) {
-      el.innerHTML = `<div class="empty-state">${activeTab === 'warn' ? 'No warnings' : 'No output'}</div>`;
+      el.innerHTML = `<div class="empty-state">${EMPTY_STATE[activeTab] ?? 'No output'}</div>`;
       return;
     }
-    el.innerHTML = lines.map(l =>
-      `<div class="${l.level === 'warn' ? 'log-line-warn' : ''}">${escHtml(l.text)}</div>`
-    ).join('');
+    el.innerHTML = lines.map(l => {
+      const cls = l.level === 'warn' ? 'log-line-warn' : l.level === 'info' ? 'log-line-info' : '';
+      return `<div class="${cls}">${escHtml(l.text)}</div>`;
+    }).join('');
 
     if (autoScroll) el.scrollTop = el.scrollHeight;
   }
@@ -159,6 +165,11 @@
 
       case 'full-file-result':
         list.updateFile(msg.file);
+        // If this file is the currently selected scope, refresh Column 2 logs
+        if (list.selectedFileId === msg.file.fileId && msg.file.outputLines?.length) {
+          currentLogs = msg.file.outputLines;
+          renderLogs();
+        }
         break;
 
       case 'scope-changed':

@@ -55,6 +55,7 @@ class TestListLayout {
     this.data = [];            // array of FileResult (plain objects, from toJSON())
     this.query = '';           // active search filter
     this.selectedId = null;   // selected row key
+    this.selectedFileId = null; // fileId of the selected row (any level)
     this.expanded = new Set(); // expanded file/suite IDs
     this._render();
   }
@@ -62,10 +63,11 @@ class TestListLayout {
   /** Replace the full data tree and re-render. */
   setData(files) {
     this.data = files;
-    // Auto-expand files with failures
+    // Auto-expand all files so suites and tests are visible by default
     for (const file of files) {
-      if (file.status === 'failed') {
-        this.expanded.add(file.fileId);
+      this.expanded.add(file.fileId);
+      for (const suite of (file.suites ?? [])) {
+        this.expanded.add(suite.suiteId);
       }
     }
     this._render();
@@ -79,8 +81,10 @@ class TestListLayout {
     } else {
       this.data.push(fileData);
     }
-    if (fileData.status === 'failed') {
-      this.expanded.add(fileData.fileId);
+    // Auto-expand the file and its suites whenever it's updated
+    this.expanded.add(fileData.fileId);
+    for (const suite of (fileData.suites ?? [])) {
+      this.expanded.add(suite.suiteId);
     }
     this._render();
   }
@@ -92,6 +96,7 @@ class TestListLayout {
 
   setSelected(fileId, suiteId, testId) {
     this.selectedId = testId ?? suiteId ?? fileId ?? null;
+    this.selectedFileId = fileId ?? null;
     this._render();
   }
 
@@ -223,6 +228,7 @@ class TestListLayout {
         this.container.querySelectorAll('.test-row').forEach(r => r.classList.remove('selected'));
         row.classList.add('selected');
         this.selectedId = id;
+        this.selectedFileId = fileId;
 
         this.vscode.postMessage({ type: 'select', scope, fileId, suiteId, testId });
       });

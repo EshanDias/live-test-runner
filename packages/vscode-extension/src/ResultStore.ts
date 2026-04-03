@@ -7,12 +7,19 @@
 
 export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
 
+export type OutputLevel = 'log' | 'info' | 'warn';
+
+export interface OutputLine {
+  text: string;
+  level: OutputLevel;
+}
+
 export interface TestCaseResult {
   testId: string;       // `${fileId}::${suiteId}::${testName}`
   name: string;
   status: TestStatus;
   duration?: number;
-  outputLines: { text: string; level: 'info' | 'warn' }[];
+  outputLines: OutputLine[];
   failureMessages: string[];
 }
 
@@ -30,6 +37,8 @@ export interface FileResult {
   name: string;         // relative display name
   status: TestStatus;
   duration?: number;
+  /** Console output captured during this file's run (from Jest --json `console` array) */
+  outputLines: OutputLine[];
   suites: Map<string, SuiteResult>;
 }
 
@@ -48,8 +57,16 @@ export class ResultStore {
       filePath,
       name,
       status: 'running',
+      outputLines: [],
       suites: new Map(),
     });
+  }
+
+  /** Store file-level console output captured by Jest (cannot be scoped to individual tests). */
+  fileOutput(fileId: string, lines: OutputLine[]): void {
+    const file = this.files.get(fileId);
+    if (!file) return;
+    file.outputLines = lines;
   }
 
   fileResult(fileId: string, status: TestStatus, duration?: number): void {
@@ -89,7 +106,7 @@ export class ResultStore {
     });
   }
 
-  testOutput(fileId: string, suiteId: string, testId: string, text: string, level: 'info' | 'warn'): void {
+  testOutput(fileId: string, suiteId: string, testId: string, text: string, level: OutputLevel): void {
     const test = this.files.get(fileId)?.suites.get(suiteId)?.tests.get(testId);
     if (!test) return;
     test.outputLines.push({ text, level });
@@ -143,26 +160,25 @@ export class ResultStore {
     return { total, passed, failed, running };
   }
 
-  /** Returns all output lines scoped to the given selection. */
+  /** Returns output lines scoped to the given selection.
+   *  Console output is captured at file level by Jest JSON, so file/suite scope returns
+   *  file.outputLines. Test scope returns the test's own outputLines (populated via testOutput()).
+   */
   getOutputLines(
     fileId: string,
     suiteId?: string,
     testId?: string
-  ): { text: string; level: 'info' | 'warn' }[] {
+  ): OutputLine[] {
     const file = this.files.get(fileId);
     if (!file) return [];
 
     if (testId && suiteId) {
-      return file.suites.get(suiteId)?.tests.get(testId)?.outputLines ?? [];
+      // Per-test lines if available, fall back to file-level console output
+      const testLines = file.suites.get(suiteId)?.tests.get(testId)?.outputLines ?? [];
+      return testLines.length > 0 ? testLines : file.outputLines;
     }
-    if (suiteId) {
-      const suite = file.suites.get(suiteId);
-      if (!suite) return [];
-      return Array.from(suite.tests.values()).flatMap(t => t.outputLines);
-    }
-    return Array.from(file.suites.values()).flatMap(s =>
-      Array.from(s.tests.values()).flatMap(t => t.outputLines)
-    );
+    // Suite or file scope — return file-level console output
+    return file.outputLines;
   }
 
   /** Returns all failure messages scoped to the given selection. */

@@ -322,6 +322,7 @@ body {
 }
 
 .log-line-warn { color: var(--vscode-charts-yellow, #cddc39); }
+.log-line-info { color: var(--vscode-descriptionForeground); }
 
 .error-block {
   margin-bottom: 12px;

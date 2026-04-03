@@ -37,6 +37,10 @@ export class TestExplorerProvider implements vscode.WebviewViewProvider {
       this.view = undefined;
     });
 
+    webviewView.onDidChangeVisibility(() => {
+      if (webviewView.visible) this._sendInit();
+    });
+
     webviewView.webview.onDidReceiveMessage((msg) => {
       switch (msg.type) {
         case 'ready':
