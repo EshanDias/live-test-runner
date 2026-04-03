@@ -6,25 +6,6 @@ import { SelectionState } from './SelectionState';
 import { TestExplorerProvider } from './TestExplorerProvider';
 import { TestResultsProvider } from './TestResultsProvider';
 
-// ── ANSI helpers ─────────────────────────────────────────────────────────────
-const C = {
-  reset:  '\u001b[0m',
-  bold:   '\u001b[1m',
-  green:  '\u001b[92m',
-  yellow: '\u001b[33m',
-  red:    '\u001b[31m',
-  cyan:   '\u001b[36m',
-};
-
-const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '');
-const LTR_PLAIN = '[Live Test Runner]';
-
-function colorDuration(ms: number): string {
-  if (ms >= 10_000) return `${C.red}${C.bold}${ms}ms ⚠${C.reset}`;
-  if (ms >= 3_000)  return `${C.yellow}${ms}ms${C.reset}`;
-  return `${C.green}${ms}ms${C.reset}`;
-}
-
 // ── Module-level singletons ───────────────────────────────────────────────────
 let testSession: TestSession | undefined;
 let statusBarItem: vscode.StatusBarItem;
@@ -36,24 +17,20 @@ let resultsProvider: TestResultsProvider;
 
 // ── Activate ──────────────────────────────────────────────────────────────────
 export function activate(context: vscode.ExtensionContext) {
-  // Status bar
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBarItem.command = 'liveTestRunner.startTesting';
   updateStatusBar('Off');
   statusBarItem.show();
 
-  // Raw output channel (ANSI)
-  outputChannel = vscode.window.createOutputChannel('Live Test Runner');
+  outputChannel = vscode.window.createOutputChannel('Live Test Runner', 'ansi');
 
-  // Core state
-  resultStore   = new ResultStore();
+  resultStore    = new ResultStore();
   selectionState = new SelectionState();
 
-  // Webview providers
   explorerProvider = new TestExplorerProvider(context.extensionUri, resultStore, selectionState);
   resultsProvider  = new TestResultsProvider(context.extensionUri, resultStore, selectionState);
 
-  // Wire: when selection changes, push scoped data to results panel
+  // When selection changes, push scoped data to results panel
   const origSelect = selectionState.select.bind(selectionState);
   selectionState.select = (sel) => {
     origSelect(sel);
@@ -61,28 +38,23 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   context.subscriptions.push(
-    // Webview providers
     vscode.window.registerWebviewViewProvider(TestExplorerProvider.viewId, explorerProvider),
     vscode.window.registerWebviewViewProvider(TestResultsProvider.viewId, resultsProvider),
 
-    // Commands
     vscode.commands.registerCommand('liveTestRunner.startTesting', startTesting),
     vscode.commands.registerCommand('liveTestRunner.stopTesting', stopTesting),
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot', selectProjectRoot),
     vscode.commands.registerCommand('liveTestRunner.showOutput', () => outputChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.rerunScope', rerunScope),
 
-    // On-save trigger
     vscode.workspace.onDidSaveTextDocument(onSave),
 
-    // Clean up on workspace change
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
       if (testSession) {
         testSession.stop();
         testSession = undefined;
         resultStore.clear();
         updateStatusBar('Off');
-        broadcast({ type: 'run-started', fileCount: 0 });
         broadcast({ type: 'run-finished', total: 0, passed: 0, failed: 0 });
       }
     }),
@@ -96,13 +68,12 @@ export function deactivate() {
   if (testSession) testSession.stop();
 }
 
-// ── Broadcast to both webviews ────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function broadcast(msg: unknown): void {
   explorerProvider.postMessage(msg);
   resultsProvider.postMessage(msg);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function getProjectRoot(): string | undefined {
   const configured = vscode.workspace.getConfiguration('liveTestRunner').get<string>('projectRoot');
   if (configured?.trim()) return configured.trim();
@@ -117,10 +88,6 @@ function getJestCommand(): string {
 
 function updateStatusBar(text: string) {
   statusBarItem.text = `Live Tests: ${text}`;
-}
-
-function log(msg: string) {
-  outputChannel.appendLine(`${LTR_PLAIN} ${msg}`);
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
@@ -139,22 +106,18 @@ async function startTesting() {
 
   outputChannel.show(true);
   outputChannel.appendLine('');
-  log('── Starting ──────────────────────────────────────────');
-  log(`Project root : ${projectRoot}`);
-  log(`Jest command : ${getJestCommand() || '(auto-detect)'}`);
+  outputChannel.appendLine(`[Live Test Runner] Starting — ${projectRoot}`);
 
-  const runner = new JestRunner(getJestCommand(), (msg) => outputChannel.appendLine(stripAnsi(msg)));
+  const runner = new JestRunner(getJestCommand(), (msg) => outputChannel.appendLine(msg));
   testSession = new TestSession(runner);
 
   try {
     updateStatusBar('Discovering…');
-    log('Discovering tests…');
 
     const testFiles = await runner.discoverTests(projectRoot);
-    log(`Found ${testFiles.length} test file(s)`);
+    outputChannel.appendLine(`[Live Test Runner] Found ${testFiles.length} test file(s)`);
 
     if (testFiles.length === 0) {
-      log('No test files found.');
       updateStatusBar('✅ Ready');
       testSession.activate();
       return;
@@ -165,7 +128,6 @@ async function startTesting() {
 
   } catch (error) {
     updateStatusBar('❌ Error');
-    log(`Error: ${error}`);
     vscode.window.showErrorMessage(`Failed to start testing: ${error}`);
   }
 }
@@ -199,7 +161,6 @@ async function selectProjectRoot() {
 async function rerunScope(args: { scope: string; fileId: string; suiteId?: string; testId?: string }) {
   const projectRoot = getProjectRoot();
   if (!projectRoot) return;
-  // For now, rerun the whole file — suite/test granularity can be added later
   await runFiles([args.fileId], projectRoot);
 }
 
@@ -229,7 +190,7 @@ async function onSave(document: vscode.TextDocument) {
       await runFiles(filesToRun, projectRoot);
     } catch (error) {
       updateStatusBar('✅ Ready');
-      log(`Error: ${(error as Error).message}`);
+      outputChannel.appendLine(`[Live Test Runner] Error: ${(error as Error).message}`);
     }
   }, debounceMs);
 }
@@ -242,28 +203,23 @@ async function runFiles(filePaths: string[], projectRoot: string): Promise<void>
   let numPassed = 0;
   let numFailed = 0;
 
-  // Mark all files as running in the store
   for (const fp of filePaths) {
-    const name = vscode.workspace.asRelativePath(fp);
-    resultStore.fileStarted(fp, fp, name);
+    resultStore.fileStarted(fp, fp, vscode.workspace.asRelativePath(fp));
   }
 
   broadcast({ type: 'run-started', fileCount: filePaths.length });
   updateStatusBar(`Running… 0/${filePaths.length}`);
-  log(`Running ${filePaths.length} test file(s)…`);
 
   const totalStart = Date.now();
 
   await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, filePaths.length) }, async () => {
-      const poolRunner = new JestRunner(getJestCommand(), (msg) => outputChannel.appendLine(stripAnsi(msg)));
+      const poolRunner = new JestRunner(getJestCommand(), (msg) => outputChannel.appendLine(msg));
       poolRunner.setProjectRoot(projectRoot);
 
       while (true) {
         const filePath = queue.shift();
         if (!filePath) break;
-
-        const relPath = vscode.workspace.asRelativePath(filePath);
 
         try {
           const jsonResult = await poolRunner.runTestFileJson(filePath);
@@ -271,68 +227,24 @@ async function runFiles(filePaths: string[], projectRoot: string): Promise<void>
 
           if (fileResult) {
             applyFileResultToStore(filePath, fileResult);
-
-            const statusTag = fileResult.status === 'passed'
-              ? `${C.green}${C.bold}PASS${C.reset}`
-              : `${C.red}${C.bold}FAIL${C.reset}`;
-            const dur = fileResult.duration;
-            const durationStr = dur != null && dur > 0 ? ` ${colorDuration(dur)}` : '';
-            log(`${statusTag} ${relPath}${durationStr}`);
-
             if (fileResult.status === 'passed') numPassed++; else numFailed++;
           } else {
-            const msg = jsonResult.errors.join('\n') || 'No results returned';
             resultStore.fileResult(filePath, 'failed');
-            log(`${C.red}${C.bold}ERROR${C.reset} ${relPath}: ${msg}`);
             numFailed++;
           }
         } catch (error) {
           resultStore.fileResult(filePath, 'failed');
-          log(`${C.red}ERROR${C.reset} ${relPath}: ${(error as Error).message}`);
           numFailed++;
         }
 
         completed++;
         updateStatusBar(`Running… ${completed}/${filePaths.length}`);
-
-        // Push full file tree to webviews
-        const fileData = resultStore.getFile(filePath);
-        const summary = resultStore.getSummary();
-        if (fileData) {
-          const fileJson = {
-            fileId: fileData.fileId,
-            filePath: fileData.filePath,
-            name: fileData.name,
-            status: fileData.status,
-            duration: fileData.duration,
-            suites: Array.from(fileData.suites.values()).map(s => ({
-              suiteId: s.suiteId,
-              name: s.name,
-              status: s.status,
-              duration: s.duration,
-              tests: Array.from(s.tests.values()).map(t => ({
-                testId: t.testId,
-                name: t.name,
-                status: t.status,
-                duration: t.duration,
-                failureMessages: t.failureMessages,
-              })),
-            })),
-          };
-          broadcast({
-            type: 'full-file-result',
-            file: fileJson,
-            total: summary.total,
-            passed: summary.passed,
-            failed: summary.failed,
-          });
-        }
+        broadcastFileResult(filePath);
       }
     })
   );
 
-  const totalDur = Date.now() - totalStart;
-  log(`Finished in ${colorDuration(totalDur)}`);
+  outputChannel.appendLine(`[Live Test Runner] Finished in ${Date.now() - totalStart}ms`);
 
   const summary = resultStore.getSummary();
   broadcast({ type: 'run-finished', total: summary.total, passed: summary.passed, failed: summary.failed });
@@ -344,12 +256,43 @@ async function runFiles(filePaths: string[], projectRoot: string): Promise<void>
   }
 }
 
+function broadcastFileResult(filePath: string): void {
+  const fileData = resultStore.getFile(filePath);
+  if (!fileData) return;
+  const summary = resultStore.getSummary();
+  broadcast({
+    type: 'full-file-result',
+    file: {
+      fileId: fileData.fileId,
+      filePath: fileData.filePath,
+      name: fileData.name,
+      status: fileData.status,
+      duration: fileData.duration,
+      suites: Array.from(fileData.suites.values()).map(s => ({
+        suiteId: s.suiteId,
+        name: s.name,
+        status: s.status,
+        duration: s.duration,
+        tests: Array.from(s.tests.values()).map(t => ({
+          testId: t.testId,
+          name: t.name,
+          status: t.status,
+          duration: t.duration,
+          failureMessages: t.failureMessages,
+        })),
+      })),
+    },
+    total: summary.total,
+    passed: summary.passed,
+    failed: summary.failed,
+  });
+}
+
 // ── Map JestFileResult into ResultStore ───────────────────────────────────────
 function applyFileResultToStore(filePath: string, fileResult: JestFileResult): void {
   const suiteCounters = new Map<string, number>();
 
   for (const tc of fileResult.testCases) {
-    // Build a stable suiteId from ancestor path
     const suiteKey = tc.ancestorTitles.join(' > ') || '(root)';
     const suiteId  = `${filePath}::${suiteKey}`;
 
@@ -369,8 +312,6 @@ function applyFileResultToStore(filePath: string, fileResult: JestFileResult): v
       tc.status === 'skipped' ? 'skipped' : 'pending';
 
     resultStore.testResult(filePath, suiteId, testId, status, tc.duration, tc.failureMessages ?? []);
-
-    // Store console output lines (Jest puts them in failureDetails — approximate as output)
   }
 
   // Roll up suite statuses
@@ -378,13 +319,11 @@ function applyFileResultToStore(filePath: string, fileResult: JestFileResult): v
   if (file) {
     for (const suite of file.suites.values()) {
       const tests = Array.from(suite.tests.values());
-      const hasFailed  = tests.some(t => t.status === 'failed');
-      const suiteStatus: TestStatus = hasFailed ? 'failed' : 'passed';
+      const suiteStatus: TestStatus = tests.some(t => t.status === 'failed') ? 'failed' : 'passed';
       const suiteDur = tests.reduce((acc, t) => acc + (t.duration ?? 0), 0);
       resultStore.suiteResult(filePath, suite.suiteId, suiteStatus, suiteDur);
     }
   }
 
-  const jestStatus: TestStatus = fileResult.status === 'passed' ? 'passed' : 'failed';
-  resultStore.fileResult(filePath, jestStatus, fileResult.duration);
+  resultStore.fileResult(filePath, fileResult.status === 'passed' ? 'passed' : 'failed', fileResult.duration);
 }
