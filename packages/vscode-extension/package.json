@@ -81,7 +81,17 @@
         "liveTestRunner.jestCommand": {
           "type": "string",
           "default": "",
-          "description": "Override the Jest command (e.g. 'node_modules/.bin/jest'). Leave empty to auto-detect from package.json scripts and node_modules."
+          "description": "Override the Jest command (e.g. 'node_modules/.bin/jest'). Leave empty to auto-detect from package.json scripts and node_modules. Only used when runMode is 'extension'."
+        },
+        "liveTestRunner.runMode": {
+          "type": "string",
+          "enum": ["auto", "npm"],
+          "enumDescriptions": [
+            "Extension manages Jest directly — full structured output, per-test durations, console capture.",
+            "Use the project's 'npm test' script — respects your package.json test setup but provides limited structured output."
+          ],
+          "default": "auto",
+          "description": "How tests are invoked. 'auto' (recommended): extension calls Jest directly with structured output. 'npm': delegates to 'npm test -- --json' from your package.json scripts."
         },
         "liveTestRunner.onSaveDebounceMs": {
           "type": "number",

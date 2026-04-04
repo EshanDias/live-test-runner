@@ -2,8 +2,8 @@
   "compilerOptions": {
     "target": "ES2020",
     "lib": ["ES2020"],
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "node16",
+    "moduleResolution": "node16",
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -15,9 +15,7 @@
     "sourceMap": true,
     "composite": true
   },
-  "references": [
-    { "path": "../runner" }
-  ],
+  "references": [{ "path": "../runner" }],
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

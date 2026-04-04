@@ -60,6 +60,7 @@ export class TestExplorerProvider implements vscode.WebviewViewProvider {
             fileId: msg.fileId,
             suiteId: msg.suiteId,
             testId: msg.testId,
+            fullName: msg.fullName,
           });
           break;
         case 'open-file':

@@ -13,5 +13,6 @@
     "@live-test-runner/core": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^25.5.1"
   }
 }
