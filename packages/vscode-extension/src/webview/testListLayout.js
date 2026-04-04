@@ -298,10 +298,12 @@ class TestListLayout {
 
     return `
       <div class="test-row level-folder" data-id="${esc(folderId)}" data-scope="folder"
-           style="padding-left: ${indentPx}px">
+           data-folder-path="${esc(node.path)}" style="padding-left: ${indentPx}px">
         ${toggle}
         <span class="row-folder-icon">⊿</span>
         <span class="row-name">${esc(node.name)}</span>
+        <button class="row-folder-collapse" title="Collapse folder" data-folder-path="${esc(node.path)}">⊟</button>
+        <button class="row-folder-expand"   title="Expand folder"   data-folder-path="${esc(node.path)}">⊞</button>
       </div>
       <div class="children ${isExpanded ? 'expanded' : ''}" data-children="${esc(folderId)}"
            style="--indent-offset: ${childIndentOffset}px">
@@ -417,7 +419,9 @@ class TestListLayout {
         if (
           e.target.closest('.row-rerun') ||
           e.target.closest('.row-open') ||
-          e.target.closest('.row-copy')
+          e.target.closest('.row-copy') ||
+          e.target.closest('.row-folder-collapse') ||
+          e.target.closest('.row-folder-expand')
         ) return;
 
         const id = row.dataset.id;
@@ -488,6 +492,53 @@ class TestListLayout {
         }).catch(() => {});
       });
     });
+
+    this.container.querySelectorAll('.row-folder-collapse, .row-folder-expand').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const folderPath = btn.dataset.folderPath;
+        const collapse = btn.classList.contains('row-folder-collapse');
+        this._setFolderSubtreeExpanded(folderPath, !collapse);
+        this._render();
+      });
+    });
+  }
+
+  /** Expand or collapse all folder and file IDs within a given folder subtree. */
+  _setFolderSubtreeExpanded(folderPath, expand) {
+    const prefix = folderPath + '/';
+    // All folder IDs at or below this path
+    for (const id of [...this.expanded]) {
+      if (id.startsWith('folder:' + folderPath)) {
+        if (!expand) this.expanded.delete(id);
+      }
+    }
+    if (expand) {
+      // Re-add this folder and all descendant folder/file IDs
+      this.expanded.add(`folder:${folderPath}`);
+      for (const file of this.data) {
+        const name = (file.name ?? '').replace(/\\/g, '/');
+        if (name.startsWith(prefix)) {
+          this.expanded.add(file.fileId);
+          for (const suite of file.suites ?? []) this.expanded.add(suite.suiteId);
+          this._expandFolderPaths(name);
+        }
+      }
+    } else {
+      // Collapse this folder and all descendants
+      this.expanded.delete(`folder:${folderPath}`);
+      for (const file of this.data) {
+        const name = (file.name ?? '').replace(/\\/g, '/');
+        if (name.startsWith(prefix)) {
+          this.expanded.delete(file.fileId);
+          for (const suite of file.suites ?? []) this.expanded.delete(suite.suiteId);
+        }
+      }
+      // Also remove any deeper folder IDs
+      for (const id of [...this.expanded]) {
+        if (id.startsWith(`folder:${prefix}`)) this.expanded.delete(id);
+      }
+    }
   }
 }
 

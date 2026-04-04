@@ -346,6 +346,8 @@ body {
 .row-duration.moderate { color: var(--vscode-charts-yellow, #cddc39); }
 .row-duration.slow { color: var(--vscode-charts-red, #f44336); }
 
+.row-folder-collapse,
+.row-folder-expand,
 .row-rerun,
 .row-open,
 .row-copy {
@@ -362,6 +364,8 @@ body {
   pointer-events: none;
 }
 
+.test-row:hover .row-folder-collapse,
+.test-row:hover .row-folder-expand,
 .test-row:hover .row-rerun,
 .test-row:hover .row-open,
 .test-row:hover .row-copy {
@@ -369,6 +373,8 @@ body {
   pointer-events: auto;
 }
 
+.row-folder-collapse:hover,
+.row-folder-expand:hover,
 .row-rerun:hover,
 .row-open:hover,
 .row-copy:hover {
