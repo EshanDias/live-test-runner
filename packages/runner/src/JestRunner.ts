@@ -284,9 +284,10 @@ export class JestRunner implements TestRunner {
   /** Args that every Jest invocation needs regardless of framework or mode. */
   private baseArgs(): string[] {
     return [
-      '--watchAll=false',  // prevent Jest from entering watch mode
-      '--forceExit',       // prevent Jest from hanging after completion
-      '--no-bail',         // always run all tests, never stop on first failure
+      '--watchAll=false',          // prevent Jest from entering watch mode
+      '--forceExit',               // prevent Jest from hanging after completion
+      '--no-bail',                 // always run all tests, never stop on first failure
+      '--testLocationInResults',   // populate location.line in JSON output (needed for gutter decorations)
     ];
   }
 
