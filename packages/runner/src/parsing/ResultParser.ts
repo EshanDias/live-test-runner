@@ -40,6 +40,9 @@ export class ResultParser {
               // Backfill duration from stderr when JSON omits it
               duration: this.computeTestCaseDuration(tc, stderrDurations),
               failureMessages: this.stripStackTraces(tc.failureMessages) ?? [],
+              location: tc.location != null
+                ? { line: tc.location.line, column: tc.location.column ?? 0 }
+                : undefined,
             }),
           );
 

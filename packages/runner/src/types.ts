@@ -20,6 +20,8 @@ export interface JestTestCaseResult {
   status: 'passed' | 'failed' | 'pending' | 'todo' | 'skipped';
   duration?: number;
   failureMessages: string[];
+  /** Source location reported by Jest (1-based line number) */
+  location?: { line: number; column: number };
 }
 
 export interface JestConsoleEntry {

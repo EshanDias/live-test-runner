@@ -5,6 +5,14 @@
  * All IDs are stable string keys derived from file path / suite name / test name.
  */
 
+export type LineEntry = {
+  testId:   string;
+  suiteId:  string;
+  fileId:   string;
+  status:   'passed' | 'failed' | 'running' | 'pending';
+  duration: number | null;
+};
+
 export type TestStatus =
   | 'pending'
   | 'running'
@@ -61,11 +69,34 @@ export interface FileResult {
 
 export class ResultStore {
   private files: Map<string, FileResult> = new Map();
+  // key: absolute filePath → Map<1-based lineNumber, LineEntry>
+  private _lineMap: Map<string, Map<number, LineEntry>> = new Map();
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   clear(): void {
     this.files.clear();
+  }
+
+  // ── LineMap ────────────────────────────────────────────────────────────────
+
+  setLineEntry(filePath: string, line: number, entry: LineEntry): void {
+    if (!this._lineMap.has(filePath)) {
+      this._lineMap.set(filePath, new Map());
+    }
+    this._lineMap.get(filePath)!.set(line, entry);
+  }
+
+  getLineMap(filePath: string): Map<number, LineEntry> {
+    return this._lineMap.get(filePath) ?? new Map();
+  }
+
+  clearLineMap(filePath: string): void {
+    this._lineMap.delete(filePath);
+  }
+
+  clearAllLineMaps(): void {
+    this._lineMap.clear();
   }
 
   fileStarted(fileId: string, filePath: string, name: string): void {

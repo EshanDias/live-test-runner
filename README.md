@@ -30,10 +30,12 @@ packages/
 └── vscode-extension/   # The VS Code extension
     └── src/
         ├── extension.ts                      # Entry point, commands, on-save handler
-        ├── ResultStore.ts                    # In-memory test result state
+        ├── ResultStore.ts                    # In-memory test result state + LineMap
         ├── SelectionState.ts                 # Explorer selection tracking
         ├── TestExplorerProvider.ts           # Webview: file/suite/test tree
         ├── TestResultsProvider.ts            # Webview: detail panel (3-column)
+        ├── EditorDecorationManager.ts        # Gutter icons and inline duration text
+        ├── CodeLensProvider.ts               # ▶ Run / ▷ Debug / ◈ Results CodeLens
         └── webview/
             ├── results.html                  # Test Results panel UI
             ├── explorer.html                 # Test Explorer sidebar UI

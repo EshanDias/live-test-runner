@@ -68,6 +68,18 @@
         "command": "liveTestRunner.showOutput",
         "title": "Show Raw Output",
         "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.rerunFromEditor",
+        "title": "Live Test Runner: Rerun Test at Line"
+      },
+      {
+        "command": "liveTestRunner.debugFromEditor",
+        "title": "Live Test Runner: Debug Test at Line"
+      },
+      {
+        "command": "liveTestRunner.focusResult",
+        "title": "Live Test Runner: Focus Test in Results Panel"
       }
     ],
     "configuration": {

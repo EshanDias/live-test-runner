@@ -7,10 +7,13 @@ import {
   OutputLevel,
   OutputLine,
   ScopedOutput,
+  LineEntry,
 } from './ResultStore';
 import { SelectionState } from './SelectionState';
 import { TestExplorerProvider } from './TestExplorerProvider';
 import { TestResultsProvider } from './TestResultsProvider';
+import { EditorDecorationManager } from './EditorDecorationManager';
+import { LiveTestCodeLensProvider } from './CodeLensProvider';
 
 // ── Module-level singletons ───────────────────────────────────────────────────
 let testSession: TestSession | undefined;
@@ -20,9 +23,14 @@ let resultStore: ResultStore;
 let selectionState: SelectionState;
 let explorerProvider: TestExplorerProvider;
 let resultsProvider: TestResultsProvider;
+let decorationManager: EditorDecorationManager;
+let codeLensProvider: LiveTestCodeLensProvider;
+let codeLensDisposable: vscode.Disposable | undefined;
+let extensionContext: vscode.ExtensionContext;
 
 // ── Activate ──────────────────────────────────────────────────────────────────
 export function activate(context: vscode.ExtensionContext) {
+  extensionContext = context;
   statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     100,
@@ -35,6 +43,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   resultStore = new ResultStore();
   selectionState = new SelectionState();
+  decorationManager = new EditorDecorationManager(resultStore, context);
+  codeLensProvider  = new LiveTestCodeLensProvider(resultStore);
 
   explorerProvider = new TestExplorerProvider(
     context.extensionUri,
@@ -77,6 +87,22 @@ export function activate(context: vscode.ExtensionContext) {
       outputChannel.show(),
     ),
     vscode.commands.registerCommand('liveTestRunner.rerunScope', rerunScope),
+    vscode.commands.registerCommand(
+      'liveTestRunner.rerunFromEditor',
+      rerunFromEditor,
+    ),
+    vscode.commands.registerCommand(
+      'liveTestRunner.debugFromEditor',
+      debugFromEditor,
+    ),
+    vscode.commands.registerCommand(
+      'liveTestRunner.focusResult',
+      focusResult,
+    ),
+
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) { decorationManager.applyToEditor(editor); }
+    }),
 
     vscode.workspace.onDidSaveTextDocument(onSave),
 
@@ -123,6 +149,13 @@ function getJestCommand(): string {
     return 'npm test --';
   }
   return cfg.get<string>('jestCommand') || '';
+}
+
+function getTestFileGlob(): vscode.GlobPattern {
+  const patterns = vscode.workspace
+    .getConfiguration('liveTestRunner')
+    .get<string[]>('testFilePatterns') ?? ['**/*.test.*', '**/*.spec.*'];
+  return `{${patterns.join(',')}}`;
 }
 
 function updateStatusBar(text: string) {
@@ -172,6 +205,19 @@ async function startTesting() {
 
     testSession.activate();
     broadcast({ type: 'session-started' });
+
+    // Register CodeLens for test files while session is active
+    codeLensDisposable = vscode.languages.registerCodeLensProvider(
+      { scheme: 'file', pattern: getTestFileGlob() },
+      codeLensProvider,
+    );
+    extensionContext.subscriptions.push(codeLensDisposable);
+
+    // Apply decorations to any already-open editors
+    for (const editor of vscode.window.visibleTextEditors) {
+      decorationManager.applyToEditor(editor);
+    }
+
     await runFiles(testFiles, projectRoot, true);
   } catch (error) {
     updateStatusBar('❌ Error');
@@ -184,6 +230,11 @@ function stopTesting() {
     testSession.stop();
     testSession = undefined;
   }
+  decorationManager.dispose();
+  resultStore.clearAllLineMaps();
+  codeLensProvider.refresh();
+  codeLensDisposable?.dispose();
+  codeLensDisposable = undefined;
   updateStatusBar('Off');
   broadcast({ type: 'session-stopped' });
 }
@@ -324,6 +375,7 @@ async function runFiles(
   }
 
   if (isFullSuite) {
+    resultStore.clearAllLineMaps();
     // Wipe the whole results tree for a fresh full run — include pending file list
     // so both the explorer and results panel can pre-populate before tests complete
     broadcast({
@@ -550,6 +602,95 @@ function applyFileResultToStore(
     fileResult.status === 'passed' ? 'passed' : 'failed',
     fileResult.duration,
   );
+
+  // ── Populate LineMap from location data ──────────────────────────────────
+  resultStore.clearLineMap(filePath);
+  for (const tc of fileResult.testCases) {
+    if (tc.location?.line == null) { continue; }
+    const suiteKey = tc.ancestorTitles.join(' > ') || '(root)';
+    const suiteId  = `${filePath}::${suiteKey}`;
+    const testId   = `${suiteId}::${tc.fullName || tc.title}`;
+    const lineStatus: LineEntry['status'] =
+      tc.status === 'passed' ? 'passed'
+      : tc.status === 'failed' ? 'failed'
+      : 'pending';
+    resultStore.setLineEntry(filePath, tc.location.line, {
+      testId,
+      suiteId,
+      fileId:   filePath,
+      status:   lineStatus,
+      duration: tc.duration ?? null,
+    });
+  }
+
+  // Refresh decorations for any visible editor showing this file
+  for (const editor of vscode.window.visibleTextEditors) {
+    if (editor.document.uri.fsPath === filePath) {
+      decorationManager.applyToEditor(editor);
+    }
+  }
+  codeLensProvider.refresh();
+}
+
+// ── Editor CodeLens commands ──────────────────────────────────────────────────
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function rerunFromEditor(filePath: string, line: number): void {
+  const projectRoot = getProjectRoot();
+  if (!projectRoot) { return; }
+  const entry = resultStore.getLineMap(filePath).get(line);
+  if (!entry) {
+    runFiles([filePath], projectRoot);
+    return;
+  }
+  const test = resultStore.getTest(entry.fileId, entry.suiteId, entry.testId);
+  if (test) {
+    rerunScope({
+      scope:    'test',
+      fileId:   entry.fileId,
+      suiteId:  entry.suiteId,
+      testId:   entry.testId,
+      fullName: test.fullName,
+    });
+  } else {
+    runFiles([filePath], projectRoot);
+  }
+}
+
+async function debugFromEditor(filePath: string, line: number): Promise<void> {
+  const projectRoot = getProjectRoot();
+  if (!projectRoot) { return; }
+  const entry  = resultStore.getLineMap(filePath).get(line);
+  const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(filePath));
+
+  const args: string[] = [filePath];
+  if (entry) {
+    const test = resultStore.getTest(entry.fileId, entry.suiteId, entry.testId);
+    if (test) {
+      args.push('--testNamePattern', escapeRegex(test.fullName));
+    }
+  }
+  args.push('--runInBand', '--no-coverage');
+
+  await vscode.debug.startDebugging(folder, {
+    type:      'node',
+    request:   'launch',
+    name:      'Debug Jest test',
+    program:   '${workspaceFolder}/node_modules/.bin/jest',
+    args,
+    cwd:       projectRoot,
+    console:   'integratedTerminal',
+    skipFiles: ['<node_internals>/**'],
+  });
+}
+
+function focusResult(fileId: string, suiteId: string, testId: string): void {
+  vscode.commands.executeCommand('liveTestRunner.results.focus');
+  selectionState.select({ scope: 'test', fileId, suiteId, testId });
+  resultsProvider.postMessage({ type: 'scope-changed', scope: 'test', fileId, suiteId, testId });
 }
 
 function buildOutputLines(
