@@ -44,7 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
   resultStore = new ResultStore();
   selectionState = new SelectionState();
   decorationManager = new EditorDecorationManager(resultStore, context);
-  codeLensProvider  = new LiveTestCodeLensProvider(resultStore);
+  codeLensProvider = new LiveTestCodeLensProvider(resultStore);
 
   explorerProvider = new TestExplorerProvider(
     context.extensionUri,
@@ -95,13 +95,12 @@ export function activate(context: vscode.ExtensionContext) {
       'liveTestRunner.debugFromEditor',
       debugFromEditor,
     ),
-    vscode.commands.registerCommand(
-      'liveTestRunner.focusResult',
-      focusResult,
-    ),
+    vscode.commands.registerCommand('liveTestRunner.focusResult', focusResult),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-      if (editor) { decorationManager.applyToEditor(editor); }
+      if (editor) {
+        decorationManager.applyToEditor(editor);
+      }
     }),
 
     vscode.workspace.onDidSaveTextDocument(onSave),
@@ -604,21 +603,29 @@ function applyFileResultToStore(
   );
 
   // ── Populate LineMap from location data ──────────────────────────────────
-  resultStore.clearLineMap(filePath);
+  // Only clear the full map on a whole-file run. Scoped reruns only have the
+  // rerun test in fileResult.testCases — clearing would wipe all other entries.
+  if (!selectedSuiteId && !selectedTestId) {
+    resultStore.clearLineMap(filePath);
+  }
   for (const tc of fileResult.testCases) {
-    if (tc.location?.line == null) { continue; }
+    if (tc.location?.line == null) {
+      continue;
+    }
     const suiteKey = tc.ancestorTitles.join(' > ') || '(root)';
-    const suiteId  = `${filePath}::${suiteKey}`;
-    const testId   = `${suiteId}::${tc.fullName || tc.title}`;
+    const suiteId = `${filePath}::${suiteKey}`;
+    const testId = `${suiteId}::${tc.fullName || tc.title}`;
     const lineStatus: LineEntry['status'] =
-      tc.status === 'passed' ? 'passed'
-      : tc.status === 'failed' ? 'failed'
-      : 'pending';
+      tc.status === 'passed'
+        ? 'passed'
+        : tc.status === 'failed'
+          ? 'failed'
+          : 'pending';
     resultStore.setLineEntry(filePath, tc.location.line, {
       testId,
       suiteId,
-      fileId:   filePath,
-      status:   lineStatus,
+      fileId: filePath,
+      status: lineStatus,
       duration: tc.duration ?? null,
     });
   }
@@ -640,19 +647,21 @@ function escapeRegex(str: string): string {
 
 function rerunFromEditor(filePath: string, line: number): void {
   const projectRoot = getProjectRoot();
-  if (!projectRoot) { return; }
+  if (!projectRoot) {
+    return;
+  }
   const entry = resultStore.getLineMap(filePath).get(line);
-  if (!entry) {
+  if (entry === null || entry === undefined) {
     runFiles([filePath], projectRoot);
     return;
   }
   const test = resultStore.getTest(entry.fileId, entry.suiteId, entry.testId);
   if (test) {
     rerunScope({
-      scope:    'test',
-      fileId:   entry.fileId,
-      suiteId:  entry.suiteId,
-      testId:   entry.testId,
+      scope: 'test',
+      fileId: entry.fileId,
+      suiteId: entry.suiteId,
+      testId: entry.testId,
       fullName: test.fullName,
     });
   } else {
@@ -662,8 +671,10 @@ function rerunFromEditor(filePath: string, line: number): void {
 
 async function debugFromEditor(filePath: string, line: number): Promise<void> {
   const projectRoot = getProjectRoot();
-  if (!projectRoot) { return; }
-  const entry  = resultStore.getLineMap(filePath).get(line);
+  if (!projectRoot) {
+    return;
+  }
+  const entry = resultStore.getLineMap(filePath).get(line);
   const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(filePath));
 
   const args: string[] = [filePath];
@@ -676,13 +687,13 @@ async function debugFromEditor(filePath: string, line: number): Promise<void> {
   args.push('--runInBand', '--no-coverage');
 
   await vscode.debug.startDebugging(folder, {
-    type:      'node',
-    request:   'launch',
-    name:      'Debug Jest test',
-    program:   '${workspaceFolder}/node_modules/.bin/jest',
+    type: 'node',
+    request: 'launch',
+    name: 'Debug Jest test',
+    program: '${workspaceFolder}/node_modules/.bin/jest',
     args,
-    cwd:       projectRoot,
-    console:   'integratedTerminal',
+    cwd: projectRoot,
+    console: 'integratedTerminal',
     skipFiles: ['<node_internals>/**'],
   });
 }
@@ -690,7 +701,13 @@ async function debugFromEditor(filePath: string, line: number): Promise<void> {
 function focusResult(fileId: string, suiteId: string, testId: string): void {
   vscode.commands.executeCommand('liveTestRunner.results.focus');
   selectionState.select({ scope: 'test', fileId, suiteId, testId });
-  resultsProvider.postMessage({ type: 'scope-changed', scope: 'test', fileId, suiteId, testId });
+  resultsProvider.postMessage({
+    type: 'scope-changed',
+    scope: 'test',
+    fileId,
+    suiteId,
+    testId,
+  });
 }
 
 function buildOutputLines(
