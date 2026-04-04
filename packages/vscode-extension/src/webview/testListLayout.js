@@ -300,7 +300,6 @@ class TestListLayout {
       <div class="test-row level-folder" data-id="${esc(folderId)}" data-scope="folder"
            data-folder-path="${esc(node.path)}" style="padding-left: ${indentPx}px">
         ${toggle}
-        <span class="row-folder-icon">⊿</span>
         <span class="row-name">${esc(node.name)}</span>
         <button class="row-folder-collapse" title="Collapse folder" data-folder-path="${esc(node.path)}">⊟</button>
         <button class="row-folder-expand"   title="Expand folder"   data-folder-path="${esc(node.path)}">⊞</button>

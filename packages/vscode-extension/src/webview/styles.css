@@ -306,8 +306,6 @@ body {
 .test-row.level-suite { padding-left: calc(24px + var(--indent-offset, 0px)); }
 .test-row.level-test  { padding-left: calc(36px + var(--indent-offset, 0px)); }
 
-.row-folder-icon { font-size: 11px; margin-right: 2px; flex-shrink: 0; }
-
 .row-toggle {
   width: 14px;
   flex-shrink: 0;
