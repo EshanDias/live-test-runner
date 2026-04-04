@@ -430,7 +430,20 @@ class TestListLayout {
         const suiteId = row.dataset.suite;
         const testId = row.dataset.test;
 
-        // Toggle expand/collapse ONLY when the arrow toggle is clicked
+        // Folder rows toggle on any click (whole row acts as toggle)
+        if (scope === 'folder') {
+          const childEl = this.container.querySelector(`[data-children="${CSS.escape(id)}"]`);
+          if (childEl) {
+            const isNowExpanded = !childEl.classList.contains('expanded');
+            childEl.classList.toggle('expanded', isNowExpanded);
+            row.querySelector('.row-toggle')?.classList.toggle('expanded', isNowExpanded);
+            if (isNowExpanded) this.expanded.add(id);
+            else this.expanded.delete(id);
+          }
+          return;
+        }
+
+        // For file/suite rows, toggle expand/collapse ONLY when the arrow is clicked
         if (scope !== 'test' && e.target.closest('.row-toggle')) {
           const childEl = this.container.querySelector(
             `[data-children="${CSS.escape(id)}"]`,
@@ -443,12 +456,7 @@ class TestListLayout {
             if (isNowExpanded) this.expanded.add(id);
             else this.expanded.delete(id);
           }
-          // Folder rows: toggle only, no selection
-          if (scope === 'folder') return;
         }
-
-        // Folder rows are not selectable
-        if (scope === 'folder') return;
 
         // Highlight selected row and notify extension
         this.container

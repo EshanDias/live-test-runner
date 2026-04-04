@@ -300,8 +300,8 @@ body {
 .test-row.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
 
 /* --indent-offset is set by folder-view .children wrappers to shift nested rows */
-.test-row.level-folder { padding-left: 12px; color: var(--vscode-descriptionForeground); }
-.test-row.level-folder:hover { background: var(--vscode-list-hoverBackground); cursor: default; }
+.test-row.level-folder { padding-left: 12px; color: var(--vscode-descriptionForeground); cursor: pointer; }
+.test-row.level-folder:hover { background: var(--vscode-list-hoverBackground); }
 .test-row.level-file  { padding-left: calc(12px + var(--indent-offset, 0px)); font-weight: 500; }
 .test-row.level-suite { padding-left: calc(24px + var(--indent-offset, 0px)); }
 .test-row.level-test  { padding-left: calc(36px + var(--indent-offset, 0px)); }
