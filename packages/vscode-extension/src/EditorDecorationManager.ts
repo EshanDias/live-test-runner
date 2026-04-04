@@ -63,17 +63,22 @@ export class EditorDecorationManager {
     };
 
     for (const [line, entry] of lineMap) {
+      // Read status and duration live from the result tree — LineEntry is identity only
+      const test     = this._store.getTest(entry.fileId, entry.suiteId, entry.testId);
+      const status   = test?.status ?? 'pending';
+      const duration = test?.duration ?? null;
+
       const range = new vscode.Range(line - 1, 0, line - 1, 0);
 
-      const durationText = entry.duration != null
-        ? `  ${durationLabel(entry.duration)}`
+      const durationText = duration != null && status !== 'running'
+        ? `  ${durationLabel(duration)}`
         : '';
 
-      const durationColor = entry.duration == null
+      const durationColor = duration == null
         ? ''
-        : entry.duration < DURATION_THRESHOLDS.amber
+        : duration < DURATION_THRESHOLDS.amber
           ? 'var(--vscode-terminal-ansiGreen)'
-          : entry.duration < DURATION_THRESHOLDS.red
+          : duration < DURATION_THRESHOLDS.red
             ? 'var(--vscode-terminal-ansiYellow)'
             : 'var(--vscode-terminal-ansiRed)';
 
@@ -89,7 +94,7 @@ export class EditorDecorationManager {
         },
       };
 
-      buckets[entry.status]?.push(decoration);
+      buckets[status]?.push(decoration);
     }
 
     for (const [state, opts] of Object.entries(buckets)) {

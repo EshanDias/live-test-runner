@@ -7,7 +7,6 @@ import {
   OutputLevel,
   OutputLine,
   ScopedOutput,
-  LineEntry,
 } from './ResultStore';
 import { SelectionState } from './SelectionState';
 import { TestExplorerProvider } from './TestExplorerProvider';
@@ -285,7 +284,8 @@ async function rerunScope(args: {
       suiteId: args.suiteId,
       testId: args.testId,
     });
-    markLineMapRunning(args.fileId);
+    resultStore.markTestsRunning(args.fileId);
+    refreshDecorations(args.fileId);
     updateStatusBar('Running… 1/1');
     try {
       const jsonResult = await runner.runTestCaseJson(
@@ -372,7 +372,8 @@ async function runFiles(
   for (const fp of filePaths) {
     const name = vscode.workspace.asRelativePath(fp);
     resultStore.fileStarted(fp, fp, name);
-    markLineMapRunning(fp);
+    resultStore.markTestsRunning(fp);
+    refreshDecorations(fp);
   }
 
   if (isFullSuite) {
@@ -619,18 +620,10 @@ function applyFileResultToStore(
     const suiteKey = tc.ancestorTitles.join(' > ') || '(root)';
     const suiteId = `${filePath}::${suiteKey}`;
     const testId = `${suiteId}::${tc.fullName || tc.title}`;
-    const lineStatus: LineEntry['status'] =
-      tc.status === 'passed'
-        ? 'passed'
-        : tc.status === 'failed'
-          ? 'failed'
-          : 'pending';
     resultStore.setLineEntry(filePath, tc.location.line, {
       testId,
       suiteId,
       fileId: filePath,
-      status: lineStatus,
-      duration: tc.duration ?? null,
     });
   }
 
@@ -714,11 +707,7 @@ function focusResult(fileId: string, suiteId: string, testId: string): void {
   });
 }
 
-function markLineMapRunning(filePath: string): void {
-  const lineMap = resultStore.getLineMap(filePath);
-  for (const [line, entry] of lineMap) {
-    resultStore.setLineEntry(filePath, line, { ...entry, status: 'running' });
-  }
+function refreshDecorations(filePath: string): void {
   for (const editor of vscode.window.visibleTextEditors) {
     if (editor.document.uri.fsPath === filePath) {
       decorationManager.applyToEditor(editor);

@@ -5,12 +5,11 @@
  * All IDs are stable string keys derived from file path / suite name / test name.
  */
 
+/** Location index only — status and duration are read live from the result tree. */
 export type LineEntry = {
-  testId:   string;
-  suiteId:  string;
-  fileId:   string;
-  status:   'passed' | 'failed' | 'running' | 'pending';
-  duration: number | null;
+  testId:  string;
+  suiteId: string;
+  fileId:  string;
 };
 
 export type TestStatus =
@@ -99,6 +98,18 @@ export class ResultStore {
 
   clearAllLineMaps(): void {
     this._lineMap.clear();
+  }
+
+  /** Set all tests in a file to 'running' so the editor decorations show the spinner. */
+  markTestsRunning(filePath: string): void {
+    const file = this.files.get(filePath);
+    if (!file) { return; }
+    for (const suite of file.suites.values()) {
+      suite.status = 'running';
+      for (const test of suite.tests.values()) {
+        test.status = 'running';
+      }
+    }
   }
 
   fileStarted(fileId: string, filePath: string, name: string): void {
