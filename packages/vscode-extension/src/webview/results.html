@@ -23,6 +23,15 @@
       <input class="search-input" id="searchInput" type="text" placeholder="🔍 Filter…" autocomplete="off">
       <button class="search-clear" id="searchClear" title="Clear">✕</button>
     </div>
+    <div class="list-toolbar" id="listToolbar" style="padding: 0 8px 4px;">
+      <span class="list-toolbar-label" id="listCount"></span>
+      <div class="list-toolbar-actions">
+        <button class="toolbar-icon-btn" id="btnFailuresOnly" title="Show failures only" data-active="false">✗</button>
+        <button class="toolbar-icon-btn" id="btnCollapseAll" title="Collapse all">⊟</button>
+        <button class="toolbar-icon-btn" id="btnExpandAll" title="Expand all">⊞</button>
+        <button class="toolbar-icon-btn" id="btnFolderView" title="Toggle folder view" data-active="false">⊿</button>
+      </div>
+    </div>
     <div class="test-list" id="testList" style="flex:1; overflow-y:auto;"></div>
   </div>
 
@@ -61,6 +70,35 @@
 
   let activeTab = 'all';
   let autoScroll = true;
+  let showFailuresOnly = false;
+  let showFolderView = false;
+
+  // ── List toolbar ───────────────────────────────────────────────────────────
+  const listCount       = document.getElementById('listCount');
+  const btnFailuresOnly = document.getElementById('btnFailuresOnly');
+  const btnCollapseAll  = document.getElementById('btnCollapseAll');
+  const btnExpandAll    = document.getElementById('btnExpandAll');
+  const btnFolderView   = document.getElementById('btnFolderView');
+
+  function updateListCount() {
+    const total = list.data.length;
+    listCount.textContent = total > 0 ? `${total} file${total !== 1 ? 's' : ''}` : '';
+  }
+
+  btnFailuresOnly.addEventListener('click', () => {
+    showFailuresOnly = !showFailuresOnly;
+    btnFailuresOnly.dataset.active = String(showFailuresOnly);
+    btnFailuresOnly.title = showFailuresOnly ? 'Show all tests' : 'Show failures only';
+    list.setFailuresOnly(showFailuresOnly);
+  });
+  btnCollapseAll.addEventListener('click', () => list.collapseAll());
+  btnExpandAll.addEventListener('click', () => list.expandAll());
+  btnFolderView.addEventListener('click', () => {
+    showFolderView = !showFolderView;
+    btnFolderView.dataset.active = String(showFolderView);
+    btnFolderView.title = showFolderView ? 'Switch to flat list' : 'Toggle folder view';
+    list.setFolderView(showFolderView);
+  });
 
   // ── Log tabs ───────────────────────────────────────────────────────────────
   document.querySelectorAll('.log-tab').forEach(tab => {
@@ -241,13 +279,14 @@
 
       case 'init':
         list.setData(msg.files ?? []);
+        updateListCount();
         break;
 
       case 'run-started':
-        // Full suite run — clear columns 2 & 3
+        // Full suite run — pre-populate with pending files, clear columns 2 & 3
         renderLogSections([]);
         renderErrorSections([]);
-        list.setData([]);
+        if (msg.files) { list.setData(msg.files); updateListCount(); }
         break;
 
       case 'files-rerunning':
@@ -260,6 +299,7 @@
       case 'full-file-result':
         // Drives column 1 only
         list.updateFile(msg.file);
+        updateListCount();
         break;
 
       case 'scope-changed':

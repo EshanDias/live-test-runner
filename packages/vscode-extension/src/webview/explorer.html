@@ -75,6 +75,7 @@
       <button class="toolbar-icon-btn" id="btnFailuresOnly" title="Show failures only" data-active="false">✗</button>
       <button class="toolbar-icon-btn" id="btnCollapseAll" title="Collapse all">⊟</button>
       <button class="toolbar-icon-btn" id="btnExpandAll" title="Expand all">⊞</button>
+      <button class="toolbar-icon-btn" id="btnFolderView" title="Toggle folder view" data-active="false">⊿</button>
     </div>
   </div>
 
@@ -110,6 +111,7 @@
   const btnCollapseAll  = document.getElementById('btnCollapseAll');
   const btnExpandAll    = document.getElementById('btnExpandAll');
   const btnFailuresOnly = document.getElementById('btnFailuresOnly');
+  const btnFolderView   = document.getElementById('btnFolderView');
   const emptyState      = document.getElementById('emptyState');
   const listToolbar     = document.getElementById('listToolbar');
 
@@ -120,6 +122,7 @@
   // 'idle' | 'running' | 'watching'
   let sessionState = 'idle';
   let showFailuresOnly = false;
+  let showFolderView = false;
 
   // ── Session state → button visibility ────────────────────────────────────────
   function applySessionState(state) {
@@ -195,6 +198,13 @@
     list.setFailuresOnly(showFailuresOnly);
   });
 
+  btnFolderView.addEventListener('click', () => {
+    showFolderView = !showFolderView;
+    btnFolderView.dataset.active = String(showFolderView);
+    btnFolderView.title = showFolderView ? 'Switch to flat list' : 'Toggle folder view';
+    list.setFolderView(showFolderView);
+  });
+
   // ── Messages from extension ───────────────────────────────────────────────────
   window.addEventListener('message', (event) => {
     const msg = event.data;
@@ -224,6 +234,7 @@
         runProgress.classList.add('visible');
         applySessionState('running');
         updateSummary(null, null, null, null);
+        if (msg.files) { list.setData(msg.files); updateListCount(); }
         break;
 
       case 'run-finished':
@@ -252,18 +263,18 @@
 
       case 'file-result':
         completedFiles++;
-        const elapsed = ((Date.now() - runStartTime) / 1000).toFixed(1);
+        const elapsed = ((Date.now() - runStartTime)).toFixed(1);
         const failedStr = failedDuringRun > 0 ? ` • ${failedDuringRun} failed` : '';
-        runProgress.textContent = `Running — ${completedFiles} / ${totalFiles} files • ${elapsed}s${failedStr}`;
+        runProgress.textContent = `Running — ${completedFiles} / ${totalFiles} files • ${durationLabel(elapsed)}${failedStr}`;
         list.updateFile({ ...list.data.find(f => f.fileId === msg.fileId), status: msg.status, duration: msg.duration });
         break;
 
       case 'full-file-result':
         completedFiles++;
         if (msg.file.status === 'failed') failedDuringRun++;
-        const el2 = ((Date.now() - runStartTime) / 1000).toFixed(1);
+        const el2 = ((Date.now() - runStartTime)).toFixed(1);
         const fl2 = failedDuringRun > 0 ? ` • <span class="progress-failed">${failedDuringRun} failed</span>` : '';
-        runProgress.innerHTML = `Running — ${completedFiles} / ${totalFiles} files • ${el2}s${fl2}`;
+        runProgress.innerHTML = `Running — ${completedFiles} / ${totalFiles} files • ${durationLabel(el2)}${fl2}`;
         list.updateFile(msg.file);
         updateSummary(msg.total, msg.passed, msg.failed);
         break;

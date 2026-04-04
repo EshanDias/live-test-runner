@@ -50,6 +50,11 @@ function durationLabel(ms) {
   return parts.join(' ');
 }
 
+function basename(p) {
+  if (!p) return p;
+  return p.replace(/\\/g, '/').split('/').pop() ?? p;
+}
+
 const STATUS_ICON = {
   running: '<span class="status-running">⟳</span>',
   passed: '<span class="status-passed">✓</span>',
@@ -71,21 +76,16 @@ class TestListLayout {
     this.query = ''; // active search filter
     this.selectedId = null; // selected row key
     this.selectedFileId = null; // fileId of the selected row (any level)
-    this.expanded = new Set(); // expanded file/suite IDs
+    this.expanded = new Set(); // expanded file/suite/folder IDs
     this.failuresOnly = false;
+    this.folderView = false;
     this._render();
   }
 
   /** Replace the full data tree and re-render. */
   setData(files) {
     this.data = files;
-    // Auto-expand all files so suites and tests are visible by default
-    for (const file of files) {
-      this.expanded.add(file.fileId);
-      for (const suite of file.suites ?? []) {
-        this.expanded.add(suite.suiteId);
-      }
-    }
+    this._autoExpand(files);
     this._render();
   }
 
@@ -102,6 +102,7 @@ class TestListLayout {
     for (const suite of fileData.suites ?? []) {
       this.expanded.add(suite.suiteId);
     }
+    this._expandFolderPaths(fileData.name);
     this._render();
   }
 
@@ -112,6 +113,11 @@ class TestListLayout {
 
   setFailuresOnly(on) {
     this.failuresOnly = on;
+    this._render();
+  }
+
+  setFolderView(on) {
+    this.folderView = on;
     this._render();
   }
 
@@ -126,6 +132,7 @@ class TestListLayout {
       for (const suite of file.suites ?? []) {
         this.expanded.add(suite.suiteId);
       }
+      this._expandFolderPaths(file.name);
     }
     this._render();
   }
@@ -175,12 +182,36 @@ class TestListLayout {
     this.scrollToSelected();
   }
 
+  // ── Private helpers ──────────────────────────────────────────────────────
+
+  _autoExpand(files) {
+    for (const file of files) {
+      this.expanded.add(file.fileId);
+      for (const suite of file.suites ?? []) {
+        this.expanded.add(suite.suiteId);
+      }
+      this._expandFolderPaths(file.name);
+    }
+  }
+
+  /** Add all ancestor folder path keys for a given relative file name. */
+  _expandFolderPaths(name) {
+    if (!name) return;
+    const parts = name.replace(/\\/g, '/').split('/');
+    let p = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      p = p ? `${p}/${parts[i]}` : parts[i];
+      this.expanded.add(`folder:${p}`);
+    }
+  }
+
   _matches(name) {
     return !this.query || name.toLowerCase().includes(this.query);
   }
 
   _fileMatches(file) {
     if (this._matches(file.name)) return true;
+    if (this._matches(basename(file.name))) return true;
     for (const suite of file.suites) {
       if (this._matches(suite.name)) return true;
       for (const test of suite.tests) {
@@ -199,11 +230,86 @@ class TestListLayout {
         (f) => f.status === 'failed' || f.status === 'running',
       );
 
-    this.container.innerHTML = filtered
-      .map((f) => this._renderFile(f))
-      .join('');
+    // Use folder view only when not searching (search always shows flat list)
+    if (this.folderView && !this.query) {
+      const tree = this._buildFolderTree(filtered);
+      this.container.innerHTML = this._renderFolderTree(tree);
+    } else {
+      this.container.innerHTML = filtered
+        .map((f) => this._renderFile(f))
+        .join('');
+    }
     this._attachListeners();
   }
+
+  // ── Folder tree ──────────────────────────────────────────────────────────
+
+  /**
+   * Build a folder tree from a flat list of file results.
+   * Each node: { name, path, children: Map<string, node>, files: FileResult[] }
+   */
+  _buildFolderTree(files) {
+    const root = { name: '', path: '', children: new Map(), files: [] };
+    for (const file of files) {
+      const normalized = (file.name ?? '').replace(/\\/g, '/');
+      const parts = normalized.split('/');
+      const dirParts = parts.slice(0, -1);
+      let node = root;
+      let currentPath = '';
+      for (const part of dirParts) {
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+        if (!node.children.has(part)) {
+          node.children.set(part, {
+            name: part,
+            path: currentPath,
+            children: new Map(),
+            files: [],
+          });
+        }
+        node = node.children.get(part);
+      }
+      node.files.push(file);
+    }
+    return root;
+  }
+
+  _renderFolderTree(root) {
+    // Render root-level files (tests with no directory) then subfolders
+    const rootFiles = root.files.map((f) => this._renderFile(f)).join('');
+    const subfolders = Array.from(root.children.values())
+      .map((child) => this._renderFolderNode(child, 0))
+      .join('');
+    return rootFiles + subfolders;
+  }
+
+  _renderFolderNode(node, depth) {
+    const folderId = `folder:${node.path}`;
+    const isExpanded = this.expanded.has(folderId);
+    const toggle = isExpanded
+      ? '<span class="row-toggle expanded">▶</span>'
+      : '<span class="row-toggle">▶</span>';
+    const indentPx = 12 + depth * 16;
+    const childIndentOffset = (depth + 1) * 16;
+
+    const subfolders = Array.from(node.children.values())
+      .map((child) => this._renderFolderNode(child, depth + 1))
+      .join('');
+    const files = node.files.map((f) => this._renderFile(f)).join('');
+
+    return `
+      <div class="test-row level-folder" data-id="${esc(folderId)}" data-scope="folder"
+           style="padding-left: ${indentPx}px">
+        ${toggle}
+        <span class="row-folder-icon">⊿</span>
+        <span class="row-name">${esc(node.name)}</span>
+      </div>
+      <div class="children ${isExpanded ? 'expanded' : ''}" data-children="${esc(folderId)}"
+           style="--indent-offset: ${childIndentOffset}px">
+        ${subfolders}${files}
+      </div>`;
+  }
+
+  // ── Row renderers ────────────────────────────────────────────────────────
 
   _renderFile(file) {
     const isExpanded = this.expanded.has(file.fileId) || !!this.query;
@@ -215,10 +321,11 @@ class TestListLayout {
     const toggle = isExpanded
       ? '<span class="row-toggle expanded">▶</span>'
       : '<span class="row-toggle">▶</span>';
+    const displayName = basename(file.name);
 
     // Suites named '(root)' are a synthetic wrapper for top-level tests written
     // without a describe() block — render their tests directly under the file.
-    const children = file.suites
+    const children = (file.suites ?? [])
       .map((s) =>
         s.name === '(root)'
           ? s.tests.map((t) => this._renderTest(file, s, t)).join('')
@@ -232,9 +339,9 @@ class TestListLayout {
            data-file="${esc(file.fileId)}">
         ${toggle}
         <span class="row-status">${icon}</span>
-        <span class="row-name" title="${esc(file.filePath)}">${esc(file.name)}</span>
+        <span class="row-name" title="${esc(file.name)}">${esc(displayName)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
-        <button class="row-copy"  title="Copy file name"  data-copy-name="${esc(file.name)}">⎘</button>
+        <button class="row-copy"  title="Copy file name"  data-copy-name="${esc(displayName)}">⎘</button>
         <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}">↗</button>
         <button class="row-rerun" title="Rerun file"      data-rerun="file" data-file="${esc(file.fileId)}">▶</button>
       </div>
@@ -332,8 +439,12 @@ class TestListLayout {
             if (isNowExpanded) this.expanded.add(id);
             else this.expanded.delete(id);
           }
-          // Arrow click still selects the row — fall through to select logic
+          // Folder rows: toggle only, no selection
+          if (scope === 'folder') return;
         }
+
+        // Folder rows are not selectable
+        if (scope === 'folder') return;
 
         // Highlight selected row and notify extension
         this.container
@@ -382,7 +493,7 @@ class TestListLayout {
 
 function esc(str) {
   if (!str) return '';
-  return str
+  return String(str)
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')

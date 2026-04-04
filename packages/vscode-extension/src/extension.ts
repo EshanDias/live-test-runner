@@ -324,8 +324,13 @@ async function runFiles(
   }
 
   if (isFullSuite) {
-    // Wipe the whole results tree for a fresh full run
-    broadcast({ type: 'run-started', fileCount: filePaths.length });
+    // Wipe the whole results tree for a fresh full run — include pending file list
+    // so both the explorer and results panel can pre-populate before tests complete
+    broadcast({
+      type: 'run-started',
+      fileCount: filePaths.length,
+      files: (resultStore.toJSON() as { files: unknown[] }).files,
+    });
   } else {
     // Partial rerun — keep other files' results, just mark these as running
     broadcast({ type: 'files-rerunning', fileIds: filePaths });
