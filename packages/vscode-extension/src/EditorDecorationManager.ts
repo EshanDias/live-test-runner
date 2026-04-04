@@ -1,10 +1,23 @@
 import * as vscode from 'vscode';
 import { ResultStore } from './ResultStore';
 
+// Matches durationLabel() in testListLayout.js
+function durationLabel(ms: number): string {
+  if (ms < 1000) { return `${ms}ms`; }
+  const sec = Math.floor(ms / 1000);
+  const min = Math.floor(sec / 60);
+  const hr  = Math.floor(min / 60);
+  const parts: string[] = [];
+  if (hr)              { parts.push(`${hr}h`); }
+  if (min % 60)        { parts.push(`${min % 60}m`); }
+  if (sec % 60 || !parts.length) { parts.push(`${sec % 60}s`); }
+  return parts.join(' ');
+}
+
+// Matches THRESHOLDS.test in testListLayout.js
 const DURATION_THRESHOLDS = {
-  green: 100,  // < 100ms
-  amber: 500,  // 100ms – 500ms
-  // > 500ms = red
+  amber: 100,  // < 100ms = green
+  red:   500,  // 100–500ms = amber, > 500ms = red
 };
 
 export class EditorDecorationManager {
@@ -53,14 +66,14 @@ export class EditorDecorationManager {
       const range = new vscode.Range(line - 1, 0, line - 1, 0);
 
       const durationText = entry.duration != null
-        ? `  ${entry.duration}ms`
+        ? `  ${durationLabel(entry.duration)}`
         : '';
 
       const durationColor = entry.duration == null
         ? ''
-        : entry.duration < DURATION_THRESHOLDS.green
+        : entry.duration < DURATION_THRESHOLDS.amber
           ? 'var(--vscode-terminal-ansiGreen)'
-          : entry.duration < DURATION_THRESHOLDS.amber
+          : entry.duration < DURATION_THRESHOLDS.red
             ? 'var(--vscode-terminal-ansiYellow)'
             : 'var(--vscode-terminal-ansiRed)';
 

@@ -476,6 +476,7 @@ function broadcastFileResult(filePath: string): void {
           fullName: t.fullName,
           status: t.status,
           duration: t.duration,
+          line: t.line,
           failureMessages: t.failureMessages,
         })),
       })),
@@ -526,6 +527,7 @@ function applyFileResultToStore(
       testId,
       tc.title,
       tc.fullName || tc.title,
+      tc.location?.line,
     );
     touchedTestId = testId;
 

@@ -404,7 +404,7 @@ class TestListLayout {
         <span class="row-name">${esc(test.name)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
         <button class="row-copy"  title="Copy test name"  data-copy-name="${esc(test.name)}">⎘</button>
-        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}">↗</button>
+        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}"${test.line != null ? ` data-open-line="${test.line}"` : ''}>↗</button>
         <button class="row-rerun" title="Rerun test"      data-rerun="test"
                 data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}" data-test="${esc(test.testId)}"
                 data-full-name="${esc(test.fullName ?? test.name)}">▶</button>
@@ -480,7 +480,8 @@ class TestListLayout {
     this.container.querySelectorAll('.row-open').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.vscode.postMessage({ type: 'open-file', filePath: btn.dataset.openPath });
+        const line = btn.dataset.openLine != null ? parseInt(btn.dataset.openLine, 10) : undefined;
+        this.vscode.postMessage({ type: 'open-file', filePath: btn.dataset.openPath, line });
       });
     });
 

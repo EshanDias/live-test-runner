@@ -65,7 +65,13 @@ export class TestExplorerProvider implements vscode.WebviewViewProvider {
           break;
         case 'open-file':
           if (msg.filePath) {
-            vscode.window.showTextDocument(vscode.Uri.file(msg.filePath));
+            const uri = vscode.Uri.file(msg.filePath);
+            const line = typeof msg.line === 'number' ? msg.line - 1 : 0;
+            const pos = new vscode.Position(line, 0);
+            vscode.window.showTextDocument(uri, {
+              selection: new vscode.Range(pos, pos),
+              preserveFocus: false,
+            });
           }
           break;
         case 'cmd':

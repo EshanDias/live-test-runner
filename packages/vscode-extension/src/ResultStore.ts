@@ -43,6 +43,8 @@ export interface TestCaseResult {
   fullName: string;
   status: TestStatus;
   duration?: number;
+  /** 1-based source line from Jest --testLocationInResults, used for editor navigation */
+  line?: number;
   output: ScopedOutput;
   failureMessages: string[];
 }
@@ -147,6 +149,7 @@ export class ResultStore {
     testId: string,
     name: string,
     fullName: string,
+    line?: number,
   ): void {
     const suite = this.files.get(fileId)?.suites.get(suiteId);
     if (!suite) return;
@@ -155,6 +158,7 @@ export class ResultStore {
       name,
       fullName,
       status: 'running',
+      line,
       output: { lines: [], capturedAt: null },
       failureMessages: [],
     });
@@ -281,6 +285,7 @@ export class ResultStore {
           fullName: t.fullName,
           status: t.status,
           duration: t.duration,
+          line: t.line,
           failureMessages: t.failureMessages,
           // output omitted — fetched on demand via scope-logs
         })),
