@@ -285,6 +285,7 @@ async function rerunScope(args: {
       suiteId: args.suiteId,
       testId: args.testId,
     });
+    markLineMapRunning(args.fileId);
     updateStatusBar('Running… 1/1');
     try {
       const jsonResult = await runner.runTestCaseJson(
@@ -371,6 +372,7 @@ async function runFiles(
   for (const fp of filePaths) {
     const name = vscode.workspace.asRelativePath(fp);
     resultStore.fileStarted(fp, fp, name);
+    markLineMapRunning(fp);
   }
 
   if (isFullSuite) {
@@ -710,6 +712,18 @@ function focusResult(fileId: string, suiteId: string, testId: string): void {
     suiteId,
     testId,
   });
+}
+
+function markLineMapRunning(filePath: string): void {
+  const lineMap = resultStore.getLineMap(filePath);
+  for (const [line, entry] of lineMap) {
+    resultStore.setLineEntry(filePath, line, { ...entry, status: 'running' });
+  }
+  for (const editor of vscode.window.visibleTextEditors) {
+    if (editor.document.uri.fsPath === filePath) {
+      decorationManager.applyToEditor(editor);
+    }
+  }
 }
 
 function buildOutputLines(
