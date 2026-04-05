@@ -152,27 +152,30 @@ class TestListLayout {
   scrollToSelected() {
     setTimeout(() => {
       const selected = this.container.querySelector('.test-row.selected');
-      if (selected) selected.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (selected)
+        selected.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
   }
 
   /** Mark a single file as running (partial rerun) without wiping other files. */
   markFileRunning(fileId, suiteId = null, testId = null) {
     const file = this.data.find((f) => f.fileId === fileId);
-    if (file) {
-      file.status = 'running';
-      if (suiteId) {
-        const suite = file.suites?.find((s) => s.suiteId === suiteId);
-        if (suite) {
-          suite.status = 'running';
-          if (testId) {
-            const test = suite.tests?.find((t) => t.testId === testId);
-            if (test) test.status = 'running';
-          }
-        }
-      }
-      this._render();
+    if (!file) {
+      return;
     }
+    for (const suite of file.suites.values()) {
+      if (!!suiteId && suite.suiteId !== suiteId) {
+        continue;
+      }
+      suite.status = 'running';
+      for (const test of suite.tests.values()) {
+        if (!!testId && test.testId !== testId) {
+          continue;
+        }
+        test.status = 'running';
+      }
+    }
+    this._render();
   }
 
   setSelected(fileId, suiteId, testId) {
@@ -421,7 +424,8 @@ class TestListLayout {
           e.target.closest('.row-copy') ||
           e.target.closest('.row-folder-collapse') ||
           e.target.closest('.row-folder-expand')
-        ) return;
+        )
+          return;
 
         const id = row.dataset.id;
         const scope = row.dataset.scope;
@@ -431,11 +435,15 @@ class TestListLayout {
 
         // Folder rows toggle on any click (whole row acts as toggle)
         if (scope === 'folder') {
-          const childEl = this.container.querySelector(`[data-children="${CSS.escape(id)}"]`);
+          const childEl = this.container.querySelector(
+            `[data-children="${CSS.escape(id)}"]`,
+          );
           if (childEl) {
             const isNowExpanded = !childEl.classList.contains('expanded');
             childEl.classList.toggle('expanded', isNowExpanded);
-            row.querySelector('.row-toggle')?.classList.toggle('expanded', isNowExpanded);
+            row
+              .querySelector('.row-toggle')
+              ?.classList.toggle('expanded', isNowExpanded);
             if (isNowExpanded) this.expanded.add(id);
             else this.expanded.delete(id);
           }
@@ -465,23 +473,49 @@ class TestListLayout {
         this.selectedId = id;
         this.selectedFileId = fileId;
 
-        this.vscode.postMessage({ type: 'select', scope, fileId, suiteId, testId });
+        this.vscode.postMessage({
+          type: 'select',
+          scope,
+          fileId,
+          suiteId,
+          testId,
+        });
       });
     });
 
     this.container.querySelectorAll('.row-rerun').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const { rerun: scope, file: fileId, suite: suiteId, test: testId, fullName } = btn.dataset;
-        this.vscode.postMessage({ type: 'rerun', scope, fileId, suiteId, testId, fullName });
+        const {
+          rerun: scope,
+          file: fileId,
+          suite: suiteId,
+          test: testId,
+          fullName,
+        } = btn.dataset;
+        this.vscode.postMessage({
+          type: 'rerun',
+          scope,
+          fileId,
+          suiteId,
+          testId,
+          fullName,
+        });
       });
     });
 
     this.container.querySelectorAll('.row-open').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const line = btn.dataset.openLine != null ? parseInt(btn.dataset.openLine, 10) : undefined;
-        this.vscode.postMessage({ type: 'open-file', filePath: btn.dataset.openPath, line });
+        const line =
+          btn.dataset.openLine != null
+            ? parseInt(btn.dataset.openLine, 10)
+            : undefined;
+        this.vscode.postMessage({
+          type: 'open-file',
+          filePath: btn.dataset.openPath,
+          line,
+        });
       });
     });
 
@@ -489,27 +523,32 @@ class TestListLayout {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const name = btn.dataset.copyName;
-        navigator.clipboard.writeText(name).then(() => {
-          const orig = btn.textContent;
-          btn.textContent = '✓';
-          btn.style.color = 'var(--vscode-charts-green, #4caf50)';
-          setTimeout(() => {
-            btn.textContent = orig;
-            btn.style.color = '';
-          }, 1000);
-        }).catch(() => {});
+        navigator.clipboard
+          .writeText(name)
+          .then(() => {
+            const orig = btn.textContent;
+            btn.textContent = '✓';
+            btn.style.color = 'var(--vscode-charts-green, #4caf50)';
+            setTimeout(() => {
+              btn.textContent = orig;
+              btn.style.color = '';
+            }, 1000);
+          })
+          .catch(() => {});
       });
     });
 
-    this.container.querySelectorAll('.row-folder-collapse, .row-folder-expand').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const folderPath = btn.dataset.folderPath;
-        const collapse = btn.classList.contains('row-folder-collapse');
-        this._setFolderSubtreeExpanded(folderPath, !collapse);
-        this._render();
+    this.container
+      .querySelectorAll('.row-folder-collapse, .row-folder-expand')
+      .forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const folderPath = btn.dataset.folderPath;
+          const collapse = btn.classList.contains('row-folder-collapse');
+          this._setFolderSubtreeExpanded(folderPath, !collapse);
+          this._render();
+        });
       });
-    });
   }
 
   /** Expand or collapse all folder and file IDs within a given folder subtree. */
@@ -528,7 +567,8 @@ class TestListLayout {
         const name = (file.name ?? '').replace(/\\/g, '/');
         if (name.startsWith(prefix)) {
           this.expanded.add(file.fileId);
-          for (const suite of file.suites ?? []) this.expanded.add(suite.suiteId);
+          for (const suite of file.suites ?? [])
+            this.expanded.add(suite.suiteId);
           this._expandFolderPaths(name);
         }
       }
@@ -539,7 +579,8 @@ class TestListLayout {
         const name = (file.name ?? '').replace(/\\/g, '/');
         if (name.startsWith(prefix)) {
           this.expanded.delete(file.fileId);
-          for (const suite of file.suites ?? []) this.expanded.delete(suite.suiteId);
+          for (const suite of file.suites ?? [])
+            this.expanded.delete(suite.suiteId);
         }
       }
       // Also remove any deeper folder IDs

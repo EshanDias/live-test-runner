@@ -1,24 +1,36 @@
 import * as vscode from 'vscode';
 import { ResultStore } from '../store/ResultStore';
-import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResultObserver';
+import {
+  IResultObserver,
+  RunStartedPayload,
+  RunFinishedPayload,
+} from '../IResultObserver';
 
 // Matches durationLabel() in testListLayout.js
 function durationLabel(ms: number): string {
-  if (ms < 1000) { return `${ms}ms`; }
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
   const sec = Math.floor(ms / 1000);
   const min = Math.floor(sec / 60);
-  const hr  = Math.floor(min / 60);
+  const hr = Math.floor(min / 60);
   const parts: string[] = [];
-  if (hr)              { parts.push(`${hr}h`); }
-  if (min % 60)        { parts.push(`${min % 60}m`); }
-  if (sec % 60 || !parts.length) { parts.push(`${sec % 60}s`); }
+  if (hr) {
+    parts.push(`${hr}h`);
+  }
+  if (min % 60) {
+    parts.push(`${min % 60}m`);
+  }
+  if (sec % 60 || !parts.length) {
+    parts.push(`${sec % 60}s`);
+  }
   return parts.join(' ');
 }
 
 // Matches THRESHOLDS.test in testListLayout.js
 const DURATION_THRESHOLDS = {
-  amber: 100,  // < 100ms = green
-  red:   500,  // 100–500ms = amber, > 500ms = red
+  amber: 100, // < 100ms = green
+  red: 500, // 100–500ms = amber, > 500ms = red
 };
 
 export class DecorationManager implements IResultObserver {
@@ -60,9 +72,9 @@ export class DecorationManager implements IResultObserver {
 
   onRunStarted(_payload: RunStartedPayload): void {}
 
-  onFilesRerunning(fileIds: string[]): void {
+  onFilesRerunning(fileIds: string[], suiteId?: string, testId?: string): void {
     for (const filePath of fileIds) {
-      this._store.markTestsRunning(filePath);
+      this._store.markTestsRunning(filePath, suiteId, testId);
       this._refreshFile(filePath);
     }
   }
@@ -84,39 +96,48 @@ export class DecorationManager implements IResultObserver {
 
   applyToEditor(editor: vscode.TextEditor): void {
     const filePath = editor.document.uri.fsPath;
-    const lineMap  = this._store.getLineMap(filePath);
+    const lineMap = this._store.getLineMap(filePath);
 
     const buckets: Record<string, vscode.DecorationOptions[]> = {
-      passed: [], failed: [], running: [], pending: [],
+      passed: [],
+      failed: [],
+      running: [],
+      pending: [],
     };
 
     for (const [line, entry] of lineMap) {
-      const test     = this._store.getTest(entry.fileId, entry.suiteId, entry.testId);
-      const status   = test?.status ?? 'pending';
+      const test = this._store.getTest(
+        entry.fileId,
+        entry.suiteId,
+        entry.testId,
+      );
+      const status = test?.status ?? 'pending';
       const duration = test?.duration ?? null;
 
       const range = new vscode.Range(line - 1, 0, line - 1, 0);
 
-      const durationText = duration != null && status !== 'running'
-        ? `  ${durationLabel(duration)}`
-        : '';
+      const durationText =
+        duration != null && status !== 'running'
+          ? `  ${durationLabel(duration)}`
+          : '';
 
-      const durationColor = duration == null
-        ? ''
-        : duration < DURATION_THRESHOLDS.amber
-          ? 'var(--vscode-terminal-ansiGreen)'
-          : duration < DURATION_THRESHOLDS.red
-            ? 'var(--vscode-terminal-ansiYellow)'
-            : 'var(--vscode-terminal-ansiRed)';
+      const durationColor =
+        duration == null
+          ? ''
+          : duration < DURATION_THRESHOLDS.amber
+            ? 'var(--vscode-terminal-ansiGreen)'
+            : duration < DURATION_THRESHOLDS.red
+              ? 'var(--vscode-terminal-ansiYellow)'
+              : 'var(--vscode-terminal-ansiRed)';
 
       const decoration: vscode.DecorationOptions = {
         range,
         renderOptions: {
           after: {
             contentText: durationText,
-            color:       durationColor,
-            fontStyle:   'normal',
-            margin:      '0 0 0 16px',
+            color: durationColor,
+            fontStyle: 'normal',
+            margin: '0 0 0 16px',
           },
         },
       };
@@ -125,7 +146,10 @@ export class DecorationManager implements IResultObserver {
     }
 
     for (const [state, opts] of Object.entries(buckets)) {
-      editor.setDecorations(this._types[state as keyof typeof this._types], opts);
+      editor.setDecorations(
+        this._types[state as keyof typeof this._types],
+        opts,
+      );
     }
   }
 
@@ -152,6 +176,11 @@ export class DecorationManager implements IResultObserver {
   }
 
   private _icon(name: string): vscode.Uri {
-    return vscode.Uri.joinPath(this._context.extensionUri, 'resources', 'icons', `${name}.svg`);
+    return vscode.Uri.joinPath(
+      this._context.extensionUri,
+      'resources',
+      'icons',
+      `${name}.svg`,
+    );
   }
 }
