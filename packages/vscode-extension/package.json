@@ -68,6 +68,18 @@
         "command": "liveTestRunner.showOutput",
         "title": "Show Raw Output",
         "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.rerunFromEditor",
+        "title": "Live Test Runner: Rerun Test at Line"
+      },
+      {
+        "command": "liveTestRunner.debugFromEditor",
+        "title": "Live Test Runner: Debug Test at Line"
+      },
+      {
+        "command": "liveTestRunner.focusResult",
+        "title": "Live Test Runner: Focus Test in Results Panel"
       }
     ],
     "configuration": {
@@ -110,6 +122,19 @@
           },
           "default": ["**/*.test.*", "**/*.spec.*"],
           "description": "Glob patterns for test files"
+        },
+        "liveTestRunner.durationThresholds": {
+          "type": "object",
+          "description": "Duration thresholds (ms) for colour-coding test times. Green < amber ≤ yellow < red.",
+          "default": {},
+          "properties": {
+            "testAmberMs":  { "type": "number", "default": 100,  "description": "Individual test: amber threshold in ms (default 100)" },
+            "testRedMs":    { "type": "number", "default": 500,  "description": "Individual test: red threshold in ms (default 500)" },
+            "suiteAmberMs": { "type": "number", "default": 500,  "description": "Suite: amber threshold in ms (default 500)" },
+            "suiteRedMs":   { "type": "number", "default": 2000, "description": "Suite: red threshold in ms (default 2000)" },
+            "fileAmberMs":  { "type": "number", "default": 1000, "description": "File: amber threshold in ms (default 1000)" },
+            "fileRedMs":    { "type": "number", "default": 5000, "description": "File: red threshold in ms (default 5000)" }
+          }
         }
       }
     }

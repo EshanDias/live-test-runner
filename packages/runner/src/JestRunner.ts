@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { TestRunner } from './TestRunner';
-import { JestJsonResult } from './types';
+import { RunResult } from './types';
 import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { Executor } from './execution/Executor';
@@ -74,14 +74,19 @@ export class JestRunner implements TestRunner {
       );
     }
 
-    const found = this.parser.parseListTestsOutput(result.stdout + '\n' + result.stderr);
+    const found = this.parser.parseListTestsOutput(
+      result.stdout + '\n' + result.stderr,
+    );
     if (found.length > 0) return found;
 
     // Last resort: filesystem scan
     return this.discoverFromFilesystem(projectRoot);
   }
 
-  async runFullSuiteJson(projectRoot: string, withCoverage = false): Promise<JestJsonResult> {
+  async runFullSuiteJson(
+    projectRoot: string,
+    withCoverage = false,
+  ): Promise<RunResult> {
     this.initAdapter(projectRoot);
     const adapter = this.requireAdapter();
     const cwd = this.requireProjectRoot();
@@ -90,7 +95,11 @@ export class JestRunner implements TestRunner {
     const prefixArgs = this.resolvePrefixArgs();
     const configArgs = await this.resolveConfigArgs(adapter, projectRoot);
     const coverageArgs = withCoverage
-      ? ['--coverage', '--coverageReporters=json', '--coverageReporters=json-summary']
+      ? [
+          '--coverage',
+          '--coverageReporters=json',
+          '--coverageReporters=json-summary',
+        ]
       : [];
 
     const args = [
@@ -102,11 +111,12 @@ export class JestRunner implements TestRunner {
       ...coverageArgs,
     ];
 
-    const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture({ binary, args, cwd });
+    const { passed, jsonOutput, stderr } =
+      await this.executor.runWithJsonCapture({ binary, args, cwd });
     return this.parser.parse(passed, jsonOutput, stderr);
   }
 
-  async runTestFileJson(filePath: string): Promise<JestJsonResult> {
+  async runTestFileJson(filePath: string): Promise<RunResult> {
     const projectRoot = this.requireProjectRoot();
     const adapter = this.requireAdapter();
 
@@ -123,11 +133,16 @@ export class JestRunner implements TestRunner {
       filePath,
     ];
 
-    const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture({ binary, args, cwd: projectRoot });
+    const { passed, jsonOutput, stderr } =
+      await this.executor.runWithJsonCapture({
+        binary,
+        args,
+        cwd: projectRoot,
+      });
     return this.parser.parse(passed, jsonOutput, stderr);
   }
 
-  async runTestFilesJson(filePaths: string[]): Promise<JestJsonResult> {
+  async runTestFilesJson(filePaths: string[]): Promise<RunResult> {
     if (filePaths.length === 0) return this.parser.empty(true, []);
     if (filePaths.length === 1) return this.runTestFileJson(filePaths[0]);
 
@@ -150,12 +165,17 @@ export class JestRunner implements TestRunner {
         '--runTestsByPath',
         ...filePaths,
       ];
-      const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture({ binary, args, cwd: projectRoot });
+      const { passed, jsonOutput, stderr } =
+        await this.executor.runWithJsonCapture({
+          binary,
+          args,
+          cwd: projectRoot,
+        });
       return this.parser.parse(passed, jsonOutput, stderr);
     }
 
     // Multiple chunks — run sequentially and merge
-    const results: JestJsonResult[] = [];
+    const results: RunResult[] = [];
     for (const chunk of chunks) {
       const args = [
         ...prefixArgs,
@@ -166,13 +186,22 @@ export class JestRunner implements TestRunner {
         '--runTestsByPath',
         ...chunk,
       ];
-      const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture({ binary, args, cwd: projectRoot });
+      const { passed, jsonOutput, stderr } =
+        await this.executor.runWithJsonCapture({
+          binary,
+          args,
+          cwd: projectRoot,
+        });
       results.push(this.parser.parse(passed, jsonOutput, stderr));
     }
     return this.parser.merge(results);
   }
 
-  async runTestCaseJson(filePath: string, testFullName: string): Promise<JestJsonResult> {
+  async runTestCaseJson(
+    filePath: string,
+    testFullName: string,
+    isTestSuite: boolean = false,
+  ): Promise<RunResult> {
     const projectRoot = this.requireProjectRoot();
     const adapter = this.requireAdapter();
 
@@ -190,14 +219,19 @@ export class JestRunner implements TestRunner {
       '--runTestsByPath',
       filePath,
       '--testNamePattern',
-      `^${escapedName}$`,
+      isTestSuite ? `^${escapedName}` : `^${escapedName}$`,
     ];
 
-    const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture({ binary, args, cwd: projectRoot });
+    const { passed, jsonOutput, stderr } =
+      await this.executor.runWithJsonCapture({
+        binary,
+        args,
+        cwd: projectRoot,
+      });
     return this.parser.parse(passed, jsonOutput, stderr);
   }
 
-  async runRelatedTestsJson(filePath: string): Promise<JestJsonResult> {
+  async runRelatedTestsJson(filePath: string): Promise<RunResult> {
     const projectRoot = this.requireProjectRoot();
     const adapter = this.requireAdapter();
 
@@ -214,7 +248,12 @@ export class JestRunner implements TestRunner {
       filePath,
     ];
 
-    const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture({ binary, args, cwd: projectRoot });
+    const { passed, jsonOutput, stderr } =
+      await this.executor.runWithJsonCapture({
+        binary,
+        args,
+        cwd: projectRoot,
+      });
     return this.parser.parse(passed, jsonOutput, stderr);
   }
 
@@ -226,7 +265,11 @@ export class JestRunner implements TestRunner {
     const cwd = this.requireProjectRoot();
     const p = path.join(cwd, 'coverage', 'coverage-final.json');
     if (fs.existsSync(p)) {
-      try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { /* fall through */ }
+      try {
+        return JSON.parse(fs.readFileSync(p, 'utf8'));
+      } catch {
+        /* fall through */
+      }
     }
     return {};
   }
@@ -246,12 +289,18 @@ export class JestRunner implements TestRunner {
   }
 
   private requireAdapter(): FrameworkAdapter {
-    if (!this.adapter) throw new Error('JestRunner: no adapter — call setProjectRoot() or discoverTests() first.');
+    if (!this.adapter)
+      throw new Error(
+        'JestRunner: no adapter — call setProjectRoot() or discoverTests() first.',
+      );
     return this.adapter;
   }
 
   private requireProjectRoot(): string {
-    if (!this.projectRoot) throw new Error('JestRunner: projectRoot not set — call discoverTests(projectRoot) first.');
+    if (!this.projectRoot)
+      throw new Error(
+        'JestRunner: projectRoot not set — call discoverTests(projectRoot) first.',
+      );
     return this.projectRoot;
   }
 
@@ -259,11 +308,14 @@ export class JestRunner implements TestRunner {
    * If the user provided a custom jest command override, use that binary directly.
    * Otherwise delegate to the adapter's binary resolution.
    */
-  private resolveBinary(adapter: FrameworkAdapter, projectRoot: string): string {
+  private resolveBinary(
+    adapter: FrameworkAdapter,
+    projectRoot: string,
+  ): string {
     if (this.userJestCommand.trim()) {
       return this.userJestCommand.trim().split(/\s+/)[0];
     }
-    return adapter.resolveJestBinary(projectRoot);
+    return adapter.resolveBinary(projectRoot);
   }
 
   /**
@@ -276,17 +328,21 @@ export class JestRunner implements TestRunner {
   }
 
   /** Returns `['--config', '<path>']` if the adapter provides a config, or `[]`. */
-  private async resolveConfigArgs(adapter: FrameworkAdapter, projectRoot: string): Promise<string[]> {
-    const configPath = await adapter.resolveJestConfig(projectRoot);
+  private async resolveConfigArgs(
+    adapter: FrameworkAdapter,
+    projectRoot: string,
+  ): Promise<string[]> {
+    const configPath = await adapter.resolveConfig(projectRoot);
     return configPath ? ['--config', configPath] : [];
   }
 
   /** Args that every Jest invocation needs regardless of framework or mode. */
   private baseArgs(): string[] {
     return [
-      '--watchAll=false',  // prevent Jest from entering watch mode
-      '--forceExit',       // prevent Jest from hanging after completion
-      '--no-bail',         // always run all tests, never stop on first failure
+      '--watchAll=false', // prevent Jest from entering watch mode
+      '--forceExit', // prevent Jest from hanging after completion
+      '--no-bail', // always run all tests, never stop on first failure
+      '--testLocationInResults', // populate location.line in JSON output (needed for gutter decorations)
     ];
   }
 
@@ -294,7 +350,10 @@ export class JestRunner implements TestRunner {
    * Splits file paths into chunks so the command line doesn't exceed the
    * Windows 8191-character limit.
    */
-  private chunkByCommandLineLength(filePaths: string[], maxCharsForPaths = 5500): string[][] {
+  private chunkByCommandLineLength(
+    filePaths: string[],
+    maxCharsForPaths = 5500,
+  ): string[][] {
     const chunks: string[][] = [];
     let current: string[] = [];
     let currentLen = 0;
@@ -326,19 +385,32 @@ export class JestRunner implements TestRunner {
 
     const scan = (dir: string) => {
       let items: string[] = [];
-      try { items = fs.readdirSync(path.join(projectRoot, dir)); } catch { return; }
+      try {
+        items = fs.readdirSync(path.join(projectRoot, dir));
+      } catch {
+        return;
+      }
 
       for (const item of items) {
         const rel = path.join(dir, item);
         const abs = path.join(projectRoot, rel);
         let st: fs.Stats;
-        try { st = fs.statSync(abs); } catch { continue; }
+        try {
+          st = fs.statSync(abs);
+        } catch {
+          continue;
+        }
 
         if (st.isDirectory()) {
-          if (item.startsWith('.') || ['node_modules', 'build', 'dist', 'out', 'coverage'].includes(item)) continue;
+          if (
+            item.startsWith('.') ||
+            ['node_modules', 'build', 'dist', 'out', 'coverage'].includes(item)
+          )
+            continue;
           scan(rel);
         } else if (st.isFile()) {
-          if (item.includes('.test.') || item.includes('.spec.')) testFiles.push(abs);
+          if (item.includes('.test.') || item.includes('.spec.'))
+            testFiles.push(abs);
         }
       }
     };

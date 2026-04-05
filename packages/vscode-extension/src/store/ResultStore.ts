@@ -1,9 +1,20 @@
 /**
  * ResultStore — typed in-memory result tree for the custom UI.
  *
+ * Intentionally has no VS Code or framework imports — it is pure data.
+ * The extension layer writes to it (via JestAdapter._applyFileResult) and
+ * reads from it (via views and DecorationManager).
+ *
  * Hierarchy: File → Suite → Test case
  * All IDs are stable string keys derived from file path / suite name / test name.
  */
+
+/** Location index only — status and duration are read live from the result tree. */
+export type LineEntry = {
+  testId: string;
+  suiteId: string;
+  fileId: string;
+};
 
 export type TestStatus =
   | 'pending'
@@ -31,10 +42,12 @@ const EMPTY_OUTPUT: ScopedOutput = { lines: [], capturedAt: null };
 export interface TestCaseResult {
   testId: string; // `${fileId}::${suiteId}::${testName}`
   name: string;
-  /** Jest fullName — ancestor suite titles + test title, used for --testNamePattern */
+  /** Full display name including ancestor suite titles — used to scope reruns by name pattern */
   fullName: string;
   status: TestStatus;
   duration?: number;
+  /** 1-based source line reported by the framework, used for editor gutter decorations */
+  line?: number;
   output: ScopedOutput;
   failureMessages: string[];
 }
@@ -54,18 +67,62 @@ export interface FileResult {
   name: string; // relative display name
   status: TestStatus;
   duration?: number;
-  /** Console output captured during this file's run (from Jest --json `console` array) */
+  /** Console output captured during this file's run */
   output: ScopedOutput;
   suites: Map<string, SuiteResult>;
 }
 
 export class ResultStore {
   private files: Map<string, FileResult> = new Map();
+  // key: absolute filePath → Map<1-based lineNumber, LineEntry>
+  private _lineMap: Map<string, Map<number, LineEntry>> = new Map();
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   clear(): void {
     this.files.clear();
+  }
+
+  // ── LineMap ────────────────────────────────────────────────────────────────
+
+  setLineEntry(filePath: string, line: number, entry: LineEntry): void {
+    if (!this._lineMap.has(filePath)) {
+      this._lineMap.set(filePath, new Map());
+    }
+    this._lineMap.get(filePath)!.set(line, entry);
+  }
+
+  getLineMap(filePath: string): Map<number, LineEntry> {
+    return this._lineMap.get(filePath) ?? new Map();
+  }
+
+  clearLineMap(filePath: string): void {
+    this._lineMap.delete(filePath);
+  }
+
+  clearAllLineMaps(): void {
+    this._lineMap.clear();
+  }
+
+  /** Set all tests in a file to 'running' so the editor decorations show the spinner. */
+  markTestsRunning(filePath: string, suiteId?: string, testId?: string): void {
+    const file = this.files.get(filePath);
+    if (!file) {
+      return;
+    }
+    file.status = 'running';
+    for (const suite of file.suites.values()) {
+      if (!!suiteId && suite.suiteId !== suiteId) {
+        continue;
+      }
+      suite.status = 'running';
+      for (const test of suite.tests.values()) {
+        if (!!testId && test.testId !== testId) {
+          continue;
+        }
+        test.status = 'running';
+      }
+    }
   }
 
   fileStarted(fileId: string, filePath: string, name: string): void {
@@ -116,6 +173,7 @@ export class ResultStore {
     testId: string,
     name: string,
     fullName: string,
+    line?: number,
   ): void {
     const suite = this.files.get(fileId)?.suites.get(suiteId);
     if (!suite) return;
@@ -124,6 +182,7 @@ export class ResultStore {
       name,
       fullName,
       status: 'running',
+      line,
       output: { lines: [], capturedAt: null },
       failureMessages: [],
     });
@@ -213,12 +272,15 @@ export class ResultStore {
     passed: number;
     failed: number;
     running: number;
+    totalDuration: number;
   } {
     let total = 0,
       passed = 0,
       failed = 0,
-      running = 0;
+      running = 0,
+      totalDuration = 0;
     for (const file of this.files.values()) {
+      totalDuration += file.duration ?? 0;
       for (const suite of file.suites.values()) {
         for (const test of suite.tests.values()) {
           total++;
@@ -228,7 +290,7 @@ export class ResultStore {
         }
       }
     }
-    return { total, passed, failed, running };
+    return { total, passed, failed, running, totalDuration };
   }
 
   /** Serialises the full tree to a plain object safe to post to a webview. */
@@ -250,6 +312,7 @@ export class ResultStore {
           fullName: t.fullName,
           status: t.status,
           duration: t.duration,
+          line: t.line,
           failureMessages: t.failureMessages,
           // output omitted — fetched on demand via scope-logs
         })),

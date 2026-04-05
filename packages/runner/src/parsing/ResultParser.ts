@@ -1,27 +1,27 @@
 import * as path from "path";
 import {
-  JestJsonResult,
-  JestFileResult,
-  JestTestCaseResult,
-  JestConsoleEntry,
+  RunResult,
+  FileRunResult,
+  TestCaseRunResult,
+  ConsoleEntry,
 } from "../types";
 
 /**
  * Parses the JSON output produced by `jest --json --outputFile=<file>` into
- * our internal JestJsonResult structure.
+ * our internal RunResult structure.
  *
  * Also handles the console.log fallback: react-scripts omits the `console`
  * array from its JSON output, so we parse it from stderr instead.
  */
 export class ResultParser {
   /**
-   * Parse raw Jest JSON string into a JestJsonResult.
+   * Parse raw Jest JSON string into a RunResult.
    *
    * @param passed   Whether the process exited with code 0.
    * @param raw      The raw JSON string (from outputFile or stdout).
    * @param stderr   The full stderr output (used for console fallback + error messages).
    */
-  parse(passed: boolean, raw: string, stderr: string): JestJsonResult {
+  parse(passed: boolean, raw: string, stderr: string): RunResult {
     try {
       const json = JSON.parse(raw);
       // Parse per-test durations from stderr once — used as fallback below.
@@ -29,10 +29,10 @@ export class ResultParser {
       // do print "(X ms)" next to each test name in human-readable stderr.
       const stderrDurations = this.parseDurationsFromStderr(stderr);
 
-      const fileResults: JestFileResult[] = (json.testResults ?? []).map(
-        (fr: any): JestFileResult => {
+      const fileResults: FileRunResult[] = (json.testResults ?? []).map(
+        (fr: any): FileRunResult => {
           const testCases = (fr.testResults ?? fr.assertionResults ?? []).map(
-            (tc: any): JestTestCaseResult => ({
+            (tc: any): TestCaseRunResult => ({
               ancestorTitles: tc.ancestorTitles ?? [],
               title: tc.title ?? "",
               fullName: tc.fullName ?? "",
@@ -40,13 +40,16 @@ export class ResultParser {
               // Backfill duration from stderr when JSON omits it
               duration: this.computeTestCaseDuration(tc, stderrDurations),
               failureMessages: this.stripStackTraces(tc.failureMessages) ?? [],
+              location: tc.location != null
+                ? { line: tc.location.line, column: tc.location.column ?? 0 }
+                : undefined,
             }),
           );
 
           const fileDuration = this.computeFileDuration(testCases, fr);
 
-          const consoleOutput: JestConsoleEntry[] = (fr.console ?? []).map(
-            (c: any): JestConsoleEntry => ({
+          const consoleOutput: ConsoleEntry[] = (fr.console ?? []).map(
+            (c: any): ConsoleEntry => ({
               message: String(c.message ?? ""),
               type: String(c.type ?? "log"),
               origin: String(c.origin ?? ""),
@@ -88,7 +91,7 @@ export class ResultParser {
               pathIndex.set(fr.testFilePath.replace(/\\/g, "/"), idx);
             });
 
-            const buckets: JestConsoleEntry[][] = fileResults.map(() => []);
+            const buckets: ConsoleEntry[][] = fileResults.map(() => []);
             let fallbackIdx = fileResults.findIndex(
               (fr) => fr.consoleOutput.length === 0,
             );
@@ -144,7 +147,7 @@ export class ResultParser {
   }
 
   /** Build an empty result with the given pass/fail state and error messages. */
-  empty(passed: boolean, errors: string[]): JestJsonResult {
+  empty(passed: boolean, errors: string[]): RunResult {
     return {
       passed,
       numPassedTests: 0,
@@ -155,8 +158,8 @@ export class ResultParser {
     };
   }
 
-  /** Merge multiple JestJsonResults into one (used for chunked multi-file runs). */
-  merge(results: JestJsonResult[]): JestJsonResult {
+  /** Merge multiple RunResults into one (used for chunked multi-file runs). */
+  merge(results: RunResult[]): RunResult {
     return {
       passed: results.every((r) => r.passed),
       numPassedTests: results.reduce((s, r) => s + r.numPassedTests, 0),
@@ -226,7 +229,7 @@ export class ResultParser {
   }
 
   private computeFileDuration(
-    testCases: JestTestCaseResult[],
+    testCases: TestCaseRunResult[],
     fr: any,
   ): number {
     const fromCases = testCases.reduce(
@@ -239,7 +242,7 @@ export class ResultParser {
   }
 
   private computeTestCaseDuration(
-    tc: JestTestCaseResult,
+    tc: TestCaseRunResult,
     stderrDurations: Map<string, number>,
   ): number {
     let duration = tc.duration ?? 0;
@@ -262,8 +265,8 @@ export class ResultParser {
    *   Jest 26 / some CRA builds (origin on the same line as type):
    *     "  console.log path/to/file.js:10:5\n    <message lines>\n"
    */
-  parseConsoleFromStderr(stderr: string): JestConsoleEntry[] {
-    const entries: JestConsoleEntry[] = [];
+  parseConsoleFromStderr(stderr: string): ConsoleEntry[] {
+    const entries: ConsoleEntry[] = [];
     const lines = stderr.split(/\r?\n/);
     let i = 0;
 

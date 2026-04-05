@@ -4,6 +4,35 @@ All notable changes to Live Test Runner are documented here.
 
 ---
 
+## [2.2.0] — 2026-04-04
+
+### Editor Inline Decorations
+
+#### Features
+- **Gutter status icons** — pass ✓ / fail ✗ / running ⟳ / pending ○ icons appear next to each
+  `it()` and `test()` line as soon as results arrive; cleared automatically when the session stops
+- **Inline duration text** — muted duration label rendered after the closing paren of each test
+  block, colour-coded green (< 100 ms) / amber (100–500 ms) / red (> 500 ms)
+- **CodeLens run button** — `▶ Run` appears above each `describe`, `it`, and `test` block while a
+  session is active; clicking reruns that test (or the whole file if no result exists yet)
+- **CodeLens debug button** — `▷ Debug` above each block launches Jest in debug mode via
+  `vscode.debug.startDebugging` with `--runInBand --no-coverage`, scoped to that test via
+  `--testNamePattern`
+- **Jump to results** — `◈ Results` CodeLens on `it`/`test` lines with known results; clicking
+  focuses the Test Results panel and scrolls to and selects the matching row
+- **Session-scoped** — CodeLens entries and gutter decorations are only visible while a session is
+  active; stopping clears everything immediately
+
+#### Internal
+- `JestTestCaseResult` now carries an optional `location: { line, column }` field populated from
+  Jest's `--json` output
+- New `LineEntry` type and `LineMap` methods added to `ResultStore`
+- New `EditorDecorationManager` class owns all `TextEditorDecorationType` instances
+- New `LiveTestCodeLensProvider` class provides CodeLens via regex line scan (no AST)
+- SVG gutter icons in `resources/icons/` (passed / failed / running / pending)
+
+---
+
 ## [1.0.0] — 2026-04-03
 
 ### Initial release

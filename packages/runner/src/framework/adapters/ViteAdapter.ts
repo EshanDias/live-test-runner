@@ -23,11 +23,11 @@ export class ViteAdapter implements FrameworkAdapter {
     return 'vitest' in deps;
   }
 
-  resolveJestBinary(_projectRoot: string): string {
+  resolveBinary(_projectRoot: string): string {
     throw new UnsupportedFrameworkError('vite');
   }
 
-  async resolveJestConfig(_projectRoot: string): Promise<string | undefined> {
+  async resolveConfig(_projectRoot: string): Promise<string | undefined> {
     throw new UnsupportedFrameworkError('vite');
   }
 

@@ -299,9 +299,12 @@ body {
 .test-row:hover { background: var(--vscode-list-hoverBackground); }
 .test-row.selected { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
 
-.test-row.level-file { padding-left: 12px; font-weight: 500; }
-.test-row.level-suite { padding-left: 24px; }
-.test-row.level-test { padding-left: 36px; }
+/* --indent-offset is set by folder-view .children wrappers to shift nested rows */
+.test-row.level-folder { padding-left: 12px; color: var(--vscode-descriptionForeground); cursor: pointer; }
+.test-row.level-folder:hover { background: var(--vscode-list-hoverBackground); }
+.test-row.level-file  { padding-left: calc(12px + var(--indent-offset, 0px)); font-weight: 500; }
+.test-row.level-suite { padding-left: calc(24px + var(--indent-offset, 0px)); }
+.test-row.level-test  { padding-left: calc(36px + var(--indent-offset, 0px)); }
 
 .row-toggle {
   width: 14px;
@@ -341,6 +344,8 @@ body {
 .row-duration.moderate { color: var(--vscode-charts-yellow, #cddc39); }
 .row-duration.slow { color: var(--vscode-charts-red, #f44336); }
 
+.row-folder-collapse,
+.row-folder-expand,
 .row-rerun,
 .row-open,
 .row-copy {
@@ -357,6 +362,8 @@ body {
   pointer-events: none;
 }
 
+.test-row:hover .row-folder-collapse,
+.test-row:hover .row-folder-expand,
 .test-row:hover .row-rerun,
 .test-row:hover .row-open,
 .test-row:hover .row-copy {
@@ -364,6 +371,8 @@ body {
   pointer-events: auto;
 }
 
+.row-folder-collapse:hover,
+.row-folder-expand:hover,
 .row-rerun:hover,
 .row-open:hover,
 .row-copy:hover {

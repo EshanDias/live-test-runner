@@ -11,41 +11,60 @@ export interface TestResult {
   errors: string[];
 }
 
-// ── Structured Jest JSON output types ────────────────────────────────────────
+// ── Structured runner output types ───────────────────────────────────────────
+//
+// These are the normalised result types returned by any framework adapter after
+// a test run. They are framework-agnostic: JestRunner, a future VitestRunner,
+// or any other runner all produce these same shapes.
 
-export interface JestTestCaseResult {
+export interface TestCaseRunResult {
   ancestorTitles: string[];
   title: string;
+  /** Full display name including all ancestor suite titles */
   fullName: string;
   status: 'passed' | 'failed' | 'pending' | 'todo' | 'skipped';
   duration?: number;
   failureMessages: string[];
+  /** 1-based source location reported by the framework (requires framework support) */
+  location?: { line: number; column: number };
 }
 
-export interface JestConsoleEntry {
+export interface ConsoleEntry {
   message: string;
-  /** Jest console type: 'log' | 'warn' | 'error' | 'info' | 'debug' | etc. */
+  /** Console level: 'log' | 'warn' | 'error' | 'info' | 'debug' | etc. */
   type: string;
   origin: string;
 }
 
-export interface JestFileResult {
+export interface FileRunResult {
   testFilePath: string;
   status: 'passed' | 'failed';
-  testCases: JestTestCaseResult[];
+  testCases: TestCaseRunResult[];
   /** Console output captured during this file's run */
-  consoleOutput: JestConsoleEntry[];
+  consoleOutput: ConsoleEntry[];
   /** Populated when the file itself fails to compile/parse */
   failureMessage?: string;
   /** Total execution time for this file in milliseconds */
   duration?: number;
 }
 
-export interface JestJsonResult {
+export interface RunResult {
   passed: boolean;
   numPassedTests: number;
   numFailedTests: number;
   numPendingTests: number;
-  fileResults: JestFileResult[];
+  fileResults: FileRunResult[];
   errors: string[];
 }
+
+// ── Backward-compatible aliases ───────────────────────────────────────────────
+// These keep existing imports working during any gradual migration.
+
+/** @deprecated Use RunResult */
+export type JestJsonResult = RunResult;
+/** @deprecated Use FileRunResult */
+export type JestFileResult = FileRunResult;
+/** @deprecated Use TestCaseRunResult */
+export type JestTestCaseResult = TestCaseRunResult;
+/** @deprecated Use ConsoleEntry */
+export type JestConsoleEntry = ConsoleEntry;

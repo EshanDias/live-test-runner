@@ -3,15 +3,23 @@
 // Core interface — the extension layer depends only on this
 export { TestRunner } from './TestRunner';
 
-// Shared result types
+// Shared result types (canonical names)
 export {
   Framework,
   PackageManager,
   TestResult,
+  RunResult,
+  FileRunResult,
+  TestCaseRunResult,
+  ConsoleEntry,
+} from './types';
+
+// Backward-compatible type aliases — kept so existing imports don't break
+export {
+  JestJsonResult,
+  JestFileResult,
   JestTestCaseResult,
   JestConsoleEntry,
-  JestFileResult,
-  JestJsonResult,
 } from './types';
 
 // Concrete runner
