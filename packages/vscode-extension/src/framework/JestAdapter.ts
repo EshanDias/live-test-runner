@@ -1,5 +1,9 @@
 import * as vscode from 'vscode';
-import { JestRunner, FileRunResult, ConsoleEntry } from '@live-test-runner/runner';
+import {
+  JestRunner,
+  FileRunResult,
+  ConsoleEntry,
+} from '@live-test-runner/runner';
 import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
 import {
@@ -216,8 +220,10 @@ export class JestAdapter implements IFrameworkAdapter {
       );
     }
 
-    // Roll up suite statuses
+    // Roll up statuses
     const file = store.getFile(filePath);
+    let fileStatus: TestStatus =
+      fileResult.status === 'passed' ? 'passed' : 'failed';
     if (file) {
       for (const suite of file.suites.values()) {
         const tests = Array.from(suite.tests.values());
@@ -226,6 +232,7 @@ export class JestAdapter implements IFrameworkAdapter {
           : ('passed' as TestStatus);
         const suiteDur = tests.reduce((acc, t) => acc + (t.duration ?? 0), 0);
         store.suiteResult(filePath, suite.suiteId, suiteStatus, suiteDur);
+        fileStatus = suiteStatus === 'failed' ? 'failed' : fileStatus;
       }
     }
 
@@ -252,11 +259,7 @@ export class JestAdapter implements IFrameworkAdapter {
       store.setFileOutput(filePath, output);
     }
 
-    store.fileResult(
-      filePath,
-      fileResult.status === 'passed' ? 'passed' : 'failed',
-      fileResult.duration,
-    );
+    store.fileResult(filePath, fileStatus, fileResult.duration);
 
     // Populate LineMap (only clear on full-file run to preserve other tests' entries)
     if (!opts?.suiteId && !opts?.testId) {
