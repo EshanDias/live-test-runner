@@ -17,7 +17,10 @@ export interface TestRunner {
   discoverTests(projectRoot: string): Promise<string[]>;
 
   /** Run every test file and return structured per-file/per-case results. */
-  runFullSuiteJson(projectRoot: string, withCoverage?: boolean): Promise<JestJsonResult>;
+  runFullSuiteJson(
+    projectRoot: string,
+    withCoverage?: boolean,
+  ): Promise<JestJsonResult>;
 
   /** Run a single test file and return structured results. */
   runTestFileJson(filePath: string): Promise<JestJsonResult>;
@@ -26,7 +29,11 @@ export interface TestRunner {
   runTestFilesJson(filePaths: string[]): Promise<JestJsonResult>;
 
   /** Run a single named test within a file using --testNamePattern. */
-  runTestCaseJson(filePath: string, testFullName: string): Promise<JestJsonResult>;
+  runTestCaseJson(
+    filePath: string,
+    testFullName: string,
+    isTestSuite?: boolean,
+  ): Promise<JestJsonResult>;
 
   /** Run tests related to a source file (e.g. --findRelatedTests) and return structured results. */
   runRelatedTestsJson(filePath: string): Promise<JestJsonResult>;
