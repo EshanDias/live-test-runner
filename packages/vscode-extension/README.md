@@ -40,6 +40,12 @@ A VS Code extension that runs your Jest tests automatically on save and presents
 | `liveTestRunner.projectRoot` | `""` | Project root directory (auto-detected for single-folder workspaces) |
 | `liveTestRunner.jestCommand` | `""` | Override Jest command (e.g. `node_modules/.bin/jest`). Leave empty to auto-detect. |
 | `liveTestRunner.onSaveDebounceMs` | `300` | Delay in ms before running tests after a save |
+| `liveTestRunner.durationThresholds.testAmberMs` | `100` | Test duration (ms) at which the badge turns amber |
+| `liveTestRunner.durationThresholds.testRedMs` | `500` | Test duration (ms) at which the badge turns red |
+| `liveTestRunner.durationThresholds.suiteAmberMs` | `500` | Suite duration (ms) at which the badge turns amber |
+| `liveTestRunner.durationThresholds.suiteRedMs` | `2000` | Suite duration (ms) at which the badge turns red |
+| `liveTestRunner.durationThresholds.fileAmberMs` | `1000` | File duration (ms) at which the badge turns amber |
+| `liveTestRunner.durationThresholds.fileRedMs` | `5000` | File duration (ms) at which the badge turns red |
 
 ## Status Bar
 
@@ -54,12 +60,12 @@ A VS Code extension that runs your Jest tests automatically on save and presents
 ## Supported Frameworks
 
 - **Jest** — fully supported, including Create React App / react-scripts projects
-- More frameworks planned for v2.1.0
+- More frameworks planned for future.
 
 ## Known Limitations
 
-- Rerunning a suite or individual test reruns the whole file (Jest limitation without a custom reporter — planned for v2.1.0)
-- Line-number anchoring when opening test files is not yet available
+- Rerunning an individual test uses `--testNamePattern` which may match multiple tests if names overlap
+- Rerunning a `describe` block with no matching entry in the line map falls back to running the whole file
 
 ## Contributing
 
