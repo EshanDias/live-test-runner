@@ -1,5 +1,3 @@
-import * as vscode from 'vscode';
-
 export type SelectionScope = 'file' | 'suite' | 'test';
 
 export interface Selection {

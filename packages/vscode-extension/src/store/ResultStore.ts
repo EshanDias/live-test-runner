@@ -1,6 +1,10 @@
 /**
  * ResultStore — typed in-memory result tree for the custom UI.
  *
+ * Intentionally has no VS Code or framework imports — it is pure data.
+ * The extension layer writes to it (via JestAdapter._applyFileResult) and
+ * reads from it (via views and DecorationManager).
+ *
  * Hierarchy: File → Suite → Test case
  * All IDs are stable string keys derived from file path / suite name / test name.
  */
@@ -142,12 +146,7 @@ export class ResultStore {
     });
   }
 
-  suiteResult(
-    fileId: string,
-    suiteId: string,
-    status: TestStatus,
-    duration?: number,
-  ): void {
+  suiteResult(fileId: string, suiteId: string, status: TestStatus, duration?: number): void {
     const suite = this.files.get(fileId)?.suites.get(suiteId);
     if (!suite) return;
     suite.status = status;
@@ -204,12 +203,7 @@ export class ResultStore {
     suite.output = output;
   }
 
-  setTestOutput(
-    fileId: string,
-    suiteId: string,
-    testId: string,
-    output: ScopedOutput,
-  ): void {
+  setTestOutput(fileId: string, suiteId: string, testId: string, output: ScopedOutput): void {
     const test = this.files.get(fileId)?.suites.get(suiteId)?.tests.get(testId);
     if (!test) return;
     test.output = output;
@@ -242,11 +236,7 @@ export class ResultStore {
     return this.files.get(fileId)?.suites.get(suiteId);
   }
 
-  getTest(
-    fileId: string,
-    suiteId: string,
-    testId: string,
-  ): TestCaseResult | undefined {
+  getTest(fileId: string, suiteId: string, testId: string): TestCaseResult | undefined {
     return this.files.get(fileId)?.suites.get(suiteId)?.tests.get(testId);
   }
 
@@ -254,22 +244,14 @@ export class ResultStore {
     return Array.from(this.files.values());
   }
 
-  getSummary(): {
-    total: number;
-    passed: number;
-    failed: number;
-    running: number;
-  } {
-    let total = 0,
-      passed = 0,
-      failed = 0,
-      running = 0;
+  getSummary(): { total: number; passed: number; failed: number; running: number } {
+    let total = 0, passed = 0, failed = 0, running = 0;
     for (const file of this.files.values()) {
       for (const suite of file.suites.values()) {
         for (const test of suite.tests.values()) {
           total++;
-          if (test.status === 'passed') passed++;
-          else if (test.status === 'failed') failed++;
+          if (test.status === 'passed')       passed++;
+          else if (test.status === 'failed')  failed++;
           else if (test.status === 'running') running++;
         }
       }
@@ -280,23 +262,23 @@ export class ResultStore {
   /** Serialises the full tree to a plain object safe to post to a webview. */
   toJSON(): object {
     const files = Array.from(this.files.values()).map((f) => ({
-      fileId: f.fileId,
+      fileId:   f.fileId,
       filePath: f.filePath,
-      name: f.name,
-      status: f.status,
+      name:     f.name,
+      status:   f.status,
       duration: f.duration,
       suites: Array.from(f.suites.values()).map((s) => ({
-        suiteId: s.suiteId,
-        name: s.name,
-        status: s.status,
+        suiteId:  s.suiteId,
+        name:     s.name,
+        status:   s.status,
         duration: s.duration,
         tests: Array.from(s.tests.values()).map((t) => ({
-          testId: t.testId,
-          name: t.name,
-          fullName: t.fullName,
-          status: t.status,
-          duration: t.duration,
-          line: t.line,
+          testId:          t.testId,
+          name:            t.name,
+          fullName:        t.fullName,
+          status:          t.status,
+          duration:        t.duration,
+          line:            t.line,
           failureMessages: t.failureMessages,
           // output omitted — fetched on demand via scope-logs
         })),

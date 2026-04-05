@@ -1,14 +1,27 @@
 import * as vscode from 'vscode';
-import { ResultStore } from './ResultStore';
+import { ResultStore } from '../store/ResultStore';
+import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResultObserver';
 
 const BLOCK_PATTERN = /^\s*(describe|it|test)\s*[\.(]/;
 const SUITE_PATTERN = /^\s*describe\s*[\.(]/;
 
-export class LiveTestCodeLensProvider implements vscode.CodeLensProvider {
+export class CodeLensProvider implements vscode.CodeLensProvider, IResultObserver {
   private _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this._onDidChange.event;
 
   constructor(private readonly _store: ResultStore) {}
+
+  // ── IResultObserver ────────────────────────────────────────────────────────
+
+  onSessionStarted(_payload?: RunStartedPayload): void { this.refresh(); }
+  onSessionStopped(): void                             { this.refresh(); }
+  onRunStarted(_payload: RunStartedPayload): void      {}
+  onFilesRerunning(_fileIds: string[]): void           {}
+  onFileResult(_filePath: string): void                { this.refresh(); }
+  onRunFinished(_payload: RunFinishedPayload): void    {}
+  dispose(): void                                      { this._onDidChange.dispose(); }
+
+  // ── CodeLensProvider ───────────────────────────────────────────────────────
 
   refresh(): void {
     this._onDidChange.fire();
@@ -23,26 +36,23 @@ export class LiveTestCodeLensProvider implements vscode.CodeLensProvider {
       const text = document.lineAt(i).text;
       if (!BLOCK_PATTERN.test(text)) { continue; }
 
-      const lineNumber = i + 1;  // 1-based, matches Jest location.line
+      const lineNumber = i + 1;
       const isSuite    = SUITE_PATTERN.test(text);
       const entry      = lineMap.get(lineNumber);
       const range      = new vscode.Range(i, 0, i, 0);
 
-      // ▶ Run
       lenses.push(new vscode.CodeLens(range, {
         title:     '▶ Run',
         command:   'liveTestRunner.rerunFromEditor',
         arguments: [filePath, lineNumber],
       }));
 
-      // ▷ Debug
       lenses.push(new vscode.CodeLens(range, {
         title:     '▷ Debug',
         command:   'liveTestRunner.debugFromEditor',
         arguments: [filePath, lineNumber],
       }));
 
-      // ◈ Results — only on it/test lines with a known result
       if (!isSuite && entry) {
         lenses.push(new vscode.CodeLens(range, {
           title:     '◈ Results',

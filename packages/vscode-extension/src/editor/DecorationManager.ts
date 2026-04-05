@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { ResultStore } from './ResultStore';
+import { ResultStore } from '../store/ResultStore';
+import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResultObserver';
 
 // Matches durationLabel() in testListLayout.js
 function durationLabel(ms: number): string {
@@ -20,7 +21,7 @@ const DURATION_THRESHOLDS = {
   red:   500,  // 100–500ms = amber, > 500ms = red
 };
 
-export class EditorDecorationManager {
+export class DecorationManager implements IResultObserver {
   private _types = {
     passed: vscode.window.createTextEditorDecorationType({
       gutterIconPath: this._icon('passed'),
@@ -45,14 +46,41 @@ export class EditorDecorationManager {
     private readonly _context: vscode.ExtensionContext,
   ) {}
 
-  private _icon(name: string): vscode.Uri {
-    return vscode.Uri.joinPath(
-      this._context.extensionUri,
-      'resources',
-      'icons',
-      `${name}.svg`,
-    );
+  // ── IResultObserver ────────────────────────────────────────────────────────
+
+  onSessionStarted(_payload?: RunStartedPayload): void {
+    for (const editor of vscode.window.visibleTextEditors) {
+      this.applyToEditor(editor);
+    }
   }
+
+  onSessionStopped(): void {
+    this.dispose();
+  }
+
+  onRunStarted(_payload: RunStartedPayload): void {}
+
+  onFilesRerunning(fileIds: string[]): void {
+    for (const filePath of fileIds) {
+      this._store.markTestsRunning(filePath);
+      this._refreshFile(filePath);
+    }
+  }
+
+  onFileResult(filePath: string): void {
+    this._refreshFile(filePath);
+  }
+
+  onRunFinished(_payload: RunFinishedPayload): void {}
+
+  dispose(): void {
+    this.clearAll();
+    for (const type of Object.values(this._types)) {
+      type.dispose();
+    }
+  }
+
+  // ── Public helpers ─────────────────────────────────────────────────────────
 
   applyToEditor(editor: vscode.TextEditor): void {
     const filePath = editor.document.uri.fsPath;
@@ -63,7 +91,6 @@ export class EditorDecorationManager {
     };
 
     for (const [line, entry] of lineMap) {
-      // Read status and duration live from the result tree — LineEntry is identity only
       const test     = this._store.getTest(entry.fileId, entry.suiteId, entry.testId);
       const status   = test?.status ?? 'pending';
       const duration = test?.duration ?? null;
@@ -98,10 +125,7 @@ export class EditorDecorationManager {
     }
 
     for (const [state, opts] of Object.entries(buckets)) {
-      editor.setDecorations(
-        this._types[state as keyof typeof this._types],
-        opts,
-      );
+      editor.setDecorations(this._types[state as keyof typeof this._types], opts);
     }
   }
 
@@ -117,10 +141,17 @@ export class EditorDecorationManager {
     }
   }
 
-  dispose(): void {
-    this.clearAll();
-    for (const type of Object.values(this._types)) {
-      type.dispose();
+  // ── Private ────────────────────────────────────────────────────────────────
+
+  private _refreshFile(filePath: string): void {
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (editor.document.uri.fsPath === filePath) {
+        this.applyToEditor(editor);
+      }
     }
+  }
+
+  private _icon(name: string): vscode.Uri {
+    return vscode.Uri.joinPath(this._context.extensionUri, 'resources', 'icons', `${name}.svg`);
   }
 }
