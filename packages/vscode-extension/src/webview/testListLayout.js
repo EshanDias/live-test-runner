@@ -6,49 +6,7 @@
  * Exports a single `TestListLayout` class to be instantiated per container.
  */
 
-/* Duration thresholds ────────────────────────────────────────────────────── */
-const THRESHOLDS = {
-  test: [100, 500], // ms: [amber, red]
-  suite: [500, 2000],
-  file: [1000, 5000],
-};
-
-function durationClass(ms, level) {
-  if (ms == null) return '';
-  const [amber, red] = THRESHOLDS[level] ?? THRESHOLDS.test;
-  if (ms > red) return 'slow';
-  if (ms > amber) return 'moderate';
-  return 'fast';
-}
-
-function durationTooltip(ms, level) {
-  if (ms == null) return '';
-  const [amber, red] = THRESHOLDS[level] ?? THRESHOLDS.test;
-  if (ms > red) return 'Slow — consider mocking heavy I/O';
-  if (ms > amber) return 'Could be improved';
-  return 'Fast';
-}
-
-// humanTime.ts
-function durationLabel(ms) {
-  if (ms == null) return '';
-  if (ms < 1000) return `${ms}ms`;
-
-  const sec = Math.floor(ms / 1000);
-  const min = Math.floor(sec / 60);
-  const hr = Math.floor(min / 60);
-
-  const seconds = sec % 60;
-  const minutes = min % 60;
-  const hours = hr;
-
-  const parts = [];
-  if (hours) parts.push(`${hours}h`);
-  if (minutes) parts.push(`${minutes}m`);
-  if (seconds || parts.length === 0) parts.push(`${seconds}s`);
-
-  return parts.join(' ');
-}
+// durationLabel, durationClass, durationTooltip are globals injected by utils.js
 
 function basename(p) {
   if (!p) return p;

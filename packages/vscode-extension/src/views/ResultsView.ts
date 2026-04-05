@@ -62,8 +62,9 @@ export class ResultsView extends BaseWebviewProvider {
 
   protected _sendInit(): void {
     this.postMessage({
-      type:  'init',
-      files: (this.store.toJSON() as { files: unknown[] }).files,
+      type:       'init',
+      files:      (this.store.toJSON() as { files: unknown[] }).files,
+      thresholds: this._getThresholds(),
     });
   }
 

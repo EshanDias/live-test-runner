@@ -8,11 +8,12 @@ export class ExplorerView extends BaseWebviewProvider {
   protected _sendInit(): void {
     const summary = this.store.getSummary();
     this.postMessage({
-      type:   'init',
-      files:  (this.store.toJSON() as { files: unknown[] }).files,
-      total:  summary.total,
-      passed: summary.passed,
-      failed: summary.failed,
+      type:       'init',
+      files:      (this.store.toJSON() as { files: unknown[] }).files,
+      total:      summary.total,
+      passed:     summary.passed,
+      failed:     summary.failed,
+      thresholds: this._getThresholds(),
     });
   }
 }

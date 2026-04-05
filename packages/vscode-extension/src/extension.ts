@@ -89,23 +89,29 @@ export function deactivate() {}
 // These live here (not in SessionManager) because they need both the store
 // and the session — thin glue that reads store state then delegates to session.
 
-function rerunFromEditor(
+async function rerunFromEditor(
   filePath: string,
   line: number,
   store: ResultStore,
   session: SessionManager,
-): void {
+): Promise<void> {
   const entry = store.getLineMap(filePath).get(line);
-  if (!entry) {
-    session.rerunScope({ scope: 'file', fileId: filePath });
+  if (entry) {
+    const test = store.getTest(entry.fileId, entry.suiteId, entry.testId);
+    if (test) {
+      session.rerunScope({ scope: 'test', fileId: entry.fileId, suiteId: entry.suiteId, testId: entry.testId, fullName: test.fullName });
+      return;
+    }
+  }
+  // describe blocks are not in the LineMap (Jest doesn't report their location).
+  // Try to extract the suite title from the source line and find the matching suite.
+  const suiteId = await _resolveSuiteAtLine(filePath, line, store);
+  if (suiteId) {
+    const suite = store.getSuite(filePath, suiteId);
+    session.rerunScope({ scope: 'suite', fileId: filePath, suiteId, fullName: suite?.name });
     return;
   }
-  const test = store.getTest(entry.fileId, entry.suiteId, entry.testId);
-  if (test) {
-    session.rerunScope({ scope: 'test', fileId: entry.fileId, suiteId: entry.suiteId, testId: entry.testId, fullName: test.fullName });
-  } else {
-    session.rerunScope({ scope: 'file', fileId: filePath });
-  }
+  session.rerunScope({ scope: 'file', fileId: filePath });
 }
 
 async function debugFromEditor(
@@ -114,9 +120,34 @@ async function debugFromEditor(
   store: ResultStore,
   session: SessionManager,
 ): Promise<void> {
-  const entry        = store.getLineMap(filePath).get(line);
-  const testFullName = entry ? store.getTest(entry.fileId, entry.suiteId, entry.testId)?.fullName : undefined;
-  await session.debugFromEditor(filePath, testFullName);
+  const entry = store.getLineMap(filePath).get(line);
+  if (entry) {
+    const testFullName = store.getTest(entry.fileId, entry.suiteId, entry.testId)?.fullName;
+    await session.debugFromEditor(filePath, testFullName);
+    return;
+  }
+  // describe block — use suite name as testNamePattern so Jest runs all tests within it
+  const suiteId = await _resolveSuiteAtLine(filePath, line, store);
+  const suiteName = suiteId ? store.getSuite(filePath, suiteId)?.name : undefined;
+  await session.debugFromEditor(filePath, suiteName);
+}
+
+/** Extracts the describe title from a source line and looks it up in the store. */
+async function _resolveSuiteAtLine(
+  filePath: string,
+  line: number,
+  store: ResultStore,
+): Promise<string | undefined> {
+  try {
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+    const lineText = doc.lineAt(line - 1).text;
+    const m = lineText.match(/describe\s*[\.(]\s*['"`]([^'"`]+)['"`]/);
+    if (!m) { return undefined; }
+    const suiteId = `${filePath}::${m[1]}`;
+    return store.getSuite(filePath, suiteId) ? suiteId : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function focusResult(

@@ -5,33 +5,7 @@ import {
   RunStartedPayload,
   RunFinishedPayload,
 } from '../IResultObserver';
-
-// Matches durationLabel() in testListLayout.js
-function durationLabel(ms: number): string {
-  if (ms < 1000) {
-    return `${ms}ms`;
-  }
-  const sec = Math.floor(ms / 1000);
-  const min = Math.floor(sec / 60);
-  const hr = Math.floor(min / 60);
-  const parts: string[] = [];
-  if (hr) {
-    parts.push(`${hr}h`);
-  }
-  if (min % 60) {
-    parts.push(`${min % 60}m`);
-  }
-  if (sec % 60 || !parts.length) {
-    parts.push(`${sec % 60}s`);
-  }
-  return parts.join(' ');
-}
-
-// Matches THRESHOLDS.test in testListLayout.js
-const DURATION_THRESHOLDS = {
-  amber: 100, // < 100ms = green
-  red: 500, // 100–500ms = amber, > 500ms = red
-};
+import { durationLabel, durationColorVar, getThresholds } from '../utils/duration';
 
 export class DecorationManager implements IResultObserver {
   private _types = {
@@ -122,13 +96,7 @@ export class DecorationManager implements IResultObserver {
           : '';
 
       const durationColor =
-        duration == null
-          ? ''
-          : duration < DURATION_THRESHOLDS.amber
-            ? 'var(--vscode-terminal-ansiGreen)'
-            : duration < DURATION_THRESHOLDS.red
-              ? 'var(--vscode-terminal-ansiYellow)'
-              : 'var(--vscode-terminal-ansiRed)';
+        duration == null ? '' : durationColorVar(duration, 'test', getThresholds());
 
       const decoration: vscode.DecorationOptions = {
         range,

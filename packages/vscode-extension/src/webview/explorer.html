@@ -91,6 +91,7 @@
 
 </div>
 
+<script nonce="{{nonce}}" src="{{utilsUri}}"></script>
 <script nonce="{{nonce}}" src="{{testListLayoutUri}}"></script>
 <script nonce="{{nonce}}">
   const vscode = acquireVsCodeApi();
@@ -211,6 +212,7 @@
     switch (msg.type) {
 
       case 'init':
+        LiveTestUtils.setThresholds(msg.thresholds);
         list.setData(msg.files ?? []);
         updateSummary(msg.total, msg.passed, msg.failed, null);
         updateListCount();

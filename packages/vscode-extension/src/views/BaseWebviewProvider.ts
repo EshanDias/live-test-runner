@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ResultStore } from '../store/ResultStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResultObserver';
+import { getThresholds } from '../utils/duration';
 
 /**
  * Shared base for ExplorerView and ResultsView.
@@ -173,14 +174,20 @@ export abstract class BaseWebviewProvider
   /** Override to handle view-specific message types. */
   protected handleExtraMessage(_msg: unknown): void {}
 
+  /** Returns current duration thresholds from VS Code settings for inclusion in init messages. */
+  protected _getThresholds() {
+    return getThresholds();
+  }
+
   // ── Private ────────────────────────────────────────────────────────────────
 
   private _buildHtml(webview: vscode.Webview): string {
-    const webviewDir         = vscode.Uri.joinPath(this.extensionUri, 'src', 'webview');
-    const stylesUri          = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'styles.css'));
-    const testListLayoutUri  = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'testListLayout.js'));
-    const nonce              = getNonce();
-    const cspSource          = webview.cspSource;
+    const webviewDir        = vscode.Uri.joinPath(this.extensionUri, 'src', 'webview');
+    const stylesUri         = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'styles.css'));
+    const utilsUri          = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'utils.js'));
+    const testListLayoutUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'testListLayout.js'));
+    const nonce             = getNonce();
+    const cspSource         = webview.cspSource;
 
     const html = require('fs').readFileSync(
       require('path').join(this.extensionUri.fsPath, 'src', 'webview', this._htmlFile),
@@ -188,9 +195,10 @@ export abstract class BaseWebviewProvider
     ) as string;
 
     return html
-      .replace(/\{\{cspSource\}\}/g,        cspSource)
-      .replace(/\{\{nonce\}\}/g,            nonce)
-      .replace(/\{\{stylesUri\}\}/g,        stylesUri.toString())
+      .replace(/\{\{cspSource\}\}/g,         cspSource)
+      .replace(/\{\{nonce\}\}/g,             nonce)
+      .replace(/\{\{stylesUri\}\}/g,         stylesUri.toString())
+      .replace(/\{\{utilsUri\}\}/g,          utilsUri.toString())
       .replace(/\{\{testListLayoutUri\}\}/g, testListLayoutUri.toString());
   }
 }
