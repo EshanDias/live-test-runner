@@ -29,18 +29,28 @@ packages/
 │           └── ResultParser.ts               # Parses Jest JSON output → JestJsonResult
 └── vscode-extension/   # The VS Code extension
     └── src/
-        ├── extension.ts                      # Entry point, commands, on-save handler
-        ├── ResultStore.ts                    # In-memory test result state + LineMap
-        ├── SelectionState.ts                 # Explorer selection tracking
-        ├── TestExplorerProvider.ts           # Webview: file/suite/test tree
-        ├── TestResultsProvider.ts            # Webview: detail panel (3-column)
-        ├── EditorDecorationManager.ts        # Gutter icons and inline duration text
-        ├── CodeLensProvider.ts               # ▶ Run / ▷ Debug / ◈ Results CodeLens
-        └── webview/
-            ├── results.html                  # Test Results panel UI
-            ├── explorer.html                 # Test Explorer sidebar UI
-            ├── testListLayout.js             # Column 1 test list renderer (shared)
-            └── styles.css                    # Shared webview styles
+        ├── extension.ts                      # Entry point — wires instances, registers commands (~110 lines)
+        ├── IResultObserver.ts                # Cross-cutting event contract (session/run lifecycle)
+        ├── store/
+        │   ├── ResultStore.ts                # In-memory File→Suite→Test result tree + LineMap
+        │   └── SelectionState.ts             # Selected row tracking; broadcasts scope-changed to webviews
+        ├── session/
+        │   └── SessionManager.ts             # Session lifecycle, run execution pool, on-save, rerun
+        ├── framework/
+        │   ├── IFrameworkAdapter.ts          # Adapter interface (detect, runFile, runTestCase, getDebugConfig…)
+        │   └── JestAdapter.ts                # All Jest-specific logic — adding Vitest = new file here
+        ├── editor/
+        │   ├── CodeLensProvider.ts           # ▶ Run / ▷ Debug / ◈ Results CodeLens
+        │   └── DecorationManager.ts          # Gutter icons and inline duration text
+        ├── views/
+        │   ├── BaseWebviewProvider.ts        # Webview lifecycle, postMessage routing, IResultObserver base
+        │   ├── ExplorerView.ts               # Sidebar: file/suite/test tree
+        │   └── ResultsView.ts                # Panel: detail view with scoped logs and errors
+        └── webview/                          # Browser-side assets (not compiled by tsc)
+            ├── results.html
+            ├── explorer.html
+            ├── testListLayout.js             # Shared test list renderer (used by both views)
+            └── styles.css
 ```
 
 ---
@@ -52,13 +62,21 @@ packages/
 ```
 VS Code saves a file
   → extension.ts onSave
-  → JestRunner (orchestrator)
-      → FrameworkDetector     detects: jest | cra | vite | …
-      → FrameworkAdapter      resolves binary + config
-      → Executor              spawns jest, captures --outputFile JSON
-      → ResultParser          parses JSON → JestJsonResult
-  → ResultStore               stores results
-  → WebviewProviders          push update to UI
+  → SessionManager.onSave
+      → IFrameworkAdapter.isTestFile / getAffectedTests
+      → SessionManager._runFiles (concurrency pool)
+          → IFrameworkAdapter.runFile
+              → JestRunner (orchestrator)
+                  → FrameworkDetector     detects: jest | cra | vite | …
+                  → FrameworkAdapter      resolves binary + config
+                  → Executor              spawns jest, captures --outputFile JSON
+                  → ResultParser          parses JSON → JestJsonResult
+              → JestAdapter._applyFileResult → ResultStore
+  → IResultObserver.notify   broadcasts to all observers
+      → ExplorerView          pushes full-file-result to sidebar webview
+      → ResultsView           pushes full-file-result + scope-logs to panel webview
+      → DecorationManager     refreshes gutter icons for visible editors
+      → CodeLensProvider      fires onDidChangeCodeLenses
 ```
 
 ### Key design decisions
@@ -116,22 +134,26 @@ cd packages/vscode-extension && pnpm run compile
 
 ## Adding a New Framework
 
-1. Create `packages/runner/src/framework/adapters/MyAdapter.ts` implementing `FrameworkAdapter`:
+Adding support for a new test framework (e.g. Vitest, Mocha) requires changes in two places:
+
+### 1. Runner package — how to spawn and parse the framework
+
+Create `packages/runner/src/framework/adapters/VitestAdapter.ts` implementing `FrameworkAdapter`:
 
 ```typescript
-export class MyAdapter implements FrameworkAdapter {
-  readonly framework: Framework = 'myframework';
+export class VitestAdapter implements FrameworkAdapter {
+  readonly framework: Framework = 'vitest';
 
   detect(projectRoot: string): boolean {
-    // Return true if package.json indicates this framework
+    // Return true if package.json has vitest
   }
 
   resolveJestBinary(projectRoot: string): string {
-    // Return absolute path to the compatible jest binary in node_modules
+    // Return path to vitest binary in node_modules
   }
 
   async resolveJestConfig(projectRoot: string): Promise<string | undefined> {
-    // Return path to a config file, or undefined to let Jest discover its own
+    return undefined; // vitest discovers its own config
   }
 
   getExtraArgs(projectRoot: string): string[] {
@@ -140,11 +162,28 @@ export class MyAdapter implements FrameworkAdapter {
 }
 ```
 
-2. Register it in `FrameworkDetector.ts` at the correct priority position in `ADAPTER_PRIORITY`.
+Register it in `FrameworkDetector.ts` in `ADAPTER_PRIORITY`, and export from `packages/runner/src/index.ts`.
 
-3. Export it from `packages/runner/src/index.ts`.
+### 2. Extension package — how to map results and launch the debugger
 
-That's it — `JestRunner` picks it up automatically.
+Create `packages/vscode-extension/src/framework/VitestAdapter.ts` implementing `IFrameworkAdapter`:
+
+```typescript
+export class VitestAdapter implements IFrameworkAdapter {
+  async detect(projectRoot) { /* check for vitest in package.json */ }
+  async discoverTests(projectRoot, log) { /* ... */ }
+  getFileGlob() { return '{**/*.test.*,**/*.spec.*}'; }
+  isTestFile(filePath) { return /\.(test|spec)\.[jt]sx?$/.test(filePath); }
+  async runFile(store, filePath, projectRoot, log) { /* ... */ }
+  async runTestCase(store, filePath, fullName, projectRoot, log, opts) { /* ... */ }
+  getAffectedTests(session, changedFile) { /* ... */ }
+  getDebugConfig(projectRoot, filePath, testFullName?) { /* vitest debug config */ }
+}
+```
+
+Then in `extension.ts`, replace `new JestAdapter()` with your adapter (or add auto-detection logic).
+
+`SessionManager`, `ResultStore`, all views, and all observer notifications require zero changes.
 
 ---
 
