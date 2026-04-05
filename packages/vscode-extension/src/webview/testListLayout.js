@@ -121,6 +121,7 @@ class TestListLayout {
     if (!file) {
       return;
     }
+    file.status = 'running';
     for (const suite of file.suites.values()) {
       if (!!suiteId && suite.suiteId !== suiteId) {
         continue;
