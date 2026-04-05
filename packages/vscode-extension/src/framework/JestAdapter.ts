@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { JestRunner, JestFileResult } from '@live-test-runner/runner';
+import { JestRunner, FileRunResult, ConsoleEntry } from '@live-test-runner/runner';
 import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
 import {
@@ -164,7 +164,7 @@ export class JestAdapter implements IFrameworkAdapter {
   private _applyFileResult(
     store: ResultStore,
     filePath: string,
-    fileResult: JestFileResult,
+    fileResult: FileRunResult,
     opts?: RerunOptions,
   ): void {
     const touchedSuiteIds = new Set<string>();
@@ -278,7 +278,7 @@ export class JestAdapter implements IFrameworkAdapter {
   }
 
   private _buildOutputLines(
-    entries: JestFileResult['consoleOutput'],
+    entries: ConsoleEntry[],
     timestamp: number,
   ): OutputLine[] {
     return entries.map((entry) => ({

@@ -11,7 +11,7 @@ import { BinaryResolver } from '../../resolution/BinaryResolver';
  * jest config (jest.config.* or package.json#jest) — OR jest is in deps with
  * no other framework taking priority.
  *
- * Config: jest discovers its own config; we return undefined from resolveJestConfig
+ * Config: jest discovers its own config; we return undefined from resolveConfig
  * and let jest handle it.
  *
  * Binary: node_modules/.bin/jest (local install).
@@ -38,11 +38,11 @@ export class JestAdapter implements FrameworkAdapter {
     return hasJest || hasJestConfig;
   }
 
-  resolveJestBinary(projectRoot: string): string {
+  resolveBinary(projectRoot: string): string {
     return this.binaryResolver.resolve(projectRoot);
   }
 
-  async resolveJestConfig(_projectRoot: string): Promise<string | undefined> {
+  async resolveConfig(_projectRoot: string): Promise<string | undefined> {
     // Jest discovers its own config — nothing to resolve.
     return undefined;
   }

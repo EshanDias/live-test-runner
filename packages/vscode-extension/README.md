@@ -102,7 +102,8 @@ All settings are under `liveTestRunner.*` in VS Code settings.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `liveTestRunner.projectRoot` | `""` | Project root (auto-detected for single-folder workspaces) |
-| `liveTestRunner.jestCommand` | `""` | Override the Jest command. Leave empty to auto-detect. |
+| `liveTestRunner.runMode` | `"auto"` | `"auto"`: extension calls Jest directly for full structured output. `"npm"`: delegates to your `npm test` script — useful when Jest is wrapped or non-standard, but per-test durations and gutter icons may be limited. |
+| `liveTestRunner.jestCommand` | `""` | Override the Jest command (e.g. `node_modules/.bin/jest`). Only used when `runMode` is `"auto"`. |
 | `liveTestRunner.onSaveDebounceMs` | `300` | Milliseconds to wait after a save before triggering a run |
 
 ### Duration thresholds

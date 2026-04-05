@@ -1,9 +1,9 @@
-import { JestJsonResult } from './types';
+import { RunResult } from './types';
 
 /**
  * Framework-agnostic test runner interface.
  *
- * Any framework adapter (Jest, Vitest, etc.) implements this contract.
+ * Any framework implementation (Jest, Vitest, etc.) implements this contract.
  * The extension layer only depends on this interface — never on concrete runner classes.
  */
 export interface TestRunner {
@@ -20,23 +20,23 @@ export interface TestRunner {
   runFullSuiteJson(
     projectRoot: string,
     withCoverage?: boolean,
-  ): Promise<JestJsonResult>;
+  ): Promise<RunResult>;
 
   /** Run a single test file and return structured results. */
-  runTestFileJson(filePath: string): Promise<JestJsonResult>;
+  runTestFileJson(filePath: string): Promise<RunResult>;
 
   /** Run multiple test files in one invocation and return merged structured results. */
-  runTestFilesJson(filePaths: string[]): Promise<JestJsonResult>;
+  runTestFilesJson(filePaths: string[]): Promise<RunResult>;
 
-  /** Run a single named test within a file using --testNamePattern. */
+  /** Run a single named test within a file using a name pattern match. */
   runTestCaseJson(
     filePath: string,
     testFullName: string,
     isTestSuite?: boolean,
-  ): Promise<JestJsonResult>;
+  ): Promise<RunResult>;
 
-  /** Run tests related to a source file (e.g. --findRelatedTests) and return structured results. */
-  runRelatedTestsJson(filePath: string): Promise<JestJsonResult>;
+  /** Run tests related to a source file and return structured results. */
+  runRelatedTestsJson(filePath: string): Promise<RunResult>;
 
   /** Returns true if the given path is a test file (not a source file). */
   isTestFile(filePath: string): boolean;

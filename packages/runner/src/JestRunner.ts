@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { TestRunner } from './TestRunner';
-import { JestJsonResult } from './types';
+import { RunResult } from './types';
 import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { Executor } from './execution/Executor';
@@ -86,7 +86,7 @@ export class JestRunner implements TestRunner {
   async runFullSuiteJson(
     projectRoot: string,
     withCoverage = false,
-  ): Promise<JestJsonResult> {
+  ): Promise<RunResult> {
     this.initAdapter(projectRoot);
     const adapter = this.requireAdapter();
     const cwd = this.requireProjectRoot();
@@ -116,7 +116,7 @@ export class JestRunner implements TestRunner {
     return this.parser.parse(passed, jsonOutput, stderr);
   }
 
-  async runTestFileJson(filePath: string): Promise<JestJsonResult> {
+  async runTestFileJson(filePath: string): Promise<RunResult> {
     const projectRoot = this.requireProjectRoot();
     const adapter = this.requireAdapter();
 
@@ -142,7 +142,7 @@ export class JestRunner implements TestRunner {
     return this.parser.parse(passed, jsonOutput, stderr);
   }
 
-  async runTestFilesJson(filePaths: string[]): Promise<JestJsonResult> {
+  async runTestFilesJson(filePaths: string[]): Promise<RunResult> {
     if (filePaths.length === 0) return this.parser.empty(true, []);
     if (filePaths.length === 1) return this.runTestFileJson(filePaths[0]);
 
@@ -175,7 +175,7 @@ export class JestRunner implements TestRunner {
     }
 
     // Multiple chunks — run sequentially and merge
-    const results: JestJsonResult[] = [];
+    const results: RunResult[] = [];
     for (const chunk of chunks) {
       const args = [
         ...prefixArgs,
@@ -201,7 +201,7 @@ export class JestRunner implements TestRunner {
     filePath: string,
     testFullName: string,
     isTestSuite: boolean = false,
-  ): Promise<JestJsonResult> {
+  ): Promise<RunResult> {
     const projectRoot = this.requireProjectRoot();
     const adapter = this.requireAdapter();
 
@@ -231,7 +231,7 @@ export class JestRunner implements TestRunner {
     return this.parser.parse(passed, jsonOutput, stderr);
   }
 
-  async runRelatedTestsJson(filePath: string): Promise<JestJsonResult> {
+  async runRelatedTestsJson(filePath: string): Promise<RunResult> {
     const projectRoot = this.requireProjectRoot();
     const adapter = this.requireAdapter();
 
@@ -315,7 +315,7 @@ export class JestRunner implements TestRunner {
     if (this.userJestCommand.trim()) {
       return this.userJestCommand.trim().split(/\s+/)[0];
     }
-    return adapter.resolveJestBinary(projectRoot);
+    return adapter.resolveBinary(projectRoot);
   }
 
   /**
@@ -332,7 +332,7 @@ export class JestRunner implements TestRunner {
     adapter: FrameworkAdapter,
     projectRoot: string,
   ): Promise<string[]> {
-    const configPath = await adapter.resolveJestConfig(projectRoot);
+    const configPath = await adapter.resolveConfig(projectRoot);
     return configPath ? ['--config', configPath] : [];
   }
 

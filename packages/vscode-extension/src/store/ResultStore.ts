@@ -42,11 +42,11 @@ const EMPTY_OUTPUT: ScopedOutput = { lines: [], capturedAt: null };
 export interface TestCaseResult {
   testId: string; // `${fileId}::${suiteId}::${testName}`
   name: string;
-  /** Jest fullName — ancestor suite titles + test title, used for --testNamePattern */
+  /** Full display name including ancestor suite titles — used to scope reruns by name pattern */
   fullName: string;
   status: TestStatus;
   duration?: number;
-  /** 1-based source line from Jest --testLocationInResults, used for editor navigation */
+  /** 1-based source line reported by the framework, used for editor gutter decorations */
   line?: number;
   output: ScopedOutput;
   failureMessages: string[];
@@ -67,7 +67,7 @@ export interface FileResult {
   name: string; // relative display name
   status: TestStatus;
   duration?: number;
-  /** Console output captured during this file's run (from Jest --json `console` array) */
+  /** Console output captured during this file's run */
   output: ScopedOutput;
   suites: Map<string, SuiteResult>;
 }

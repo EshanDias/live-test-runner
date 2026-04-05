@@ -51,7 +51,7 @@ export class CRAAdapter implements FrameworkAdapter {
    * extracted config. Falls back to the project's own node_modules/.bin/jest
    * (present in newer CRA versions that list jest as a peer dep).
    */
-  resolveJestBinary(projectRoot: string): string {
+  resolveBinary(projectRoot: string): string {
     // 1. Jest bundled inside react-scripts (most reliable for CRA)
     const craJest = path.join(
       projectRoot,
@@ -100,7 +100,7 @@ export class CRAAdapter implements FrameworkAdapter {
    * The temp file is keyed by project root so it is reused across runs.
    * It is invalidated when the project's package.json changes (mtime check).
    */
-  async resolveJestConfig(projectRoot: string): Promise<string | undefined> {
+  async resolveConfig(projectRoot: string): Promise<string | undefined> {
     const cached = this.configCache.get(projectRoot);
     const pkgMtime = this.getPackageJsonMtime(projectRoot);
 
