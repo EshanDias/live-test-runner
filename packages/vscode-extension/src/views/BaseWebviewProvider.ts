@@ -148,9 +148,10 @@ export abstract class BaseWebviewProvider
           })),
         })),
       },
-      total:  summary.total,
-      passed: summary.passed,
-      failed: summary.failed,
+      total:         summary.total,
+      passed:        summary.passed,
+      failed:        summary.failed,
+      totalDuration: summary.totalDuration,
     });
   }
 

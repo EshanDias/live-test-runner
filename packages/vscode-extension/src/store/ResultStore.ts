@@ -272,12 +272,15 @@ export class ResultStore {
     passed: number;
     failed: number;
     running: number;
+    totalDuration: number;
   } {
     let total = 0,
       passed = 0,
       failed = 0,
-      running = 0;
+      running = 0,
+      totalDuration = 0;
     for (const file of this.files.values()) {
+      totalDuration += file.duration ?? 0;
       for (const suite of file.suites.values()) {
         for (const test of suite.tests.values()) {
           total++;
@@ -287,7 +290,7 @@ export class ResultStore {
         }
       }
     }
-    return { total, passed, failed, running };
+    return { total, passed, failed, running, totalDuration };
   }
 
   /** Serialises the full tree to a plain object safe to post to a webview. */

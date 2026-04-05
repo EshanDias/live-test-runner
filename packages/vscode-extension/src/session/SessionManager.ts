@@ -212,7 +212,7 @@ export class SessionManager {
       this._session = undefined;
       this._store.clear();
       this._updateStatusBar('Off');
-      this._notify('onRunFinished', { total: 0, passed: 0, failed: 0, sessionActive: false });
+      this._notify('onRunFinished', { total: 0, passed: 0, failed: 0, totalDuration: 0, sessionActive: false });
     }
   }
 
@@ -270,6 +270,7 @@ export class SessionManager {
       total:         summary.total,
       passed:        summary.passed,
       failed:        summary.failed,
+      totalDuration: summary.totalDuration,
       sessionActive: this.isActive(),
     });
 

@@ -242,7 +242,7 @@
       case 'run-finished':
         runProgress.classList.remove('visible');
         applySessionState(msg.sessionActive !== false ? 'watching' : 'idle');
-        updateSummary(msg.total, msg.passed, msg.failed, Date.now() - runStartTime);
+        updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
         if (msg.failed > 0) list.scrollToFirstFailure();
         break;
 
@@ -278,7 +278,7 @@
         const fl2 = failedDuringRun > 0 ? ` • <span class="progress-failed">${failedDuringRun} failed</span>` : '';
         runProgress.innerHTML = `Running — ${completedFiles} / ${totalFiles} files • ${durationLabel(el2)}${fl2}`;
         list.updateFile(msg.file);
-        updateSummary(msg.total, msg.passed, msg.failed);
+        updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
         break;
 
       case 'scope-changed':
