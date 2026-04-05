@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "pnpm -r run build",
-    "rebuild": "rimraf packages/*/dist && rimraf packages/*/build && rimraf packages/*/out && rimraf packages/*/tsconfig.tsbuildinfo && pnpm -r run build",
+    "rebuild": "rimraf --glob \"packages/*/{dist,build,out,tsconfig.tsbuildinfo}\" && pnpm -r run build",
     "test": "pnpm -r run test",
     "lint": "pnpm -r run lint",
     "start": "pnpm --filter live-test-runner run watch"

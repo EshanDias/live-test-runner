@@ -29,7 +29,7 @@ Key takeaways we **adopt**, **simplify**, or **explicitly avoid**:
 
 ### We simplify (by design)
 
-- ❌ No multi‑framework support (Jest only)
+- ✅ Multi‑framework via `FrameworkAdapter` (Jest + CRA now; Vitest stub ready)
 - ❌ No AST parsing of test files or configs
 - ❌ No continuous watch / keystroke execution
 - ❌ No persistent cache across sessions
@@ -260,30 +260,58 @@ Fallback always exists (`--findRelatedTests`).
 
 ---
 
-## 7. Architecture
+## 7. Architecture (v2.1.0)
 
 ### 7.1 High‑level layers
 
 ```text
 VS Code UI Layer
- ├─ Commands
- ├─ Status Bar
- ├─ Test Explorer
- ├─ Diagnostics
-
-Execution Layer
- ├─ JestRunner (CLI wrapper)
- ├─ Output parsing
+ ├─ extension.ts       commands, on-save handler, status bar
+ ├─ TestExplorerProvider  file/suite/test tree webview
+ └─ TestResultsProvider   detail panel webview
 
 Core Logic
- ├─ TestSession
- ├─ SelectionPolicy
- ├─ CoverageMap
+ ├─ TestSession         session lifecycle, coverage map management
+ └─ CoverageMap         source-file → test-file mapping
+
+Runner Engine (packages/runner)
+ ├─ TestRunner          interface — extension only depends on this
+ ├─ JestRunner          thin orchestrator
+ ├─ framework/
+ │   ├─ FrameworkDetector   reads package.json → picks adapter
+ │   └─ adapters/
+ │       ├─ FrameworkAdapter   interface
+ │       ├─ JestAdapter        plain Jest / Next.js + Jest
+ │       ├─ CRAAdapter         react-scripts: extracts hidden config via --showConfig
+ │       └─ ViteAdapter        stub (Vitest — not yet supported)
+ ├─ resolution/
+ │   └─ BinaryResolver   finds jest binary in project node_modules
+ ├─ execution/
+ │   └─ Executor         spawns jest, --outputFile JSON strategy, streams stderr
+ └─ parsing/
+     └─ ResultParser      parses jest JSON → JestJsonResult
 ```
+
+### 7.2 Execution flow
+
+```text
+jest --config <resolved> --watchAll=false --forceExit --no-bail --json --outputFile=<tmp>
+```
+
+For every framework:
+1. **FrameworkDetector** inspects `package.json` → selects adapter
+2. **FrameworkAdapter** resolves the binary (always from project `node_modules`) and config
+3. **Executor** spawns the process, streams stderr live, reads `--outputFile` on exit
+4. **ResultParser** normalises the JSON into `JestJsonResult`
+
+CRA‑specific: `CRAAdapter.resolveJestConfig()` runs
+`node ./node_modules/react-scripts/bin/react-scripts.js test --showConfig --passWithNoTests`
+once per session (result cached in‑memory), writes the extracted config to a temp file,
+then Jest is invoked directly — never via `react-scripts` at run time.
 
 ---
 
-### 7.2 Folder layout
+### 7.3 Folder layout
 
 ```text
 packages/
@@ -292,14 +320,39 @@ packages/
  │   ├─ CoverageMap.ts
  │   └─ SelectionPolicy.ts
  ├─ runner/
- │   └─ JestRunner.ts
+ │   └─ src/
+ │       ├─ types.ts
+ │       ├─ TestRunner.ts
+ │       ├─ JestRunner.ts
+ │       ├─ framework/
+ │       │   ├─ FrameworkDetector.ts
+ │       │   └─ adapters/
+ │       │       ├─ FrameworkAdapter.ts
+ │       │       ├─ JestAdapter.ts
+ │       │       ├─ CRAAdapter.ts
+ │       │       └─ ViteAdapter.ts
+ │       ├─ resolution/
+ │       │   └─ BinaryResolver.ts
+ │       ├─ execution/
+ │       │   └─ Executor.ts
+ │       └─ parsing/
+ │           └─ ResultParser.ts
  └─ vscode-extension/
-     ├─ extension.ts
-     ├─ commands/
-     ├─ testExplorer/
-     ├─ diagnostics/
-     └─ statusBar/
+     └─ src/
+         ├─ extension.ts
+         ├─ ResultStore.ts
+         ├─ SelectionState.ts
+         ├─ TestExplorerProvider.ts
+         └─ TestResultsProvider.ts
 ```
+
+### 7.4 Adding a new framework
+
+1. Implement `FrameworkAdapter` in `packages/runner/src/framework/adapters/`
+2. Add the instance to `ADAPTER_PRIORITY` in `FrameworkDetector.ts`
+3. Export from `packages/runner/src/index.ts`
+
+No changes required to `JestRunner`, `Executor`, `ResultParser`, or any VS Code layer.
 
 ---
 

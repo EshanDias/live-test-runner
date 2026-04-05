@@ -31,9 +31,10 @@
   <!-- Column 2: Live Test Results output -->
   <div class="col-logs" id="colLogs">
     <div class="log-tabs">
-      <div class="log-tab active" id="tabLogs" data-tab="log">Logs</div>
-      <div class="log-tab" id="tabInfo" data-tab="info">Info</div>
-      <div class="log-tab" id="tabWarn" data-tab="warn">Warn</div>
+      <div class="log-tab active" id="tabAll"  data-tab="all">All</div>
+      <div class="log-tab" id="tabLogs"  data-tab="log">Logs</div>
+      <div class="log-tab" id="tabInfo"  data-tab="info">Info</div>
+      <div class="log-tab" id="tabWarn"  data-tab="warn">Warn</div>
       <div class="log-tab" id="tabError" data-tab="error">Error</div>
     </div>
     <div class="log-content" id="logContent">
@@ -58,9 +59,7 @@
   const vscode = acquireVsCodeApi();
   const list = new TestListLayout(document.getElementById('testList'), vscode);
 
-  let activeTab = 'log';
-  let currentLogs = [];   // { text, level }[]  level: 'log' | 'info' | 'warn'
-  let currentErrors = []; // string[]
+  let activeTab = 'all';
   let autoScroll = true;
 
   // ── Log tabs ───────────────────────────────────────────────────────────────
@@ -69,47 +68,8 @@
       document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       activeTab = tab.dataset.tab;
-      renderLogs();
+      applyTabFilter(activeTab);
     });
-  });
-
-  const EMPTY_STATE = {
-    log:   'No console.log output for this selection',
-    info:  'No info output for this selection',
-    warn:  'No warnings for this selection',
-    error: 'No console.error output for this selection',
-  };
-
-  function renderLogs() {
-    const el = document.getElementById('logContent');
-    const lines = currentLogs.filter(l => l.level === activeTab);
-
-    if (lines.length === 0) {
-      el.innerHTML = `<div class="empty-state">${EMPTY_STATE[activeTab] ?? 'No output'}</div>`;
-      return;
-    }
-    el.innerHTML = lines.map(l => {
-      const cls = l.level === 'warn' ? 'log-line-warn' : l.level === 'info' ? 'log-line-info' : l.level === 'error' ? 'log-line-error' : '';
-      return `<div class="${cls}">${escHtml(l.text)}</div>`;
-    }).join('');
-
-    if (autoScroll) el.scrollTop = el.scrollHeight;
-  }
-
-  function renderErrors() {
-    const el = document.getElementById('errorContent');
-    if (currentErrors.length === 0) {
-      el.innerHTML = '<div class="empty-state">No errors for this selection</div>';
-      return;
-    }
-    el.innerHTML = currentErrors.map(m => `<div class="error-block">${escHtml(m)}</div>`).join('');
-  }
-
-  // Lock auto-scroll when user scrolls up
-  const logContent = document.getElementById('logContent');
-  logContent.addEventListener('scroll', () => {
-    const atBottom = logContent.scrollHeight - logContent.scrollTop - logContent.clientHeight < 40;
-    autoScroll = atBottom;
   });
 
   // ── Search ─────────────────────────────────────────────────────────────────
@@ -148,6 +108,132 @@
   makeResizable(document.getElementById('resizeHandle1'), document.getElementById('colList'));
   makeResizable(document.getElementById('resizeHandle2'), document.getElementById('colLogs'));
 
+  // Lock auto-scroll when user scrolls up
+  const logContent = document.getElementById('logContent');
+  logContent.addEventListener('scroll', () => {
+    const atBottom = logContent.scrollHeight - logContent.scrollTop - logContent.clientHeight < 40;
+    autoScroll = atBottom;
+  });
+
+  // ── Column 2: section rendering ────────────────────────────────────────────
+  function renderLogSections(sections) {
+    const container = document.getElementById('logContent');
+    container.innerHTML = '';
+
+    if (!sections || sections.length === 0) {
+      container.innerHTML = '<div class="empty-state">Select a test to view output</div>';
+      return;
+    }
+
+    const allEmpty = sections.every(s => s.lines.length === 0);
+    if (allEmpty) {
+      const scope = sections[0].scope;
+      const msg = scope === 'test'
+        ? 'No output captured at test level. Run the test individually to capture output here.'
+        : scope === 'suite'
+        ? 'No output captured at suite level. Check file level for console logs.'
+        : 'No output captured yet. Run a test to see logs here.';
+      container.innerHTML = `<div class="empty-state">${msg}</div>`;
+      return;
+    }
+
+    for (const section of sections) {
+      if (section.lines.length === 0) continue;
+
+      const sectionEl = document.createElement('div');
+      sectionEl.className = 'output-section';
+      sectionEl.dataset.scope = section.scope;
+
+      const header = document.createElement('div');
+      header.className = 'section-header';
+      header.innerHTML =
+        `<span class="scope-icon">${scopeIcon(section.scope)}</span>` +
+        `<span class="scope-label">${escHtml(section.label)}</span>` +
+        `<span class="captured-at">${formatCapturedAt(section.capturedAt)}</span>`;
+      sectionEl.appendChild(header);
+
+      const linesEl = document.createElement('div');
+      linesEl.className = 'section-lines';
+      for (const line of section.lines) {
+        const lineEl = document.createElement('div');
+        lineEl.className = `log-line log-line-${line.level}`;
+        lineEl.dataset.level = line.level;
+        lineEl.textContent = line.text;
+        linesEl.appendChild(lineEl);
+      }
+      sectionEl.appendChild(linesEl);
+      container.appendChild(sectionEl);
+    }
+
+    applyTabFilter(activeTab);
+    if (autoScroll) logContent.scrollTop = logContent.scrollHeight;
+  }
+
+  function applyTabFilter(level) {
+    activeTab = level;
+    document.querySelectorAll('.log-line').forEach(el => {
+      el.style.display = (level === 'all' || el.dataset.level === level) ? '' : 'none';
+    });
+    document.querySelectorAll('.output-section').forEach(section => {
+      const hasVisible = [...section.querySelectorAll('.log-line')]
+        .some(el => el.style.display !== 'none');
+      section.style.display = hasVisible ? '' : 'none';
+    });
+  }
+
+  // ── Column 3: error rendering ──────────────────────────────────────────────
+  function renderErrorSections(sections) {
+    const container = document.getElementById('errorContent');
+    container.innerHTML = '';
+
+    if (!sections || sections.length === 0 || sections.every(s => s.errors.length === 0)) {
+      container.innerHTML = '<div class="empty-state no-errors">No failures for this selection ✓</div>';
+      return;
+    }
+
+    for (const section of sections) {
+      for (const entry of section.errors) {
+        const entryEl = document.createElement('div');
+        entryEl.className = 'error-entry';
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'error-test-name';
+        nameEl.textContent = entry.testName;
+        entryEl.appendChild(nameEl);
+
+        for (const msg of entry.failureMessages) {
+          const msgEl = document.createElement('pre');
+          msgEl.className = 'error-message';
+          msgEl.textContent = msg;
+          entryEl.appendChild(msgEl);
+        }
+
+        container.appendChild(entryEl);
+      }
+    }
+  }
+
+  // ── Helper functions ───────────────────────────────────────────────────────
+  function scopeIcon(scope) {
+    return { file: '📄', suite: '🔷', test: '🔹' }[scope] ?? '•';
+  }
+
+  function formatCapturedAt(capturedAt) {
+    if (capturedAt === null) return '';
+    const diff = Date.now() - capturedAt;
+    if (diff < 10_000)  return 'just now';
+    if (diff < 120_000) return `${Math.floor(diff / 1000)}s ago`;
+    return new Date(capturedAt).toLocaleTimeString();
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   // ── Messages from extension ────────────────────────────────────────────────
   window.addEventListener('message', (event) => {
     const msg = event.data;
@@ -158,47 +244,40 @@
         break;
 
       case 'run-started':
-        currentLogs = [];
-        currentErrors = [];
-        renderLogs();
-        renderErrors();
+        // Full suite run — clear columns 2 & 3
+        renderLogSections([]);
+        renderErrorSections([]);
         list.setData([]);
         break;
 
-      case 'full-file-result':
-        list.updateFile(msg.file);
-        // If this file is the currently selected scope, refresh Column 2 logs
-        if (list.selectedFileId === msg.file.fileId && msg.file.outputLines?.length) {
-          currentLogs = msg.file.outputLines;
-          renderLogs();
+      case 'files-rerunning':
+        // Partial rerun — mark only affected files as running
+        for (const fileId of (msg.fileIds ?? [])) {
+          list.markFileRunning(fileId, msg.suiteId, msg.testId);
         }
         break;
 
+      case 'full-file-result':
+        // Drives column 1 only
+        list.updateFile(msg.file);
+        break;
+
       case 'scope-changed':
+        // Selection highlight only — columns 2 & 3 are driven by scope-logs
         list.setSelected(msg.fileId, msg.suiteId, msg.testId);
-        // Extension sends scoped logs + errors alongside scope-changed
-        if (msg.outputLines)      currentLogs   = msg.outputLines;
-        if (msg.failureMessages)  currentErrors = msg.failureMessages;
+        break;
+
+      case 'scope-logs':
         autoScroll = true;
-        renderLogs();
-        renderErrors();
+        renderLogSections(msg.payload.logSections);
+        renderErrorSections(msg.payload.errorSections);
         break;
 
       case 'test-output':
-        // Streaming output for a running test — append only if it matches scope
-        currentLogs.push({ text: msg.line, level: msg.level ?? 'info' });
-        renderLogs();
+        // Streaming output for a running test — not yet fully wired; ignore for now
         break;
     }
   });
-
-  function escHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
 
   vscode.postMessage({ type: 'ready' });
 </script>
