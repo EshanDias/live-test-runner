@@ -192,6 +192,8 @@ class TestListLayout {
         (f) => f.status === 'failed' || f.status === 'running',
       );
 
+    const savedScroll = this.container.scrollTop;
+
     // Use folder view only when not searching (search always shows flat list)
     if (this.folderView && !this.query) {
       const tree = this._buildFolderTree(filtered);
@@ -202,6 +204,8 @@ class TestListLayout {
         .join('');
     }
     this._attachListeners();
+
+    this.container.scrollTop = savedScroll;
   }
 
   // ── Folder tree ──────────────────────────────────────────────────────────

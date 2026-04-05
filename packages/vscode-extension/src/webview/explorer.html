@@ -120,6 +120,7 @@
   let completedFiles = 0;
   let failedDuringRun = 0;
   let runStartTime = 0;
+  let isPartialRerun = false;
   // 'idle' | 'running' | 'watching'
   let sessionState = 'idle';
   let showFailuresOnly = false;
@@ -232,6 +233,7 @@
         completedFiles = 0;
         failedDuringRun = 0;
         runStartTime = Date.now();
+        isPartialRerun = false;
         runProgress.textContent = `Running — 0 / ${totalFiles} files`;
         runProgress.classList.add('visible');
         applySessionState('running');
@@ -243,10 +245,11 @@
         runProgress.classList.remove('visible');
         applySessionState(msg.sessionActive !== false ? 'watching' : 'idle');
         updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
-        if (msg.failed > 0) list.scrollToFirstFailure();
+        if (msg.failed > 0 && !isPartialRerun) list.scrollToFirstFailure();
         break;
 
       case 'files-rerunning':
+        isPartialRerun = true;
         for (const fileId of (msg.fileIds ?? [])) {
           list.markFileRunning(fileId, msg.suiteId, msg.testId);
         }
