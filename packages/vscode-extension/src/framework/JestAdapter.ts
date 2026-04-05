@@ -235,29 +235,21 @@ export class JestAdapter implements IFrameworkAdapter {
       : [];
     const now = Date.now();
 
+    const output: ScopedOutput = {
+      lines: this._buildOutputLines(consoleLines, now),
+      capturedAt: now,
+    };
+
     if (opts?.testId && touchedTestId) {
       const suiteId = [...touchedSuiteIds][0];
-      if (suiteId) {
-        const output: ScopedOutput = {
-          lines: this._buildOutputLines(consoleLines, now),
-          capturedAt: now,
-        };
-        store.setSuiteOutput(filePath, suiteId, output);
-        store.setTestOutput(filePath, suiteId, touchedTestId, output);
-      }
+      store.setTestOutput(filePath, suiteId, touchedTestId, output);
     } else if (opts?.suiteId && touchedSuiteIds.size > 0) {
       const suiteId = [...touchedSuiteIds][0];
       if (suiteId) {
-        store.setSuiteOutput(filePath, suiteId, {
-          lines: this._buildOutputLines(consoleLines, now),
-          capturedAt: now,
-        });
+        store.setSuiteOutput(filePath, suiteId, output);
       }
     } else {
-      store.setFileOutput(filePath, {
-        lines: this._buildOutputLines(consoleLines, now),
-        capturedAt: now,
-      });
+      store.setFileOutput(filePath, output);
     }
 
     store.fileResult(
