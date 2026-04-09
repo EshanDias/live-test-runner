@@ -138,6 +138,63 @@ The `CodeLensProvider` is registered with `vscode.languages.registerCodeLensProv
 
 ---
 
+## Using the Timeline Debugger
+
+The Timeline Debugger runs a single test case through an instrumented Jest transform, records every executed line and variable state, then lets you step through the replay.
+
+**Activate from the editor:**
+1. Start a Live Test Runner session (`▶ Start Testing`)
+2. Click the `⏱ Timeline` CodeLens that appears above any `it()` or `test()` line
+
+**Activate from the sidebar:**
+- Click the `⏱` button on any test row in the Explorer sidebar
+
+On activation the Results panel switches to Timeline mode and a loading spinner appears while the trace runs. When complete:
+
+- The **timeline bar** shows one box per executed step. Click any box or use the playback controls (`⏮ ◀ ▶ ▶| ⏭ ⏸`) to step through.
+- The **editor** highlights the active line and shows variable values as ghost text inline.
+- The **sidebar** shows State (variables at the current step), Watch (pin variables), and Call Stack.
+- The **Console** and **Errors** tabs in the right column show logs and failures.
+
+**Zoom:** scroll the mouse wheel over the timeline bar to zoom between line / function / file grouping levels.
+
+**Re-run:** click the `↺ Re-run` button in the sidebar header to run the trace again.
+
+**Exit:** click any normal test row in the sidebar to return to normal mode. All timeline decorations are cleared.
+
+---
+
+## Adding a new instrumented framework
+
+The Timeline Debugger uses `IInstrumentedRunner` as its framework boundary. Adding Vitest or Mocha timeline support = one new file. Nothing else changes.
+
+```typescript
+// packages/vscode-extension/src/timeline/VitestInstrumentedRunner.ts
+import { IInstrumentedRunner } from './IInstrumentedRunner'
+import { TimelineStore } from './TimelineStore'
+
+export class VitestInstrumentedRunner implements IInstrumentedRunner {
+  async run(options: { filePath: string; testFullName: string; projectRoot: string }): Promise<TimelineStore> {
+    // 1. Create a temp file for JSONL trace output
+    // 2. Configure Vitest to load your instrumentation transform
+    // 3. Spawn Vitest via Executor or directly
+    // 4. Parse the JSONL trace into a TimelineStore (reuse parseEvents logic)
+    // 5. Return the store
+  }
+
+  cancel(): void { /* kill the child process */ }
+}
+```
+
+In `extension.ts`, swap `new JestInstrumentedRunner()` for `new VitestInstrumentedRunner()` — or add auto-detection logic based on the project root.
+
+**Key files to understand:**
+- `timeline/instrumentation/traceTransform.js` — the Jest regex-based transform (adapt for Vitest's transform API)
+- `timeline/instrumentation/traceRuntime.js` — the `__trace` runtime (reuse as-is — it just writes JSONL)
+- `timeline/JestInstrumentedRunner.ts` — the full Jest implementation to follow as a reference
+
+---
+
 ## Adding a new framework
 
 Supporting Vitest, Mocha, or any other framework requires one class in each of two packages. No other files change.
@@ -340,6 +397,31 @@ cd packages/runner && pnpm run test
 
 ---
 
+## Core patterns (Timeline Debugger additions)
+
+### Webview router pattern
+
+Both `ResultsView` and `ExplorerView` implement an internal single-page router (`router.js`). The router listens for `{ type: 'route', view: '...' }` messages and swaps view modules in and out of `<div id="app">`.
+
+Each view module exports `{ mount(container, vscode, payload), unmount(), onMessage(msg) }`. Adding a new view = one new JS file + one entry in the `views` map passed to `Router.init()` in the HTML shell.
+
+### `PlaybackEngine` pattern
+
+`PlaybackEngine` is a plain JS class that lives in the webview (`src/webview/timeline/PlaybackEngine.js`). It owns all playback state (`currentStepId`, play/pause timer). Callers wire callbacks — the engine emits nothing itself. To use it:
+
+```javascript
+const engine = new PlaybackEngine(store)  // store has .steps array
+engine.play(step => { /* update UI, call vscode.postMessage step-changed */ })
+engine.pause()
+engine.jumpTo(stepId)
+```
+
+### Shared component pattern
+
+`logPanel.js` and `errorPanel.js` in `src/webview/components/` are standalone JS modules loaded as `<script>` tags in both HTML shells. They expose `window.LogPanel` and `window.ErrorPanel` with `{ mount, update, unmount }`. Views call these directly — no import/export, no bundler required.
+
+---
+
 ## Known limitations
 
 | Limitation | Detail |
@@ -350,6 +432,9 @@ cd packages/runner && pnpm run test
 | CRA config cache is in-memory | Lost when the session ends; recomputed (~2–3s) on next Start Testing |
 | Gutter icon animation | `animateTransform` in the running SVG is rendered statically by VS Code — the spinner does not spin in the gutter |
 | `location` not always present | Some Jest setups (CRA, Vitest stub) may not emit `location` in JSON; gutter icons won't appear for those files |
+| Timeline transform: regex-only, not AST | `traceTransform.js` uses regex line injection. It handles common unit test patterns (assignments, function calls) but will miss complex patterns such as destructuring, multi-line expressions, and arrow functions as arguments. AST-based transforms (e.g. `@babel/parser`) would cover these but add a dependency — not added in MVP. |
+| Timeline: no import tracing | The transform only instruments the target test file. Imported modules are not traced; their execution does not appear as steps in the timeline. |
+| Timeline: `console.log` in tests | `traceRuntime.js` patches `console.*` to emit LOG events. If the test patches `console` before the runtime loads, log capture may be incomplete. |
 
 ---
 

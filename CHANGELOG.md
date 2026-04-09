@@ -4,6 +4,29 @@ All notable changes to Live Test Runner are documented here.
 
 ---
 
+## [1.1.0] — 2026-04-09
+
+### Test Timeline Debugger
+
+#### Added
+- **Test Timeline Debugger** — step-by-step replay of individual test cases. Click `⏱ Timeline` above any `it()` or `test()` line, or the `⏱` button on a test row in the sidebar, to run an instrumented trace and replay execution in the Results panel.
+- **`⏱ Timeline` CodeLens** on `it`/`test` lines alongside the existing `▶ Run` and `▷ Debug` lenses.
+- **Timeline button** per test row in the Explorer sidebar.
+- **Timeline bar** — one box per executed step, colour-coded (accent = active, red = error step, striped = loop compression). Drag to scrub; scroll to zoom between line / function / file grouping.
+- **Playback controls** — `⏮ ◀ ▶ ▶| ⏭ ⏸` centred below the timeline bar.
+- **Editor highlight** — active step line highlighted in the editor; file switches automatically when steps cross file boundaries.
+- **Inline variable ghost text** — variable values rendered as after-text on the active step's line, updating on every step change.
+- **Hover tooltip** — hovering a variable line shows value history across steps with `[Add to Watch]` and `[Copy]` actions.
+- **Console panel** — cumulative logs up to the current step, prefixed with step number.
+- **Errors panel** — all test failure messages, shown statically from the trace result.
+- **State panel** (sidebar) — variables at the current step; objects and arrays lazily expandable.
+- **Watch panel** (sidebar) — pin variables by name; values track the current step.
+- **Call Stack panel** (sidebar) — current step's function and file; clickable to open that location.
+- **Re-run button** (sidebar) — re-runs the instrumented trace for the same test without leaving timeline mode.
+- **`IInstrumentedRunner` interface** — framework-agnostic contract for instrumented runs; enables future Vitest / Mocha timeline support as a single new file.
+
+---
+
 ## [1.0.0] — 2026-04-09
 
 ### Test List Improvements

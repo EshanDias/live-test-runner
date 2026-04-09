@@ -47,12 +47,12 @@ Dependency direction: `vscode-extension` → `core` → `runner`. The runner has
 | VS Code zone | What lives there |
 |---|---|
 | Activity Bar | Beaker icon — opens the Explorer view |
-| Primary sidebar | **Explorer view** — file → suite → test tree, summary counts, search |
+| Primary sidebar | **Explorer view** — file → suite → test tree, summary counts, search; switches to **Timeline sidebar** (State / Watch / Call Stack) in timeline mode |
 | Panel › Output | **Raw output channel** — every Jest command + full stderr, unformatted ANSI |
-| Panel › Test Results | **Results view** — 3-column scoped view |
-| Editor gutter | Status icons (✓ / ✗ / ⟳ / ○) per test line |
-| Editor inline | Duration text after each test, colour-coded |
-| Editor CodeLens | `▶ Run`, `▷ Debug`, `◈ Results` above each block |
+| Panel › Test Results | **Results view** — 3-column scoped view in normal mode; **Timeline view** (bar + controls + console/errors) in timeline mode |
+| Editor gutter | Status icons (✓ / ✗ / ⟳ / ○) per test line; active-step highlight in timeline mode |
+| Editor inline | Duration text after each test (normal mode); variable ghost text at current step (timeline mode) |
+| Editor CodeLens | `▶ Run`, `▷ Debug`, `◈ Results`, `⏱ Timeline` above each block |
 | Status Bar | Live summary: `Live Tests: ✅ 12 passed` |
 
 ---
@@ -158,6 +158,48 @@ The deprecated aliases `JestJsonResult`, `JestFileResult`, `JestTestCaseResult`,
 ---
 
 ## Package: `vscode-extension`
+
+### Timeline Debugger
+
+A self-contained feature that runs alongside the existing session system. It replays a single test case step by step, showing what lines executed, what variables held at each step, and where things went wrong.
+
+**Activation:** `⏱ Timeline` CodeLens on `it`/`test` lines, or the per-row `⏱ Timeline` button in the Explorer sidebar. Both call `liveTestRunner.openTimelineDebugger(filePath, testFullName)`.
+
+**Architecture:**
+
+```
+IInstrumentedRunner (interface)
+  └── JestInstrumentedRunner
+        ├── Writes temp Jest config that adds traceTransform.js to the transform chain
+        ├── Sets TRACE_OUTPUT_FILE env var
+        ├── Spawns Jest via Executor (reused as-is)
+        └── Reads JSONL trace file → parseEvents() → TimelineStore
+
+traceTransform.js (CJS)
+  Injected into Jest's transform chain for the target file only.
+  Adds __trace.step(id, line, file, fn) before each statement
+  and __trace.var(id, name, value) after assignments.
+
+traceRuntime.js
+  Provides __trace.* — writes each event as a JSON line to TRACE_OUTPUT_FILE synchronously.
+
+TimelineStore
+  Held in extension host memory. Serialised (Maps → plain objects) before postMessage.
+  Contains: steps[], variables{stepId: VariableSnapshot[]}, logs{stepId: LogEntry[]}, errors[]
+
+PlaybackEngine (webview)
+  Pure JS class in results.html. Owns currentStepId, play/pause timer, next/prev/jumpTo.
+  On each step change, sends { type: 'step-changed' } to the extension host.
+
+TimelineDecorationManager
+  Dedicated TextEditorDecorationType (never touches DecorationManager.ts).
+  Highlights the active line; renders inline ghost text (variable values).
+  Registers a HoverProvider for variable history + [Add to Watch] / [Copy].
+```
+
+**Webview routing:** Both `ResultsView` and `ExplorerView` implement an internal JS router. On timeline activation, the extension sends `{ type: 'route', view: 'timeline' }` to `ResultsView` and `{ type: 'route', view: 'timelineSidebar' }` to `ExplorerView`. The router swaps view modules into `<div id="app">` without reloading the page.
+
+**Shared components:** `logPanel.js` and `errorPanel.js` are standalone JS modules used by both `resultsView.js` (normal mode) and `timelineView.js` (timeline mode). They accept a container element and a data payload, and render themselves with no view-specific knowledge.
 
 ### Entry point (`extension.ts`)
 
@@ -336,8 +378,18 @@ Both views extend `BaseWebviewProvider`, which handles webview lifecycle, `postM
 | `rerun` | Webview → extension | User clicked a rerun button |
 | `open-file` | Webview → extension | User wants to open a file in the editor |
 | `ready` | Webview → extension | Webview signals it has initialised |
+| `route` | Extension → both | Switch view: `{ type: 'route', view: 'timeline' \| 'results' \| ... }` |
+| `timeline-loading` | Extension → ResultsView | Show spinner while instrumented run is in progress |
+| `timeline-ready` | Extension → both | Instrumented run complete; carries serialised `TimelineStore` |
+| `timeline-error` | Extension → ResultsView | Instrumented run failed |
+| `timeline-exited` | ResultsView → extension | User navigated away from timeline mode |
+| `step-changed` | ResultsView → extension | User stepped to a new step; carries `stepId`, `filePath`, `line` |
+| `step-update` | Extension → ExplorerView | Forward of step-changed to sync sidebar panels |
+| `timeline-rerun` | ExplorerView → extension | User clicked Re-run in the timeline sidebar |
 
-`scope-logs` and `scope-changed` are always sent as separate messages. Column 1 updates on every run. Columns 2 and 3 update on selection changes or when a run completes for the currently selected scope. Keeping them separate avoids unnecessary re-renders.
+`scope-logs` and `scope-changed` are always sent as separate messages.
+
+**Key design boundary:** playback state lives entirely in the `ResultsView` webview (`PlaybackEngine`). The extension host receives `step-changed` events and reacts (editor highlight, sidebar sync). The extension host never drives playback. Column 1 updates on every run. Columns 2 and 3 update on selection changes or when a run completes for the currently selected scope. Keeping them separate avoids unnecessary re-renders.
 
 ### Duration colour thresholds
 
@@ -425,3 +477,7 @@ User stops session
 | `extension.ts` ≤ 110 lines | Wires instances and registers commands only; no business logic |
 | `CONCURRENCY = 3` for parallel runs | Balances throughput against system load; configurable constant |
 | Session guard on all background behavior | No surprise background work; resource usage is predictable |
+| `step-changed` boundary: playback in webview, editor in host | `PlaybackEngine` drives the timeline UI inside the webview sandbox. The extension host only reacts to `step-changed` — it never drives playback. This keeps the playback loop fast (no round-trips) and the editor highlight authoritative. |
+| `TimelineDecorationManager` separate from `DecorationManager` | Timeline decorations (whole-line highlight, ghost text, hover) never touch pass/fail gutter icons. Two completely independent `TextEditorDecorationType` sets. |
+| Webview router instead of new tabs | Both `ResultsView` and `ExplorerView` implement an internal JS router. Timeline mode is a view swap inside an existing panel — no new VS Code panel is registered. |
+| `logPanel.js` / `errorPanel.js` as shared components | Same rendering code in both normal and timeline modes. Extracted from `resultsView.js` and consumed by `timelineView.js` without modification. |

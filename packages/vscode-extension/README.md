@@ -64,6 +64,27 @@ Every `it()` and `test()` line gets:
 
 ---
 
+### Test Timeline Debugger
+
+Step through a single test case like a time-travel debugger — no breakpoints, no `debugger` statements, no terminal.
+
+Click the **`⏱ Timeline`** CodeLens above any `it()` or `test()` line (or the `⏱` button on a test row in the sidebar) to start a trace. Live Test Runner re-runs that test with instrumentation injected at transform time and records every executed line, every variable value, and every log entry.
+
+When the trace completes:
+
+- The **timeline bar** shows one box per step. Click any box or use the controls (`⏮ ◀ ▶ ▶| ⏭ ⏸`) to replay the execution.
+- The **editor** highlights the active line and shows variable values as inline ghost text. Hover a variable for its full history across steps and an `[Add to Watch]` action.
+- The **sidebar State panel** shows all variables captured at the current step. Objects and arrays are lazily expandable.
+- The **Watch panel** lets you pin any variable and track its value as you step through.
+- The **Call Stack panel** shows the function chain at the current step — click any frame to jump to that line.
+- The **Console tab** shows cumulative logs up to the current step. The **Errors tab** shows all failure messages.
+
+Zoom the timeline bar with the mouse wheel to group steps by line / function / file. Drag to scrub through steps in real time. Click `↺ Re-run` in the sidebar to re-trace at any time.
+
+No test file is ever modified on disk — instrumentation is injected at Jest transform time only.
+
+---
+
 ### Smart Jest detection
 
 Automatically detects:
