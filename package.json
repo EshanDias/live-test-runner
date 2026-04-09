@@ -7,6 +7,10 @@
   "engines": {
     "vscode": "^1.144.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eshandias/live-test-runner"
+  },
   "scripts": {
     "build": "pnpm -r run build",
     "rebuild": "rimraf --glob \"packages/*/{dist,build,out,tsconfig.tsbuildinfo}\" && pnpm -r run build",
