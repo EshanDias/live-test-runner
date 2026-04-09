@@ -35,6 +35,8 @@
 
     unmount() {
       if (_engine) { _engine.pause(); }
+      // Notify extension host that timeline mode is ending so it can clear decorations.
+      if (_vscode) { _vscode.postMessage({ type: 'timeline-exited' }); }
       _engine = null;
       _store = null;
       _container = null;

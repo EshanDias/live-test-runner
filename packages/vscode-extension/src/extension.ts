@@ -20,6 +20,7 @@ import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
 import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
+import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
 
 export function activate(context: vscode.ExtensionContext) {
   // ── Infrastructure ─────────────────────────────────────────────────────────
@@ -50,14 +51,20 @@ export function activate(context: vscode.ExtensionContext) {
   // ── Timeline debugger ──────────────────────────────────────────────────────
   // Reference typed as the interface — never as the concrete class.
   const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner();
+  const timelineDecorations = new TimelineDecorationManager();
 
   // Last timeline run context, used by the Re-run button in the sidebar.
   let lastTimelineOptions: { filePath: string; testFullName: string } | null = null;
 
-  // Forward step-changed from ResultsView to ExplorerView (sidebar state update).
-  resultsView.onStepChanged = (stepId, _filePath, _line) => {
+  // Forward step-changed from ResultsView to ExplorerView (sidebar state update)
+  // and apply the editor highlight.
+  resultsView.onStepChanged = (stepId, filePath, line) => {
     explorerView.postMessage({ type: 'step-update', stepId });
+    timelineDecorations.highlight(filePath, line).catch(() => {});
   };
+
+  // Clear decorations when the user navigates away from timeline mode.
+  resultsView.onTimelineExit = () => { timelineDecorations.clearAll(); };
 
   // Re-run button in the sidebar.
   explorerView.onTimelineRerun = () => {
@@ -116,6 +123,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     outputChannel,
     statusBar,
+    { dispose: () => timelineDecorations.dispose() },
   );
 }
 
