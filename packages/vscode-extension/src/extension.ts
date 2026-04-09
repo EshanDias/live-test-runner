@@ -51,6 +51,28 @@ export function activate(context: vscode.ExtensionContext) {
   // Reference typed as the interface — never as the concrete class.
   const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner();
 
+  // Last timeline run context, used by the Re-run button in the sidebar.
+  let lastTimelineOptions: { filePath: string; testFullName: string } | null = null;
+
+  // Forward step-changed from ResultsView to ExplorerView (sidebar state update).
+  resultsView.onStepChanged = (stepId, _filePath, _line) => {
+    explorerView.postMessage({ type: 'step-update', stepId });
+  };
+
+  // Re-run button in the sidebar.
+  explorerView.onTimelineRerun = () => {
+    if (!lastTimelineOptions) { return; }
+    openTimelineDebugger(
+      lastTimelineOptions.filePath,
+      lastTimelineOptions.testFullName,
+      instrumentedRunner,
+      resultsView,
+      explorerView,
+      outputChannel,
+      lastTimelineOptions,
+    );
+  };
+
   // ── Session manager ────────────────────────────────────────────────────────
   const session = new SessionManager(
     context,
@@ -80,8 +102,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath, line) => rerunFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath, line) => debugFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, suiteId, testId) => focusResult(fileId, suiteId, testId, selection, resultsView)),
-    vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) =>
-      openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, outputChannel)),
+    vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) => {
+      lastTimelineOptions = { filePath, testFullName };
+      return openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, outputChannel, lastTimelineOptions);
+    }),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) { decorationManager.applyToEditor(editor); }
@@ -169,6 +193,7 @@ async function openTimelineDebugger(
   resultsView: ResultsView,
   explorerView: ExplorerView,
   outputChannel: vscode.OutputChannel,
+  _optionsRef?: { filePath: string; testFullName: string },
 ): Promise<void> {
   const projectRoot = _resolveProjectRoot();
   if (!projectRoot) {

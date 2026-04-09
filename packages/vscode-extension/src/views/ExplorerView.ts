@@ -6,6 +6,9 @@ export class ExplorerView extends BaseWebviewProvider {
 
   protected get _htmlFile(): string { return 'explorer.html'; }
 
+  /** Called by extension.ts when the sidebar Re-run button is clicked. */
+  onTimelineRerun: (() => void) | null = null;
+
   protected handleExtraMessage(msg: { type: string; filePath?: string; testFullName?: string }): void {
     if (msg.type === 'open-timeline' && msg.filePath && msg.testFullName) {
       vscode.commands.executeCommand(
@@ -13,6 +16,10 @@ export class ExplorerView extends BaseWebviewProvider {
         msg.filePath,
         msg.testFullName,
       );
+      return;
+    }
+    if (msg.type === 'timeline-rerun') {
+      this.onTimelineRerun?.();
     }
   }
 

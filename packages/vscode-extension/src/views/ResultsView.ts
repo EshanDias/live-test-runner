@@ -54,9 +54,16 @@ export class ResultsView extends BaseWebviewProvider {
     this._sendScopedLogs(fileId, suiteId, testId);
   }
 
-  protected handleExtraMessage(msg: { type: string; fileId?: string; suiteId?: string; testId?: string }): void {
+  /** Called by extension.ts so it can forward step-changed to ExplorerView. */
+  onStepChanged: ((stepId: number, filePath: string, line: number) => void) | null = null;
+
+  protected handleExtraMessage(msg: { type: string; fileId?: string; suiteId?: string; testId?: string; stepId?: number; filePath?: string; line?: number }): void {
     if (msg.type === 'select' && msg.fileId) {
       this._sendScopedLogs(msg.fileId, msg.suiteId, msg.testId);
+      return;
+    }
+    if (msg.type === 'step-changed' && typeof msg.stepId === 'number') {
+      this.onStepChanged?.(msg.stepId, msg.filePath ?? '', msg.line ?? 0);
     }
   }
 
