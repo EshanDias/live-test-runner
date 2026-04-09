@@ -81,7 +81,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath, line) => debugFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, suiteId, testId) => focusResult(fileId, suiteId, testId, selection, resultsView)),
     vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) =>
-      openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView)),
+      openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, outputChannel)),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) { decorationManager.applyToEditor(editor); }
@@ -162,17 +162,57 @@ async function _resolveSuiteAtLine(
   }
 }
 
-function openTimelineDebugger(
+async function openTimelineDebugger(
   filePath: string,
   testFullName: string,
-  _runner: IInstrumentedRunner,
+  runner: IInstrumentedRunner,
   resultsView: ResultsView,
   explorerView: ExplorerView,
-): void {
-  // Route both panels to their timeline views.
-  // run() is NOT called here — that comes in task 10.
+  outputChannel: vscode.OutputChannel,
+): Promise<void> {
+  const projectRoot = _resolveProjectRoot();
+  if (!projectRoot) {
+    vscode.window.showErrorMessage(
+      'Live Test Runner: Cannot open Timeline Debugger — no project root configured.',
+    );
+    return;
+  }
+
+  // Route both panels to their timeline views and show a loading state.
   resultsView.postMessage({ type: 'route', view: 'timeline', payload: { testFullName, filePath } });
-  explorerView.postMessage({ type: 'route', view: 'timelineSidebar', payload: {} });
+  explorerView.postMessage({ type: 'route', view: 'timelineSidebar', payload: { testFullName } });
+  resultsView.postMessage({ type: 'timeline-loading' });
+
+  outputChannel.appendLine(`[Timeline] Running instrumented trace: ${testFullName}`);
+
+  try {
+    const store = await runner.run({ filePath, testFullName, projectRoot });
+
+    // Convert Maps to plain objects for postMessage serialisation (Maps are not
+    // JSON-serialisable and webviews receive messages via JSON.stringify).
+    const serialisableStore = {
+      ...store,
+      variables: Object.fromEntries(store.variables),
+      logs:      Object.fromEntries(store.logs),
+    };
+
+    outputChannel.appendLine(`[Timeline] Trace complete — ${store.steps.length} steps captured.`);
+    resultsView.postMessage({ type: 'timeline-ready', store: serialisableStore });
+    explorerView.postMessage({ type: 'timeline-ready', store: serialisableStore });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    outputChannel.appendLine(`[Timeline] Error: ${message}`);
+    vscode.window.showErrorMessage(`Timeline Debugger error: ${message}`);
+    resultsView.postMessage({ type: 'timeline-error', message });
+  }
+}
+
+function _resolveProjectRoot(): string | undefined {
+  const configured = vscode.workspace.getConfiguration('liveTestRunner').get<string>('projectRoot');
+  if (configured?.trim()) { return configured.trim(); }
+  const folders = vscode.workspace.workspaceFolders;
+  if (folders?.length === 1) { return folders[0].uri.fsPath; }
+  return undefined;
 }
 
 function focusResult(
