@@ -56,11 +56,28 @@ export function activate(context: vscode.ExtensionContext) {
   // Last timeline run context, used by the Re-run button in the sidebar.
   let lastTimelineOptions: { filePath: string; testFullName: string } | null = null;
 
+  // Last serialised store — kept so TimelineDecorationManager can render inline values.
+  let lastTimelineStore: { steps: unknown[]; variables: Record<number, unknown[]> } | null = null;
+
   // Forward step-changed from ResultsView to ExplorerView (sidebar state update)
-  // and apply the editor highlight.
+  // and apply the editor highlight with inline variable values.
   resultsView.onStepChanged = (stepId, filePath, line) => {
     explorerView.postMessage({ type: 'step-update', stepId });
-    timelineDecorations.highlight(filePath, line).catch(() => {});
+    if (lastTimelineStore) {
+      timelineDecorations.applyStep(
+        filePath,
+        line,
+        lastTimelineStore as Parameters<typeof timelineDecorations.applyStep>[2],
+        stepId,
+      ).catch(() => {});
+    } else {
+      timelineDecorations.highlight(filePath, line).catch(() => {});
+    }
+  };
+
+  // Wire Add-to-Watch from hover → ExplorerView sidebar.
+  timelineDecorations.onAddToWatch = (varName) => {
+    explorerView.postMessage({ type: 'add-to-watch', varName });
   };
 
   // Clear decorations when the user navigates away from timeline mode.
@@ -77,6 +94,7 @@ export function activate(context: vscode.ExtensionContext) {
       explorerView,
       outputChannel,
       lastTimelineOptions,
+      (s) => { lastTimelineStore = s; },
     );
   };
 
@@ -111,7 +129,16 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, suiteId, testId) => focusResult(fileId, suiteId, testId, selection, resultsView)),
     vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) => {
       lastTimelineOptions = { filePath, testFullName };
-      return openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, outputChannel, lastTimelineOptions);
+      return openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, outputChannel, lastTimelineOptions,
+        (s) => { lastTimelineStore = s; });
+    }),
+
+    // Timeline hover actions
+    vscode.commands.registerCommand('liveTestRunner.addToWatch', (varName: string) => {
+      explorerView.postMessage({ type: 'add-to-watch', varName });
+    }),
+    vscode.commands.registerCommand('liveTestRunner.copyValue', (value: string) => {
+      void vscode.env.clipboard.writeText(value);
     }),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
@@ -202,6 +229,7 @@ async function openTimelineDebugger(
   explorerView: ExplorerView,
   outputChannel: vscode.OutputChannel,
   _optionsRef?: { filePath: string; testFullName: string },
+  onStoreReady?: (store: { steps: unknown[]; variables: Record<number, unknown[]> }) => void,
 ): Promise<void> {
   const projectRoot = _resolveProjectRoot();
   if (!projectRoot) {
@@ -230,6 +258,7 @@ async function openTimelineDebugger(
     };
 
     outputChannel.appendLine(`[Timeline] Trace complete — ${store.steps.length} steps captured.`);
+    onStoreReady?.(serialisableStore as { steps: unknown[]; variables: Record<number, unknown[]> });
     resultsView.postMessage({ type: 'timeline-ready', store: serialisableStore });
     explorerView.postMessage({ type: 'timeline-ready', store: serialisableStore });
   } catch (err: unknown) {
