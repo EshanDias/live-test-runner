@@ -1,7 +1,7 @@
 # Live Test Runner 
 
 <p align="center">
-  <img src="resources/images/live_test_runner.png" alt="Live Runner Logo" width=100">
+  <img src="resources/images/live-test-runner.png" alt="Live Runner Logo" width="100">
 </p>
 
 
