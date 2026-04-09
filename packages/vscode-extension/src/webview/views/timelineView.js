@@ -5,6 +5,8 @@
  *
  * Task 11: timeline bar + playback controls.
  * Task 14: log/error panels wired in (right column).
+ * Task 16: drag scrubbing + mouse-wheel zoom.
+ * Task 17: loop compression (consecutive same-line runs → ×N box).
  */
 
 (function () {
@@ -16,6 +18,11 @@
   let _store = null;
   let _errorStepIds = new Set();
   let _activeTab = 'console'; // 'console' | 'errors'
+
+  // Zoom level: 'line' | 'function' | 'file'
+  let _zoom = 'line';
+  // Compressed bar items (set by _buildBarItems)
+  let _barItems = []; // [{ type: 'step'|'loop', step?, steps?, count?, firstStepId, lastStepId }]
 
   // Containers for LogPanel / ErrorPanel (set after render)
   let _logContainer = null;
@@ -159,25 +166,211 @@
     _applyStep(_engine.currentStep);
   }
 
+  // ── Bar items: loop compression + zoom grouping ────────────────────────────────
+
+  const LOOP_THRESHOLD = 10;
+
+  /**
+   * Compress consecutive steps at the same line (loops) into single items,
+   * then group by zoom level.
+   */
+  function _buildBarItems(steps) {
+    // 1. Loop compression: detect runs of the same line
+    const compressed = [];
+    let i = 0;
+    while (i < steps.length) {
+      const s = steps[i];
+      let j = i + 1;
+      while (j < steps.length && steps[j].line === s.line && steps[j].file === s.file) { j++; }
+      const count = j - i;
+      if (count > LOOP_THRESHOLD) {
+        compressed.push({ type: 'loop', steps: steps.slice(i, j), count,
+          firstStepId: steps[i].stepId, lastStepId: steps[j - 1].stepId,
+          file: s.file, line: s.line });
+      } else {
+        for (let k = i; k < j; k++) {
+          compressed.push({ type: 'step', step: steps[k],
+            firstStepId: steps[k].stepId, lastStepId: steps[k].stepId });
+        }
+      }
+      i = j;
+    }
+
+    if (_zoom === 'line') { return compressed; }
+
+    // 2. Function or file zoom: group consecutive items with same key
+    const keyFn = _zoom === 'function'
+      ? (item) => `${item.file || item.step?.file}::${item.step?.functionName || item.file || ''}`
+      : (item) => item.file || item.step?.file || '';
+
+    const grouped = [];
+    let g = null;
+    for (const item of compressed) {
+      const key = keyFn(item);
+      if (!g || g.key !== key) {
+        g = { type: 'group', key, items: [item],
+          firstStepId: item.firstStepId, lastStepId: item.lastStepId,
+          label: _zoom === 'function' ? (item.step?.functionName || _basename(item.step?.file || item.file || '')) : _basename(item.step?.file || item.file || '') };
+        grouped.push(g);
+      } else {
+        g.items.push(item);
+        g.lastStepId = item.lastStepId;
+      }
+    }
+    return grouped;
+  }
+
   // ── Timeline bar ───────────────────────────────────────────────────────────────
 
   function _buildBar(steps) {
     const bar = _container.querySelector('#tl-bar');
     if (!bar) return;
 
+    _barItems = _buildBarItems(steps);
     bar.innerHTML = '';
-    for (const step of steps) {
+
+    for (const item of _barItems) {
       const box = document.createElement('div');
-      box.className = 'tl-box';
-      box.dataset.stepId = String(step.stepId);
-      if (_errorStepIds.has(step.stepId)) { box.classList.add('tl-box--error'); }
-      box.title = `${_basename(step.file)} · line ${step.line}`;
+
+      if (item.type === 'step') {
+        box.className = 'tl-box';
+        box.dataset.firstStepId = String(item.firstStepId);
+        box.dataset.lastStepId  = String(item.lastStepId);
+        if (_errorStepIds.has(item.step.stepId)) { box.classList.add('tl-box--error'); }
+        box.title = `${_basename(item.step.file)} · line ${item.step.line}`;
+      } else if (item.type === 'loop') {
+        box.className = 'tl-box tl-box--loop';
+        box.dataset.firstStepId = String(item.firstStepId);
+        box.dataset.lastStepId  = String(item.lastStepId);
+        box.title = `Loop ×${item.count} at line ${item.line}`;
+        box.textContent = `×${item.count}`;
+      } else {
+        // group (zoom out)
+        box.className = 'tl-box tl-box--group';
+        box.dataset.firstStepId = String(item.firstStepId);
+        box.dataset.lastStepId  = String(item.lastStepId);
+        box.title = item.label;
+        box.textContent = item.label;
+      }
+
       box.addEventListener('click', () => {
-        _engine.jumpTo(step.stepId);
+        _engine.jumpTo(item.lastStepId);
         _applyStep(_engine.currentStep);
       });
       bar.appendChild(box);
     }
+
+    // Mouse-wheel zoom
+    bar.addEventListener('wheel', _onWheel, { passive: true });
+
+    // Drag scrubbing
+    _bindDrag(bar);
+  }
+
+  // ── Zoom ───────────────────────────────────────────────────────────────────────
+
+  const ZOOM_LEVELS = ['file', 'function', 'line'];
+
+  function _onWheel(e) {
+    if (!_store || !_store.steps) return;
+    const idx = ZOOM_LEVELS.indexOf(_zoom);
+    if (e.deltaY < 0 && idx < ZOOM_LEVELS.length - 1) {
+      _zoom = ZOOM_LEVELS[idx + 1]; // zoom in
+    } else if (e.deltaY > 0 && idx > 0) {
+      _zoom = ZOOM_LEVELS[idx - 1]; // zoom out
+    } else { return; }
+    _buildBar(_store.steps);
+    _highlightActiveBox(_engine.currentStepId);
+  }
+
+  function _highlightActiveBox(stepId) {
+    const bar = _container && _container.querySelector('#tl-bar');
+    if (!bar) return;
+    bar.querySelectorAll('.tl-box--active').forEach(el => el.classList.remove('tl-box--active'));
+    // Find a box whose range contains the stepId
+    const boxes = bar.querySelectorAll('[data-first-step-id]');
+    for (const box of boxes) {
+      const first = parseInt(box.dataset.firstStepId, 10);
+      const last  = parseInt(box.dataset.lastStepId, 10);
+      if (stepId >= first && stepId <= last) {
+        box.classList.add('tl-box--active');
+        box.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+        break;
+      }
+    }
+  }
+
+  // ── Drag scrubbing ─────────────────────────────────────────────────────────────
+
+  const DRAG_SLOW_THROTTLE = 80; // ms
+
+  function _bindDrag(bar) {
+    let dragging = false;
+    let lastThrottleTime = 0;
+    let pendingStep = null;
+
+    const getStepFromEvent = (e) => {
+      const x = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+      const boxes = bar.querySelectorAll('[data-first-step-id]');
+      let closestBox = null;
+      let closestDist = Infinity;
+      for (const box of boxes) {
+        const rect = box.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const dist = Math.abs(x - cx);
+        if (dist < closestDist) { closestDist = dist; closestBox = box; }
+      }
+      return closestBox ? parseInt(closestBox.dataset.lastStepId, 10) : null;
+    };
+
+    const startDrag = (e) => {
+      dragging = true;
+      lastThrottleTime = 0;
+      e.preventDefault();
+    };
+
+    const moveDrag = (e) => {
+      if (!dragging) return;
+      const stepId = getStepFromEvent(e);
+      if (stepId === null) return;
+      pendingStep = stepId;
+
+      const now = Date.now();
+      if (now - lastThrottleTime >= DRAG_SLOW_THROTTLE) {
+        lastThrottleTime = now;
+        // Slow drag: update context label and highlight box (not full step-changed)
+        _engine.jumpTo(stepId);
+        const step = _engine.currentStep;
+        if (step) {
+          const ctx = _container && _container.querySelector('#tl-context');
+          if (ctx) {
+            const file = _basename(step.file);
+            const fn   = step.functionName ? ` · ${step.functionName}` : '';
+            ctx.textContent = `${file}${fn} · line ${step.line}`;
+          }
+          _highlightActiveBox(step.stepId);
+        }
+      }
+    };
+
+    const endDrag = () => {
+      if (!dragging) return;
+      dragging = false;
+      // Release: full commit
+      if (pendingStep !== null) {
+        _engine.jumpTo(pendingStep);
+        _applyStep(_engine.currentStep);
+        pendingStep = null;
+      }
+    };
+
+    bar.addEventListener('mousedown',  startDrag);
+    window.addEventListener('mousemove', moveDrag);
+    window.addEventListener('mouseup',   endDrag);
+
+    bar.addEventListener('touchstart', startDrag, { passive: false });
+    bar.addEventListener('touchmove',  moveDrag,  { passive: true });
+    bar.addEventListener('touchend',   endDrag);
   }
 
   // ── Controls ───────────────────────────────────────────────────────────────────
@@ -232,16 +425,8 @@
       counter.textContent = `Step ${_engine.currentStepId} of ${_engine.stepCount}`;
     }
 
-    // Active box in bar
-    const bar = _container.querySelector('#tl-bar');
-    if (bar) {
-      bar.querySelectorAll('.tl-box--active').forEach(el => el.classList.remove('tl-box--active'));
-      const active = bar.querySelector(`[data-step-id="${step.stepId}"]`);
-      if (active) {
-        active.classList.add('tl-box--active');
-        active.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
-      }
-    }
+    // Active box in bar (works with grouped/compressed items via range check)
+    _highlightActiveBox(step.stepId);
 
     // Update console panel (cumulative logs up to current step)
     _updateLogPanel(step.stepId);
@@ -374,6 +559,22 @@
       }
       .tl-box--error { background: var(--vscode-inputValidation-errorBackground, #5a1d1d); }
       .tl-box--error.tl-box--active { background: var(--vscode-errorForeground, #f48771); }
+      .tl-box--loop {
+        width: auto; min-width: 28px; padding: 0 4px;
+        font-size: 9px; display: flex; align-items: center; justify-content: center;
+        background: repeating-linear-gradient(
+          45deg,
+          var(--vscode-button-secondaryBackground, #3c3c3c) 0px,
+          var(--vscode-button-secondaryBackground, #3c3c3c) 4px,
+          transparent 4px, transparent 8px
+        );
+        border: 1px solid var(--vscode-focusBorder, #007fd4);
+      }
+      .tl-box--group {
+        width: auto; min-width: 40px; max-width: 80px; padding: 0 4px;
+        font-size: 9px; display: flex; align-items: center; justify-content: center;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
 
       .tl-controls {
         display: flex; justify-content: center; gap: 6px; flex-shrink: 0;
