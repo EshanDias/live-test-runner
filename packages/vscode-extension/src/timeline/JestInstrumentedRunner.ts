@@ -66,12 +66,20 @@ try {
   }
 }
 
+// Normalise baseConfig.transform to array format so we can prepend our entry.
+// Jest accepts both object { pattern: path } and array [[pattern, path]] forms.
+const baseTransforms = Array.isArray(baseConfig.transform)
+  ? baseConfig.transform
+  : Object.entries(baseConfig.transform || {}).map(([p, v]) => Array.isArray(v) ? [p, ...v] : [p, v]);
+
 module.exports = {
   ...baseConfig,
-  transform: {
-    ...(baseConfig.transform || {}),
-    ${JSON.stringify('^' + escapedFileForRegex + '$')}: ${JSON.stringify(TRACE_TRANSFORM_PATH)},
-  },
+  // Our specific-file entry goes FIRST so Jest's first-match selects it before
+  // the project's catch-all transformer (e.g. ^.+\\.[jt]sx?$).
+  transform: [
+    [${JSON.stringify('^' + escapedFileForRegex + '$')}, ${JSON.stringify(TRACE_TRANSFORM_PATH)}],
+    ...baseTransforms,
+  ],
 };
 `;
     fs.writeFileSync(tempConfigPath, configContent, 'utf8');
