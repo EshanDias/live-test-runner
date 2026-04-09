@@ -4,6 +4,11 @@
   "description": "Core logic for Live Test Runner",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eshandias/live-test-runner",
+    "directory": "packages/core"
+  },
   "scripts": {
     "build": "tsc --build",
     "test": "jest",
@@ -12,6 +17,5 @@
   "dependencies": {
     "@live-test-runner/runner": "workspace:*"
   },
-  "devDependencies": {
-  }
+  "devDependencies": {}
 }

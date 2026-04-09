@@ -4,6 +4,11 @@
   "description": "Test runner abstraction for Live Test Runner",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eshandias/live-test-runner",
+    "directory": "packages/runner"
+  },
   "scripts": {
     "build": "tsc --build",
     "test": "jest",
