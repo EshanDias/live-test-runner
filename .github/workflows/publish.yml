@@ -17,11 +17,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'pnpm'
 
-      # 3️⃣ Install pnpm globally
       - name: Install pnpm
         run: npm install -g pnpm
+
+      - name: Setup Node with pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
 
       - name: Install deps
         run: pnpm install
