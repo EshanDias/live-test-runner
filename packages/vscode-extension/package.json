@@ -2,9 +2,15 @@
   "name": "live-test-runner",
   "displayName": "Live Test Runner",
   "description": "Live testing on save for Jest and other frameworks",
-  "version": "2.0.0",
+  "version": "1.0.0",
+  "icon": "resources/images/logo.png",
+  "publisher": "EshLabs",
   "engines": {
     "vscode": "^1.74.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eshandias/live-test-runner"
   },
   "categories": [
     "Testing"
@@ -21,7 +27,7 @@
         {
           "id": "liveTestRunnerContainer",
           "title": "Live Test Runner",
-          "icon": "$(beaker)"
+          "icon": "resources/icons/live_test_runner_vscode_logo.svg"
         }
       ],
       "panel": [
@@ -97,7 +103,10 @@
         },
         "liveTestRunner.runMode": {
           "type": "string",
-          "enum": ["auto", "npm"],
+          "enum": [
+            "auto",
+            "npm"
+          ],
           "enumDescriptions": [
             "Extension manages Jest directly — full structured output, per-test durations, console capture.",
             "Use the project's 'npm test' script — respects your package.json test setup but provides limited structured output."
@@ -120,7 +129,10 @@
           "items": {
             "type": "string"
           },
-          "default": ["**/*.test.*", "**/*.spec.*"],
+          "default": [
+            "**/*.test.*",
+            "**/*.spec.*"
+          ],
           "description": "Glob patterns for test files"
         },
         "liveTestRunner.durationThresholds": {
@@ -128,12 +140,36 @@
           "description": "Duration thresholds (ms) for colour-coding test times. Green < amber ≤ yellow < red.",
           "default": {},
           "properties": {
-            "testAmberMs":  { "type": "number", "default": 100,  "description": "Individual test: amber threshold in ms (default 100)" },
-            "testRedMs":    { "type": "number", "default": 500,  "description": "Individual test: red threshold in ms (default 500)" },
-            "suiteAmberMs": { "type": "number", "default": 500,  "description": "Suite: amber threshold in ms (default 500)" },
-            "suiteRedMs":   { "type": "number", "default": 2000, "description": "Suite: red threshold in ms (default 2000)" },
-            "fileAmberMs":  { "type": "number", "default": 1000, "description": "File: amber threshold in ms (default 1000)" },
-            "fileRedMs":    { "type": "number", "default": 5000, "description": "File: red threshold in ms (default 5000)" }
+            "testAmberMs": {
+              "type": "number",
+              "default": 100,
+              "description": "Individual test: amber threshold in ms (default 100)"
+            },
+            "testRedMs": {
+              "type": "number",
+              "default": 500,
+              "description": "Individual test: red threshold in ms (default 500)"
+            },
+            "suiteAmberMs": {
+              "type": "number",
+              "default": 500,
+              "description": "Suite: amber threshold in ms (default 500)"
+            },
+            "suiteRedMs": {
+              "type": "number",
+              "default": 2000,
+              "description": "Suite: red threshold in ms (default 2000)"
+            },
+            "fileAmberMs": {
+              "type": "number",
+              "default": 1000,
+              "description": "File: amber threshold in ms (default 1000)"
+            },
+            "fileRedMs": {
+              "type": "number",
+              "default": 5000,
+              "description": "File: red threshold in ms (default 5000)"
+            }
           }
         }
       }

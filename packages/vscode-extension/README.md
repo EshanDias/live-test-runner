@@ -1,9 +1,13 @@
-# Live Test Runner
+# Live Test Runner 
 
-> **Jest tests that run themselves — right inside VS Code.**
+<p align="center">
+  <img src="resources/images/live_test_runner.svg" alt="Live Runner Logo" width=100">
+</p>
 
-<!-- PLACEHOLDER: hero gif — screen recording of saving a file, watching the test tree update, clicking ▶ Run on a single test, seeing gutter icons flip green -->
-<!-- Recommended size: 1200×675px, 60fps, 15–20s loop -->
+
+![v1 Demo](resources/gifs/live-test-runner-v1-demo.gif)
+
+> **Only Supports `Jest` at the moment**
 
 ---
 
@@ -146,14 +150,22 @@ Control when duration badges switch from green → amber → red. Separate thres
 ## Known Limitations
 
 - Rerunning an individual test uses `--testNamePattern`, which may match multiple tests if names overlap
+- Logs only get capured at file level.
+- Live run only works on test file for the moment.
+- Start test button state dissapears when switching to other tabs (The test are still being watched).
 
 ---
-
 ## About
 
-<!-- PLACEHOLDER: short bio / avatar — e.g. "Built by [Your Name](https://yoursite.com), a [role] who got tired of alt-tabbing to a terminal mid-flow." -->
+<p align="center">
+  <img src="resources/images/bradlogo.png" alt="Brand Logo" width="150">
+</p>
 
-Built because switching to a terminal to run tests interrupts the flow of writing code. If it does the same for you, give it a ⭐ on [GitHub](https://github.com/eshandias/live-test-runner).
+This software is built by `EshLabs` (Eshan Dias). I’m a software engineer who was tired of paying for third-party tools, so I decided to create my own tools to help streamline development.  
+
+I built this tool because during development, we often forget about test cases, and running them after completing a project to find errors can take a lot of time. With this tool, I can immediately see if any test cases fail as I code, making the debugging process faster and more efficient.  
+
+If this tool helps you as much as it helps me, please give it a ⭐ on [GitHub](https://github.com/eshandias/live-test-runner)!
 
 ---
 
