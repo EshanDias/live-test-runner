@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
 
@@ -22,7 +22,7 @@ jobs:
         run: npm install -g pnpm
 
       - name: Setup Node with pnpm cache
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: 'pnpm'
@@ -38,7 +38,7 @@ jobs:
         run: npm install -g vsce
 
       - name: Publish
-        run: vsce publish -p $VSCE_PAT --no-dependencies
+        run: vsce publish -p $VSCE_PAT --no-dependencies --baseContentUrl https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension
         working-directory: packages/vscode-extension
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
