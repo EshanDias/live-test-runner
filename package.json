@@ -1,10 +1,10 @@
 {
   "name": "live-test-runner",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "EshLabs",
   "engines": {
-    "vscode": "^1.144.0"
+    "vscode": "^1.74.0"
   },
   "repository": {
     "type": "git",
