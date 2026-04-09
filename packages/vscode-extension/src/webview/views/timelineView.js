@@ -1,14 +1,10 @@
 /**
  * timelineView.js — timeline debugger view for ResultsView (results.html).
  *
- * Mounted when the router receives { type: 'route', view: 'timeline' }.
- * Receives { type: 'timeline-loading' } to show a spinner while Jest runs.
- * Receives { type: 'timeline-ready', store } when the trace is ready.
+ * Layout: [timeline bar 75%] | [Console/Errors tabs 25%]
  *
  * Task 11: timeline bar + playback controls.
- * Task 14: log/error panels wired in.
- * Task 16: drag + zoom.
- * Task 17: loop compression.
+ * Task 14: log/error panels wired in (right column).
  */
 
 (function () {
@@ -16,11 +12,16 @@
 
   let _vscode = null;
   let _container = null;
-  let _engine = null;   // PlaybackEngine instance
-  let _store = null;    // serialised TimelineStore (variables/logs as plain objects)
-  let _errorStepIds = new Set(); // stepIds that have errors
+  let _engine = null;
+  let _store = null;
+  let _errorStepIds = new Set();
+  let _activeTab = 'console'; // 'console' | 'errors'
 
-  // ── Mount / unmount ────────────────────────────────────────────────────────────
+  // Containers for LogPanel / ErrorPanel (set after render)
+  let _logContainer = null;
+  let _errContainer = null;
+
+  // ── Public view interface ─────────────────────────────────────────────────────
 
   const TimelineView = {
     mount(container, vscode, payload) {
@@ -29,23 +30,31 @@
       _engine = null;
       _store = null;
       _errorStepIds = new Set();
+      _logContainer = null;
+      _errContainer = null;
+      _activeTab = 'console';
 
       _renderLoading(payload && payload.testFullName);
     },
 
     unmount() {
       if (_engine) { _engine.pause(); }
-      // Notify extension host that timeline mode is ending so it can clear decorations.
+      // Notify extension host so it can clear editor decorations.
       if (_vscode) { _vscode.postMessage({ type: 'timeline-exited' }); }
       _engine = null;
       _store = null;
       _container = null;
       _vscode = null;
+      _logContainer = null;
+      _errContainer = null;
     },
 
     onMessage(msg) {
       if (msg.type === 'timeline-loading') {
-        _renderLoading(_store ? _store.testFullName : undefined);
+        if (_engine) { _engine.pause(); }
+        _engine = null;
+        _store = null;
+        _renderLoading();
         return;
       }
       if (msg.type === 'timeline-ready') {
@@ -61,7 +70,7 @@
     },
   };
 
-  // ── Rendering helpers ──────────────────────────────────────────────────────────
+  // ── Loading / error states ─────────────────────────────────────────────────────
 
   function _renderLoading(testName) {
     if (!_container) return;
@@ -82,38 +91,69 @@
       </div>`;
   }
 
+  // ── Main timeline render ───────────────────────────────────────────────────────
+
   function _renderTimeline() {
     if (!_container || !_store) return;
+
+    _injectStyles();
 
     const steps = _store.steps || [];
 
     _container.innerHTML = `
       <div class="tl-root">
-        <div class="tl-context-label" id="tl-context"></div>
-        <div class="tl-bar-wrap">
-          <div class="tl-bar" id="tl-bar"></div>
+        <!-- Left: timeline (75%) -->
+        <div class="tl-main">
+          <div class="tl-context-label" id="tl-context"></div>
+          <div class="tl-bar-wrap">
+            <div class="tl-bar" id="tl-bar"></div>
+          </div>
+          <div class="tl-controls">
+            <button class="tl-btn" id="tl-first"  title="First step">⏮</button>
+            <button class="tl-btn" id="tl-prev"   title="Step back">◀</button>
+            <button class="tl-btn" id="tl-play"   title="Play">▶</button>
+            <button class="tl-btn" id="tl-next"   title="Step forward">▶|</button>
+            <button class="tl-btn" id="tl-last"   title="Last step">⏭</button>
+            <button class="tl-btn" id="tl-pause"  title="Pause">⏸</button>
+          </div>
+          <div class="tl-step-count" id="tl-step-count"></div>
         </div>
-        <div class="tl-controls" id="tl-controls">
-          <button class="tl-btn" id="tl-first"  title="First step">⏮</button>
-          <button class="tl-btn" id="tl-prev"   title="Step back">◀</button>
-          <button class="tl-btn" id="tl-play"   title="Play">▶</button>
-          <button class="tl-btn" id="tl-next"   title="Step forward">▶|</button>
-          <button class="tl-btn" id="tl-last"   title="Last step">⏭</button>
-          <button class="tl-btn" id="tl-pause"  title="Pause">⏸</button>
+
+        <!-- Right: console + errors (25%) -->
+        <div class="tl-side">
+          <div class="tl-tabs">
+            <button class="tl-tab tl-tab--active" id="tab-console" data-tab="console">Console</button>
+            <button class="tl-tab" id="tab-errors" data-tab="errors">Errors</button>
+          </div>
+          <div class="tl-tab-body" id="tl-log-container"></div>
+          <div class="tl-tab-body" id="tl-err-container" style="display:none"></div>
         </div>
-        <div class="tl-step-count" id="tl-step-count"></div>
       </div>`;
 
-    _injectStyles();
+    _logContainer = _container.querySelector('#tl-log-container');
+    _errContainer = _container.querySelector('#tl-err-container');
+
+    // Render static errors panel immediately
+    _renderErrorPanel();
+
+    // Wire tabs
+    _container.querySelectorAll('.tl-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _activeTab = btn.dataset.tab;
+        _container.querySelectorAll('.tl-tab').forEach(b => b.classList.remove('tl-tab--active'));
+        btn.classList.add('tl-tab--active');
+        _logContainer.style.display = _activeTab === 'console' ? '' : 'none';
+        _errContainer.style.display = _activeTab === 'errors'  ? '' : 'none';
+      });
+    });
 
     if (steps.length === 0) {
       _container.querySelector('#tl-context').textContent = 'No steps recorded.';
+      _updateLogPanel(null);
       return;
     }
 
-    // Instantiate the PlaybackEngine (loaded as a <script> before this view)
     _engine = new PlaybackEngine(_store);
-
     _buildBar(steps);
     _bindControls();
     _applyStep(_engine.currentStep);
@@ -163,8 +203,9 @@
   }
 
   function _updatePlayPause(playing) {
-    const play  = _container && _container.querySelector('#tl-play');
-    const pause = _container && _container.querySelector('#tl-pause');
+    if (!_container) return;
+    const play  = _container.querySelector('#tl-play');
+    const pause = _container.querySelector('#tl-pause');
     if (!play || !pause) return;
     play.disabled  = playing;
     pause.disabled = !playing;
@@ -175,10 +216,9 @@
   function _applyStep(step) {
     if (!step || !_container) return;
 
-    // If auto-play has naturally ended (at last step), reset play/pause buttons
     if (!_engine.isPlaying()) { _updatePlayPause(false); }
 
-    // Update context label
+    // Context label
     const ctx = _container.querySelector('#tl-context');
     if (ctx) {
       const file = _basename(step.file);
@@ -186,13 +226,13 @@
       ctx.textContent = `${file}${fn} · line ${step.line}`;
     }
 
-    // Update step counter
+    // Step counter
     const counter = _container.querySelector('#tl-step-count');
     if (counter) {
       counter.textContent = `Step ${_engine.currentStepId} of ${_engine.stepCount}`;
     }
 
-    // Highlight the active box in the bar
+    // Active box in bar
     const bar = _container.querySelector('#tl-bar');
     if (bar) {
       bar.querySelectorAll('.tl-box--active').forEach(el => el.classList.remove('tl-box--active'));
@@ -203,10 +243,54 @@
       }
     }
 
-    // Notify extension host — editor highlight happens in task 13
+    // Update console panel (cumulative logs up to current step)
+    _updateLogPanel(step.stepId);
+
+    // Notify extension host (editor highlight + sidebar state update)
     if (_vscode) {
       _vscode.postMessage({ type: 'step-changed', stepId: step.stepId, filePath: step.file, line: step.line });
     }
+  }
+
+  // ── Log / Error panels ─────────────────────────────────────────────────────────
+
+  function _updateLogPanel(currentStepId) {
+    if (!_logContainer || !window.LogPanel) return;
+
+    if (!_store || currentStepId === null) {
+      LogPanel.update(_logContainer, { sections: [] });
+      return;
+    }
+
+    // Collect all logs from steps up to and including currentStepId.
+    const lines = [];
+    for (const step of (_store.steps || [])) {
+      const stepLogs = _store.logs[step.stepId] || [];
+      for (const entry of stepLogs) {
+        lines.push({
+          level: entry.level,
+          text: `step ${step.stepId} · ${entry.text}`,
+        });
+      }
+      if (step.stepId === currentStepId) { break; }
+    }
+
+    const sections = lines.length > 0
+      ? [{ scope: 'test', label: _store.testFullName || 'Test', capturedAt: null, lines }]
+      : [];
+
+    LogPanel.update(_logContainer, { sections });
+  }
+
+  function _renderErrorPanel() {
+    if (!_errContainer || !window.ErrorPanel) return;
+
+    const errors = _store && _store.errors ? _store.errors : [];
+    const sections = errors.length > 0
+      ? [{ errors: errors.map(e => ({ testName: e.testName || _store.testFullName || 'Test', failureMessages: e.failureMessages })) }]
+      : [];
+
+    ErrorPanel.mount(_errContainer, { sections });
   }
 
   // ── Utility ────────────────────────────────────────────────────────────────────
@@ -214,9 +298,7 @@
   function _buildErrorSet() {
     _errorStepIds = new Set();
     if (!_store || !_store.errors) return;
-    for (const e of _store.errors) {
-      _errorStepIds.add(e.stepId);
-    }
+    for (const e of _store.errors) { _errorStepIds.add(e.stepId); }
   }
 
   function _basename(filePath) {
@@ -252,12 +334,21 @@
       @keyframes tl-spin { to { transform: rotate(360deg); } }
 
       .tl-root {
-        display: flex; flex-direction: column;
-        height: 100%; padding: 8px 12px; box-sizing: border-box;
-        gap: 6px;
+        display: flex; height: 100%; overflow: hidden;
       }
+      .tl-main {
+        display: flex; flex-direction: column; flex: 3;
+        padding: 8px 12px; box-sizing: border-box; gap: 6px;
+        border-right: 1px solid var(--vscode-panel-border, #3c3c3c);
+        overflow: hidden;
+      }
+      .tl-side {
+        display: flex; flex-direction: column; flex: 1;
+        min-width: 120px; overflow: hidden;
+      }
+
       .tl-context-label {
-        font-size: 11px; opacity: 0.75;
+        font-size: 11px; opacity: 0.75; flex-shrink: 0;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         min-height: 16px;
       }
@@ -290,14 +381,31 @@
       .tl-btn {
         background: none; border: 1px solid var(--vscode-button-secondaryBackground, #3c3c3c);
         color: var(--vscode-foreground); border-radius: 4px;
-        padding: 3px 8px; cursor: pointer; font-size: 13px;
-        min-width: 28px;
+        padding: 3px 8px; cursor: pointer; font-size: 13px; min-width: 28px;
       }
       .tl-btn:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground, #444); }
       .tl-btn:disabled { opacity: 0.4; cursor: default; }
 
       .tl-step-count {
         font-size: 10px; opacity: 0.55; text-align: center; flex-shrink: 0;
+      }
+
+      /* Side panel tabs */
+      .tl-tabs {
+        display: flex; flex-shrink: 0;
+        border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
+      }
+      .tl-tab {
+        flex: 1; padding: 4px; font-size: 11px;
+        background: none; border: none; color: var(--vscode-foreground);
+        cursor: pointer; opacity: 0.6; border-bottom: 2px solid transparent;
+      }
+      .tl-tab:hover { opacity: 0.9; }
+      .tl-tab--active { opacity: 1; border-bottom-color: var(--vscode-focusBorder); }
+
+      .tl-tab-body {
+        flex: 1; overflow-y: auto; font-size: 11px;
+        padding: 4px 6px; box-sizing: border-box;
       }
     `;
     document.head.appendChild(style);
