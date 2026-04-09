@@ -25,7 +25,7 @@ No configuration required for standard Jest projects. No dependency on the VS Co
 
 Tests re-run automatically on every save. A status bar badge gives you a one-glance pass/fail count without opening the panel.
 
-<!-- PLACEHOLDER: screenshot — status bar badge showing "✅ 42 passed" -->
+![Status Bar](resources/images/status_bar.png)
 
 ---
 
@@ -33,8 +33,7 @@ Tests re-run automatically on every save. A status bar badge gives you a one-gla
 
 A sidebar panel shows your full test suite as a **file → suite → test** tree. Every row has live status icons and color-coded duration badges.
 
-<!-- PLACEHOLDER: screenshot — Explorer panel, mixed pass/fail state, expanded suites -->
-
+![Explorer Test Cases View](resources/images/explorer-test-run.png)
 ---
 
 ### Live Results panel
@@ -47,7 +46,7 @@ A three-column split view for deep inspection:
 | **Output** | Console logs for the selected test, tabbed by level (All / Logs / Info / Warn / Error) |
 | **Errors** | Failure messages and stack traces for the selection |
 
-<!-- PLACEHOLDER: screenshot — Results panel, a failing test selected, error visible in column 3 -->
+![Explorer Test Cases View](resources/images/test-results-column-split.png)
 
 ---
 
@@ -61,7 +60,7 @@ Every `it()` and `test()` line gets:
 - **`▷ Debug`** — launch Jest under the debugger, scoped to this test via `--testNamePattern`
 - **`◈ Results`** — jump straight to this test in the Results panel
 
-<!-- PLACEHOLDER: screenshot — editor showing gutter icons, inline durations, CodeLens row above a describe block -->
+![Explorer Test Cases View](resources/images/editor-decorations.png)
 
 ---
 
@@ -152,7 +151,6 @@ Control when duration badges switch from green → amber → red. Separate thres
 - Rerunning an individual test uses `--testNamePattern`, which may match multiple tests if names overlap
 - Logs only get capured at file level.
 - Live run only works on test file for the moment.
-- Start test button state dissapears when switching to other tabs (The test are still being watched).
 
 ---
 ## About

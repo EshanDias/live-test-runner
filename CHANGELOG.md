@@ -4,7 +4,21 @@ All notable changes to Live Test Runner are documented here.
 
 ---
 
-## [2.2.0] — 2026-04-04
+## [1.0.0] — 2026-04-09
+
+### Test List Improvements
+
+#### Features
+- **Search filters to test case level** — typing in the search bar now narrows results down to
+  individual test cases. Only matching suites and tests are shown within each file; if a suite name
+  matches the query all of its tests are shown, otherwise only the matching tests appear
+- **State preserved across tab switches** — the Start / Stop buttons, live blinking indicator, and
+  watch state are now correctly restored when returning to the explorer after switching VS Code tabs.
+  Search query, failures-only filter, and folder-view toggle also survive the tab switch
+
+---
+
+## [0.2.0] — 2026-04-04
 
 ### Editor Inline Decorations
 
@@ -33,7 +47,7 @@ All notable changes to Live Test Runner are documented here.
 
 ---
 
-## [1.0.0] — 2026-04-03
+## [0.1.0] — 2026-04-03
 
 ### Initial release
 
@@ -67,7 +81,7 @@ All notable changes to Live Test Runner are documented here.
   Results panel shows *"The test case did not report any output."* on macOS. The global run output
   (visible via the "Show Results Output" button) is complete and unaffected. This is caused by
   inconsistent behaviour in the VS Code `TestRun.appendOutput()` API on macOS when a `test`
-  parameter is supplied. The fix (a custom interactive panel) is planned for v1.1.0.
+  parameter is supplied.
 
 - **No per-test click-to-view output** — as a consequence of the above, there is currently no way
   to click a passing test and see its isolated output. Failure messages for failed tests do appear
@@ -87,15 +101,8 @@ All notable changes to Live Test Runner are documented here.
 
 ## Roadmap
 
-### v1.1.0 — Custom interactive panel
-- Custom WebviewView panel replacing reliance on the native VS Code Test Results panel
-- Full file → suite → test tree with live status icons and durations
-- Click any row (file, suite, or test case) to view scoped log output in a side pane
-- Start / Stop / Reset toolbar buttons inside the panel
-- Cross-platform, no dependency on `appendOutput` API behaviour
-
 ### Future
 - Coverage overlay (% per file in tree)
-- Filter: show failures only
 - Re-run a single file or single test from the custom tree
 - Persistent results across window reloads
+- Monorepo multi-root support
