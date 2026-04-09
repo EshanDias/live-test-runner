@@ -26,10 +26,12 @@ class TestListLayout {
   /**
    * @param {HTMLElement} container
    * @param {{ postMessage: (msg: object) => void }} vscodeApi
+   * @param {{ showTimelineButton?: boolean }} [opts]
    */
-  constructor(container, vscodeApi) {
+  constructor(container, vscodeApi, opts) {
     this.container = container;
     this.vscode = vscodeApi;
+    this._showTimelineButton = !!(opts && opts.showTimelineButton);
     this.data = []; // array of FileResult (plain objects, from toJSON())
     this.query = ''; // active search filter
     this.selectedId = null; // selected row key
@@ -395,6 +397,9 @@ class TestListLayout {
         <button class="row-rerun" title="Rerun test"      data-rerun="test"
                 data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}" data-test="${esc(test.testId)}"
                 data-full-name="${esc(test.fullName ?? test.name)}">▶</button>
+        ${this._showTimelineButton ? `<button class="row-timeline" title="Open Timeline Debugger"
+                data-open-path="${esc(file.filePath)}"
+                data-full-name="${esc(test.fullName ?? test.name)}">⏱</button>` : ''}
       </div>`;
   }
 
@@ -406,6 +411,7 @@ class TestListLayout {
           e.target.closest('.row-rerun') ||
           e.target.closest('.row-open') ||
           e.target.closest('.row-copy') ||
+          e.target.closest('.row-timeline') ||
           e.target.closest('.row-folder-collapse') ||
           e.target.closest('.row-folder-expand')
         )
@@ -519,6 +525,17 @@ class TestListLayout {
             }, 1000);
           })
           .catch(() => {});
+      });
+    });
+
+    this.container.querySelectorAll('.row-timeline').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.vscode.postMessage({
+          type:         'open-timeline',
+          filePath:     btn.dataset.openPath,
+          testFullName: btn.dataset.fullName,
+        });
       });
     });
 

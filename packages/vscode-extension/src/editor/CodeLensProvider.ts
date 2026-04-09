@@ -81,6 +81,17 @@ export class CodeLensProvider
             arguments: [entry.fileId, entry.suiteId, entry.testId],
           }),
         );
+
+        const test = this._store.getTest(entry.fileId, entry.suiteId, entry.testId);
+        if (test?.fullName) {
+          lenses.push(
+            new vscode.CodeLens(range, {
+              title: '⏱ Timeline',
+              command: 'liveTestRunner.openTimelineDebugger',
+              arguments: [filePath, test.fullName],
+            }),
+          );
+        }
       }
     }
 

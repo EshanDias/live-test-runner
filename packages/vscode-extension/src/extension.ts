@@ -18,6 +18,8 @@ import { DecorationManager } from './editor/DecorationManager';
 import { ExplorerView } from './views/ExplorerView';
 import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
+import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
+import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 
 export function activate(context: vscode.ExtensionContext) {
   // ── Infrastructure ─────────────────────────────────────────────────────────
@@ -44,6 +46,10 @@ export function activate(context: vscode.ExtensionContext) {
     origSelect(sel);
     resultsView.sendScopedData(sel.fileId, sel.suiteId, sel.testId);
   };
+
+  // ── Timeline debugger ──────────────────────────────────────────────────────
+  // Reference typed as the interface — never as the concrete class.
+  const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner();
 
   // ── Session manager ────────────────────────────────────────────────────────
   const session = new SessionManager(
@@ -74,6 +80,8 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath, line) => rerunFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath, line) => debugFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, suiteId, testId) => focusResult(fileId, suiteId, testId, selection, resultsView)),
+    vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) =>
+      openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView)),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) { decorationManager.applyToEditor(editor); }
@@ -152,6 +160,19 @@ async function _resolveSuiteAtLine(
   } catch {
     return undefined;
   }
+}
+
+function openTimelineDebugger(
+  filePath: string,
+  testFullName: string,
+  _runner: IInstrumentedRunner,
+  resultsView: ResultsView,
+  explorerView: ExplorerView,
+): void {
+  // Route both panels to their timeline views.
+  // run() is NOT called here — that comes in task 10.
+  resultsView.postMessage({ type: 'route', view: 'timeline', payload: { testFullName, filePath } });
+  explorerView.postMessage({ type: 'route', view: 'timelineSidebar', payload: {} });
 }
 
 function focusResult(
