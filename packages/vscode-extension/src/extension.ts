@@ -23,7 +23,7 @@ export function activate(context: vscode.ExtensionContext) {
   // ── Infrastructure ─────────────────────────────────────────────────────────
   const outputChannel  = vscode.window.createOutputChannel('Live Test Runner', 'ansi');
   const statusBar      = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  statusBar.command    = 'liveTestRunner.startTesting';
+  statusBar.command    = 'liveTestRunner.showPanels';
   statusBar.text       = 'Live Tests: Off';
   statusBar.show();
 
@@ -66,6 +66,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.stopTesting',        () => session.stop(decorationManager)),
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot',  () => session.selectProjectRoot()),
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
+    vscode.commands.registerCommand('liveTestRunner.showPanels',         () => {
+      vscode.commands.executeCommand('liveTestRunner.explorer.focus');
+      vscode.commands.executeCommand('liveTestRunner.results.focus');
+    }),
     vscode.commands.registerCommand('liveTestRunner.rerunScope',         (args) => session.rerunScope(args)),
     vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath, line) => rerunFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath, line) => debugFromEditor(filePath, line, store, session)),

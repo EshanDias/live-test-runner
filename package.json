@@ -1,7 +1,7 @@
 {
   "name": "live-test-runner",
   "private": true,
-  "version": "1.0.6",
+  "version": "1.0.7",
   "publisher": "EshLabs",
   "engines": {
     "vscode": "^1.74.0"
