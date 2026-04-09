@@ -235,7 +235,7 @@
 
       container.innerHTML = TEMPLATE;
 
-      _list = new TestListLayout(_q('testList'), vscode);
+      _list = new TestListLayout(_q('testList'), vscode, { showTimelineButton: true });
 
       // ── List toolbar ────────────────────────────────────────────────────────
       const btnFailuresOnly = _q('btnFailuresOnly');
