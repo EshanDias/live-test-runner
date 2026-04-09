@@ -1,140 +1,54 @@
-# Live Test Runner - Developer Guide
+# Live Test Runner
 
-This is the development repository for Live Test Runner, a VS Code extension for live testing on save.
+A VS Code extension that runs Jest tests automatically on file save, showing results directly in the editor. No terminal switching, no manual commands — instant feedback as you write code.
 
-## Project Structure
+---
 
-This is a monorepo with the following packages:
+## What it does
 
-```
-packages/
-├── core/           # Shared business logic (TestSession, CoverageMap, etc.)
-├── runner/         # Test runner abstractions (JestRunner, etc.)
-└── vscode-extension/ # The VS Code extension itself
-```
+- **On-save execution** — save any file and the relevant tests run immediately
+- **Custom test explorer** — file → suite → test tree with live status icons and duration badges
+- **Results panel** — three-column view: test list, console output, and error details
+- **Editor decorations** — gutter icons and inline durations on every test line
+- **CodeLens buttons** — `▶ Run`, `▷ Debug`, and `◈ Results` above every `it()` and `describe()`
+- **Smart detection** — works with standard Jest and Create React App out of the box
 
-## Architecture
+---
 
-- **Session-based**: Testing only active during explicit sessions
-- **Framework abstraction**: TestRunner interface allows adding new frameworks
-- **Coverage-assisted mapping**: Uses Jest coverage to map source files to tests
-- **VS Code Testing API**: Integrates with Test Explorer
+## Packages
 
-## Development Setup
+| Package | Name | Purpose |
+|---------|------|---------|
+| `packages/core` | `@live-test-runner/core` | Session lifecycle + coverage map |
+| `packages/runner` | `@live-test-runner/runner` | Framework-agnostic test execution engine |
+| `packages/vscode-extension` | `live-test-runner` | VS Code extension |
 
-1. Clone the repository
-2. Install dependencies: `pnpm install`
-3. Start development: `pnpm start` (starts TypeScript watch mode for the extension)
-4. Open in VS Code and press F5 to launch extension development host
+---
 
-## Building
+## Documentation
 
-```bash
-# Build all packages
-pnpm run build
+| File | What it covers |
+|------|---------------|
+| [docs/architecture.md](docs/architecture.md) | Full system design — VS Code layout, packages, data model, execution flow, UI details, key decisions |
+| [docs/developer-guide.md](docs/developer-guide.md) | Dev setup, patterns and practices, adding frameworks, publishing |
+| [docs/ai-context.md](docs/ai-context.md) | Complete AI context — paste into any conversation for full codebase understanding |
+| [packages/core/README.md](packages/core/README.md) | Core package API and design |
+| [packages/runner/README.md](packages/runner/README.md) | Runner package API, layers, CRA behavior |
+| [packages/vscode-extension/README.md](packages/vscode-extension/README.md) | User guide — features, commands, configuration |
 
-# Start development (starts TypeScript watch mode for the extension)
-pnpm start
+---
 
-# Build individual packages
-cd packages/core && pnpm run build
-cd packages/runner && pnpm run build
-cd packages/vscode-extension && pnpm run compile
-```
-
-## Testing
+## Quick start (development)
 
 ```bash
-# Run tests for all packages
-pnpm test
-
-# Run extension tests
-cd packages/vscode-extension && pnpm test
+pnpm install
+pnpm start          # TypeScript watch mode
+# Press F5 in VS Code to launch the Extension Development Host
 ```
 
-## Adding a New Test Framework
+See [docs/developer-guide.md](docs/developer-guide.md) for full setup and build instructions.
 
-1. Implement `TestRunner` interface in `packages/runner/src/`
-2. Export from `packages/runner/src/index.ts`
-3. Add configuration option in extension for framework selection
-4. Update extension to instantiate the appropriate runner
-
-Example for Vite:
-
-```typescript
-// packages/runner/src/ViteRunner.ts
-export class ViteRunner implements TestRunner {
-  // Implement interface methods
-}
-```
-
-## VS Code Extension Development
-
-### Key Files
-
-- `packages/vscode-extension/src/extension.ts`: Main extension entry point
-- `packages/vscode-extension/package.json`: Extension manifest and configuration
-
-### Debugging
-
-- Press F5 in VS Code to launch Extension Development Host
-- Set breakpoints in extension code
-- Test commands via Command Palette
-
-### Publishing
-
-1. Update version in `packages/vscode-extension/package.json`
-2. Build: `npm run build`
-3. Package: `vsce package`
-4. Publish: `vsce publish`
-
-## Configuration Schema
-
-Settings are defined in `packages/vscode-extension/package.json` under `contributes.configuration.properties`.
-
-## Test Explorer Integration
-
-Uses VS Code's Testing API:
-- `vscode.tests.createTestController()` creates the controller
-- `refreshHandler` populates test items
-- `runHandler` executes tests
-
-## Performance Considerations
-
-- Jest runs in child processes, never in extension host
-- Coverage parsing is done asynchronously
-- On-save execution is debounced
-- Processes are killed on session end
-
-## Code Style
-
-- TypeScript strict mode
-- ESLint for linting
-- Prettier for formatting (if configured)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make changes
-4. Add tests
-5. Submit a pull request
-
-### Commit Messages
-
-Follow conventional commits:
-- `feat:` for new features
-- `fix:` for bug fixes
-- `docs:` for documentation
-- `refactor:` for code changes
-
-## Roadmap
-
-- [ ] Vite test runner
-- [ ] Playwright test runner
-- [ ] Suite/test-case level Test Explorer items
-- [ ] Inline diagnostics and squiggles
-- [ ] Time-travel debugging integration
+---
 
 ## License
 

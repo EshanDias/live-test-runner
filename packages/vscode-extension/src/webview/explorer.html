@@ -75,6 +75,7 @@
       <button class="toolbar-icon-btn" id="btnFailuresOnly" title="Show failures only" data-active="false">✗</button>
       <button class="toolbar-icon-btn" id="btnCollapseAll" title="Collapse all">⊟</button>
       <button class="toolbar-icon-btn" id="btnExpandAll" title="Expand all">⊞</button>
+      <button class="toolbar-icon-btn" id="btnFolderView" title="Toggle folder view" data-active="false">⊿</button>
     </div>
   </div>
 
@@ -90,6 +91,7 @@
 
 </div>
 
+<script nonce="{{nonce}}" src="{{utilsUri}}"></script>
 <script nonce="{{nonce}}" src="{{testListLayoutUri}}"></script>
 <script nonce="{{nonce}}">
   const vscode = acquireVsCodeApi();
@@ -110,6 +112,7 @@
   const btnCollapseAll  = document.getElementById('btnCollapseAll');
   const btnExpandAll    = document.getElementById('btnExpandAll');
   const btnFailuresOnly = document.getElementById('btnFailuresOnly');
+  const btnFolderView   = document.getElementById('btnFolderView');
   const emptyState      = document.getElementById('emptyState');
   const listToolbar     = document.getElementById('listToolbar');
 
@@ -117,9 +120,11 @@
   let completedFiles = 0;
   let failedDuringRun = 0;
   let runStartTime = 0;
+  let isPartialRerun = false;
   // 'idle' | 'running' | 'watching'
   let sessionState = 'idle';
   let showFailuresOnly = false;
+  let showFolderView = false;
 
   // ── Session state → button visibility ────────────────────────────────────────
   function applySessionState(state) {
@@ -129,6 +134,11 @@
     btnStop.classList.toggle('hidden', state !== 'watching');
     btnStopRun.classList.toggle('hidden', state !== 'running');
     watchIndicator.classList.toggle('hidden', state !== 'watching');
+    // Restore start button in case it was put into a loading state
+    if (state === 'idle') {
+      btnStart.disabled = false;
+      btnStart.textContent = '▶ Start Testing';
+    }
     updateListCount();
   }
 
@@ -138,8 +148,7 @@
     summaryPassed.textContent = passed != null ? passed : '—';
     summaryFailed.textContent = failed != null ? failed : '—';
     if (durationMs != null) {
-      const s = (durationMs / 1000).toFixed(1);
-      summaryDuration.textContent = `Completed in ${s}s`;
+      summaryDuration.textContent = `Completed in ${durationLabel(durationMs)}`;
       summaryDuration.style.display = '';
     } else {
       summaryDuration.style.display = 'none';
@@ -158,20 +167,54 @@
   const searchInput = document.getElementById('searchInput');
   const searchClear = document.getElementById('searchClear');
 
+  // ── Persist / restore UI filter state across webview destruction ─────────────
+  function saveUiState() {
+    vscode.setState({ query: searchInput.value, showFailuresOnly, showFolderView });
+  }
+
+  {
+    const saved = vscode.getState();
+    if (saved) {
+      if (saved.query) {
+        searchInput.value = saved.query;
+        searchClear.classList.add('visible');
+        list.setQuery(saved.query);
+      }
+      if (saved.showFailuresOnly) {
+        showFailuresOnly = true;
+        btnFailuresOnly.dataset.active = 'true';
+        btnFailuresOnly.title = 'Show all tests';
+        list.setFailuresOnly(true);
+      }
+      if (saved.showFolderView) {
+        showFolderView = true;
+        btnFolderView.dataset.active = 'true';
+        btnFolderView.title = 'Switch to flat list';
+        list.setFolderView(true);
+      }
+    }
+  }
+
   searchInput.addEventListener('input', () => {
     const q = searchInput.value;
     searchClear.classList.toggle('visible', q.length > 0);
     list.setQuery(q);
+    saveUiState();
   });
 
   searchClear.addEventListener('click', () => {
     searchInput.value = '';
     searchClear.classList.remove('visible');
     list.setQuery('');
+    saveUiState();
   });
 
   // ── Action buttons ────────────────────────────────────────────────────────────
-  btnStart.addEventListener('click', () => vscode.postMessage({ type: 'cmd', command: 'start' }));
+  btnStart.addEventListener('click', () => {
+    btnStart.disabled = true;
+    btnStart.textContent = '⟳ Starting…';
+    vscode.postMessage({ type: 'cmd', command: 'start' });
+  });
   btnRerun.addEventListener('click', () => vscode.postMessage({ type: 'cmd', command: 'start' }));
   btnStop.addEventListener('click', () => vscode.postMessage({ type: 'cmd', command: 'stop' }));
   btnStopRun.addEventListener('click', () => vscode.postMessage({ type: 'cmd', command: 'stop' }));
@@ -185,6 +228,15 @@
     btnFailuresOnly.dataset.active = String(showFailuresOnly);
     btnFailuresOnly.title = showFailuresOnly ? 'Show all tests' : 'Show failures only';
     list.setFailuresOnly(showFailuresOnly);
+    saveUiState();
+  });
+
+  btnFolderView.addEventListener('click', () => {
+    showFolderView = !showFolderView;
+    btnFolderView.dataset.active = String(showFolderView);
+    btnFolderView.title = showFolderView ? 'Switch to flat list' : 'Toggle folder view';
+    list.setFolderView(showFolderView);
+    saveUiState();
   });
 
   // ── Messages from extension ───────────────────────────────────────────────────
@@ -193,10 +245,11 @@
     switch (msg.type) {
 
       case 'init':
+        LiveTestUtils.setThresholds(msg.thresholds);
         list.setData(msg.files ?? []);
         updateSummary(msg.total, msg.passed, msg.failed, null);
         updateListCount();
-        if (msg.sessionActive) applySessionState('watching');
+        applySessionState(msg.sessionActive ? 'watching' : 'idle');
         break;
 
       case 'session-started':
@@ -212,17 +265,26 @@
         completedFiles = 0;
         failedDuringRun = 0;
         runStartTime = Date.now();
+        isPartialRerun = false;
         runProgress.textContent = `Running — 0 / ${totalFiles} files`;
         runProgress.classList.add('visible');
         applySessionState('running');
         updateSummary(null, null, null, null);
+        if (msg.files) { list.setData(msg.files); updateListCount(); }
         break;
 
       case 'run-finished':
         runProgress.classList.remove('visible');
         applySessionState(msg.sessionActive !== false ? 'watching' : 'idle');
-        updateSummary(msg.total, msg.passed, msg.failed, Date.now() - runStartTime);
-        if (msg.failed > 0) list.scrollToFirstFailure();
+        updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
+        if (msg.failed > 0 && !isPartialRerun) list.scrollToFirstFailure();
+        break;
+
+      case 'files-rerunning':
+        isPartialRerun = true;
+        for (const fileId of (msg.fileIds ?? [])) {
+          list.markFileRunning(fileId, msg.suiteId, msg.testId);
+        }
         break;
 
       case 'file-started':
@@ -238,20 +300,20 @@
 
       case 'file-result':
         completedFiles++;
-        const elapsed = ((Date.now() - runStartTime) / 1000).toFixed(1);
+        const elapsed = ((Date.now() - runStartTime)).toFixed(1);
         const failedStr = failedDuringRun > 0 ? ` • ${failedDuringRun} failed` : '';
-        runProgress.textContent = `Running — ${completedFiles} / ${totalFiles} files • ${elapsed}s${failedStr}`;
+        runProgress.textContent = `Running — ${completedFiles} / ${totalFiles} files • ${durationLabel(elapsed)}${failedStr}`;
         list.updateFile({ ...list.data.find(f => f.fileId === msg.fileId), status: msg.status, duration: msg.duration });
         break;
 
       case 'full-file-result':
         completedFiles++;
         if (msg.file.status === 'failed') failedDuringRun++;
-        const el2 = ((Date.now() - runStartTime) / 1000).toFixed(1);
+        const el2 = ((Date.now() - runStartTime)).toFixed(1);
         const fl2 = failedDuringRun > 0 ? ` • <span class="progress-failed">${failedDuringRun} failed</span>` : '';
-        runProgress.innerHTML = `Running — ${completedFiles} / ${totalFiles} files • ${el2}s${fl2}`;
+        runProgress.innerHTML = `Running — ${completedFiles} / ${totalFiles} files • ${durationLabel(el2)}${fl2}`;
         list.updateFile(msg.file);
-        updateSummary(msg.total, msg.passed, msg.failed);
+        updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
         break;
 
       case 'scope-changed':
