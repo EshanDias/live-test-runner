@@ -81,125 +81,18 @@
     el.textContent = total > 0 ? `${total} file${total !== 1 ? 's' : ''}` : '';
   }
 
-  function applyTabFilter(level) {
-    _activeTab = level;
+  function renderLogSections(sections) {
     const logContent = _q('logContent');
     if (!logContent) { return; }
-    logContent.querySelectorAll('.log-line').forEach(el => {
-      el.style.display = (level === 'all' || el.dataset.level === level) ? '' : 'none';
-    });
-    logContent.querySelectorAll('.output-section').forEach(section => {
-      const hasVisible = [...section.querySelectorAll('.log-line')]
-        .some(el => el.style.display !== 'none');
-      section.style.display = hasVisible ? '' : 'none';
-    });
-  }
-
-  function renderLogSections(sections) {
-    const container = _q('logContent');
-    if (!container) { return; }
-    container.innerHTML = '';
-
-    if (!sections || sections.length === 0) {
-      container.innerHTML = '<div class="empty-state">Select a test to view output</div>';
-      return;
-    }
-
-    const allEmpty = sections.every(s => s.lines.length === 0);
-    if (allEmpty) {
-      const scope = sections[0].scope;
-      const msg = scope === 'test'
-        ? 'No output captured at test level. Run the test individually to capture output here.'
-        : scope === 'suite'
-        ? 'No output captured at suite level. Check file level for console logs.'
-        : 'No output captured yet. Run a test to see logs here.';
-      container.innerHTML = `<div class="empty-state">${msg}</div>`;
-      return;
-    }
-
-    for (const section of sections) {
-      if (section.lines.length === 0) { continue; }
-
-      const sectionEl = document.createElement('div');
-      sectionEl.className = 'output-section';
-      sectionEl.dataset.scope = section.scope;
-
-      const header = document.createElement('div');
-      header.className = 'section-header';
-      header.innerHTML =
-        `<span class="scope-icon">${_scopeIcon(section.scope)}</span>` +
-        `<span class="scope-label">${_escHtml(section.label)}</span>` +
-        `<span class="captured-at">${_formatCapturedAt(section.capturedAt)}</span>`;
-      sectionEl.appendChild(header);
-
-      const linesEl = document.createElement('div');
-      linesEl.className = 'section-lines';
-      for (const line of section.lines) {
-        const lineEl = document.createElement('div');
-        lineEl.className = `log-line log-line-${line.level}`;
-        lineEl.dataset.level = line.level;
-        lineEl.textContent = line.text;
-        linesEl.appendChild(lineEl);
-      }
-      sectionEl.appendChild(linesEl);
-      container.appendChild(sectionEl);
-    }
-
-    applyTabFilter(_activeTab);
-    const logContent = _q('logContent');
-    if (_autoScroll && logContent) { logContent.scrollTop = logContent.scrollHeight; }
+    LogPanel.update(logContent, { sections });
+    LogPanel.applyFilter(logContent, _activeTab);
+    if (_autoScroll) { logContent.scrollTop = logContent.scrollHeight; }
   }
 
   function renderErrorSections(sections) {
-    const container = _q('errorContent');
-    if (!container) { return; }
-    container.innerHTML = '';
-
-    if (!sections || sections.length === 0 || sections.every(s => s.errors.length === 0)) {
-      container.innerHTML = '<div class="empty-state no-errors">No failures for this selection ✓</div>';
-      return;
-    }
-
-    for (const section of sections) {
-      for (const entry of section.errors) {
-        const entryEl = document.createElement('div');
-        entryEl.className = 'error-entry';
-
-        const nameEl = document.createElement('div');
-        nameEl.className = 'error-test-name';
-        nameEl.textContent = entry.testName;
-        entryEl.appendChild(nameEl);
-
-        for (const msg of entry.failureMessages) {
-          const msgEl = document.createElement('pre');
-          msgEl.className = 'error-message';
-          msgEl.textContent = msg;
-          entryEl.appendChild(msgEl);
-        }
-
-        container.appendChild(entryEl);
-      }
-    }
-  }
-
-  function _scopeIcon(scope) {
-    return { file: '📄', suite: '🔷', test: '🔹' }[scope] ?? '•';
-  }
-
-  function _formatCapturedAt(capturedAt) {
-    if (capturedAt === null) { return ''; }
-    const diff = Date.now() - capturedAt;
-    if (diff < 10_000)  { return 'just now'; }
-    if (diff < 120_000) { return `${Math.floor(diff / 1000)}s ago`; }
-    return new Date(capturedAt).toLocaleTimeString();
-  }
-
-  function _escHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+    const errorContent = _q('errorContent');
+    if (!errorContent) { return; }
+    ErrorPanel.update(errorContent, { sections });
   }
 
   function _makeResizable(handle, leftEl) {
@@ -263,7 +156,9 @@
         tab.addEventListener('click', () => {
           container.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
           tab.classList.add('active');
-          applyTabFilter(tab.dataset.tab);
+          _activeTab = tab.dataset.tab;
+          const logContent = _q('logContent');
+          if (logContent) { LogPanel.applyFilter(logContent, _activeTab); }
         });
       });
 

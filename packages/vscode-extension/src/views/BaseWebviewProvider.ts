@@ -188,17 +188,20 @@ export abstract class BaseWebviewProvider
   private _buildHtml(webview: vscode.Webview): string {
     const webviewDir        = vscode.Uri.joinPath(this.extensionUri, 'src', 'webview');
     const viewsDir          = vscode.Uri.joinPath(webviewDir, 'views');
+    const componentsDir     = vscode.Uri.joinPath(webviewDir, 'components');
     const timelineDir       = vscode.Uri.joinPath(webviewDir, 'timeline');
 
-    const stylesUri              = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'styles.css'));
-    const utilsUri               = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'utils.js'));
-    const testListLayoutUri      = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'testListLayout.js'));
-    const routerUri              = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'router.js'));
-    const resultsViewUri         = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,   'resultsView.js'));
-    const timelineViewUri        = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,   'timelineView.js'));
-    const testListViewUri        = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,   'testListView.js'));
-    const timelineSidebarUri     = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,   'timelineSidebar.js'));
-    const playbackEngineUri      = webview.asWebviewUri(vscode.Uri.joinPath(timelineDir,'PlaybackEngine.js'));
+    const stylesUri              = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir,    'styles.css'));
+    const utilsUri               = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir,    'utils.js'));
+    const testListLayoutUri      = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir,    'testListLayout.js'));
+    const routerUri              = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir,    'router.js'));
+    const logPanelUri            = webview.asWebviewUri(vscode.Uri.joinPath(componentsDir, 'logPanel.js'));
+    const errorPanelUri          = webview.asWebviewUri(vscode.Uri.joinPath(componentsDir, 'errorPanel.js'));
+    const resultsViewUri         = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'resultsView.js'));
+    const timelineViewUri        = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'timelineView.js'));
+    const testListViewUri        = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'testListView.js'));
+    const timelineSidebarUri     = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'timelineSidebar.js'));
+    const playbackEngineUri      = webview.asWebviewUri(vscode.Uri.joinPath(timelineDir,   'PlaybackEngine.js'));
 
     const nonce     = getNonce();
     const cspSource = webview.cspSource;
@@ -214,6 +217,8 @@ export abstract class BaseWebviewProvider
       .replace(/\{\{stylesUri\}\}/g,          stylesUri.toString())
       .replace(/\{\{utilsUri\}\}/g,           utilsUri.toString())
       .replace(/\{\{testListLayoutUri\}\}/g,  testListLayoutUri.toString())
+      .replace(/\{\{logPanelUri\}\}/g,        logPanelUri.toString())
+      .replace(/\{\{errorPanelUri\}\}/g,      errorPanelUri.toString())
       .replace(/\{\{routerUri\}\}/g,          routerUri.toString())
       .replace(/\{\{resultsViewUri\}\}/g,     resultsViewUri.toString())
       .replace(/\{\{timelineViewUri\}\}/g,    timelineViewUri.toString())
