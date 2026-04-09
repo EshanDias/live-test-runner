@@ -15,14 +15,6 @@ All notable changes to Live Test Runner are documented here.
 - **State preserved across tab switches** — the Start / Stop buttons, live blinking indicator, and
   watch state are now correctly restored when returning to the explorer after switching VS Code tabs.
   Search query, failures-only filter, and folder-view toggle also survive the tab switch
-
----
-
-## [0.2.0] — 2026-04-04
-
-### Editor Inline Decorations
-
-#### Features
 - **Gutter status icons** — pass ✓ / fail ✗ / running ⟳ / pending ○ icons appear next to each
   `it()` and `test()` line as soon as results arrive; cleared automatically when the session stops
 - **Inline duration text** — muted duration label rendered after the closing paren of each test
@@ -36,6 +28,32 @@ All notable changes to Live Test Runner are documented here.
   focuses the Test Results panel and scrolls to and selects the matching row
 - **Session-scoped** — CodeLens entries and gutter decorations are only visible while a session is
   active; stopping clears everything immediately
+
+---
+
+## [0.2.0] — 2026-04-04
+
+### Editor Inline Decorations
+
+#### Features
+- **Custom Test Explorer** sidebar panel with file → suite → test hierarchy
+- **Live Test Results** panel (3 columns: test list, console output, errors)
+- **Action bar** — Start Testing, Stop Testing, and Rerun Tests buttons
+- **Live watch indicator** shown when the session is active
+- **Summary bar** — total / passed / failed counts with elapsed time
+- **Failures-only filter** toggle on the test list toolbar
+- **Search** bar to filter the test tree by name
+- **Collapse All / Expand All** toolbar buttons
+- **Per-row rerun** (▶) and **open file** (↗) buttons on hover
+- **Duration badges** — color-coded fast / moderate / slow at file, suite, and test level
+- **Empty state** message when no tests have been discovered yet
+- **Run progress** line showing file count and elapsed time during a run
+- `session-started` / `session-stopped` broadcast messages for accurate UI state
+- Smart Jest auto-detection: standard Jest, CRA / react-scripts, local `node_modules/.bin/jest`
+- `--outputFile` temp-file capture to avoid Windows pipe-buffering data loss
+- `stdout` JSON fallback for CRA runs that skip writing `--outputFile` on failure
+- Concurrent file runner (up to 3 parallel Jest workers)
+- Console output parsed from stderr for CRA projects that omit the `console` array in JSON
 
 #### Internal
 - `JestTestCaseResult` now carries an optional `location: { line, column }` field populated from
