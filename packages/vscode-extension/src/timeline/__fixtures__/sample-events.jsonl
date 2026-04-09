@@ -1,0 +1,18 @@
+{"type":"STEP","stepId":1,"line":5,"file":"/project/src/math.test.js","functionName":"adds two numbers"}
+{"type":"VAR","stepId":1,"name":"a","snapshot":{"name":"a","type":"primitive","value":2}}
+{"type":"VAR","stepId":1,"name":"b","snapshot":{"name":"b","type":"primitive","value":3}}
+{"type":"LOG","stepId":1,"level":"log","args":["adding",2,3]}
+{"type":"STEP","stepId":2,"line":6,"file":"/project/src/math.test.js","functionName":"adds two numbers"}
+{"type":"VAR","stepId":2,"name":"result","snapshot":{"name":"result","type":"primitive","value":5}}
+{"type":"LOG","stepId":2,"level":"info","args":["result is",5]}
+{"type":"STEP","stepId":3,"line":7,"file":"/project/src/math.test.js","functionName":"adds two numbers"}
+{"type":"ASSERT","stepId":3,"expected":5,"actual":5,"pass":true}
+{"type":"STEP","stepId":4,"line":10,"file":"/project/src/math.test.js","functionName":"handles negative numbers"}
+{"type":"VAR","stepId":4,"name":"x","snapshot":{"name":"x","type":"primitive","value":-1}}
+{"type":"VAR","stepId":4,"name":"obj","snapshot":{"name":"obj","type":"object","keys":["foo","bar"]}}
+{"type":"STEP","stepId":5,"line":11,"file":"/project/src/math.test.js","functionName":"handles negative numbers"}
+{"type":"VAR","stepId":5,"name":"result","snapshot":{"name":"result","type":"primitive","value":-2}}
+{"type":"LOG","stepId":5,"level":"warn","args":["negative result"]}
+{"type":"STEP","stepId":6,"line":12,"file":"/project/src/math.test.js","functionName":"handles negative numbers"}
+{"type":"ASSERT","stepId":6,"expected":-2,"actual":-3,"pass":false}
+{"type":"ERROR","stepId":6,"message":"Expected -2 but received -3"}
