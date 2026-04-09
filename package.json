@@ -1,7 +1,7 @@
 {
   "name": "live-test-runner",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "publisher": "EshLabs",
   "engines": {
     "vscode": "^1.74.0"
@@ -18,7 +18,9 @@
     "start": "pnpm --filter live-test-runner run watch"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "@types/jest": "^29.0.0",

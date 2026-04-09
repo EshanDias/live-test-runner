@@ -2,7 +2,7 @@
   "name": "live-test-runner",
   "displayName": "Live Test Runner",
   "description": "Live testing on save for Jest and other frameworks",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "icon": "resources/images/live-test-runner.png",
   "publisher": "EshLabs",
   "engines": {
