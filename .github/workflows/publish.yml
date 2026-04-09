@@ -38,7 +38,7 @@ jobs:
         run: npm install -g vsce
 
       - name: Publish
-        run: vsce publish -p $VSCE_PAT
+        run: vsce publish -p $VSCE_PAT --no-dependencies
         working-directory: packages/vscode-extension
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
