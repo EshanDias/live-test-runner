@@ -167,16 +167,46 @@
   const searchInput = document.getElementById('searchInput');
   const searchClear = document.getElementById('searchClear');
 
+  // ── Persist / restore UI filter state across webview destruction ─────────────
+  function saveUiState() {
+    vscode.setState({ query: searchInput.value, showFailuresOnly, showFolderView });
+  }
+
+  {
+    const saved = vscode.getState();
+    if (saved) {
+      if (saved.query) {
+        searchInput.value = saved.query;
+        searchClear.classList.add('visible');
+        list.setQuery(saved.query);
+      }
+      if (saved.showFailuresOnly) {
+        showFailuresOnly = true;
+        btnFailuresOnly.dataset.active = 'true';
+        btnFailuresOnly.title = 'Show all tests';
+        list.setFailuresOnly(true);
+      }
+      if (saved.showFolderView) {
+        showFolderView = true;
+        btnFolderView.dataset.active = 'true';
+        btnFolderView.title = 'Switch to flat list';
+        list.setFolderView(true);
+      }
+    }
+  }
+
   searchInput.addEventListener('input', () => {
     const q = searchInput.value;
     searchClear.classList.toggle('visible', q.length > 0);
     list.setQuery(q);
+    saveUiState();
   });
 
   searchClear.addEventListener('click', () => {
     searchInput.value = '';
     searchClear.classList.remove('visible');
     list.setQuery('');
+    saveUiState();
   });
 
   // ── Action buttons ────────────────────────────────────────────────────────────
@@ -198,6 +228,7 @@
     btnFailuresOnly.dataset.active = String(showFailuresOnly);
     btnFailuresOnly.title = showFailuresOnly ? 'Show all tests' : 'Show failures only';
     list.setFailuresOnly(showFailuresOnly);
+    saveUiState();
   });
 
   btnFolderView.addEventListener('click', () => {
@@ -205,6 +236,7 @@
     btnFolderView.dataset.active = String(showFolderView);
     btnFolderView.title = showFolderView ? 'Switch to flat list' : 'Toggle folder view';
     list.setFolderView(showFolderView);
+    saveUiState();
   });
 
   // ── Messages from extension ───────────────────────────────────────────────────
@@ -217,7 +249,7 @@
         list.setData(msg.files ?? []);
         updateSummary(msg.total, msg.passed, msg.failed, null);
         updateListCount();
-        if (msg.sessionActive) applySessionState('watching');
+        applySessionState(msg.sessionActive ? 'watching' : 'idle');
         break;
 
       case 'session-started':

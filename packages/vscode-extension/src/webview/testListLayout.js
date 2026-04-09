@@ -183,6 +183,23 @@ class TestListLayout {
     return false;
   }
 
+  /** Returns true if the suite or any of its tests match the current query. */
+  _suiteMatchesQuery(suite) {
+    if (this._matches(suite.name)) return true;
+    return suite.tests.some((t) => this._matches(t.name));
+  }
+
+  /**
+   * When a query is active, filter tests within a suite:
+   * - If the suite name itself matches, show all tests.
+   * - Otherwise, show only tests whose name matches.
+   */
+  _filterTests(tests, suite) {
+    if (!this.query) return tests;
+    if (this._matches(suite.name)) return tests;
+    return tests.filter((t) => this._matches(t.name));
+  }
+
   _render() {
     let filtered = this.query
       ? this.data.filter((f) => this._fileMatches(f))
@@ -290,12 +307,16 @@ class TestListLayout {
       : '<span class="row-toggle">▶</span>';
     const displayName = basename(file.name);
 
+    // When a query is active, only render suites (and their tests) that match.
     // Suites named '(root)' are a synthetic wrapper for top-level tests written
     // without a describe() block — render their tests directly under the file.
-    const children = (file.suites ?? [])
+    const suitesToRender = this.query
+      ? (file.suites ?? []).filter((s) => this._suiteMatchesQuery(s))
+      : (file.suites ?? []);
+    const children = suitesToRender
       .map((s) =>
         s.name === '(root)'
-          ? s.tests.map((t) => this._renderTest(file, s, t)).join('')
+          ? this._filterTests(s.tests, s).map((t) => this._renderTest(file, s, t)).join('')
           : this._renderSuite(file, s),
       )
       .join('');
@@ -331,7 +352,7 @@ class TestListLayout {
           : '<span class="row-toggle">▶</span>'
         : '<span class="row-toggle"></span>';
 
-    const children = suite.tests
+    const children = this._filterTests(suite.tests, suite)
       .map((t) => this._renderTest(file, suite, t))
       .join('');
 

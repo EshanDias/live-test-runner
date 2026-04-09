@@ -19,6 +19,7 @@ export abstract class BaseWebviewProvider
   implements vscode.WebviewViewProvider, IResultObserver
 {
   protected view?: vscode.WebviewView;
+  protected _sessionActive = false;
 
   constructor(
     protected readonly extensionUri: vscode.Uri,
@@ -105,10 +106,12 @@ export abstract class BaseWebviewProvider
   // ── IResultObserver ────────────────────────────────────────────────────────
 
   onSessionStarted(): void {
+    this._sessionActive = true;
     this.postMessage({ type: 'session-started' });
   }
 
   onSessionStopped(): void {
+    this._sessionActive = false;
     this.postMessage({ type: 'session-stopped' });
   }
 
