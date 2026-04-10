@@ -402,6 +402,7 @@ body {
 /* ── Results panel (3-column) ──────────────────────────────────────────────── */
 .results-layout {
   display: flex;
+  flex: 1;
   height: 100vh;
   overflow: hidden;
 }
