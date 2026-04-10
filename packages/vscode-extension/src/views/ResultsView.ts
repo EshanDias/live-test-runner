@@ -59,6 +59,8 @@ export class ResultsView extends BaseWebviewProvider {
 
   /** Called by extension.ts when the timeline view is unmounted (route → results). */
   onTimelineExit: (() => void) | null = null;
+  /** Called when timeline UI asks host to exit timeline mode. */
+  onTimelineExitRequest: (() => void) | null = null;
 
   protected handleExtraMessage(msg: { type: string; fileId?: string; suiteId?: string; testId?: string; stepId?: number; filePath?: string; line?: number; view?: string }): void {
     if (msg.type === 'select' && msg.fileId) {
@@ -71,6 +73,10 @@ export class ResultsView extends BaseWebviewProvider {
     }
     if (msg.type === 'timeline-exited') {
       this.onTimelineExit?.();
+      return;
+    }
+    if (msg.type === 'timeline-exit-request') {
+      this.onTimelineExitRequest?.();
     }
   }
 

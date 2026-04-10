@@ -59,6 +59,21 @@ export function activate(context: vscode.ExtensionContext) {
   // Last serialised store — kept so TimelineDecorationManager can render inline values.
   let lastTimelineStore: { steps: unknown[]; variables: Record<number, unknown[]> } | null = null;
 
+  const routeExplorerToMain = () => {
+    const summary = store.getSummary();
+    explorerView.postMessage({
+      type: 'route',
+      view: 'testList',
+      payload: {
+        files: (store.toJSON() as { files: unknown[] }).files,
+        total: summary.total,
+        passed: summary.passed,
+        failed: summary.failed,
+        sessionActive: false,
+      },
+    });
+  };
+
   // Forward step-changed from ResultsView to ExplorerView (sidebar state update)
   // and apply the editor highlight with inline variable values.
   resultsView.onStepChanged = (stepId, filePath, line) => {
@@ -81,7 +96,31 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   // Clear decorations when the user navigates away from timeline mode.
-  resultsView.onTimelineExit = () => { timelineDecorations.clearAll(); };
+  resultsView.onTimelineExit = () => {
+    timelineDecorations.clearAll();
+    routeExplorerToMain();
+  };
+  resultsView.onTimelineExitRequest = () => {
+    resultsView.postMessage({
+      type: 'route',
+      view: 'results',
+      payload: {
+        files: (store.toJSON() as { files: unknown[] }).files,
+      },
+    });
+    routeExplorerToMain();
+  };
+  explorerView.onTimelineExitRequest = () => {
+    timelineDecorations.clearAll();
+    resultsView.postMessage({
+      type: 'route',
+      view: 'results',
+      payload: {
+        files: (store.toJSON() as { files: unknown[] }).files,
+      },
+    });
+    routeExplorerToMain();
+  };
 
   // Re-run button in the sidebar.
   explorerView.onTimelineRerun = () => {

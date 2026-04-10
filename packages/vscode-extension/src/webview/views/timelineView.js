@@ -61,10 +61,6 @@
         _dragAbort.abort();
         _dragAbort = null;
       }
-      // Notify extension host so it can clear editor decorations.
-      if (_vscode) {
-        _vscode.postMessage({ type: 'timeline-exited' });
-      }
       _engine = null;
       _store = null;
       _container = null;
@@ -146,6 +142,9 @@
         <!-- Left: timeline (75%) -->
         <div class="tl-main" id="tl-main">
           <div class="tl-main-inner">
+            <div class="tl-header-row">
+              <button class="tl-exit-btn" id="tl-exit" title="Exit Timeline View">← Back to Test Results</button>
+            </div>
             <div class="tl-context-label" id="tl-context"></div>
             <div class="tl-scrub-track" id="tl-scrub-track">
               <div class="tl-scrub-surface" aria-hidden="true"></div>
@@ -213,6 +212,7 @@
     _buildBar(steps);
     _bindControls();
     _bindResizeHandle();
+    _bindExit();
     _applyStep(_engine.currentStep);
   }
 
@@ -664,6 +664,17 @@
     });
   }
 
+  function _bindExit() {
+    const exitBtn = _container && _container.querySelector('#tl-exit');
+    if (!exitBtn) return;
+    exitBtn.addEventListener('click', () => {
+      // Ask extension host to route both panels back in sync.
+      if (_vscode) {
+        _vscode.postMessage({ type: 'timeline-exit-request' });
+      }
+    });
+  }
+
   function _updatePlayPause(playing) {
     if (!_container) return;
     const play = _container.querySelector('#tl-play');
@@ -915,6 +926,23 @@
         width: 100%;
         max-width: min(920px, 100%);
         gap: 10px;
+      }
+      .tl-header-row {
+        display: flex;
+        justify-content: flex-end;
+      }
+      .tl-exit-btn {
+        background: var(--vscode-button-secondaryBackground, #3c3c3c);
+        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+        border: 1px solid var(--vscode-panel-border, rgba(80,80,80,0.65));
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .tl-exit-btn:hover {
+        background: var(--vscode-button-secondaryHoverBackground, #444);
+        border-color: var(--vscode-focusBorder);
       }
       .tl-resize-handle {
         width: 4px; flex-shrink: 0; cursor: col-resize;

@@ -8,6 +8,8 @@ export class ExplorerView extends BaseWebviewProvider {
 
   /** Called by extension.ts when the sidebar Re-run button is clicked. */
   onTimelineRerun: (() => void) | null = null;
+  /** Called when timeline sidebar requests exiting timeline mode. */
+  onTimelineExitRequest: (() => void) | null = null;
 
   protected handleExtraMessage(msg: { type: string; filePath?: string; testFullName?: string }): void {
     if (msg.type === 'open-timeline' && msg.filePath && msg.testFullName) {
@@ -20,6 +22,10 @@ export class ExplorerView extends BaseWebviewProvider {
     }
     if (msg.type === 'timeline-rerun') {
       this.onTimelineRerun?.();
+      return;
+    }
+    if (msg.type === 'timeline-exit-request') {
+      this.onTimelineExitRequest?.();
     }
   }
 

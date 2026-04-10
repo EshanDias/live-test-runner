@@ -83,8 +83,11 @@
     _container.innerHTML = `
       <div class="ts-root">
         <div class="ts-header">
+          <div class="ts-header-actions">
+            <button class="ts-back-btn" id="ts-back" title="Back to Test Results">← Back</button>
+            <button class="ts-rerun-btn" id="ts-rerun" title="Re-run instrumented trace">↺ Re-run</button>
+          </div>
           <div class="ts-test-name" id="ts-test-name">${_esc(testName || 'Timeline Debugger')}</div>
-          <button class="ts-rerun-btn" id="ts-rerun" title="Re-run instrumented trace">↺ Re-run</button>
         </div>
 
         <div class="ts-section">
@@ -112,6 +115,9 @@
     _container.querySelector('#ts-rerun').addEventListener('click', () => {
       if (_running) return;
       _vscode && _vscode.postMessage({ type: 'timeline-rerun' });
+    });
+    _container.querySelector('#ts-back').addEventListener('click', () => {
+      _vscode && _vscode.postMessage({ type: 'timeline-exit-request' });
     });
 
     const input = _container.querySelector('#ts-watch-input');
@@ -330,13 +336,26 @@
         box-sizing: border-box; padding: 0 0 12px;
       }
       .ts-header {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 8px 10px 6px; gap: 6px; flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 8px 10px 8px;
+        gap: 6px;
+        flex-shrink: 0;
         border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c);
       }
-      .ts-test-name {
-        font-size: 11px; opacity: 0.75;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
+      .ts-header-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+      }
+      .ts-back-btn {
+        background: var(--vscode-button-secondaryBackground, #3c3c3c);
+        color: var(--vscode-button-secondaryForeground, #ccc);
+        border: none; border-radius: 3px; padding: 2px 8px;
+        cursor: pointer;
+        font-size: 11px; white-space: nowrap;
       }
       .ts-rerun-btn {
         background: var(--vscode-button-secondaryBackground, #3c3c3c);
@@ -345,8 +364,16 @@
         cursor: pointer; font-size: 11px; white-space: nowrap;
         flex-shrink: 0;
       }
+      .ts-back-btn:hover,
       .ts-rerun-btn:hover:not(:disabled) { opacity: 0.85; }
       .ts-rerun-btn:disabled { opacity: 0.4; cursor: default; }
+      .ts-test-name {
+        font-size: 11px;
+        opacity: 0.9;
+        line-height: 1.35;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
 
       .ts-section { border-bottom: 1px solid var(--vscode-panel-border, #3c3c3c); }
       .ts-section-title {
