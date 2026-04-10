@@ -193,14 +193,6 @@ module.exports = {
     }
 
     // 4. Parse the trace file into a TimelineStore
-    // DEBUG — dump first 20 raw trace events so we can inspect functionName values
-    try {
-      const raw = fs.readFileSync(traceFile, 'utf8');
-      const preview = raw.split('\n').filter(l => l.trim()).slice(0, 20).join('\n');
-      fs.appendFileSync('/tmp/ltr-debug.log',
-        `\n--- raw trace (first 20 lines) ---\ntargetTestName: ${testFullName}\n${preview}\n`);
-    } catch { /* ignore */ }
-
     let store: TimelineStore;
     try {
       store = this.parseEvents(traceFile);
