@@ -91,6 +91,39 @@ const baseTransformObj = Array.isArray(baseConfig.transform)
   ? Object.fromEntries(baseConfig.transform.map(([p, t, o]) => o ? [p, [t, o]] : [p, t]))
   : (baseConfig.transform || {});
 
+// CRA and similar projects manage Jest config inside react-scripts and don't
+// expose a transform in jest.config.js / package.json, so baseTransformObj ends
+// up empty. When that happens, none of the source files imported by the test
+// (axiosConfig.js, etc.) get transpiled — Jest loads them raw and hits their
+// import/export statements. Add a catch-all babel-jest transform so every
+// JS/TS file in the project gets compiled to CJS.
+const hasGeneralJsTransform = Object.keys(baseTransformObj).some(pattern => {
+  try { return new RegExp(pattern).test('src/foo.js'); } catch(_) { return false; }
+});
+
+let fallbackTransform = {};
+if (!hasGeneralJsTransform) {
+  const babelJestPath = require.resolve('babel-jest', { paths: [${JSON.stringify(projectRoot)}, __dirname] });
+  // Prefer babel-preset-react-app (CRA) if present, otherwise @babel/preset-env
+  let presets;
+  try {
+    const reactAppPreset = require.resolve('babel-preset-react-app', { paths: [${JSON.stringify(projectRoot)}] });
+    presets = [[reactAppPreset, { runtime: 'automatic' }]];
+  } catch(_) {
+    try {
+      const presetEnv = require.resolve('@babel/preset-env', { paths: [${JSON.stringify(projectRoot)}] });
+      presets = [[presetEnv, { targets: { node: 'current' } }]];
+    } catch(_) {
+      presets = [];
+    }
+  }
+  if (presets.length > 0) {
+    fallbackTransform = {
+      '^.+\\\\.[jt]sx?$': [babelJestPath, { configFile: false, presets }],
+    };
+  }
+}
+
 module.exports = {
   ...baseConfig,
   // rootDir must be the project root, not the /tmp/ directory where this config
@@ -99,8 +132,10 @@ module.exports = {
   transform: {
     // Our entry first — matches only the exact file being debugged
     [${JSON.stringify('^' + escapedFileForRegex + '$')}]: ${JSON.stringify(TRACE_TRANSFORM_PATH)},
-    // Project's existing transforms after (babel-jest, ts-jest, etc.)
+    // Project's existing transforms (babel-jest, ts-jest, etc.)
     ...baseTransformObj,
+    // Catch-all for CRA / projects where baseTransformObj is empty
+    ...fallbackTransform,
   },
 };
 `;
