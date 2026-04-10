@@ -444,9 +444,9 @@ Each component exports `{ mount(container, payload), update(container, payload),
 
 ---
 
-## Task 18 — End-to-end smoke test on `ibuy-frontend-sample`
+## Task 18 — End-to-end smoke test on `sample-react-project`
 
-**What:** Run the full debugger on a real test in `ibuy-frontend-sample` and verify all pieces work together.
+**What:** Run the full debugger on a real test in `sample-react-project` and verify all pieces work together.
 
 **Not a code task — a verification checklist:**
 

@@ -11,10 +11,20 @@ import * as os from 'os';
 import * as path from 'path';
 import { Executor, BinaryResolver } from '@live-test-runner/runner';
 import { IInstrumentedRunner } from './IInstrumentedRunner';
-import { TimelineStore, Step, VariableSnapshot, LogEntry, ErrorEntry } from './TimelineStore';
+import {
+  TimelineStore,
+  Step,
+  VariableSnapshot,
+  LogEntry,
+  ErrorEntry,
+} from './TimelineStore';
 import { TimelineEvent } from './TimelineEvent';
 
-const TRACE_TRANSFORM_PATH = path.resolve(__dirname, 'instrumentation', 'traceTransform.js');
+const TRACE_TRANSFORM_PATH = path.resolve(
+  __dirname,
+  'instrumentation',
+  'traceTransform.js',
+);
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -62,27 +72,48 @@ try {
     const existing = require(${JSON.stringify(path.join(projectRoot, 'jest.config.cjs'))});
     baseConfig = (existing && existing.default) ? existing.default : existing;
   } catch (_e2) {
-    // No CJS jest config — start from empty base
+    try {
+      // Many projects put jest config inside package.json under a "jest" key
+      const pkg = require(${JSON.stringify(path.join(projectRoot, 'package.json'))});
+      if (pkg.jest) { baseConfig = pkg.jest; }
+    } catch (_e3) {
+      // No jest config found anywhere — start from empty base
+    }
   }
 }
 
-// Normalise baseConfig.transform to array format so we can prepend our entry.
-// Jest accepts both object { pattern: path } and array [[pattern, path]] forms.
-const baseTransforms = Array.isArray(baseConfig.transform)
-  ? baseConfig.transform
-  : Object.entries(baseConfig.transform || {}).map(([p, v]) => Array.isArray(v) ? [p, ...v] : [p, v]);
+// Normalise baseConfig.transform to a plain object so we stay compatible with
+// all Jest versions (object format is the only format supported in Jest < 28).
+// We build a NEW object with our specific-file entry first. JS objects preserve
+// insertion order, so Jest's first-match will pick our entry before any catch-all
+// (e.g. ^.+\\.[jt]sx?$) from the project config.
+const baseTransformObj = Array.isArray(baseConfig.transform)
+  ? Object.fromEntries(baseConfig.transform.map(([p, t, o]) => o ? [p, [t, o]] : [p, t]))
+  : (baseConfig.transform || {});
 
 module.exports = {
   ...baseConfig,
-  // Our specific-file entry goes FIRST so Jest's first-match selects it before
-  // the project's catch-all transformer (e.g. ^.+\\.[jt]sx?$).
-  transform: [
-    [${JSON.stringify('^' + escapedFileForRegex + '$')}, ${JSON.stringify(TRACE_TRANSFORM_PATH)}],
-    ...baseTransforms,
-  ],
+  // rootDir must be the project root, not the /tmp/ directory where this config
+  // file lives — otherwise Jest cannot find any test files.
+  rootDir: ${JSON.stringify(projectRoot)},
+  transform: {
+    // Our entry first — matches only the exact file being debugged
+    [${JSON.stringify('^' + escapedFileForRegex + '$')}]: ${JSON.stringify(TRACE_TRANSFORM_PATH)},
+    // Project's existing transforms after (babel-jest, ts-jest, etc.)
+    ...baseTransformObj,
+  },
 };
 `;
     fs.writeFileSync(tempConfigPath, configContent, 'utf8');
+
+    // DEBUG — dump everything to a known file for easy inspection
+    const debugLog =
+      `traceFile: ${traceFile}\n` +
+      `tempConfigPath: ${tempConfigPath}\n` +
+      `TRACE_TRANSFORM_PATH: ${TRACE_TRANSFORM_PATH}\n` +
+      `TRACE_TRANSFORM_PATH exists: ${fs.existsSync(TRACE_TRANSFORM_PATH)}\n` +
+      `\n--- tempConfig ---\n${configContent}\n`;
+    fs.writeFileSync('/tmp/ltr-debug.log', debugLog, 'utf8');
 
     // 3. Set the env var that traceRuntime.js reads to know where to write events
     process.env.TRACE_OUTPUT_FILE = traceFile;
@@ -91,7 +122,7 @@ module.exports = {
       const binary = this.binaryResolver.resolve(projectRoot);
       const escapedName = escapeRegex(testFullName);
 
-      await this.executor.run({
+      const result = await this.executor.run({
         binary,
         args: [
           '--watchAll=false',
@@ -106,10 +137,20 @@ module.exports = {
         ],
         cwd: projectRoot,
       });
+
+      // DEBUG — append Jest output to the debug log
+      fs.appendFileSync(
+        '/tmp/ltr-debug.log',
+        `\n--- Jest stdout ---\n${result.stdout}\n--- Jest stderr ---\n${result.stderr}\n`,
+      );
     } finally {
       // Clean up env var and temp config regardless of outcome
       delete process.env.TRACE_OUTPUT_FILE;
-      try { fs.unlinkSync(tempConfigPath); } catch { /* ignore */ }
+      try {
+        fs.unlinkSync(tempConfigPath);
+      } catch {
+        /* ignore */
+      }
     }
 
     // 4. Parse the trace file into a TimelineStore
@@ -117,7 +158,11 @@ module.exports = {
     try {
       store = this.parseEvents(traceFile);
     } finally {
-      try { fs.unlinkSync(traceFile); } catch { /* ignore */ }
+      try {
+        fs.unlinkSync(traceFile);
+      } catch {
+        /* ignore */
+      }
     }
 
     // Backfill metadata that parseEvents can't derive from events alone
@@ -149,7 +194,7 @@ module.exports = {
     };
 
     const raw = fs.readFileSync(filePath, 'utf8');
-    const lines = raw.split('\n').filter(l => l.trim().length > 0);
+    const lines = raw.split('\n').filter((l) => l.trim().length > 0);
 
     for (const line of lines) {
       let event: TimelineEvent;
@@ -163,15 +208,19 @@ module.exports = {
       switch (event.type) {
         case 'STEP': {
           const step: Step = {
-            stepId:       event.stepId,
-            line:         event.line,
-            file:         event.file,
+            stepId: event.stepId,
+            line: event.line,
+            file: event.file,
             functionName: event.functionName,
           };
           store.steps.push(step);
           // Seed the maps so consumers always get an array (never undefined)
-          if (!store.variables.has(event.stepId)) { store.variables.set(event.stepId, []); }
-          if (!store.logs.has(event.stepId))      { store.logs.set(event.stepId, []); }
+          if (!store.variables.has(event.stepId)) {
+            store.variables.set(event.stepId, []);
+          }
+          if (!store.logs.has(event.stepId)) {
+            store.logs.set(event.stepId, []);
+          }
           break;
         }
 
@@ -185,8 +234,8 @@ module.exports = {
 
         case 'LOG': {
           const entry: LogEntry = {
-            text:      event.args.join(' '),
-            level:     event.level as LogEntry['level'],
+            text: event.args.join(' '),
+            level: event.level as LogEntry['level'],
             timestamp: Date.now(),
           };
           const existing = store.logs.get(event.stepId) ?? [];
@@ -196,13 +245,13 @@ module.exports = {
         }
 
         case 'ERROR': {
-          const existing = store.errors.find(e => e.stepId === event.stepId);
+          const existing = store.errors.find((e) => e.stepId === event.stepId);
           if (existing) {
             existing.failureMessages.push(event.message);
           } else {
             const entry: ErrorEntry = {
-              stepId:          event.stepId,
-              testName:        store.testFullName,
+              stepId: event.stepId,
+              testName: store.testFullName,
               failureMessages: [event.message],
             };
             store.errors.push(entry);

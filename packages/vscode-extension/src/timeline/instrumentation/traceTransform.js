@@ -20,7 +20,6 @@ const RUNTIME_PATH = path.resolve(__dirname, 'traceRuntime.js');
 
 // Patterns for lines we want to instrument (applied to the already-transpiled JS)
 const SKIP_LINE  = /^\s*(\/\/|\/\*|\*|'use strict'|"use strict"|import\s|export\s)/;
-const BLOCK_OPEN = /[{([]\s*$/;                              // line ending with open bracket
 const ASSIGN_VAR = /^\s*(?:const|let|var)\s+(\w+)\s*=/;     // const/let/var x =
 const REASSIGN   = /^\s*(\w+)\s*(?:[+\-*/%&|^]=|=)(?!=)/;  // x = / x += etc (not ==)
 
@@ -31,14 +30,16 @@ const REASSIGN   = /^\s*(\w+)\s*(?:[+\-*/%&|^]=|=)(?!=)/;  // x = / x += etc (no
 function chainTransform(sourceCode, sourcePath, options) {
   if (!options || !options.config) { return sourceCode; }
 
-  // Jest passes config.transform as an array of [pattern, moduleName, transformerOptions?]
-  // tuples (Jest 27+). Older Jest may pass it as a plain object — normalise.
+  // Jest passes config.transform to the transformer's process() as an array of
+  // [pattern, moduleName, transformerOptions?] tuples (Jest 27+ internal format).
+  // Normalise in case an older Jest passes a plain object.
   let transforms = options.config.transform;
   if (!Array.isArray(transforms)) {
     transforms = Object.entries(transforms || {}).map(([p, v]) =>
       Array.isArray(v) ? [p, ...v] : [p, v],
     );
   }
+  process.stderr.write(`[LTR-TRANSFORM] transform chain entries: ${transforms.length}\n`);
 
   for (const entry of transforms) {
     const [pattern, moduleName] = entry;
@@ -62,9 +63,50 @@ function chainTransform(sourceCode, sourcePath, options) {
         return result;
       }
     } catch (_e) {
-      // If chaining fails (e.g. ts-jest unavailable), fall through to raw source
+      // If chaining fails, fall through to the babel-jest fallback below
     }
     break;
+  }
+
+  // Fallback: invoke babel-jest from the project's node_modules with an explicit
+  // preset so it transpiles ES-module syntax even when the project has no
+  // babel.config.js (e.g. CRA projects where babel config lives inside react-scripts).
+  const rootDir = options && options.config && options.config.rootDir;
+  if (rootDir) {
+    const babelJestPath = path.join(rootDir, 'node_modules', 'babel-jest');
+    try {
+      const babelJest = require(babelJestPath);
+      const createTransformer = babelJest.createTransformer
+        || (babelJest.default && babelJest.default.createTransformer);
+
+      if (createTransformer) {
+        // Pick the best available preset from the project's node_modules.
+        // react-app covers CRA; @babel/preset-env covers everything else.
+        let presets;
+        const reactAppPreset = path.join(rootDir, 'node_modules', 'babel-preset-react-app');
+        const presetEnv      = path.join(rootDir, 'node_modules', '@babel', 'preset-env');
+        const presetReact    = path.join(rootDir, 'node_modules', '@babel', 'preset-react');
+
+        try {
+          require(reactAppPreset);
+          // CRA — use react-app preset (handles JSX + modern JS + TS)
+          presets = [[reactAppPreset, { runtime: 'automatic' }]];
+        } catch (_) {
+          // Generic — combine preset-env (ES-modules → CJS) + react if present
+          const ps = [[presetEnv, { targets: { node: 'current' } }]];
+          try { require(presetReact); ps.push([presetReact, {}]); } catch (_) {}
+          presets = ps;
+        }
+
+        const transformer = createTransformer({ configFile: false, presets });
+        process.stderr.write(`[LTR-TRANSFORM] babel-jest fallback with presets: ${JSON.stringify(presets.map(p => p[0]))}\n`);
+        const result = transformer.process(sourceCode, sourcePath, options);
+        if (result && typeof result.code === 'string') { return result.code; }
+        if (typeof result === 'string') { return result; }
+      }
+    } catch (_e) {
+      process.stderr.write(`[LTR-TRANSFORM] babel-jest fallback failed: ${_e.message}\n`);
+    }
   }
 
   return sourceCode;
@@ -72,12 +114,18 @@ function chainTransform(sourceCode, sourcePath, options) {
 
 module.exports = {
   process(sourceCode, sourcePath, options) {
+    // DEBUG — remove once confirmed working
+    process.stderr.write(`[LTR-TRANSFORM] called for: ${sourcePath}\n`);
+    process.stderr.write(`[LTR-TRANSFORM] TRACE_OUTPUT_FILE: ${process.env.TRACE_OUTPUT_FILE || '(not set)'}\n`);
+
     // 1. Transpile TypeScript / JSX via the project's existing transformer
     const transpiledCode = chainTransform(sourceCode, sourcePath, options);
+    process.stderr.write(`[LTR-TRANSFORM] chain result length: ${transpiledCode.length}\n`);
 
     const lines = transpiledCode.split('\n');
     const outLines = [];
     let stepId = 0;
+    let depth = 0; // bracket depth — only inject when depth === 0 (statement complete)
 
     // 2. Prepend the runtime so __trace is available in the test file scope
     outLines.push(`require(${JSON.stringify(RUNTIME_PATH)});`);
@@ -89,8 +137,16 @@ module.exports = {
       // Always emit the original (transpiled) line first
       outLines.push(raw);
 
-      // Skip blank lines, comment lines, and lines ending with an open bracket
-      if (!trim || SKIP_LINE.test(trim) || BLOCK_OPEN.test(trim)) {
+      // Track bracket depth across the line so we know if we're mid-expression.
+      // We skip string/comment parsing (good enough for babel-transpiled output).
+      for (const ch of raw) {
+        if (ch === '{' || ch === '(' || ch === '[') { depth++; }
+        else if (ch === '}' || ch === ')' || ch === ']') { depth = Math.max(0, depth - 1); }
+      }
+
+      // Skip blank lines, comment/import/export lines, and any line that leaves
+      // us inside an open expression (depth > 0 means multi-line statement in progress).
+      if (depth > 0 || !trim || SKIP_LINE.test(trim)) {
         continue;
       }
 
