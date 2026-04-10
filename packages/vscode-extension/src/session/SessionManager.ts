@@ -5,9 +5,9 @@ import { ResultStore } from '../store/ResultStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver } from '../IResultObserver';
 import { IFrameworkAdapter } from '../framework/IFrameworkAdapter';
-import { CodeLensProvider } from '../editor/CodeLensProvider';
 import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
+import { TestDiscoveryService } from './TestDiscoveryService';
 
 /**
  * SessionManager — owns the test session lifecycle and all run execution.
@@ -25,7 +25,6 @@ import { ResultsView } from '../views/ResultsView';
  */
 export class SessionManager {
   private _session: TestSession | undefined;
-  private _codeLensDisposable: vscode.Disposable | undefined;
 
   constructor(
     private readonly _context: vscode.ExtensionContext,
@@ -36,6 +35,7 @@ export class SessionManager {
     private readonly _observers: IResultObserver[],
     private readonly _outputChannel: vscode.OutputChannel,
     private readonly _statusBar: vscode.StatusBarItem,
+    private readonly _discovery: TestDiscoveryService,
   ) {}
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
@@ -67,9 +67,17 @@ export class SessionManager {
     this._session         = new TestSession(bootstrapRunner);
 
     try {
-      this._updateStatusBar('Discovering…');
-      const testFiles = await this._adapter.discoverTests(projectRoot, (msg) => this._outputChannel.appendLine(msg));
-      this._outputChannel.appendLine(`[Live Test Runner] Found ${testFiles.length} test file(s)`);
+      // ── Wait for background discovery to finish ────────────────────────────
+      // Discovery runs on activate. If the user clicks Start Testing while it
+      // is still in progress, we wait here rather than running with a partial store.
+      if (this._discovery.isDiscovering) {
+        this._updateStatusBar('Waiting for discovery…');
+        await this._discovery.awaitDiscovery();
+      }
+
+      // ── Derive the file list from the already-populated store ──────────────
+      const testFiles = this._store.getAllFiles().map((f) => f.filePath);
+      this._outputChannel.appendLine(`[Live Test Runner] Starting run — ${testFiles.length} file(s)`);
 
       if (testFiles.length === 0) {
         this._updateStatusBar('✅ Ready');
@@ -80,13 +88,14 @@ export class SessionManager {
       this._session.activate();
       this._notify('onSessionStarted');
 
-      const codeLensProvider = this._observers.find((o) => o instanceof CodeLensProvider) as CodeLensProvider;
-      this._codeLensDisposable = vscode.languages.registerCodeLensProvider(
-        { scheme: 'file', pattern: this._adapter.getFileGlob() },
-        codeLensProvider,
-      );
-      this._context.subscriptions.push(this._codeLensDisposable);
+      // Push the discovered (pending) tree to the UI so the run-started state
+      // shows all tests before the first result arrives.
+      this._notify('onRunStarted', {
+        fileCount: testFiles.length,
+        files: (this._store.toJSON() as { files: unknown[] }).files,
+      });
 
+      // ── Run the tests ──────────────────────────────────────────────────────
       await this._runFiles(testFiles, projectRoot, true);
     } catch (error) {
       this._updateStatusBar('❌ Error');
@@ -100,8 +109,6 @@ export class SessionManager {
       this._session = undefined;
     }
     this._store.clearAllLineMaps();
-    this._codeLensDisposable?.dispose();
-    this._codeLensDisposable = undefined;
     this._notify('onSessionStopped');
     void decorationManager; // already in observers, notified above
     this._updateStatusBar('Off');
@@ -227,13 +234,7 @@ export class SessionManager {
       this._store.fileStarted(fp, fp, vscode.workspace.asRelativePath(fp));
     }
 
-    if (isFullSuite) {
-      this._store.clearAllLineMaps();
-      this._notify('onRunStarted', {
-        fileCount: filePaths.length,
-        files: (this._store.toJSON() as { files: unknown[] }).files,
-      });
-    } else {
+    if (!isFullSuite) {
       this._notify('onFilesRerunning', filePaths);
     }
     this._updateStatusBar(`Running… 0/${filePaths.length}`);

@@ -100,7 +100,8 @@
   let _failedDuringRun = 0;
   let _runStartTime    = 0;
   let _isPartialRerun  = false;
-  let _sessionState    = 'idle';   // 'idle' | 'running' | 'watching'
+  let _sessionState    = 'idle';   // 'idle' | 'discovering' | 'running' | 'watching'
+  let _discoveryTotal  = 0;
   let _showFailuresOnly = false;
   let _showFolderView   = false;
 
@@ -118,17 +119,26 @@
     const btnStopRun     = _q('btnStopRun');
     const watchIndicator = _q('watchIndicator');
 
-    btnStart.classList.toggle('hidden',      state !== 'idle');
-    btnRerun.classList.toggle('hidden',      state !== 'watching');
-    btnStop.classList.toggle('hidden',       state !== 'watching');
-    btnStopRun.classList.toggle('hidden',    state !== 'running');
+    // discovering reuses the Start button slot — all other buttons stay hidden
+    btnStart.classList.toggle('hidden',       state === 'running' || state === 'watching');
+    btnRerun.classList.toggle('hidden',       state !== 'watching');
+    btnStop.classList.toggle('hidden',        state !== 'watching');
+    btnStopRun.classList.toggle('hidden',     state !== 'running');
     watchIndicator.classList.toggle('hidden', state !== 'watching');
 
     if (state === 'idle') {
       btnStart.disabled    = false;
       btnStart.textContent = '▶ Start Testing';
+    } else if (state === 'discovering') {
+      btnStart.disabled    = true;
+      btnStart.textContent = `⟳ Discovering… 0 / ${_discoveryTotal}`;
     }
     _updateListCount();
+  }
+
+  function _applyDiscoveryProgress(discovered, total) {
+    const btn = _q('btnStart');
+    if (btn) { btn.textContent = `⟳ Discovering… ${discovered} / ${total}`; }
   }
 
   function updateSummary(total, passed, failed, durationMs) {
@@ -283,7 +293,13 @@
           _list.setData(msg.files ?? []);
           updateSummary(msg.total, msg.passed, msg.failed, null);
           _updateListCount();
-          applySessionState(msg.sessionActive ? 'watching' : 'idle');
+          if (msg.isDiscovering) {
+            _discoveryTotal = msg.discoveryTotal ?? 0;
+            applySessionState('discovering');
+            _applyDiscoveryProgress(msg.discoveryDone ?? 0, _discoveryTotal);
+          } else {
+            applySessionState(msg.sessionActive ? 'watching' : 'idle');
+          }
           break;
 
         case 'session-started':
@@ -347,6 +363,21 @@
 
         case 'scope-changed':
           _list.setSelected(msg.fileId, msg.suiteId, msg.testId);
+          break;
+
+        case 'discovery-started':
+          _discoveryTotal = msg.total;
+          applySessionState('discovering');
+          break;
+
+        case 'discovery-progress':
+          _applyDiscoveryProgress(msg.discovered, msg.total);
+          if (msg.file) { _list.updateFile(msg.file); _updateListCount(); }
+          if (msg.testTotal != null) { updateSummary(msg.testTotal, null, null, null); }
+          break;
+
+        case 'discovery-complete':
+          applySessionState('idle');
           break;
 
         case 'coverage-update':

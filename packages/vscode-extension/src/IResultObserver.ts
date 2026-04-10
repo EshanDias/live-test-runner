@@ -33,4 +33,17 @@ export interface IResultObserver extends vscode.Disposable {
   onFilesRerunning(fileIds: string[], suiteId?: string, testId?: string): void;
   onFileResult(filePath: string): void;
   onRunFinished(payload: RunFinishedPayload): void;
+
+  // ── Static discovery events (optional — no-op on implementors that don't need them) ──
+
+  /** Fired once when the file list is known. `total` is the number of files to parse. */
+  onDiscoveryStarted?(total: number): void;
+  /**
+   * Fired after each file's AST is parsed and its pending tree is in the store.
+   * `file` is the serialised FileResult (same shape as full-file-result).
+   * `discovered` / `total` drive the progress counter.
+   */
+  onDiscoveryProgress?(file: unknown, discovered: number, total: number): void;
+  /** Fired when all files have been parsed. Start Testing can now be enabled. */
+  onDiscoveryComplete?(): void;
 }

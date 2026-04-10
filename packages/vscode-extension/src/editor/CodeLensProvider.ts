@@ -27,10 +27,10 @@ export class CodeLensProvider
   }
   onRunStarted(_payload: RunStartedPayload): void {}
   onFilesRerunning(_fileIds: string[]): void {}
-  onFileResult(_filePath: string): void {
-    this.refresh();
-  }
+  onFileResult(_filePath: string): void { this.refresh(); }
   onRunFinished(_payload: RunFinishedPayload): void {}
+  onDiscoveryProgress(_file: unknown, _discovered: number, _total: number): void { this.refresh(); }
+  onDiscoveryComplete(): void { this.refresh(); }
   dispose(): void {
     this._onDidChange.dispose();
   }

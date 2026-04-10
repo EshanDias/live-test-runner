@@ -223,6 +223,10 @@
           }
           break;
 
+        case 'discovery-progress':
+          if (msg.file) { _list.updateFile(msg.file); updateListCount(); }
+          break;
+
         case 'full-file-result':
           _list.updateFile(msg.file);
           updateListCount();

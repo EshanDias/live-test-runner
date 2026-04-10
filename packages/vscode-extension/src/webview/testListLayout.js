@@ -367,7 +367,7 @@ class TestListLayout {
         <span class="row-name">${esc(suite.name)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
         <button class="row-copy"  title="Copy suite name" data-copy-name="${esc(suite.name)}">⎘</button>
-        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}">↗</button>
+        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}"${suite.line != null ? ` data-open-line="${suite.line}"` : ''}>↗</button>
         <button class="row-rerun" title="Rerun suite"     data-rerun="suite"
                 data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}"
                 data-full-name="${esc(suite.name)}">▶</button>

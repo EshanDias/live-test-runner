@@ -132,9 +132,19 @@ All on-save behavior and CodeLens buttons are session-guarded. Nothing runs in t
 
 On-save runs are debounced at 300ms (configurable). Rapid successive saves (e.g. auto-format on save + manual save) only trigger one run.
 
+### Static test discovery
+
+`TestDiscoveryService` runs automatically on extension activate — before the user clicks Start Testing.
+
+- Uses `@babel/parser` + `@babel/traverse` (lazy-loaded from the project's own `node_modules`). No extra dependencies.
+- Parses files in batches of 8 with a `setImmediate` yield between batches. Safe on 500+ file projects.
+- Calls `store.fileDiscovered / suiteDiscovered / testDiscovered` — all no-op if an entry already exists so live run results are never overwritten.
+- Calls `IResultObserver.onDiscoveryProgress` on every file. Observers are free to ignore it if they don't implement the optional methods.
+- `SessionManager.start()` awaits `discovery.awaitDiscovery()` instead of running its own discovery. On a normal project load this is already resolved; it only blocks if Start Testing is clicked during the first discovery pass.
+
 ### CodeLens registration
 
-The `CodeLensProvider` is registered with `vscode.languages.registerCodeLensProvider` only while a session is active. Disposing the registration removes all lenses from every editor immediately. There is no need to send a "clear lenses" message.
+The `CodeLensProvider` is registered with `vscode.languages.registerCodeLensProvider` on extension **activate** — not on session start. Lenses appear as soon as `TestDiscoveryService` populates the first `LineMap` entry. The provider calls `refresh()` on every `onDiscoveryProgress` event so buttons appear incrementally as files are parsed.
 
 ---
 
@@ -432,7 +442,7 @@ engine.jumpTo(stepId)
 | CRA config cache is in-memory | Lost when the session ends; recomputed (~2–3s) on next Start Testing |
 | Gutter icon animation | `animateTransform` in the running SVG is rendered statically by VS Code — the spinner does not spin in the gutter |
 | `location` not always present | Some Jest setups (CRA, Vitest stub) may not emit `location` in JSON; gutter icons won't appear for those files |
-| Timeline transform: regex-only, not AST | `traceTransform.js` uses regex line injection. It handles common unit test patterns (assignments, function calls) but will miss complex patterns such as destructuring, multi-line expressions, and arrow functions as arguments. AST-based transforms (e.g. `@babel/parser`) would cover these but add a dependency — not added in MVP. |
+| Timeline transform: regex-based injection | `traceTransform.js` injects trace calls using Babel AST. It handles assignments, function calls, and common statement patterns, but may miss complex patterns such as multi-line destructuring or chained optional calls inside expressions. |
 | Timeline: no import tracing | The transform only instruments the target test file. Imported modules are not traced; their execution does not appear as steps in the timeline. |
 | Timeline: `console.log` in tests | `traceRuntime.js` patches `console.*` to emit LOG events. If the test patches `console` before the runtime loads, log capture may be incomplete. |
 
@@ -445,3 +455,4 @@ engine.jumpTo(stepId)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
 - [ ] Streaming live output during a run (message type stubbed, not wired)
 - [ ] Coverage overlay in the file tree
+- [ ] Monorepo multi-root support — multiple `TestDiscoveryService` instances, one per root

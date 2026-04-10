@@ -18,6 +18,8 @@ import { DecorationManager } from './editor/DecorationManager';
 import { ExplorerView } from './views/ExplorerView';
 import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
+import { TestDiscoveryService } from './session/TestDiscoveryService';
+import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
 import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
@@ -40,6 +42,15 @@ export function activate(context: vscode.ExtensionContext) {
   const decorationManager = new DecorationManager(store, context);
   const codeLensProvider  = new CodeLensProvider(store);
   const observers         = [explorerView, resultsView, decorationManager, codeLensProvider];
+
+  // Register CodeLens immediately so ▶ Run / ▷ Debug appear as soon as
+  // discovery populates the line map — no need to click Start Testing first.
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { scheme: 'file', pattern: '**/*.{test,spec}.{js,ts,jsx,tsx}' },
+      codeLensProvider,
+    ),
+  );
 
   // When selection changes, push scoped logs to the results view
   const origSelect = selection.select.bind(selection);
@@ -138,6 +149,25 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   // ── Session manager ────────────────────────────────────────────────────────
+  const discovery = new TestDiscoveryService();
+
+  // Kick off static discovery immediately on activate so tests appear in the
+  // sidebar before the user clicks Start Testing.
+  const activationRoot = _resolveProjectRoot();
+  if (activationRoot) {
+    discovery.start(activationRoot, store, (msg) => outputChannel.appendLine(msg), {
+      onFilesFound: (total) => {
+        (observers as IResultObserver[]).forEach((o) => o.onDiscoveryStarted?.(total));
+      },
+      onFileDiscovered: (file, discovered, total) => {
+        (observers as IResultObserver[]).forEach((o) => o.onDiscoveryProgress?.(file, discovered, total));
+      },
+      onComplete: () => {
+        (observers as IResultObserver[]).forEach((o) => o.onDiscoveryComplete?.());
+      },
+    });
+  }
+
   const session = new SessionManager(
     context,
     new JestAdapter(),
@@ -147,6 +177,7 @@ export function activate(context: vscode.ExtensionContext) {
     observers,
     outputChannel,
     statusBar,
+    discovery,
   );
 
   // ── Commands ───────────────────────────────────────────────────────────────

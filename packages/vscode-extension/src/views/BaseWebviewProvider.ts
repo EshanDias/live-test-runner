@@ -19,7 +19,10 @@ export abstract class BaseWebviewProvider
   implements vscode.WebviewViewProvider, IResultObserver
 {
   protected view?: vscode.WebviewView;
-  protected _sessionActive = false;
+  protected _sessionActive  = false;
+  protected _isDiscovering  = false;
+  protected _discoveryTotal = 0;
+  protected _discoveryDone  = 0;
 
   constructor(
     protected readonly extensionUri: vscode.Uri,
@@ -140,6 +143,7 @@ export abstract class BaseWebviewProvider
           name:     s.name,
           status:   s.status,
           duration: s.duration,
+          line:     s.line,
           tests: Array.from(s.tests.values()).map((t) => ({
             testId:          t.testId,
             name:            t.name,
@@ -160,6 +164,24 @@ export abstract class BaseWebviewProvider
 
   onRunFinished(payload: RunFinishedPayload): void {
     this.postMessage({ type: 'run-finished', ...payload });
+  }
+
+  onDiscoveryStarted(total: number): void {
+    this._isDiscovering  = true;
+    this._discoveryTotal = total;
+    this._discoveryDone  = 0;
+    this.postMessage({ type: 'discovery-started', total });
+  }
+
+  onDiscoveryProgress(file: unknown, discovered: number, total: number): void {
+    this._discoveryDone = discovered;
+    const testTotal = this.store.getSummary().total;
+    this.postMessage({ type: 'discovery-progress', file, discovered, total, testTotal });
+  }
+
+  onDiscoveryComplete(): void {
+    this._isDiscovering = false;
+    this.postMessage({ type: 'discovery-complete' });
   }
 
   dispose(): void {}

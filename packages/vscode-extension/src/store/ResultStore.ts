@@ -11,7 +11,7 @@
 
 /** Location index only — status and duration are read live from the result tree. */
 export type LineEntry = {
-  testId: string;
+  testId?: string;  // absent for describe-level entries
   suiteId: string;
   fileId: string;
 };
@@ -57,6 +57,8 @@ export interface SuiteResult {
   name: string;
   status: TestStatus;
   duration?: number;
+  /** 1-based source line of the describe() call, used for open-file navigation */
+  line?: number;
   tests: Map<string, TestCaseResult>;
   output: ScopedOutput;
 }
@@ -81,6 +83,15 @@ export class ResultStore {
 
   clear(): void {
     this.files.clear();
+  }
+
+  /**
+   * Removes a single file entry and its line map. Used by TestDiscoveryService
+   * to force a fresh re-discovery of a file that has only pending results.
+   */
+  removeFile(fileId: string): void {
+    this.files.delete(fileId);
+    this._lineMap.delete(fileId);
   }
 
   // ── LineMap ────────────────────────────────────────────────────────────────
@@ -125,15 +136,83 @@ export class ResultStore {
     }
   }
 
-  fileStarted(fileId: string, filePath: string, name: string): void {
+  /**
+   * Pre-populate a file entry from static discovery (before any run).
+   * No-ops if the file is already present so live results are never overwritten.
+   */
+  fileDiscovered(fileId: string, filePath: string, name: string): void {
+    if (this.files.has(fileId)) { return; }
     this.files.set(fileId, {
       fileId,
       filePath,
       name,
-      status: 'running',
+      status: 'pending',
       output: { lines: [], capturedAt: null },
       suites: new Map(),
     });
+  }
+
+  /**
+   * Pre-populate a suite entry from static discovery.
+   * No-ops if the suite is already present.
+   */
+  suiteDiscovered(fileId: string, suiteId: string, name: string, line?: number): void {
+    const file = this.files.get(fileId);
+    if (!file || file.suites.has(suiteId)) { return; }
+    file.suites.set(suiteId, {
+      suiteId,
+      name,
+      status: 'pending',
+      line,
+      tests: new Map(),
+      output: { lines: [], capturedAt: null },
+    });
+  }
+
+  /**
+   * Pre-populate a test entry from static discovery.
+   * No-ops if the test is already present.
+   * `line` is the 1-based source line from the AST, used for editor gutter decorations.
+   */
+  testDiscovered(
+    fileId: string,
+    suiteId: string,
+    testId: string,
+    name: string,
+    fullName: string,
+    line?: number,
+  ): void {
+    const suite = this.files.get(fileId)?.suites.get(suiteId);
+    if (!suite || suite.tests.has(testId)) { return; }
+    suite.tests.set(testId, {
+      testId,
+      name,
+      fullName,
+      status: 'pending',
+      line,
+      output: { lines: [], capturedAt: null },
+      failureMessages: [],
+    });
+  }
+
+  fileStarted(fileId: string, filePath: string, name: string): void {
+    const existing = this.files.get(fileId);
+    if (existing) {
+      // File was pre-populated by static discovery — preserve the suite/test
+      // structure so the UI keeps showing the tree while the run is in progress.
+      existing.status = 'running';
+      existing.output = { lines: [], capturedAt: null };
+      this.markTestsRunning(filePath);
+    } else {
+      this.files.set(fileId, {
+        fileId,
+        filePath,
+        name,
+        status: 'running',
+        output: { lines: [], capturedAt: null },
+        suites: new Map(),
+      });
+    }
   }
 
   fileResult(fileId: string, status: TestStatus, duration?: number): void {
@@ -306,6 +385,7 @@ export class ResultStore {
         name: s.name,
         status: s.status,
         duration: s.duration,
+        line: s.line,
         tests: Array.from(s.tests.values()).map((t) => ({
           testId: t.testId,
           name: t.name,

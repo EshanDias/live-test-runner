@@ -278,6 +278,17 @@ export class JestAdapter implements IFrameworkAdapter {
         fileId: filePath,
       });
     }
+
+    // Re-add describe-level entries from AST discovery data (Jest JSON has no
+    // describe line numbers so we preserve them from the suite's stored line).
+    const fileEntry = store.getFile(filePath);
+    if (fileEntry) {
+      for (const s of fileEntry.suites.values()) {
+        if (s.line) {
+          store.setLineEntry(filePath, s.line, { suiteId: s.suiteId, fileId: filePath });
+        }
+      }
+    }
   }
 
   private _buildOutputLines(

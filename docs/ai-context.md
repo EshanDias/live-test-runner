@@ -88,13 +88,15 @@ ConsoleEntry   // console output per file
 
 ```
 src/
-├── extension.ts                    Entry point — wires, registers commands, no logic
-├── IResultObserver.ts              Interface: onSessionStart, onRunStart, onFileResult, onSessionStop
+├── extension.ts                    Entry point — wires, registers commands, kicks off discovery
+├── IResultObserver.ts              Interface: onSessionStart/Stop, onRunStart, onFileResult,
+│                                   onDiscoveryStarted/Progress/Complete (optional)
 ├── store/
 │   ├── ResultStore.ts              In-memory File→Suite→Test tree + LineMap + ScopedOutput
 │   └── SelectionState.ts           Tracks selected row; broadcasts scope-changed
 ├── session/
-│   └── SessionManager.ts           Session lifecycle, run pool (CONCURRENCY=3), on-save, rerun
+│   ├── SessionManager.ts           Session lifecycle, run pool (CONCURRENCY=3), on-save, rerun
+│   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
 │   │                               getAffectedTests, getDebugConfig
@@ -115,8 +117,9 @@ src/
 │   ├── TimelineEvent.ts            Union type for STEP / VAR / LOG / ERROR / ASSERT events
 │   ├── TimelineDecorationManager.ts  Active-line highlight + inline ghost text + hover provider
 │   ├── instrumentation/
-│   │   ├── traceTransform.js       Jest transform (CJS): injects __trace.step/var calls via regex
-│   │   └── traceRuntime.js         __trace global: writes events as JSONL to TRACE_OUTPUT_FILE
+│   │   ├── traceTransform.js       Jest transform (CJS): injects __trace.step/var calls via AST
+│   │   ├── traceRuntime.js         __trace global: writes events as JSONL to TRACE_OUTPUT_FILE
+│   │   └── testDiscovery.js        AST walker: extracts describe/it/test names + line numbers
 │   └── __fixtures__/
 │       └── sample-events.jsonl     Hand-written fixture for parseEvents smoke tests
 └── webview/                        Browser-side assets (not compiled by tsc)
@@ -142,12 +145,21 @@ src/
 
 ## Session lifecycle
 
-1. User clicks **Start Testing**
-2. `SessionManager.start()` → `JestAdapter.discoverTests()` → `jest --listTests` → file paths
-3. Warm-up run on all files (up to 3 in parallel)
-4. Each file: detect framework → resolve binary → resolve config → spawn Jest → parse JSON → write `ResultStore` + `LineMap` → notify all observers
-5. `CoverageMap` built from coverage data
-6. On-save listener enabled
+**On extension activate (before any user action):**
+1. `TestDiscoveryService.start()` → `vscode.workspace.findFiles` → list of test file paths
+2. `onDiscoveryStarted(total)` fired → sidebar shows `⟳ Discovering… 0 / N`, Start Testing disabled
+3. Files parsed in batches of 8 (event-loop yield between batches) — each file: read source → `@babel/parser` AST walk → extract suites + tests with 1-based line numbers → `store.fileDiscovered / suiteDiscovered / testDiscovered` → `onDiscoveryProgress(file, n, total)` → sidebar list and gutter icons update incrementally
+4. `onDiscoveryComplete()` → Start Testing re-enabled
+5. `FileSystemWatcher` activated — new/changed test files are re-discovered immediately (guard: skip files with `running` status)
+
+**User clicks Start Testing:**
+1. `SessionManager.start()` → `await discovery.awaitDiscovery()` (no-op if already done)
+2. File list read from `store.getAllFiles()` — no second file scan needed
+3. `onRunStarted` pushed to UI with the already-populated pending tree
+4. Warm-up run on all files (up to 3 in parallel)
+5. Each file: detect framework → resolve binary → resolve config → spawn Jest → parse JSON → `JestAdapter._applyFileResult()` writes `ResultStore` + `LineMap` → notify all observers
+6. `CoverageMap` built from coverage data
+7. On-save listener enabled
 
 **On save (debounced 300ms):**
 ```
@@ -157,7 +169,7 @@ else
   run affected files
 ```
 
-**Stop:** kill child processes, `decorationManager.dispose()`, `codeLensDisposable.dispose()`, `resultStore.clearAllLineMaps()`, disable on-save.
+**Stop:** kill child processes, `clearAll()` on decorations (types kept alive), `resultStore.clearAllLineMaps()`, disable on-save.
 
 ---
 
@@ -215,9 +227,10 @@ LineEntry: { testId: string, suiteId: string, fileId: string }
 Identity only — **never status or duration**. `DecorationManager` always queries `ResultStore` for those values.
 
 **Lifecycle:**
-- Full run start → `clearAllLineMaps()`
-- File result arrives → `clearLineMap(filePath)` then repopulate from `location.line` on each test case
+- Discovery → `clearLineMap(filePath)` then populate from AST line numbers — pending icons appear immediately
+- File result arrives → `clearLineMap(filePath)` then repopulate from Jest `location.line` — replaces AST lines with authoritative run-time lines
 - Session stop → `clearAllLineMaps()`
+- `clearAllLineMaps()` is **not** called at run start — discovery-sourced lines stay valid until each file's own result arrives
 
 ---
 
