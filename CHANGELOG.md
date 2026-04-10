@@ -4,6 +4,59 @@ All notable changes to Live Test Runner are documented here.
 
 ---
 
+## [1.2.0] — 2026-04-10
+
+### Static Test Discovery
+
+#### Added
+- **Static test discovery on project load** — the extension now parses every test file's AST immediately on activate (before the user clicks Start Testing). The full file → suite → test tree appears in the sidebar as files are scanned, with accurate line numbers and pending status icons.
+- **`testDiscovery.js`** — lightweight AST walker (reuses project's `@babel/parser` + `@babel/traverse`). Extracts `describe`, `it`, `test`, `*.only`, `*.skip`, `*.each`, and `*.concurrent.*` calls. Template literals with interpolations are shown as readable patterns (`"accepts valid severity …"`). No code is executed or injected.
+- **`TestDiscoveryService`** — orchestrates discovery on activate and file watching during idle periods. Parses files in batches of 8 with event-loop yields between batches so the extension host stays responsive on large projects (500+ files).
+- **Incremental UI updates** — each parsed file is pushed to the webview immediately via `discovery-progress`, so the test list builds up progressively rather than appearing all at once after a full scan.
+- **FileSystemWatcher** — monitors `**/*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}`. New files appear in the tree immediately on create. Existing files are re-discovered on save as long as no run is in progress (status `running` is the only guard — files with prior results are also re-discovered so newly added tests appear straight away).
+- **Pending gutter icons** — `○` pending icons appear next to every discovered test line as soon as discovery finishes, before any test is run.
+- **`▶ Run` / `▷ Debug` CodeLens on project load** — CodeLensProvider is now registered on extension activate instead of on session start, so run and debug buttons appear above `it`/`test` lines as soon as a file is open.
+- **`◈ Results` CodeLens** — unchanged behaviour: only shown after a test has been run and a LineMap entry exists.
+- **Discovering… button state** — Start Testing is disabled and shows `⟳ Discovering… N / total` while the initial scan is in progress. Re-enabled when discovery completes.
+- **Race-condition safe init** — `_sendInit()` now carries `isDiscovering`, `discoveryTotal`, and `discoveryDone` fields so webviews that load mid-discovery restore the correct button state and progress counter without depending on message delivery order.
+- **Test total counter during discovery** — the summary Total count ticks up as each file is parsed.
+- **Three new `ResultStore` methods**: `fileDiscovered`, `suiteDiscovered`, `testDiscovered` — create `pending` entries; all no-op if the entry already exists so live results are never overwritten.
+- **`ResultStore.removeFile`** — removes a single file entry and its line map; used by the watcher to force a fresh re-discovery of modified files.
+- **`ResultStore.fileStarted` preserves structure** — when a file was pre-populated by discovery, `fileStarted` now preserves the suite/test tree and marks everything `running` instead of recreating with empty suites, so the tree stays visible during a run.
+- **`IResultObserver` discovery events** (`onDiscoveryStarted`, `onDiscoveryProgress`, `onDiscoveryComplete`) — optional methods; `BaseWebviewProvider`, `DecorationManager`, and `CodeLensProvider` all implement them.
+- **`DecorationManager` no longer disposes on session stop** — decoration types are kept alive between sessions so pending icons from discovery persist; `clearAll()` is called instead of `dispose()`.
+
+#### Changed
+- `SessionManager.start()` no longer runs its own file discovery. It awaits `TestDiscoveryService.awaitDiscovery()` (no-op if already done) then reads file paths directly from the store.
+- `CodeLensProvider` is registered in `extension.ts` on activate rather than in `SessionManager.start()`.
+- `testListView.js` and `resultsView.js` both handle `discovery-progress` to update the test list incrementally.
+- `testListView.js` `applySessionState` now supports a `'discovering'` state that disables Start Testing and shows a file progress counter.
+
+---
+
+## [1.1.0] — 2026-04-09
+
+### Test Timeline Debugger
+
+#### Added
+- **Test Timeline Debugger** — step-by-step replay of individual test cases. Click `⏱ Timeline` above any `it()` or `test()` line, or the `⏱` button on a test row in the sidebar, to run an instrumented trace and replay execution in the Results panel.
+- **`⏱ Timeline` CodeLens** on `it`/`test` lines alongside the existing `▶ Run` and `▷ Debug` lenses.
+- **Timeline button** per test row in the Explorer sidebar.
+- **Timeline bar** — one box per executed step, colour-coded (accent = active, red = error step, striped = loop compression). Drag to scrub; scroll to zoom between line / function / file grouping.
+- **Playback controls** — `⏮ ◀ ▶ ▶| ⏭ ⏸` centred below the timeline bar.
+- **Editor highlight** — active step line highlighted in the editor; file switches automatically when steps cross file boundaries.
+- **Inline variable ghost text** — variable values rendered as after-text on the active step's line, updating on every step change.
+- **Hover tooltip** — hovering a variable line shows value history across steps with `[Add to Watch]` and `[Copy]` actions.
+- **Console panel** — cumulative logs up to the current step, prefixed with step number.
+- **Errors panel** — all test failure messages, shown statically from the trace result.
+- **State panel** (sidebar) — variables at the current step; objects and arrays lazily expandable.
+- **Watch panel** (sidebar) — pin variables by name; values track the current step.
+- **Call Stack panel** (sidebar) — current step's function and file; clickable to open that location.
+- **Re-run button** (sidebar) — re-runs the instrumented trace for the same test without leaving timeline mode.
+- **`IInstrumentedRunner` interface** — framework-agnostic contract for instrumented runs; enables future Vitest / Mocha timeline support as a single new file.
+
+---
+
 ## [1.0.0] — 2026-04-09
 
 ### Test List Improvements

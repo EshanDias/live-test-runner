@@ -348,7 +348,8 @@ body {
 .row-folder-expand,
 .row-rerun,
 .row-open,
-.row-copy {
+.row-copy,
+.row-timeline {
   flex-shrink: 0;
   background: none;
   border: 1px solid transparent;
@@ -366,7 +367,8 @@ body {
 .test-row:hover .row-folder-expand,
 .test-row:hover .row-rerun,
 .test-row:hover .row-open,
-.test-row:hover .row-copy {
+.test-row:hover .row-copy,
+.test-row:hover .row-timeline {
   opacity: 1;
   pointer-events: auto;
 }
@@ -375,7 +377,8 @@ body {
 .row-folder-expand:hover,
 .row-rerun:hover,
 .row-open:hover,
-.row-copy:hover {
+.row-copy:hover,
+.row-timeline:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2));
   border-color: var(--vscode-toolbar-hoverOutline, transparent);
   color: var(--vscode-foreground);
@@ -399,6 +402,7 @@ body {
 /* ── Results panel (3-column) ──────────────────────────────────────────────── */
 .results-layout {
   display: flex;
+  flex: 1;
   height: 100vh;
   overflow: hidden;
 }

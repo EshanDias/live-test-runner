@@ -88,44 +88,78 @@ ConsoleEntry   // console output per file
 
 ```
 src/
-├── extension.ts                    Entry point (~110 lines) — wires, registers commands, no logic
-├── IResultObserver.ts              Interface: onSessionStart, onRunStart, onFileResult, onSessionStop
+├── extension.ts                    Entry point — wires, registers commands, kicks off discovery
+├── IResultObserver.ts              Interface: onSessionStart/Stop, onRunStart, onFileResult,
+│                                   onDiscoveryStarted/Progress/Complete (optional)
 ├── store/
 │   ├── ResultStore.ts              In-memory File→Suite→Test tree + LineMap + ScopedOutput
 │   └── SelectionState.ts           Tracks selected row; broadcasts scope-changed
 ├── session/
-│   └── SessionManager.ts           Session lifecycle, run pool (CONCURRENCY=3), on-save, rerun
+│   ├── SessionManager.ts           Session lifecycle, run pool (CONCURRENCY=3), on-save, rerun
+│   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
 │   │                               getAffectedTests, getDebugConfig
 │   └── JestAdapter.ts              All Jest-specific logic
 ├── editor/
-│   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results via regex line scan
+│   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
 │   └── DecorationManager.ts        Gutter icons + inline duration text
 ├── utils/
 │   └── duration.ts                 durationLabel, durationColorVar, getThresholds
 ├── views/
 │   ├── BaseWebviewProvider.ts      Webview lifecycle + postMessage routing + IResultObserver base
 │   ├── ExplorerView.ts             Sidebar: file/suite/test tree
-│   └── ResultsView.ts              Panel: 3-column detail view
+│   └── ResultsView.ts              Panel: 3-column detail view (or timeline view)
+├── timeline/                       Timeline Debugger — step-by-step test replay
+│   ├── IInstrumentedRunner.ts      Framework-agnostic interface for instrumented runs
+│   ├── JestInstrumentedRunner.ts   Jest implementation: spawns Jest with traceTransform, parses JSONL
+│   ├── TimelineStore.ts            Interfaces: TimelineStore, Step, VariableSnapshot, LogEntry, ErrorEntry
+│   ├── TimelineEvent.ts            Union type for STEP / VAR / LOG / ERROR / ASSERT events
+│   ├── TimelineDecorationManager.ts  Active-line highlight + inline ghost text + hover provider
+│   ├── instrumentation/
+│   │   ├── traceTransform.js       Jest transform (CJS): injects __trace.step/var calls via AST
+│   │   ├── traceRuntime.js         __trace global: writes events as JSONL to TRACE_OUTPUT_FILE
+│   │   └── testDiscovery.js        AST walker: extracts describe/it/test names + line numbers
+│   └── __fixtures__/
+│       └── sample-events.jsonl     Hand-written fixture for parseEvents smoke tests
 └── webview/                        Browser-side assets (not compiled by tsc)
     ├── explorer.html
     ├── results.html
+    ├── router.js                   Single-page router: mount/unmount views on { type: 'route' }
     ├── testListLayout.js           Shared test list renderer used by both views
     ├── utils.js                    JS mirror of duration.ts; exposes window.LiveTestUtils
-    └── styles.css
+    ├── styles.css
+    ├── timeline/
+    │   └── PlaybackEngine.js       Webview playback: currentStepId, next/prev/jumpTo/play/pause
+    ├── components/
+    │   ├── logPanel.js             Shared log output component (mount/update/unmount)
+    │   └── errorPanel.js           Shared error output component (mount/update/unmount)
+    └── views/
+        ├── resultsView.js          Normal results view (uses logPanel + errorPanel)
+        ├── timelineView.js         Timeline bar + controls + console/errors right panel
+        ├── testListView.js         Sidebar test list view
+        └── timelineSidebar.js      Sidebar State / Watch / Call Stack panels for timeline mode
 ```
 
 ---
 
 ## Session lifecycle
 
-1. User clicks **Start Testing**
-2. `SessionManager.start()` → `JestAdapter.discoverTests()` → `jest --listTests` → file paths
-3. Warm-up run on all files (up to 3 in parallel)
-4. Each file: detect framework → resolve binary → resolve config → spawn Jest → parse JSON → write `ResultStore` + `LineMap` → notify all observers
-5. `CoverageMap` built from coverage data
-6. On-save listener enabled
+**On extension activate (before any user action):**
+1. `TestDiscoveryService.start()` → `vscode.workspace.findFiles` → list of test file paths
+2. `onDiscoveryStarted(total)` fired → sidebar shows `⟳ Discovering… 0 / N`, Start Testing disabled
+3. Files parsed in batches of 8 (event-loop yield between batches) — each file: read source → `@babel/parser` AST walk → extract suites + tests with 1-based line numbers → `store.fileDiscovered / suiteDiscovered / testDiscovered` → `onDiscoveryProgress(file, n, total)` → sidebar list and gutter icons update incrementally
+4. `onDiscoveryComplete()` → Start Testing re-enabled
+5. `FileSystemWatcher` activated — new/changed test files are re-discovered immediately (guard: skip files with `running` status)
+
+**User clicks Start Testing:**
+1. `SessionManager.start()` → `await discovery.awaitDiscovery()` (no-op if already done)
+2. File list read from `store.getAllFiles()` — no second file scan needed
+3. `onRunStarted` pushed to UI with the already-populated pending tree
+4. Warm-up run on all files (up to 3 in parallel)
+5. Each file: detect framework → resolve binary → resolve config → spawn Jest → parse JSON → `JestAdapter._applyFileResult()` writes `ResultStore` + `LineMap` → notify all observers
+6. `CoverageMap` built from coverage data
+7. On-save listener enabled
 
 **On save (debounced 300ms):**
 ```
@@ -135,7 +169,7 @@ else
   run affected files
 ```
 
-**Stop:** kill child processes, `decorationManager.dispose()`, `codeLensDisposable.dispose()`, `resultStore.clearAllLineMaps()`, disable on-save.
+**Stop:** kill child processes, `clearAll()` on decorations (types kept alive), `resultStore.clearAllLineMaps()`, disable on-save.
 
 ---
 
@@ -193,9 +227,10 @@ LineEntry: { testId: string, suiteId: string, fileId: string }
 Identity only — **never status or duration**. `DecorationManager` always queries `ResultStore` for those values.
 
 **Lifecycle:**
-- Full run start → `clearAllLineMaps()`
-- File result arrives → `clearLineMap(filePath)` then repopulate from `location.line` on each test case
+- Discovery → `clearLineMap(filePath)` then populate from AST line numbers — pending icons appear immediately
+- File result arrives → `clearLineMap(filePath)` then repopulate from Jest `location.line` — replaces AST lines with authoritative run-time lines
 - Session stop → `clearAllLineMaps()`
+- `clearAllLineMaps()` is **not** called at run start — discovery-sourced lines stay valid until each file's own result arrives
 
 ---
 
@@ -213,6 +248,15 @@ Identity only — **never status or duration**. `DecorationManager` always queri
 | `rerun` | Webview → extension | User clicked rerun button |
 | `open-file` | Webview → extension | User wants to open a file |
 | `ready` | Webview → extension | Webview initialised |
+| `route` | Extension → both | Switch view: `{ type: 'route', view: 'timeline' \| 'results' \| 'testList' \| 'timelineSidebar' }` |
+| `timeline-loading` | Extension → ResultsView | Show spinner while instrumented Jest run is in progress |
+| `timeline-ready` | Extension → both | Instrumented run complete; carries serialised `TimelineStore` |
+| `timeline-error` | Extension → ResultsView | Instrumented run failed; carries error message |
+| `timeline-exited` | ResultsView → extension | Timeline view unmounted (user navigated away) |
+| `step-changed` | ResultsView → extension | User stepped to a new step; carries `stepId`, `filePath`, `line` |
+| `step-update` | Extension → ExplorerView | Forward of step-changed; sidebar syncs State/Watch/Call Stack |
+| `add-to-watch` | Extension → ExplorerView | Add a variable to the sidebar Watch panel |
+| `timeline-rerun` | ExplorerView → extension | User clicked Re-run in the timeline sidebar |
 
 **Rule:** `scope-logs` and `scope-changed` are always sent as separate messages. Different lifecycles; keeping them separate prevents double-renders.
 
@@ -338,6 +382,9 @@ All in `packages/vscode-extension/package.json`:
 - `liveTestRunner.rerunFromEditor`
 - `liveTestRunner.debugFromEditor`
 - `liveTestRunner.focusResult`
+- `liveTestRunner.openTimelineDebugger` — opens the Timeline Debugger for a specific test
+- `liveTestRunner.addToWatch` — adds a variable to the sidebar Watch panel (used by hover command links)
+- `liveTestRunner.copyValue` — copies an inline variable value to the clipboard (used by hover command links)
 
 **Views:**
 - `liveTestRunner.explorerView` — sidebar, Activity Bar (beaker icon)
@@ -381,6 +428,17 @@ All in `packages/vscode-extension/package.json`:
 | Purpose | File |
 |---------|------|
 | Wire everything | `packages/vscode-extension/src/extension.ts` |
+| Timeline contracts | `packages/vscode-extension/src/timeline/IInstrumentedRunner.ts` |
+| Timeline data model | `packages/vscode-extension/src/timeline/TimelineStore.ts` |
+| Timeline event union | `packages/vscode-extension/src/timeline/TimelineEvent.ts` |
+| Jest trace runner | `packages/vscode-extension/src/timeline/JestInstrumentedRunner.ts` |
+| Active-line highlight | `packages/vscode-extension/src/timeline/TimelineDecorationManager.ts` |
+| Jest transform (CJS) | `packages/vscode-extension/src/timeline/instrumentation/traceTransform.js` |
+| Trace runtime | `packages/vscode-extension/src/timeline/instrumentation/traceRuntime.js` |
+| Webview playback | `packages/vscode-extension/src/webview/timeline/PlaybackEngine.js` |
+| Webview router | `packages/vscode-extension/src/webview/router.js` |
+| Shared log renderer | `packages/vscode-extension/src/webview/components/logPanel.js` |
+| Shared error renderer | `packages/vscode-extension/src/webview/components/errorPanel.js` |
 | Run lifecycle | `packages/vscode-extension/src/session/SessionManager.ts` |
 | All result data | `packages/vscode-extension/src/store/ResultStore.ts` |
 | Selection tracking | `packages/vscode-extension/src/store/SelectionState.ts` |
@@ -411,3 +469,6 @@ All in `packages/vscode-extension/package.json`:
 6. **Never add business logic to `extension.ts`.** It wires instances and registers commands only.
 7. **`SessionManager`, `ResultStore`, views, and observers must be framework-agnostic.** All framework differences live in `IFrameworkAdapter` implementations.
 8. **`scope-logs` and `scope-changed` are always separate messages.** They have different lifecycles.
+9. **`IInstrumentedRunner` is the only abstraction for instrumented runs.** `extension.ts` holds a reference typed as `IInstrumentedRunner` — never as the concrete `JestInstrumentedRunner`. Adding Vitest or Mocha timeline support = one new file implementing this interface.
+10. **`TimelineDecorationManager` is separate from `DecorationManager`.** It never touches pass/fail gutter icons — completely independent decoration types.
+11. **Timeline Maps are serialised before postMessage.** `TimelineStore.variables` and `TimelineStore.logs` are `Map<number, ...>` in the extension host. They are converted to plain objects (`Object.fromEntries`) before sending to webviews, since Maps are not JSON-serialisable.

@@ -35,13 +35,13 @@ export class DecorationManager implements IResultObserver {
   // ── IResultObserver ────────────────────────────────────────────────────────
 
   onSessionStarted(_payload?: RunStartedPayload): void {
-    for (const editor of vscode.window.visibleTextEditors) {
-      this.applyToEditor(editor);
-    }
+    this._refreshAll();
   }
 
   onSessionStopped(): void {
-    this.dispose();
+    // Clear decorations but keep decoration types alive so discovery-sourced
+    // pending icons can be re-applied without re-creating the types.
+    this.clearAll();
   }
 
   onRunStarted(_payload: RunStartedPayload): void {}
@@ -58,6 +58,14 @@ export class DecorationManager implements IResultObserver {
   }
 
   onRunFinished(_payload: RunFinishedPayload): void {}
+
+  onDiscoveryProgress(_file: unknown, _discovered: number, _total: number): void {
+    this._refreshAll();
+  }
+
+  onDiscoveryComplete(): void {
+    this._refreshAll();
+  }
 
   dispose(): void {
     this.clearAll();
@@ -80,13 +88,21 @@ export class DecorationManager implements IResultObserver {
     };
 
     for (const [line, entry] of lineMap) {
-      const test = this._store.getTest(
-        entry.fileId,
-        entry.suiteId,
-        entry.testId,
-      );
-      const status = test?.status ?? 'pending';
-      const duration = test?.duration ?? null;
+      let status: string;
+      let duration: number | null;
+      let durationLevel: 'test' | 'suite';
+
+      if (entry.testId) {
+        const test = this._store.getTest(entry.fileId, entry.suiteId, entry.testId);
+        status        = test?.status   ?? 'pending';
+        duration      = test?.duration ?? null;
+        durationLevel = 'test';
+      } else {
+        const suite = this._store.getSuite(entry.fileId, entry.suiteId);
+        status        = suite?.status   ?? 'pending';
+        duration      = suite?.duration ?? null;
+        durationLevel = 'suite';
+      }
 
       const range = new vscode.Range(line - 1, 0, line - 1, 0);
 
@@ -96,7 +112,7 @@ export class DecorationManager implements IResultObserver {
           : '';
 
       const durationColor =
-        duration == null ? '' : durationColorVar(duration, 'test', getThresholds());
+        duration == null ? '' : durationColorVar(duration, durationLevel, getThresholds());
 
       const decoration: vscode.DecorationOptions = {
         range,
@@ -134,6 +150,12 @@ export class DecorationManager implements IResultObserver {
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
+
+  private _refreshAll(): void {
+    for (const editor of vscode.window.visibleTextEditors) {
+      this.applyToEditor(editor);
+    }
+  }
 
   private _refreshFile(filePath: string): void {
     for (const editor of vscode.window.visibleTextEditors) {

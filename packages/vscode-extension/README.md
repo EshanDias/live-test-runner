@@ -1,9 +1,19 @@
-# Live Test Runner 
+<!-- # Live Test Runner  -->
 
-<p align="center">
-  <img src="resources/images/live-test-runner.png" alt="Live Runner Logo" width="100">
+<p align="left" style="font-size: 40px;">
+  <b>
+    Live Test Runner
+    <img 
+      src="resources/images/live-test-runner.png" 
+      alt="Live Runner Logo" 
+      width="70"
+      style="vertical-align: middle; padding: 0; margin: 0;"
+    >
+  </b>
 </p>
 
+---
+</br>
 
 ![v1 Demo](resources/gifs/live-test-runner-v1-demo.gif)
 
@@ -20,6 +30,16 @@ No configuration required for standard Jest projects. No dependency on the VS Co
 ---
 
 ## Features
+
+### Static test discovery on project open
+
+The full test tree — every file, suite, and test case — appears in the sidebar the moment you open a project, before you click Start Testing. Line numbers, pending `○` icons, and `▶ Run` / `▷ Debug` CodeLens buttons are all live from the first file scan. No warm-up run required.
+
+The extension parses your test files in the background using Babel's AST (your project's own Babel — nothing extra to install). Large projects (500+ files, 3000+ tests) stay responsive because discovery runs in batches with event-loop yields between them.
+
+Test files are watched for changes. Add a test case, save the file, and it appears in the tree immediately.
+
+---
 
 ### Always-on test watching
 
@@ -54,13 +74,34 @@ A three-column split view for deep inspection:
 
 Every `it()` and `test()` line gets:
 
-- **Gutter icon** — ✓ pass (green) · ✗ fail (red) · ⟳ running (amber) · ○ pending (grey)
+- **Gutter icon** — ✓ pass (green) · ✗ fail (red) · ⟳ running (amber) · ○ pending (grey) — present from project open, before any test is run
 - **Inline duration** — muted label after the closing paren, color-coded by threshold
 - **`▶ Run`** — rerun just this test (or suite, or file) without touching anything else
 - **`▷ Debug`** — launch Jest under the debugger, scoped to this test via `--testNamePattern`
 - **`◈ Results`** — jump straight to this test in the Results panel
 
 ![Explorer Test Cases View](resources/images/editor-decorations.png)
+
+---
+
+### Test Timeline Debugger
+
+Step through a single test case like a time-travel debugger — no breakpoints, no `debugger` statements, no terminal.
+
+Click the **`⏱ Timeline`** CodeLens above any `it()` or `test()` line (or the `⏱` button on a test row in the sidebar) to start a trace. Live Test Runner re-runs that test with instrumentation injected at transform time and records every executed line, every variable value, and every log entry.
+
+When the trace completes:
+
+- The **timeline bar** shows one box per step. Click any box or use the controls (`⏮ ◀ ▶ ▶| ⏭ ⏸`) to replay the execution.
+- The **editor** highlights the active line and shows variable values as inline ghost text. Hover a variable for its full history across steps and an `[Add to Watch]` action.
+- The **sidebar State panel** shows all variables captured at the current step. Objects and arrays are lazily expandable.
+- The **Watch panel** lets you pin any variable and track its value as you step through.
+- The **Call Stack panel** shows the function chain at the current step — click any frame to jump to that line.
+- The **Console tab** shows cumulative logs up to the current step. The **Errors tab** shows all failure messages.
+
+Zoom the timeline bar with the mouse wheel to group steps by line / function / file. Drag to scrub through steps in real time. Click `↺ Re-run` in the sidebar to re-trace at any time.
+
+No test file is ever modified on disk — instrumentation is injected at Jest transform time only.
 
 ---
 
@@ -77,9 +118,11 @@ Automatically detects:
 ## Quick Start
 
 1. Open a Jest project in VS Code
-2. Click the **beaker icon** in the Activity Bar to open Live Test Runner
-3. Click **▶ Start Testing** — the extension discovers test files, runs them all, and starts watching
+2. Click the **beaker icon** in the Activity Bar to open Live Test Runner — your test tree appears automatically as files are scanned
+3. Click **▶ Start Testing** to run the full suite for the first time and start the live watch session
 4. Edit any source or test file, save, and watch results update in real time
+
+> Always run **▶ Start Testing** at least once per session. Discovery shows you the test tree upfront, but results, gutter icons, and on-save reruns only activate after the first run.
 
 > No `jest.config` changes needed. No extra dependencies to install.
 

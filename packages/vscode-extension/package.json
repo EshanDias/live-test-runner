@@ -87,6 +87,11 @@
       {
         "command": "liveTestRunner.focusResult",
         "title": "Live Test Runner: Focus Test in Results Panel"
+      },
+      {
+        "command": "liveTestRunner.openTimelineDebugger",
+        "title": "Open Timeline Debugger",
+        "category": "Live Test Runner"
       }
     ],
     "configuration": {
