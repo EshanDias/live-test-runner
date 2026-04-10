@@ -274,6 +274,51 @@ function instrumentAST(code, sourcePath) {
   const insertions = [];
 
   _traverse(ast, {
+    // Detect it('name', fn) / test('name', fn) calls and inject
+    // global.__currentTestName = name at the start of the callback so every
+    // __trace.step() knows which test is running.
+    CallExpression: {
+      enter(nodePath) {
+        const callee = nodePath.node.callee;
+        const isTestCall =
+          (t.isIdentifier(callee) && (callee.name === 'it' || callee.name === 'test')) ||
+          (t.isMemberExpression(callee) &&
+            t.isIdentifier(callee.property) &&
+            (callee.property.name === 'it' || callee.property.name === 'test') &&
+            t.isIdentifier(callee.object) &&
+            (callee.object.name === 'describe'));
+
+        if (!isTestCall) { return; }
+
+        const args = nodePath.node.arguments;
+        if (args.length < 2) { return; }
+        const nameArg = args[0];
+        const fnArg   = args[1];
+        if (!t.isFunctionExpression(fnArg) && !t.isArrowFunctionExpression(fnArg)) { return; }
+        if (!t.isBlockStatement(fnArg.body)) { return; }
+
+        // global.__currentTestName = <testName>
+        const setName = t.expressionStatement(
+          t.assignmentExpression(
+            '=',
+            t.memberExpression(t.identifier('global'), t.identifier('__currentTestName')),
+            nameArg,
+          ),
+        );
+        // global.__currentTestName = undefined  (reset after test body)
+        const clearName = t.expressionStatement(
+          t.assignmentExpression(
+            '=',
+            t.memberExpression(t.identifier('global'), t.identifier('__currentTestName')),
+            t.identifier('undefined'),
+          ),
+        );
+
+        fnArg.body.body.unshift(setName);
+        fnArg.body.body.push(clearName);
+      },
+    },
+
     Statement: {
       exit(nodePath) {
         // Skip nodes we shouldn't instrument

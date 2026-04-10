@@ -193,9 +193,17 @@ module.exports = {
     }
 
     // 4. Parse the trace file into a TimelineStore
+    // DEBUG — dump first 20 raw trace events so we can inspect functionName values
+    try {
+      const raw = fs.readFileSync(traceFile, 'utf8');
+      const preview = raw.split('\n').filter(l => l.trim()).slice(0, 20).join('\n');
+      fs.appendFileSync('/tmp/ltr-debug.log',
+        `\n--- raw trace (first 20 lines) ---\ntargetTestName: ${testFullName}\n${preview}\n`);
+    } catch { /* ignore */ }
+
     let store: TimelineStore;
     try {
-      store = this.parseEvents(traceFile);
+      store = this.parseEvents(traceFile, testFullName);
     } finally {
       try {
         fs.unlinkSync(traceFile);
@@ -219,9 +227,12 @@ module.exports = {
    * Read a JSONL trace file produced by the instrumentation layer and assemble
    * a TimelineStore from it. Each line is a TimelineEvent JSON object.
    *
+   * Only STEP/VAR/LOG/ERROR events whose functionName matches targetTestName are
+   * kept — this filters out beforeEach, afterEach, and other tests in the file.
+   *
    * Public so it can be exercised directly in tests / smoke checks.
    */
-  parseEvents(filePath: string): TimelineStore {
+  parseEvents(filePath: string, targetTestName?: string): TimelineStore {
     const store: TimelineStore = {
       testId: '',
       testFullName: '',
@@ -235,6 +246,9 @@ module.exports = {
     const raw = fs.readFileSync(filePath, 'utf8');
     const lines = raw.split('\n').filter((l) => l.trim().length > 0);
 
+    // stepIds that belong to the target test — used to filter VAR/LOG events
+    const targetStepIds = new Set<number>();
+
     for (const line of lines) {
       let event: TimelineEvent;
       try {
@@ -246,6 +260,19 @@ module.exports = {
 
       switch (event.type) {
         case 'STEP': {
+          // Filter to the target test when we know which test to focus on.
+          // __currentTestName is set to the it() label only (no describe prefix),
+          // while targetTestName is the full name "describe > it". We accept a
+          // step if targetTestName ends with the recorded functionName so that
+          // "incidentApi createIncident POSTs" matches "createIncident POSTs".
+          const belongsToTarget =
+            !targetTestName ||
+            !event.functionName ||
+            targetTestName === event.functionName ||
+            targetTestName.endsWith(event.functionName);
+          if (!belongsToTarget) { break; }
+
+          targetStepIds.add(event.stepId);
           const step: Step = {
             stepId: event.stepId,
             line: event.line,
@@ -264,6 +291,7 @@ module.exports = {
         }
 
         case 'VAR': {
+          if (!targetStepIds.has(event.stepId)) { break; }
           const snapshot: VariableSnapshot = event.snapshot;
           const existing = store.variables.get(event.stepId) ?? [];
           existing.push(snapshot);
@@ -272,6 +300,7 @@ module.exports = {
         }
 
         case 'LOG': {
+          if (!targetStepIds.has(event.stepId)) { break; }
           const entry: LogEntry = {
             text: event.args.join(' '),
             level: event.level as LogEntry['level'],
@@ -284,6 +313,7 @@ module.exports = {
         }
 
         case 'ERROR': {
+          if (targetTestName && !targetStepIds.has(event.stepId)) { break; }
           const existing = store.errors.find((e) => e.stepId === event.stepId);
           if (existing) {
             existing.failureMessages.push(event.message);
