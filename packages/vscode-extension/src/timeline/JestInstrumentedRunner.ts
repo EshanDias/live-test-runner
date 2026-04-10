@@ -55,8 +55,12 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
       `ltr-jest-config-${Date.now()}.js`,
     );
 
-    // Escape filePath for use in the regex key of the transform map
-    const escapedFileForRegex = escapeRegex(filePath).replace(/\//g, '\\/');
+    // Regex that matches any JS/TS source file under the project root (excluding
+    // node_modules, which Jest already skips via transformIgnorePatterns).
+    // This ensures imported source files (axiosConfig.js, incidentApi.js, etc.)
+    // are also instrumented — not just the test file itself.
+    const escapedRoot = escapeRegex(projectRoot).replace(/\//g, '\\/');
+    const srcTransformPattern = `^${escapedRoot}\\/(?!node_modules\\/).+\\.[jt]sx?$`;
 
     const configContent = `
 'use strict';
@@ -131,7 +135,7 @@ module.exports = {
   rootDir: ${JSON.stringify(projectRoot)},
   transform: {
     // Our entry first — matches only the exact file being debugged
-    [${JSON.stringify('^' + escapedFileForRegex + '$')}]: ${JSON.stringify(TRACE_TRANSFORM_PATH)},
+    [${JSON.stringify(srcTransformPattern)}]: ${JSON.stringify(TRACE_TRANSFORM_PATH)},
     // Project's existing transforms (babel-jest, ts-jest, etc.)
     ...baseTransformObj,
     // Catch-all for CRA / projects where baseTransformObj is empty
