@@ -6,14 +6,13 @@
  *   { process(sourceCode, sourcePath, options): { code: string } }
  *
  * Strategy:
- *  1. Chain through the project's existing transformer (babel-jest / ts-jest) to
- *     transpile TypeScript / JSX → CommonJS JS first.
- *  2. Parse the CJS output with @babel/parser.
- *  3. Walk the AST with @babel/traverse and inject __trace.step() / __trace.var()
- *     calls after each statement. Any remaining `import` declarations that the
- *     upstream transformer missed are converted to require() calls here.
- *  4. Prepend a require() for traceRuntime.js AFTER all top-level require() calls
- *     so __trace is available before the first traced statement runs.
+ *  1. Parse the original source with @babel/parser (accepts ESM/TS/JSX).
+ *  2. Walk the AST with @babel/traverse and inject __trace.step() / __trace.var()
+ *     calls after each statement. Import declarations are left untouched so line
+ *     numbers stay anchored to the file on disk.
+ *  3. Prepend require(traceRuntime.js) so __trace is available at runtime.
+ *  4. Chain through the project's existing transformer (babel-jest / ts-jest) to
+ *     transpile the instrumented-but-still-ESM code → CommonJS JS.
  *
  * Using an AST (vs regex) means we:
  *  - Never break multi-line expressions, destructuring, JSX, or template literals.
@@ -130,85 +129,6 @@ function chainTransform(sourceCode, sourcePath, options) {
 // ---------------------------------------------------------------------------
 
 /**
- * Convert a single remaining `import` declaration to a const require() call.
- * e.g.  import foo from './foo'          → const foo = require('./foo').default;
- *       import { a, b } from './lib'     → const { a, b } = require('./lib');
- *       import * as ns from './lib'      → const ns = require('./lib');
- *       import './side-effect'           → require('./side-effect');
- */
-function importToRequire(node) {
-  const t = _t;
-  const src = node.source.value;
-  const requireCall = t.callExpression(t.identifier('require'), [t.stringLiteral(src)]);
-
-  const specifiers = node.specifiers || [];
-  if (specifiers.length === 0) {
-    // Side-effect only import
-    return t.expressionStatement(requireCall);
-  }
-
-  const defaultSpec  = specifiers.find(s => t.isImportDefaultSpecifier(s));
-  const namespaceSpec = specifiers.find(s => t.isImportNamespaceSpecifier(s));
-  const namedSpecs   = specifiers.filter(s => t.isImportSpecifier(s));
-
-  if (namespaceSpec) {
-    // import * as ns
-    return t.variableDeclaration('const', [
-      t.variableDeclarator(t.identifier(namespaceSpec.local.name), requireCall),
-    ]);
-  }
-
-  if (defaultSpec && namedSpecs.length === 0) {
-    // import foo from '...'  →  const foo = require('...').default ?? require('...')
-    // We use a MemberExpression .default so it works for both CJS and ESM interop.
-    return t.variableDeclaration('const', [
-      t.variableDeclarator(
-        t.identifier(defaultSpec.local.name),
-        t.logicalExpression(
-          '??',
-          t.memberExpression(requireCall, t.identifier('default')),
-          requireCall,
-        ),
-      ),
-    ]);
-  }
-
-  if (defaultSpec && namedSpecs.length > 0) {
-    // import foo, { a, b } from '...'  →  const _m = require('...'); const foo = _m.default; const { a, b } = _m;
-    const tmpId = t.identifier('_ltrMod_' + Math.random().toString(36).slice(2, 7));
-    const props = namedSpecs.map(s => {
-      const imported = s.imported.name || s.imported.value;
-      const local    = s.local.name;
-      return imported === local
-        ? t.objectProperty(t.identifier(imported), t.identifier(local), false, true)
-        : t.objectProperty(t.identifier(imported), t.identifier(local));
-    });
-    return [
-      t.variableDeclaration('const', [t.variableDeclarator(tmpId, requireCall)]),
-      t.variableDeclaration('const', [
-        t.variableDeclarator(t.identifier(defaultSpec.local.name),
-          t.memberExpression(tmpId, t.identifier('default'))),
-      ]),
-      t.variableDeclaration('const', [
-        t.variableDeclarator(t.objectPattern(props), tmpId),
-      ]),
-    ];
-  }
-
-  // Named only: import { a, b } from '...'
-  const props = namedSpecs.map(s => {
-    const imported = s.imported.name || s.imported.value;
-    const local    = s.local.name;
-    return imported === local
-      ? t.objectProperty(t.identifier(imported), t.identifier(local), false, true)
-      : t.objectProperty(t.identifier(imported), t.identifier(local));
-  });
-  return t.variableDeclaration('const', [
-    t.variableDeclarator(t.objectPattern(props), requireCall),
-  ]);
-}
-
-/**
  * Build a __trace.step() expression statement.
  */
 function makeStepCall(stepId, lineNo, filePath) {
@@ -274,55 +194,25 @@ function instrumentAST(code, sourcePath) {
   const insertions = [];
 
   _traverse(ast, {
-    // Detect it('name', fn) / test('name', fn) calls and inject
-    // global.__currentTestName = name at the start of the callback so every
-    // __trace.step() knows which test is running.
-    CallExpression: {
-      enter(nodePath) {
-        const callee = nodePath.node.callee;
-        const isTestCall =
-          (t.isIdentifier(callee) && (callee.name === 'it' || callee.name === 'test')) ||
-          (t.isMemberExpression(callee) &&
-            t.isIdentifier(callee.property) &&
-            (callee.property.name === 'it' || callee.property.name === 'test') &&
-            t.isIdentifier(callee.object) &&
-            (callee.object.name === 'describe'));
-
-        if (!isTestCall) { return; }
-
-        const args = nodePath.node.arguments;
-        if (args.length < 2) { return; }
-        const nameArg = args[0];
-        const fnArg   = args[1];
-        if (!t.isFunctionExpression(fnArg) && !t.isArrowFunctionExpression(fnArg)) { return; }
-        if (!t.isBlockStatement(fnArg.body)) { return; }
-
-        // global.__currentTestName = <testName>
-        const setName = t.expressionStatement(
-          t.assignmentExpression(
-            '=',
-            t.memberExpression(t.identifier('global'), t.identifier('__currentTestName')),
-            nameArg,
-          ),
-        );
-        // global.__currentTestName = undefined  (reset after test body)
-        const clearName = t.expressionStatement(
-          t.assignmentExpression(
-            '=',
-            t.memberExpression(t.identifier('global'), t.identifier('__currentTestName')),
-            t.identifier('undefined'),
-          ),
-        );
-
-        fnArg.body.body.unshift(setName);
-        fnArg.body.body.push(clearName);
-      },
-    },
-
     Statement: {
       exit(nodePath) {
         // Skip nodes we shouldn't instrument
         const node = nodePath.node;
+
+        // Never instrument inside jest.mock() / jest.doMock() factory functions —
+        // Jest enforces a strict allowlist of variables accessible in those closures
+        // and __trace is not on it.
+        const insideJestMock = nodePath.findParent((p) => {
+          if (!p.isCallExpression()) { return false; }
+          const callee = p.node.callee;
+          return (
+            t.isMemberExpression(callee) &&
+            t.isIdentifier(callee.object, { name: 'jest' }) &&
+            (t.isIdentifier(callee.property, { name: 'mock' }) ||
+             t.isIdentifier(callee.property, { name: 'doMock' }))
+          );
+        });
+        if (insideJestMock) { return; }
 
         // Only instrument direct children of the Program or a block body —
         // not the body of if/for/while themselves (we instrument the inner statements).
@@ -341,16 +231,10 @@ function instrumentAST(code, sourcePath) {
           return;
         }
 
-        // Convert remaining import declarations to require() calls
-        if (t.isImportDeclaration(node)) {
-          const replacement = importToRequire(node);
-          if (Array.isArray(replacement)) {
-            nodePath.replaceWithMultiple(replacement);
-          } else {
-            nodePath.replaceWith(replacement);
-          }
-          return;
-        }
+        // Leave import declarations for the downstream transpiler (babel-jest/ts-jest)
+        // to convert to require() — they carry proper interop helpers we'd lose
+        // if we converted them ourselves here.
+        if (t.isImportDeclaration(node)) { return; }
 
         // Skip export declarations (those are for source files, not test files,
         // but handle gracefully just in case)
@@ -391,12 +275,6 @@ function instrumentAST(code, sourcePath) {
     }
   }
 
-  // Prepend runtime require at the very top of the program
-  const runtimeRequire = t.expressionStatement(
-    t.callExpression(t.identifier('require'), [t.stringLiteral(RUNTIME_PATH)]),
-  );
-  ast.program.body.unshift(runtimeRequire);
-
   let output;
   try {
     output = _generate(ast, { retainLines: false, compact: false }, code);
@@ -416,22 +294,27 @@ module.exports = {
     process.stderr.write(`[LTR-TRANSFORM] called for: ${sourcePath}\n`);
     process.stderr.write(`[LTR-TRANSFORM] TRACE_OUTPUT_FILE: ${process.env.TRACE_OUTPUT_FILE || '(not set)'}\n`);
 
-    // 1. Chain through project's transformer (babel-jest / ts-jest) → CJS JS
-    const transpiledCode = chainTransform(sourceCode, sourcePath, options);
-    process.stderr.write(`[LTR-TRANSFORM] chain result length: ${transpiledCode.length}\n`);
-
-    // 2. Try AST instrumentation
     const rootDir = options && options.config && options.config.rootDir;
+
+    // 1. Instrument original source first — line numbers match the file on disk.
+    //    Import declarations are left in place; the downstream transpiler handles them.
     if (rootDir && loadBabel(rootDir)) {
-      const instrumented = instrumentAST(transpiledCode, sourcePath);
+      const instrumented = instrumentAST(sourceCode, sourcePath);
       if (instrumented) {
-        process.stderr.write(`[LTR-TRANSFORM] AST instrumentation succeeded\n`);
-        return { code: instrumented };
+        // 2. Now transpile the instrumented (still-ESM) code → CJS
+        const transpiledCode = chainTransform(instrumented, sourcePath, options);
+        // Prepend runtime require to the final CJS output — after transpilation so
+        // babel-jest never sees mixed ESM + CJS in the same file.
+        const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${transpiledCode}`;
+        process.stderr.write(`[LTR-TRANSFORM] instrument→transpile succeeded, output length: ${finalCode.length}\n`);
+        return { code: finalCode };
       }
       process.stderr.write(`[LTR-TRANSFORM] AST instrumentation failed, falling back to regex\n`);
     }
 
-    // 3. Regex fallback (original behaviour) if AST is unavailable
+    // 3. Regex fallback — transpile first then instrument (old order, line numbers
+    //    will be wrong but at least the test runs).
+    const transpiledCode = chainTransform(sourceCode, sourcePath, options);
     const lines = transpiledCode.split('\n');
     const outLines = [];
     let stepId = 0;

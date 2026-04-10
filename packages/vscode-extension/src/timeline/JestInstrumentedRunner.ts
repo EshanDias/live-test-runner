@@ -203,7 +203,7 @@ module.exports = {
 
     let store: TimelineStore;
     try {
-      store = this.parseEvents(traceFile, testFullName);
+      store = this.parseEvents(traceFile);
     } finally {
       try {
         fs.unlinkSync(traceFile);
@@ -232,7 +232,7 @@ module.exports = {
    *
    * Public so it can be exercised directly in tests / smoke checks.
    */
-  parseEvents(filePath: string, targetTestName?: string): TimelineStore {
+  parseEvents(filePath: string): TimelineStore {
     const store: TimelineStore = {
       testId: '',
       testFullName: '',
@@ -246,9 +246,6 @@ module.exports = {
     const raw = fs.readFileSync(filePath, 'utf8');
     const lines = raw.split('\n').filter((l) => l.trim().length > 0);
 
-    // stepIds that belong to the target test — used to filter VAR/LOG events
-    const targetStepIds = new Set<number>();
-
     for (const line of lines) {
       let event: TimelineEvent;
       try {
@@ -260,19 +257,6 @@ module.exports = {
 
       switch (event.type) {
         case 'STEP': {
-          // Filter to the target test when we know which test to focus on.
-          // __currentTestName is set to the it() label only (no describe prefix),
-          // while targetTestName is the full name "describe > it". We accept a
-          // step if targetTestName ends with the recorded functionName so that
-          // "incidentApi createIncident POSTs" matches "createIncident POSTs".
-          const belongsToTarget =
-            !targetTestName ||
-            !event.functionName ||
-            targetTestName === event.functionName ||
-            targetTestName.endsWith(event.functionName);
-          if (!belongsToTarget) { break; }
-
-          targetStepIds.add(event.stepId);
           const step: Step = {
             stepId: event.stepId,
             line: event.line,
@@ -291,7 +275,6 @@ module.exports = {
         }
 
         case 'VAR': {
-          if (!targetStepIds.has(event.stepId)) { break; }
           const snapshot: VariableSnapshot = event.snapshot;
           const existing = store.variables.get(event.stepId) ?? [];
           existing.push(snapshot);
@@ -300,7 +283,6 @@ module.exports = {
         }
 
         case 'LOG': {
-          if (!targetStepIds.has(event.stepId)) { break; }
           const entry: LogEntry = {
             text: event.args.join(' '),
             level: event.level as LogEntry['level'],
@@ -313,7 +295,6 @@ module.exports = {
         }
 
         case 'ERROR': {
-          if (targetTestName && !targetStepIds.has(event.stepId)) { break; }
           const existing = store.errors.find((e) => e.stepId === event.stepId);
           if (existing) {
             existing.failureMessages.push(event.message);
