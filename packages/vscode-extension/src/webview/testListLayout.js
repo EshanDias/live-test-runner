@@ -397,9 +397,7 @@ class TestListLayout {
         <button class="row-rerun" title="Rerun test"      data-rerun="test"
                 data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}" data-test="${esc(test.testId)}"
                 data-full-name="${esc(test.fullName ?? test.name)}">▶</button>
-        ${this._showTimelineButton ? `<button class="row-timeline" title="Open Timeline Debugger"
-                data-open-path="${esc(file.filePath)}"
-                data-full-name="${esc(test.fullName ?? test.name)}">⏱</button>` : ''}
+        ${this._showTimelineButton ? `<button class="row-timeline row-timeline--disabled" title="Timeline Debugger — Coming Soon" disabled>⏱</button>` : ''}
       </div>`;
   }
 
@@ -531,11 +529,12 @@ class TestListLayout {
     this.container.querySelectorAll('.row-timeline').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.vscode.postMessage({
-          type:         'open-timeline',
-          filePath:     btn.dataset.openPath,
-          testFullName: btn.dataset.fullName,
-        });
+        // TODO: re-enable when timeline debugger is ready
+        // this.vscode.postMessage({
+        //   type:         'open-timeline',
+        //   filePath:     btn.dataset.openPath,
+        //   testFullName: btn.dataset.fullName,
+        // });
       });
     });
 

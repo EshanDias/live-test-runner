@@ -82,16 +82,16 @@ export class CodeLensProvider
           }),
         );
 
-        const test = this._store.getTest(entry.fileId, entry.suiteId, entry.testId);
-        if (test?.fullName) {
-          lenses.push(
-            new vscode.CodeLens(range, {
-              title: '⏱ Timeline',
-              command: 'liveTestRunner.openTimelineDebugger',
-              arguments: [filePath, test.fullName],
-            }),
-          );
-        }
+        // TODO: re-enable when timeline debugger is ready
+        // const test = this._store.getTest(entry.fileId, entry.suiteId, entry.testId);
+        // if (test?.fullName) {
+        //   lenses.push(new vscode.CodeLens(range, {
+        //     title: '⏱ Timeline',
+        //     command: 'liveTestRunner.openTimelineDebugger',
+        //     arguments: [filePath, test.fullName],
+        //   }));
+        // }
+        lenses.push(new vscode.CodeLens(range, { title: '⏱ Timeline (coming soon)', command: '' }));
       }
     }
 
