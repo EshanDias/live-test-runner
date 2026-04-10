@@ -69,7 +69,7 @@ export function activate(context: vscode.ExtensionContext) {
         total: summary.total,
         passed: summary.passed,
         failed: summary.failed,
-        sessionActive: false,
+        sessionActive: explorerView.sessionActive,
       },
     });
   };
@@ -151,8 +151,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   // ── Commands ───────────────────────────────────────────────────────────────
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(ExplorerView.viewId, explorerView),
-    vscode.window.registerWebviewViewProvider(ResultsView.viewId, resultsView),
+    vscode.window.registerWebviewViewProvider(ExplorerView.viewId, explorerView, { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.window.registerWebviewViewProvider(ResultsView.viewId, resultsView, { webviewOptions: { retainContextWhenHidden: true } }),
 
     vscode.commands.registerCommand('liveTestRunner.startTesting',       () => session.start()),
     vscode.commands.registerCommand('liveTestRunner.stopTesting',        () => session.stop(decorationManager)),

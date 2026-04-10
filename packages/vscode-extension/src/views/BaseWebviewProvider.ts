@@ -166,6 +166,8 @@ export abstract class BaseWebviewProvider
 
   // ── Public helpers ─────────────────────────────────────────────────────────
 
+  get sessionActive(): boolean { return this._sessionActive; }
+
   postMessage(msg: unknown): void {
     this.view?.webview.postMessage(msg);
   }
