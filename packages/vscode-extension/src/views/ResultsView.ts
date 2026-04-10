@@ -1,6 +1,7 @@
 import { OutputLine } from '../store/ResultStore';
 import { BaseWebviewProvider } from './BaseWebviewProvider';
 import { RunFinishedPayload } from '../IResultObserver';
+import * as vscode from 'vscode';
 
 // ── Scoped log payload types ───────────────────────────────────────────────────
 
@@ -62,9 +63,13 @@ export class ResultsView extends BaseWebviewProvider {
   /** Called when timeline UI asks host to exit timeline mode. */
   onTimelineExitRequest: (() => void) | null = null;
 
-  protected handleExtraMessage(msg: { type: string; fileId?: string; suiteId?: string; testId?: string; stepId?: number; filePath?: string; line?: number; view?: string }): void {
-    if (msg.type === 'select' && msg.fileId) {
-      this._sendScopedLogs(msg.fileId, msg.suiteId, msg.testId);
+  protected handleExtraMessage(msg: { type: string; fileId?: string; suiteId?: string; testId?: string; stepId?: number; filePath?: string; line?: number; view?: string; testFullName?: string }): void {
+    if (msg.type === 'open-timeline' && msg.filePath && msg.testFullName) {
+      vscode.commands.executeCommand(
+        'liveTestRunner.openTimelineDebugger',
+        msg.filePath,
+        msg.testFullName,
+      );
       return;
     }
     if (msg.type === 'step-changed' && typeof msg.stepId === 'number') {
