@@ -7,7 +7,7 @@
  * parseEvents() reads a JSONL trace file produced by the instrumentation layer.
  */
 import * as fs from 'fs';
-import * as os from 'os';
+import { LTR_TMP_DIR } from '../constants';
 import * as path from 'path';
 import { Executor, BinaryResolver } from '@live-test-runner/runner';
 import { IInstrumentedRunner } from './IInstrumentedRunner';
@@ -41,9 +41,9 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
   }): Promise<TimelineStore> {
     const { filePath, testFullName, projectRoot } = options;
 
-    // 1. Temp file for JSONL trace output
+    // 1. Temp file for JSONL trace output (LTR_TMP_DIR is created at extension activation)
     const traceFile = path.join(
-      os.tmpdir(),
+      LTR_TMP_DIR,
       `ltr-trace-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`,
     );
 
@@ -51,7 +51,7 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
     //    the project already has. We use a CJS file so we can require() the existing
     //    config safely (most projects use CJS jest configs).
     const tempConfigPath = path.join(
-      os.tmpdir(),
+      LTR_TMP_DIR,
       `ltr-jest-config-${Date.now()}.js`,
     );
 

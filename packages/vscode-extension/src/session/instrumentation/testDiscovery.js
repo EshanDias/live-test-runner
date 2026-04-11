@@ -134,6 +134,140 @@ function _memberLeaf(memberExpr) {
 }
 
 // ---------------------------------------------------------------------------
+// Shared variable detection helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true if the node is a primitive literal (immutable — cannot be
+ * mutated by another test). const declarations of these are safe.
+ */
+function _isPrimitiveLiteral(node) {
+  return (
+    node.type === 'NumericLiteral' ||
+    node.type === 'StringLiteral' ||
+    node.type === 'BooleanLiteral' ||
+    node.type === 'NullLiteral' ||
+    (node.type === 'TemplateLiteral' && node.expressions.length === 0)
+  );
+}
+
+/**
+ * Recursively walk an AST subtree and return true if an Identifier with
+ * the given name is referenced anywhere inside it.
+ * Does NOT descend into nested function scopes that shadow the name.
+ */
+function _containsRef(node, name, depth) {
+  if (!node || typeof node !== 'object') { return false; }
+  if (depth > 80) { return false; } // guard against extremely deep trees
+
+  if (node.type === 'Identifier' && node.name === name) { return true; }
+
+  // Don't descend into a function that re-declares the same name as a parameter
+  if (
+    node.type === 'FunctionDeclaration' ||
+    node.type === 'FunctionExpression' ||
+    node.type === 'ArrowFunctionExpression'
+  ) {
+    const params = node.params || [];
+    for (const p of params) {
+      if (p.type === 'Identifier' && p.name === name) { return false; }
+    }
+  }
+
+  for (const key of Object.keys(node)) {
+    if (key === 'type' || key === 'loc' || key === 'start' || key === 'end') { continue; }
+    const child = node[key];
+    if (Array.isArray(child)) {
+      for (const item of child) {
+        if (_containsRef(item, name, depth + 1)) { return true; }
+      }
+    } else if (child && typeof child === 'object' && child.type) {
+      if (_containsRef(child, name, depth + 1)) { return true; }
+    }
+  }
+  return false;
+}
+
+/**
+ * Collect the names of mutable variables declared at the DIRECT top level of
+ * a block statement body (not inside nested blocks, functions, or it/test calls).
+ *
+ * Rules:
+ *   let x / var x          → always mutable
+ *   const x = <primitive>  → safe (skip)
+ *   const x = <anything else> → mutable (object/array/new/call can be mutated)
+ */
+function _collectDescribeScopeVars(bodyStatements) {
+  const vars = new Set();
+  for (const stmt of bodyStatements) {
+    if (stmt.type !== 'VariableDeclaration') { continue; }
+    for (const decl of stmt.declarations) {
+      if (decl.id.type !== 'Identifier') { continue; }
+      if (stmt.kind === 'let' || stmt.kind === 'var') {
+        vars.add(decl.id.name);
+      } else if (stmt.kind === 'const') {
+        // const is safe only for primitive literals
+        if (!decl.init || !_isPrimitiveLiteral(decl.init)) {
+          vars.add(decl.id.name);
+        }
+      }
+    }
+  }
+  return vars;
+}
+
+/**
+ * Given the body statements of a describe callback, collect the AST bodies
+ * of all direct it/test callbacks (not nested describes).
+ */
+function _collectItBodies(bodyStatements) {
+  const bodies = [];
+  for (const stmt of bodyStatements) {
+    if (stmt.type !== 'ExpressionStatement') { continue; }
+    const expr = stmt.expression;
+    if (expr.type !== 'CallExpression') { continue; }
+    if (getCallType(expr) !== 'test') { continue; }
+    for (const arg of expr.arguments) {
+      if (arg.type === 'FunctionExpression' || arg.type === 'ArrowFunctionExpression') {
+        bodies.push(arg.body);
+        break;
+      }
+    }
+  }
+  return bodies;
+}
+
+/**
+ * Analyse a describe callback body and return { isSharedVars, sharedVarNames }.
+ *
+ * A suite is marked isSharedVars if any variable declared at describe scope is
+ * referenced inside any direct it/test callback. The caller also passes in
+ * file-scope vars so those are included.
+ */
+function _analyseDescribeBody(bodyStatements, fileScopeVars) {
+  const describeVars = _collectDescribeScopeVars(bodyStatements);
+  // Merge file-scope vars — they can also create cross-test dependencies
+  const allVars = new Set([...describeVars, ...fileScopeVars]);
+
+  if (allVars.size === 0) { return { isSharedVars: false, sharedVarNames: [] }; }
+
+  const itBodies = _collectItBodies(bodyStatements);
+  if (itBodies.length === 0) { return { isSharedVars: false, sharedVarNames: [] }; }
+
+  const sharedVarNames = [];
+  for (const varName of allVars) {
+    for (const body of itBodies) {
+      if (_containsRef(body, varName, 0)) {
+        sharedVarNames.push(varName);
+        break; // this var is shared — no need to check other it bodies
+      }
+    }
+  }
+
+  return { isSharedVars: sharedVarNames.length > 0, sharedVarNames };
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -145,7 +279,11 @@ function _memberLeaf(memberExpr) {
  * @param {string} rootDir     — project root for resolving Babel packages
  *
  * @returns {{
- *   suites: Array<{ name: string; line: number; tests: Array<{ name: string; line: number; fullName: string }> }>;
+ *   suites: Array<{
+ *     name: string; line: number;
+ *     tests: Array<{ name: string; line: number; fullName: string }>;
+ *     isSharedVars: boolean; sharedVarNames: string[];
+ *   }>;
  *   rootTests: Array<{ name: string; line: number; fullName: string }>;
  * } | null}
  */
@@ -171,13 +309,17 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
 
   const rootTests = [];
 
+  // Collect file-scope mutable variables (declared outside any describe/it).
+  // These can create cross-test dependencies for every suite in the file.
+  const fileScopeVars = _collectDescribeScopeVars(ast.program.body);
+
   function currentSuiteKey() {
     return describeStack.length ? describeStack.map((d) => d.name).join(' > ') : null;
   }
 
   function ensureSuite(key, line) {
     if (!suiteMap.has(key)) {
-      suiteMap.set(key, { name: key, line, tests: [] });
+      suiteMap.set(key, { name: key, line, tests: [], isSharedVars: false, sharedVarNames: [] });
     }
     return suiteMap.get(key);
   }
@@ -202,7 +344,21 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
         if (callType === 'describe') {
           describeStack.push({ name, line });
           // Register the suite immediately so it appears even if tests are found later.
-          ensureSuite(currentSuiteKey(), line);
+          const suite = ensureSuite(currentSuiteKey(), line);
+
+          // Analyse the describe callback body for shared variables.
+          // The callback is the last function argument.
+          const cb = args.find(
+            (a) => a.type === 'FunctionExpression' || a.type === 'ArrowFunctionExpression',
+          );
+          if (cb && cb.body && cb.body.type === 'BlockStatement') {
+            const { isSharedVars, sharedVarNames } = _analyseDescribeBody(
+              cb.body.body,
+              fileScopeVars,
+            );
+            suite.isSharedVars   = isSharedVars;
+            suite.sharedVarNames = sharedVarNames;
+          }
           return;
         }
 

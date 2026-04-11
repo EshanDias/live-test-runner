@@ -32,9 +32,10 @@ export class JestRunner implements TestRunner {
   constructor(
     jestCommand: string = '',
     logger: (msg: string) => void = () => {},
+    tmpDir?: string,
   ) {
     this.userJestCommand = jestCommand;
-    this.executor = new Executor(logger);
+    this.executor = new Executor(logger, tmpDir);
   }
 
   // ── TestRunner interface ────────────────────────────────────────────────────

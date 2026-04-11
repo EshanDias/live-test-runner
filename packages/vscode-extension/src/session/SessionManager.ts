@@ -2,12 +2,15 @@ import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
 import { JestRunner } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
+import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver } from '../IResultObserver';
 import { IFrameworkAdapter } from '../framework/IFrameworkAdapter';
 import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
+import { SessionTraceRunner } from './SessionTraceRunner';
+import { LTR_TMP_DIR } from '../constants';
 
 /**
  * SessionManager — owns the test session lifecycle and all run execution.
@@ -25,17 +28,19 @@ import { TestDiscoveryService } from './TestDiscoveryService';
  */
 export class SessionManager {
   private _session: TestSession | undefined;
+  private readonly _traceRunner = new SessionTraceRunner();
 
   constructor(
-    private readonly _context: vscode.ExtensionContext,
     private readonly _adapter: IFrameworkAdapter,
     private readonly _store: ResultStore,
+    private readonly _traceStore: ExecutionTraceStore,
     private readonly _selection: SelectionState,
     private readonly _resultsView: ResultsView,
     private readonly _observers: IResultObserver[],
     private readonly _outputChannel: vscode.OutputChannel,
     private readonly _statusBar: vscode.StatusBarItem,
     private readonly _discovery: TestDiscoveryService,
+    private readonly _traceDir: string,
   ) {}
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
@@ -63,7 +68,7 @@ export class SessionManager {
     // Bootstrap a session with a Jest runner to hold the coverage map
     const cfg             = vscode.workspace.getConfiguration('liveTestRunner');
     const cmd             = cfg.get<string>('runMode') === 'npm' ? 'npm test --' : (cfg.get<string>('jestCommand') || '');
-    const bootstrapRunner = new JestRunner(cmd, (msg) => this._outputChannel.appendLine(msg));
+    const bootstrapRunner = new JestRunner(cmd, (msg) => this._outputChannel.appendLine(msg), LTR_TMP_DIR);
     this._session         = new TestSession(bootstrapRunner);
 
     try {
@@ -97,6 +102,7 @@ export class SessionManager {
 
       // ── Run the tests ──────────────────────────────────────────────────────
       await this._runFiles(testFiles, projectRoot, true);
+      this._outputChannel.appendLine(`[Live Test Runner] Temporary trace files: ${this._traceDir}`);
     } catch (error) {
       this._updateStatusBar('❌ Error');
       vscode.window.showErrorMessage(`Failed to start testing: ${error}`);
@@ -260,6 +266,18 @@ export class SessionManager {
           this._updateStatusBar(`Running… ${completed}/${filePaths.length}`);
           this._notify('onFileResult', filePath);
           this._refreshScopedLogs(filePath);
+
+          // Fire-and-forget instrumented trace run — does not block status updates.
+          // Errors are logged but never surfaced to the user (tracing is best-effort).
+          this._traceRunner.runFile({
+            filePath,
+            projectRoot,
+            traceDir: this._traceDir,
+            traceStore: this._traceStore,
+            log,
+          }).catch((err: Error) => {
+            this._outputChannel.appendLine(`[SessionTrace] Error for ${filePath}: ${err.message}`);
+          });
         }
       }),
     );

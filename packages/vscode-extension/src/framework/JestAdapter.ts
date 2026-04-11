@@ -4,6 +4,7 @@ import {
   FileRunResult,
   ConsoleEntry,
 } from '@live-test-runner/runner';
+import { LTR_TMP_DIR } from '../constants';
 import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
 import {
@@ -152,7 +153,7 @@ export class JestAdapter implements IFrameworkAdapter {
     log: (msg: string) => void,
   ): JestRunner {
     const cmd = this._getCommand();
-    const runner = new JestRunner(cmd, log);
+    const runner = new JestRunner(cmd, log, LTR_TMP_DIR);
     runner.setProjectRoot(projectRoot);
     return runner;
   }
