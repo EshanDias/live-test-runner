@@ -289,7 +289,7 @@ export class SessionManager {
       total:         summary.total,
       passed:        summary.passed,
       failed:        summary.failed,
-      totalDuration: summary.totalDuration,
+      totalDuration: isFullSuite ? (Date.now() - totalStart) : undefined,
       sessionActive: this.isActive(),
     });
 

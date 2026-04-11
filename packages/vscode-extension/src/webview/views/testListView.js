@@ -152,11 +152,10 @@
     sPassed.textContent = passed != null ? passed : '—';
     sFailed.textContent = failed != null ? failed : '—';
     if (durationMs != null) {
-      sDuration.textContent = `Completed in ${durationLabel(durationMs)}`;
+      sDuration.textContent = `Last full run: ${durationLabel(durationMs)}`;
       sDuration.style.display = '';
-    } else {
-      sDuration.style.display = 'none';
     }
+    // If durationMs is undefined (partial rerun), leave the label as-is
   }
 
   function _updateListCount() {
@@ -320,6 +319,7 @@
           _q('runProgress').classList.add('visible');
           applySessionState('running');
           updateSummary(null, null, null, null);
+          _q('summaryDuration').style.display = 'none';
           if (msg.files) { _list.setData(msg.files); _updateListCount(); }
           break;
 
@@ -357,7 +357,7 @@
             : '';
           _q('runProgress').innerHTML = `Running — ${_completedFiles} / ${_totalFiles} files • ${durationLabel(el2)}${fl2}`;
           _list.updateFile(msg.file);
-          updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
+          updateSummary(msg.total, msg.passed, msg.failed, null);
           break;
         }
 

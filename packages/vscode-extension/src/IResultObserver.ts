@@ -19,7 +19,7 @@ export interface RunFinishedPayload {
   passed: number;
   failed: number;
   sessionActive: boolean;
-  totalDuration: number;
+  totalDuration: number | undefined;
 }
 
 /**
