@@ -84,7 +84,7 @@ Every `it()` and `test()` line gets:
 
 ---
 
-### Test Timeline Debugger
+### Test Timeline Debugger - Coming Soon
 
 Step through a single test case like a time-travel debugger — no breakpoints, no `debugger` statements, no terminal.
 
@@ -173,6 +173,7 @@ Control when duration badges switch from green → amber → red. Separate thres
 |-------|---------|
 | `Live Tests: Off` | No session active |
 | `Live Tests: Discovering…` | Finding test files |
+| `Live Tests: Tracing... N/M` | Collecting all traces |
 | `Live Tests: Running… N/M` | Run in progress |
 | `Live Tests: ✅ N passed` | All tests passed |
 | `Live Tests: ❌ N failed, M passed` | Failures present |
