@@ -58,10 +58,10 @@ if (watch) {
       copyInstrumentationFiles();
       return ctx.watch();
     })
-    .catch(() => process.exit(1));
+    .catch(e => { console.error(e); process.exit(1); });
 } else {
   esbuild
     .build(config)
     .then(() => copyInstrumentationFiles())
-    .catch(() => process.exit(1));
+    .catch(e => { console.error(e); process.exit(1); });
 }
