@@ -346,6 +346,8 @@ body {
 
 .row-folder-collapse,
 .row-folder-expand,
+.row-collapse,
+.row-expand,
 .row-rerun,
 .row-open,
 .row-copy,
@@ -359,22 +361,29 @@ body {
   font-size: 11px;
   padding: 1px 4px;
   line-height: 1.4;
-  opacity: 0;
-  pointer-events: none;
+  /* Hidden by default — use display:none so they don't create empty space */
+  display: none;
 }
 
 .test-row:hover .row-folder-collapse,
 .test-row:hover .row-folder-expand,
+.test-row:hover .row-collapse,
+.test-row:hover .row-expand,
 .test-row:hover .row-rerun,
 .test-row:hover .row-open,
 .test-row:hover .row-copy,
 .test-row:hover .row-timeline {
-  opacity: 1;
-  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
 }
+
+/* On hover: hide duration so buttons use that space */
+.test-row:hover .row-duration { display: none; }
 
 .row-folder-collapse:hover,
 .row-folder-expand:hover,
+.row-collapse:hover,
+.row-expand:hover,
 .row-rerun:hover,
 .row-open:hover,
 .row-copy:hover,
