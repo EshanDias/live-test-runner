@@ -34,6 +34,15 @@ export function activate(context: vscode.ExtensionContext) {
   // a runner tries to write before the directory exists.
   fs.mkdirSync(LTR_TMP_DIR, { recursive: true });
 
+  // Clean up stale traces-* directories left over from previous sessions.
+  try {
+    for (const entry of fs.readdirSync(LTR_TMP_DIR)) {
+      if (entry.startsWith('traces-')) {
+        fs.rmSync(path.join(LTR_TMP_DIR, entry), { recursive: true, force: true });
+      }
+    }
+  } catch { /* ignore */ }
+
   // ── Infrastructure ─────────────────────────────────────────────────────────
   const outputChannel  = vscode.window.createOutputChannel('Live Test Runner', 'ansi');
   const statusBar      = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
