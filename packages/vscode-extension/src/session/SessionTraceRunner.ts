@@ -147,6 +147,10 @@ module.exports = {
 
     fs.writeFileSync(tempConfigPath, configContent, 'utf8');
 
+    // Use a unique cache directory per run to prevent transform-cache races
+    // when multiple trace processes run in parallel on the same project.
+    const cacheDir = path.join(LTR_TMP_DIR, `jest-trace-cache-${ts}-${rand}`);
+
     try {
       const binary = this._binaryResolver.resolve(projectRoot);
       emit(`[SessionTrace] Running instrumented: ${path.relative(projectRoot, filePath)}`);
@@ -161,6 +165,9 @@ module.exports = {
           filePath,
           '--config',
           tempConfigPath,
+          '--cacheDirectory',
+          cacheDir,
+          '--maxWorkers=2',
         ],
         cwd: projectRoot,
         extraEnv: { SESSION_TRACE_FILE: rawTraceFile },
@@ -175,6 +182,7 @@ module.exports = {
       // Don't rethrow — a test failure is not a runner error; we still parse what we got
     } finally {
       try { fs.unlinkSync(tempConfigPath); } catch { /* ignore */ }
+      try { fs.rmSync(cacheDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
 
     // Parse and partition the raw trace

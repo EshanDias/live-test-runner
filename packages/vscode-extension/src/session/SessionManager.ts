@@ -1,3 +1,4 @@
+import * as os from 'os';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
 import { JestRunner } from '@live-test-runner/runner';
@@ -391,7 +392,7 @@ export class SessionManager {
     cases: { filePath: string; fullName: string }[],
     projectRoot: string,
   ): Promise<void> {
-    const CONCURRENCY = 3;
+    const CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
 
     // Group by file — one Jest invocation per file with combined pattern
     const byFile = new Map<string, string[]>();
@@ -567,7 +568,9 @@ export class SessionManager {
     projectRoot: string,
     isFullSuite = false,
   ): Promise<void> {
-    const CONCURRENCY = 3;
+    // Each Jest process uses up to (numCPUs - 1) workers by default, so limit
+    // concurrent file runs to avoid saturating the CPU.
+    const CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
     const queue = [...filePaths];
     let completed = 0,
       numPassed = 0,
@@ -584,6 +587,7 @@ export class SessionManager {
 
     const totalStart = Date.now();
     const log = (msg: string) => this._outputChannel.appendLine(msg);
+    const traceQueue: string[] = [];
 
     await Promise.all(
       Array.from(
@@ -617,26 +621,7 @@ export class SessionManager {
             this._notify('onFileResult', filePath);
             this._refreshScopedLogs(filePath);
 
-            // Instrumented trace run — fire-and-forget but applies per-test log output once done.
-            this._traceRunner
-              .runFile({
-                filePath,
-                projectRoot,
-                traceDir: this._traceDir,
-                traceStore: this._traceStore,
-                log,
-              })
-              .then((testLogs) => {
-                if (testLogs.size > 0) {
-                  this._applyTraceLogs(filePath, testLogs);
-                  this._refreshScopedLogs(filePath);
-                }
-              })
-              .catch((err: Error) => {
-                this._outputChannel.appendLine(
-                  `[SessionTrace] Error for ${filePath}: ${err.message}`,
-                );
-              });
+            traceQueue.push(filePath);
           }
         },
       ),
@@ -659,6 +644,49 @@ export class SessionManager {
       this._updateStatusBar(`❌ ${numFailed} failed, ${numPassed} passed`);
     } else if (numPassed > 0) {
       this._updateStatusBar(`✅ ${numPassed} passed`);
+    }
+
+    // Run instrumented trace jobs in parallel (each gets its own Jest cache dir
+    // so there are no transform-cache races between concurrent processes).
+    // Each trace process uses --maxWorkers=2, so cap at half the CPU count to
+    // keep total workers within the machine's core count.
+    const TRACE_CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 2));
+    if (traceQueue.length > 0) {
+      let traceCompleted = 0;
+      this._updateStatusBar(`Tracing… 0/${traceQueue.length}`);
+      const tracePool = [...traceQueue];
+      await Promise.all(
+        Array.from({ length: Math.min(TRACE_CONCURRENCY, traceQueue.length) }, async () => {
+          while (true) {
+            const filePath = tracePool.shift();
+            if (!filePath) { break; }
+            try {
+              const testLogs = await this._traceRunner.runFile({
+                filePath,
+                projectRoot,
+                traceDir: this._traceDir,
+                traceStore: this._traceStore,
+                log,
+              });
+              if (testLogs.size > 0) {
+                this._applyTraceLogs(filePath, testLogs);
+                this._refreshScopedLogs(filePath);
+              }
+            } catch (err) {
+              this._outputChannel.appendLine(
+                `[SessionTrace] Error for ${filePath}: ${(err as Error).message}`,
+              );
+            }
+            traceCompleted++;
+            this._updateStatusBar(`Tracing… ${traceCompleted}/${traceQueue.length}`);
+          }
+        }),
+      );
+      this._updateStatusBar(
+        numFailed > 0
+          ? `❌ ${numFailed} failed, ${numPassed} passed`
+          : `✅ ${numPassed} passed`,
+      );
     }
   }
 
