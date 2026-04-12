@@ -132,6 +132,21 @@ body {
   50% { opacity: 0.3; }
 }
 
+.tracing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vscode-progressBar-background);
+  animation: tracing-spin 1.4s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes tracing-spin {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
 /* ── List toolbar ──────────────────────────────────────────────────────────── */
 .list-toolbar {
   display: flex;

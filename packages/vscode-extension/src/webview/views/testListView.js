@@ -37,6 +37,10 @@
             title="Live Test Runner is active — tests will re-run automatically when you save a file">
       <span class="watch-dot"></span>live
     </span>
+    <span   class="watch-indicator tracing-indicator hidden" id="tracingIndicator"
+            title="Collecting execution traces for smart on-save reruns">
+      <span class="tracing-dot"></span><span class="tracing-label">tracing</span>
+    </span>
   </div>
 
   <!-- Run progress -->
@@ -387,6 +391,21 @@
           const fill = _q('coverageFill');
           if (fill) { fill.style.width = `${msg.percent}%`; }
           break;
+
+        case 'tracing-progress': {
+          const watchEl   = _q('watchIndicator');
+          const tracingEl = _q('tracingIndicator');
+          if (!watchEl || !tracingEl) { break; }
+          if (msg.done) {
+            tracingEl.classList.add('hidden');
+            if (_sessionState === 'watching') { watchEl.classList.remove('hidden'); }
+          } else {
+            watchEl.classList.add('hidden');
+            tracingEl.querySelector('.tracing-label').textContent = `tracing ${msg.completed}/${msg.total}`;
+            tracingEl.classList.remove('hidden');
+          }
+          break;
+        }
       }
     },
   };

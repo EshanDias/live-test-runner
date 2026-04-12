@@ -654,9 +654,9 @@ export class SessionManager {
     if (traceQueue.length > 0) {
       let traceCompleted = 0;
       const total = traceQueue.length;
-      const notifyTrace = (completed: number) => {
+      const notifyTrace = (completed: number, done = false) => {
         this._updateStatusBar(`Tracing… ${completed}/${total}`);
-        this._resultsView.postMessage({ type: 'tracing-progress', completed, total });
+        for (const obs of this._observers) { obs.onTracingProgress?.(completed, total, done); }
       };
       notifyTrace(0);
       const tracePool = [...traceQueue];
@@ -686,8 +686,7 @@ export class SessionManager {
           }
         }),
       );
-      // Banner dismiss — completed === total signals done
-      this._resultsView.postMessage({ type: 'tracing-progress', completed: total, total, done: true });
+      notifyTrace(total, true);
       this._updateStatusBar(
         numFailed > 0
           ? `❌ ${numFailed} failed, ${numPassed} passed`
