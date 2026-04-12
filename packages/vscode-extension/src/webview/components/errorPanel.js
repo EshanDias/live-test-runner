@@ -29,10 +29,29 @@
         entryEl.appendChild(nameEl);
 
         for (const msg of entry.failureMessages) {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'error-message-wrapper';
+
           const msgEl = document.createElement('pre');
           msgEl.className = 'error-message';
           msgEl.textContent = msg;
-          entryEl.appendChild(msgEl);
+
+          const copyBtn = document.createElement('button');
+          copyBtn.className = 'error-copy-btn';
+          copyBtn.title = 'Copy error';
+          copyBtn.textContent = '⎘';
+          copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(msg).then(() => {
+              const orig = copyBtn.textContent;
+              copyBtn.textContent = '✓';
+              copyBtn.style.color = 'var(--vscode-charts-green, #4caf50)';
+              setTimeout(() => { copyBtn.textContent = orig; copyBtn.style.color = ''; }, 1000);
+            }).catch(() => {});
+          });
+
+          wrapper.appendChild(copyBtn);
+          wrapper.appendChild(msgEl);
+          entryEl.appendChild(wrapper);
         }
 
         container.appendChild(entryEl);

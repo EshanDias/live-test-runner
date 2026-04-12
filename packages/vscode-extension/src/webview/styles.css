@@ -588,9 +588,41 @@ body {
 }
 
 .log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
   padding: 1px 0;
+  color: var(--vscode-foreground);
+}
+
+.log-line-text {
+  flex: 1;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.log-line-copy {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 3px;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.log-line:hover .log-line-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.log-line-copy:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2));
+  border-color: var(--vscode-toolbar-hoverOutline, transparent);
   color: var(--vscode-foreground);
 }
 
@@ -622,6 +654,40 @@ body {
   font-size: 12px;
   margin-bottom: 6px;
   color: var(--vscode-charts-red, #f44336);
+}
+
+.error-message-wrapper {
+  position: relative;
+  margin-bottom: 4px;
+}
+
+.error-message-wrapper:last-child { margin-bottom: 0; }
+
+.error-copy-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 4px;
+  line-height: 1.6;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.error-message-wrapper:hover .error-copy-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.error-copy-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2));
+  border-color: var(--vscode-toolbar-hoverOutline, transparent);
+  color: var(--vscode-foreground);
 }
 
 .error-message {

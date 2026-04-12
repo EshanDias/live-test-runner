@@ -16,6 +16,23 @@
     return { file: '📄', suite: '🔷', test: '🔹' }[scope] ?? '•';
   }
 
+  function _basename(p) {
+    if (!p) return p;
+    return p.replace(/\\/g, '/').split('/').pop() ?? p;
+  }
+
+  function _displayLabel(scope, label) {
+    if (scope === 'file')  return 'File: ' + _basename(label);
+    if (scope === 'suite') return 'Suite: ' + label;
+    if (scope === 'test')  return 'Test: ' + label;
+    return label;
+  }
+
+  function _tooltipLabel(scope, label) {
+    if (scope === 'file') return _basename(label);
+    return label;
+  }
+
   function _formatCapturedAt(capturedAt) {
     if (capturedAt === null) { return ''; }
     const diff = Date.now() - capturedAt;
@@ -61,9 +78,11 @@
 
       const header = document.createElement('div');
       header.className = 'section-header';
+      const displayLabel = _displayLabel(section.scope, section.label);
+      const tooltipLabel = _tooltipLabel(section.scope, section.label);
       header.innerHTML =
         `<span class="scope-icon">${_scopeIcon(section.scope)}</span>` +
-        `<span class="scope-label">${_escHtml(section.label)}</span>` +
+        `<span class="scope-label" title="${_escHtml(tooltipLabel)}">${_escHtml(displayLabel)}</span>` +
         `<span class="captured-at">${_formatCapturedAt(section.capturedAt)}</span>`;
       sectionEl.appendChild(header);
 
@@ -73,7 +92,26 @@
         const lineEl = document.createElement('div');
         lineEl.className = `log-line log-line-${line.level}`;
         lineEl.dataset.level = line.level;
-        lineEl.textContent = line.text;
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'log-line-text';
+        textSpan.textContent = line.text;
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'log-line-copy';
+        copyBtn.title = 'Copy';
+        copyBtn.textContent = '⎘';
+        copyBtn.addEventListener('click', () => {
+          navigator.clipboard.writeText(line.text).then(() => {
+            const orig = copyBtn.textContent;
+            copyBtn.textContent = '✓';
+            copyBtn.style.color = 'var(--vscode-charts-green, #4caf50)';
+            setTimeout(() => { copyBtn.textContent = orig; copyBtn.style.color = ''; }, 1000);
+          }).catch(() => {});
+        });
+
+        lineEl.appendChild(textSpan);
+        lineEl.appendChild(copyBtn);
         linesEl.appendChild(lineEl);
       }
       sectionEl.appendChild(linesEl);
