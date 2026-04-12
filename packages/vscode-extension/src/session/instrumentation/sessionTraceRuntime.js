@@ -119,7 +119,13 @@ if (!global.__strace) {
       writeStep({
         type:     'LOG',
         level,
-        args:     args.map((a) => String(a)),
+        args:     args.map((a) => {
+          if (a === null || a === undefined) { return String(a); }
+          if (typeof a === 'object') {
+            try { return JSON.stringify(a); } catch (_e) { return String(a); }
+          }
+          return String(a);
+        }),
         context:  _currentContext,
         testName: _currentTestName,
       });
