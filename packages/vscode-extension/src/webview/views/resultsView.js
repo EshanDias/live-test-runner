@@ -10,6 +10,10 @@
 (function () {
   // ── HTML template ───────────────────────────────────────────────────────────
   const TEMPLATE = `
+<div class="tracing-banner" id="tracingBanner" style="display:none">
+  <span class="tracing-banner-dot"></span>
+  <span id="tracingBannerText">Collecting traces…</span>
+</div>
 <div class="results-layout" id="layout">
 
   <!-- Column 1: Test List -->
@@ -245,6 +249,19 @@
         case 'test-output':
           // Streaming output — not yet fully wired; no-op for now
           break;
+
+        case 'tracing-progress': {
+          const banner = _q('tracingBanner');
+          const label  = _q('tracingBannerText');
+          if (!banner || !label) { break; }
+          if (msg.done) {
+            banner.style.display = 'none';
+          } else {
+            label.textContent = `Collecting traces… ${msg.completed}/${msg.total}`;
+            banner.style.display = 'flex';
+          }
+          break;
+        }
       }
     },
   };

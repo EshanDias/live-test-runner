@@ -653,10 +653,15 @@ export class SessionManager {
     const TRACE_CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 2));
     if (traceQueue.length > 0) {
       let traceCompleted = 0;
-      this._updateStatusBar(`Tracing… 0/${traceQueue.length}`);
+      const total = traceQueue.length;
+      const notifyTrace = (completed: number) => {
+        this._updateStatusBar(`Tracing… ${completed}/${total}`);
+        this._resultsView.postMessage({ type: 'tracing-progress', completed, total });
+      };
+      notifyTrace(0);
       const tracePool = [...traceQueue];
       await Promise.all(
-        Array.from({ length: Math.min(TRACE_CONCURRENCY, traceQueue.length) }, async () => {
+        Array.from({ length: Math.min(TRACE_CONCURRENCY, total) }, async () => {
           while (true) {
             const filePath = tracePool.shift();
             if (!filePath) { break; }
@@ -677,11 +682,12 @@ export class SessionManager {
                 `[SessionTrace] Error for ${filePath}: ${(err as Error).message}`,
               );
             }
-            traceCompleted++;
-            this._updateStatusBar(`Tracing… ${traceCompleted}/${traceQueue.length}`);
+            notifyTrace(++traceCompleted);
           }
         }),
       );
+      // Banner dismiss — completed === total signals done
+      this._resultsView.postMessage({ type: 'tracing-progress', completed: total, total, done: true });
       this._updateStatusBar(
         numFailed > 0
           ? `❌ ${numFailed} failed, ${numPassed} passed`

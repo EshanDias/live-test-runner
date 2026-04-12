@@ -715,3 +715,30 @@ body {
   height: 100vh;
   overflow: hidden;
 }
+
+/* Tracing progress banner */
+.tracing-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  flex-shrink: 0;
+}
+
+.tracing-banner-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vscode-progressBar-background);
+  animation: tracing-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes tracing-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
