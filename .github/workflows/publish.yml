@@ -35,11 +35,11 @@ jobs:
         # remove if you don’t have build step
 
       - name: Install vsce
-        run: npm install -g vsce
+        run: npm install -g @vscode/vsce
 
       - name: Publish (VS Code Marketplace)
         run: |
-          npx vsce publish -p "$VSCE_PAT" \
+          npx @vscode/vsce publish -p "$VSCE_PAT" \
             --no-dependencies \
             --skip-duplicate \
             --baseContentUrl "https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension"
