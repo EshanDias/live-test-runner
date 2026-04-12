@@ -193,8 +193,9 @@ function makeExitHook() {
 // ---------------------------------------------------------------------------
 // Detect Jest test/hook call names
 // ---------------------------------------------------------------------------
-const HOOK_NAMES = new Set(['beforeAll', 'beforeEach', 'afterEach', 'afterAll']);
-const TEST_NAMES = new Set(['it', 'test']);
+const HOOK_NAMES     = new Set(['beforeAll', 'beforeEach', 'afterEach', 'afterAll']);
+const TEST_NAMES     = new Set(['it', 'test']);
+const DESCRIBE_NAMES = new Set(['describe']);
 
 /**
  * If the node is a Jest test/hook call, return { kind: 'test'|'hook', name }.
@@ -241,6 +242,18 @@ function classifyCall(node) {
     return { kind: 'hook', name: baseName };
   }
 
+  if (DESCRIBE_NAMES.has(baseName)) {
+    const nameArg = node.arguments[0];
+    let suiteName = null;
+    if (t.isStringLiteral(nameArg)) { suiteName = nameArg.value; }
+    else if (t.isTemplateLiteral(nameArg) && nameArg.quasis.length === 1) {
+      suiteName = nameArg.quasis[0].value.cooked ?? '';
+    } else if (nameArg) {
+      suiteName = '<dynamic>';
+    }
+    return { kind: 'describe', name: suiteName };
+  }
+
   return null;
 }
 
@@ -277,21 +290,34 @@ function instrumentAST(code, sourcePath) {
 
   const insertions = [];  // { nodePath, nodes[] } — statements to insert after each step
 
-  // Pass 1: inject context wrappers around test/hook callbacks
+  // Pass 1: inject context wrappers around test/hook callbacks.
+  // Track describe nesting so tests emit their full name (matching Jest's fullName field).
+  const describeStack = [];
   _traverse(ast, {
-    CallExpression(nodePath) {
-      const info = classifyCall(nodePath.node);
-      if (!info) { return; }
+    CallExpression: {
+      enter(nodePath) {
+        const info = classifyCall(nodePath.node);
+        if (!info) { return; }
 
-      const cb = findCallbackArg(nodePath.node.arguments);
-      if (!cb || !t.isBlockStatement(cb.body)) { return; }
+        const cb = findCallbackArg(nodePath.node.arguments);
+        if (!cb || !t.isBlockStatement(cb.body)) {
+          if (info.kind === 'describe') { describeStack.push(info.name ?? '<suite>'); }
+          return;
+        }
 
-      if (info.kind === 'test') {
-        const name = info.name || '<unknown>';
-        wrapBodyWithContext(cb.body, makeEnterTest(name), makeExitTest());
-      } else {
-        wrapBodyWithContext(cb.body, makeEnterHook(info.name), makeExitHook());
-      }
+        if (info.kind === 'describe') {
+          describeStack.push(info.name ?? '<suite>');
+        } else if (info.kind === 'test') {
+          const fullName = [...describeStack, info.name || '<unknown>'].join(' ');
+          wrapBodyWithContext(cb.body, makeEnterTest(fullName), makeExitTest());
+        } else if (info.kind === 'hook') {
+          wrapBodyWithContext(cb.body, makeEnterHook(info.name), makeExitHook());
+        }
+      },
+      exit(nodePath) {
+        const info = classifyCall(nodePath.node);
+        if (info?.kind === 'describe') { describeStack.pop(); }
+      },
     },
   });
 

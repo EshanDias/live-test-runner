@@ -20,6 +20,7 @@ import * as path from 'path';
 import { Executor, BinaryResolver } from '@live-test-runner/runner';
 import { LTR_TMP_DIR } from '../constants';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
+import { OutputLine } from '../store/ResultStore';
 
 // At runtime __dirname is out/ (the esbuild output directory).
 // esbuild.js copies sessionTraceTransform.js → out/instrumentation/.
@@ -60,13 +61,14 @@ export class SessionTraceRunner {
    * @param traceStore     Store to update with trace index + coverage data
    * @param log            Optional log callback (for output channel)
    */
+  /** Maps full test name → log lines captured during the trace run. */
   async runFile(options: {
     filePath: string;
     projectRoot: string;
     traceDir: string;
     traceStore: ExecutionTraceStore;
     log?: (msg: string) => void;
-  }): Promise<void> {
+  }): Promise<Map<string, OutputLine[]>> {
     const { filePath, projectRoot, traceDir, traceStore, log } = options;
     const emit = log ?? (() => {});
 
@@ -177,7 +179,7 @@ module.exports = {
 
     // Parse and partition the raw trace
     try {
-      this._partitionAndStore(rawTraceFile, filePath, traceDir, traceStore, emit);
+      return this._partitionAndStore(rawTraceFile, filePath, traceDir, traceStore, emit);
     } finally {
       try { fs.unlinkSync(rawTraceFile); } catch { /* ignore */ }
     }
@@ -191,10 +193,10 @@ module.exports = {
     traceDir: string,
     traceStore: ExecutionTraceStore,
     emit: (msg: string) => void,
-  ): void {
+  ): Map<string, OutputLine[]> {
     if (!fs.existsSync(rawTraceFile)) {
       emit(`[SessionTrace] No trace output produced for ${testFilePath}`);
-      return;
+      return new Map();
     }
 
     const raw = fs.readFileSync(rawTraceFile, 'utf8');
@@ -226,6 +228,9 @@ module.exports = {
       }
     }
 
+    const now = Date.now();
+    const testLogs = new Map<string, OutputLine[]>();
+
     // Write per-test JSONL files and update coverage index
     for (const [testName, steps] of byTest) {
       const testId = testName;  // stable key is the full test name
@@ -250,9 +255,22 @@ module.exports = {
           traceStore.addCoveredLines(step.file, [step.line]);
         }
       }
+
+      // Collect LOG steps for this test to return to the caller
+      const logLines: OutputLine[] = allSteps
+        .filter((s): s is RawStep & { type: 'LOG' } => s.type === 'LOG')
+        .map((s) => ({
+          text:      (s.args ?? []).join(' '),
+          level:     (s.level as OutputLine['level']) ?? 'log',
+          timestamp: now,
+        }));
+      if (logLines.length > 0) {
+        testLogs.set(testName, logLines);
+      }
     }
 
     emit(`[SessionTrace] Traced ${byTest.size} test(s) from ${path.basename(testFilePath)}`);
+    return testLogs;
   }
 }
 

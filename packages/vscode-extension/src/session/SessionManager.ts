@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
 import { JestRunner } from '@live-test-runner/runner';
-import { ResultStore } from '../store/ResultStore';
+import { ResultStore, OutputLine } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver } from '../IResultObserver';
@@ -267,14 +267,18 @@ export class SessionManager {
           this._notify('onFileResult', filePath);
           this._refreshScopedLogs(filePath);
 
-          // Fire-and-forget instrumented trace run — does not block status updates.
-          // Errors are logged but never surfaced to the user (tracing is best-effort).
+          // Instrumented trace run — fire-and-forget but applies per-test log output once done.
           this._traceRunner.runFile({
             filePath,
             projectRoot,
             traceDir: this._traceDir,
             traceStore: this._traceStore,
             log,
+          }).then((testLogs) => {
+            if (testLogs.size > 0) {
+              this._applyTraceLogs(filePath, testLogs);
+              this._refreshScopedLogs(filePath);
+            }
           }).catch((err: Error) => {
             this._outputChannel.appendLine(`[SessionTrace] Error for ${filePath}: ${err.message}`);
           });
@@ -305,6 +309,20 @@ export class SessionManager {
   ): void {
     for (const obs of this._observers) {
       (obs[method] as (...a: unknown[]) => void)(...(args as unknown[]));
+    }
+  }
+
+  private _applyTraceLogs(filePath: string, testLogs: Map<string, OutputLine[]>): void {
+    const file = this._store.getFile(filePath);
+    if (!file) { return; }
+    const now = Date.now();
+    for (const suite of file.suites.values()) {
+      for (const [testId, test] of suite.tests) {
+        const lines = testLogs.get(test.fullName);
+        if (lines) {
+          this._store.setTestOutput(filePath, suite.suiteId, testId, { lines, capturedAt: now });
+        }
+      }
     }
   }
 

@@ -55,6 +55,13 @@ function safeValue(value) {
 // Global __strace — the API called by instrumented code
 // ---------------------------------------------------------------------------
 if (!global.__strace) {
+  // Patch console methods to emit LOG events attributed to the active test.
+  // Must happen before any test code runs, and only once per worker process.
+  const _origLog   = console.log.bind(console);
+  const _origInfo  = console.info.bind(console);
+  const _origWarn  = console.warn.bind(console);
+  const _origError = console.error.bind(console);
+
   global.__strace = {
     // ── Context management ──────────────────────────────────────────────────
 
@@ -118,4 +125,9 @@ if (!global.__strace) {
       });
     },
   };
+
+  console.log   = (...args) => { global.__strace.log('log',   ...args); _origLog(...args); };
+  console.info  = (...args) => { global.__strace.log('info',  ...args); _origInfo(...args); };
+  console.warn  = (...args) => { global.__strace.log('warn',  ...args); _origWarn(...args); };
+  console.error = (...args) => { global.__strace.log('error', ...args); _origError(...args); };
 }

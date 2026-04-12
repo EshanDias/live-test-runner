@@ -4,6 +4,7 @@
 2. When a bug is complete, tell how to verify it and ask user to verify and and update the bug list. remove fixed bugs. 
 3. Ask to continue with the next/current bug after a bug is completed or at the end of a discussion done towards a bug.
 4. Project related docs are in /Users/eshandias/Projects/Personal/live-test-runner/docs. temp_plans subfolder has any current developments we are working on
+5. Keep reasoning minimal. Provide only essential explanation.
 
 # Bugs
 
