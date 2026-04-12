@@ -1,6 +1,7 @@
 import { OutputLine } from '../store/ResultStore';
 import { BaseWebviewProvider } from './BaseWebviewProvider';
 import { RunFinishedPayload } from '../IResultObserver';
+import * as vscode from 'vscode';
 
 // ── Scoped log payload types ───────────────────────────────────────────────────
 
@@ -54,9 +55,33 @@ export class ResultsView extends BaseWebviewProvider {
     this._sendScopedLogs(fileId, suiteId, testId);
   }
 
-  protected handleExtraMessage(msg: { type: string; fileId?: string; suiteId?: string; testId?: string }): void {
-    if (msg.type === 'select' && msg.fileId) {
-      this._sendScopedLogs(msg.fileId, msg.suiteId, msg.testId);
+  /** Called by extension.ts so it can forward step-changed to ExplorerView. */
+  onStepChanged: ((stepId: number, filePath: string, line: number) => void) | null = null;
+
+  /** Called by extension.ts when the timeline view is unmounted (route → results). */
+  onTimelineExit: (() => void) | null = null;
+  /** Called when timeline UI asks host to exit timeline mode. */
+  onTimelineExitRequest: (() => void) | null = null;
+
+  protected handleExtraMessage(msg: { type: string; fileId?: string; suiteId?: string; testId?: string; stepId?: number; filePath?: string; line?: number; view?: string; testFullName?: string }): void {
+    if (msg.type === 'open-timeline' && msg.filePath && msg.testFullName) {
+      vscode.commands.executeCommand(
+        'liveTestRunner.openTimelineDebugger',
+        msg.filePath,
+        msg.testFullName,
+      );
+      return;
+    }
+    if (msg.type === 'step-changed' && typeof msg.stepId === 'number') {
+      this.onStepChanged?.(msg.stepId, msg.filePath ?? '', msg.line ?? 0);
+      return;
+    }
+    if (msg.type === 'timeline-exited') {
+      this.onTimelineExit?.();
+      return;
+    }
+    if (msg.type === 'timeline-exit-request') {
+      this.onTimelineExitRequest?.();
     }
   }
 

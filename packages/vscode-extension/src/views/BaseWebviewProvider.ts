@@ -19,7 +19,10 @@ export abstract class BaseWebviewProvider
   implements vscode.WebviewViewProvider, IResultObserver
 {
   protected view?: vscode.WebviewView;
-  protected _sessionActive = false;
+  protected _sessionActive  = false;
+  protected _isDiscovering  = false;
+  protected _discoveryTotal = 0;
+  protected _discoveryDone  = 0;
 
   constructor(
     protected readonly extensionUri: vscode.Uri,
@@ -140,6 +143,7 @@ export abstract class BaseWebviewProvider
           name:     s.name,
           status:   s.status,
           duration: s.duration,
+          line:     s.line,
           tests: Array.from(s.tests.values()).map((t) => ({
             testId:          t.testId,
             name:            t.name,
@@ -162,9 +166,33 @@ export abstract class BaseWebviewProvider
     this.postMessage({ type: 'run-finished', ...payload });
   }
 
+  onTracingProgress(completed: number, total: number, done?: boolean): void {
+    this.postMessage({ type: 'tracing-progress', completed, total, done: done ?? false });
+  }
+
+  onDiscoveryStarted(total: number): void {
+    this._isDiscovering  = true;
+    this._discoveryTotal = total;
+    this._discoveryDone  = 0;
+    this.postMessage({ type: 'discovery-started', total });
+  }
+
+  onDiscoveryProgress(file: unknown, discovered: number, total: number): void {
+    this._discoveryDone = discovered;
+    const summary = this.store.getSummary();
+    this.postMessage({ type: 'discovery-progress', file, discovered, fileTotal: total, total: summary.total, passed: summary.passed, failed: summary.failed });
+  }
+
+  onDiscoveryComplete(): void {
+    this._isDiscovering = false;
+    this.postMessage({ type: 'discovery-complete' });
+  }
+
   dispose(): void {}
 
   // ── Public helpers ─────────────────────────────────────────────────────────
+
+  get sessionActive(): boolean { return this._sessionActive; }
 
   postMessage(msg: unknown): void {
     this.view?.webview.postMessage(msg);
@@ -187,11 +215,24 @@ export abstract class BaseWebviewProvider
 
   private _buildHtml(webview: vscode.Webview): string {
     const webviewDir        = vscode.Uri.joinPath(this.extensionUri, 'src', 'webview');
-    const stylesUri         = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'styles.css'));
-    const utilsUri          = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'utils.js'));
-    const testListLayoutUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir, 'testListLayout.js'));
-    const nonce             = getNonce();
-    const cspSource         = webview.cspSource;
+    const viewsDir          = vscode.Uri.joinPath(webviewDir, 'views');
+    const componentsDir     = vscode.Uri.joinPath(webviewDir, 'components');
+    const timelineDir       = vscode.Uri.joinPath(webviewDir, 'timeline');
+
+    const stylesUri              = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir,    'styles.css'));
+    const utilsUri               = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir,    'utils.js'));
+    const testListLayoutUri      = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir,    'testListLayout.js'));
+    const routerUri              = webview.asWebviewUri(vscode.Uri.joinPath(webviewDir,    'router.js'));
+    const logPanelUri            = webview.asWebviewUri(vscode.Uri.joinPath(componentsDir, 'logPanel.js'));
+    const errorPanelUri          = webview.asWebviewUri(vscode.Uri.joinPath(componentsDir, 'errorPanel.js'));
+    const resultsViewUri         = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'resultsView.js'));
+    const timelineViewUri        = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'timelineView.js'));
+    const testListViewUri        = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'testListView.js'));
+    const timelineSidebarUri     = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'timelineSidebar.js'));
+    const playbackEngineUri      = webview.asWebviewUri(vscode.Uri.joinPath(timelineDir,   'PlaybackEngine.js'));
+
+    const nonce     = getNonce();
+    const cspSource = webview.cspSource;
 
     const html = require('fs').readFileSync(
       require('path').join(this.extensionUri.fsPath, 'src', 'webview', this._htmlFile),
@@ -199,11 +240,19 @@ export abstract class BaseWebviewProvider
     ) as string;
 
     return html
-      .replace(/\{\{cspSource\}\}/g,         cspSource)
-      .replace(/\{\{nonce\}\}/g,             nonce)
-      .replace(/\{\{stylesUri\}\}/g,         stylesUri.toString())
-      .replace(/\{\{utilsUri\}\}/g,          utilsUri.toString())
-      .replace(/\{\{testListLayoutUri\}\}/g, testListLayoutUri.toString());
+      .replace(/\{\{cspSource\}\}/g,          cspSource)
+      .replace(/\{\{nonce\}\}/g,              nonce)
+      .replace(/\{\{stylesUri\}\}/g,          stylesUri.toString())
+      .replace(/\{\{utilsUri\}\}/g,           utilsUri.toString())
+      .replace(/\{\{testListLayoutUri\}\}/g,  testListLayoutUri.toString())
+      .replace(/\{\{logPanelUri\}\}/g,        logPanelUri.toString())
+      .replace(/\{\{errorPanelUri\}\}/g,      errorPanelUri.toString())
+      .replace(/\{\{routerUri\}\}/g,          routerUri.toString())
+      .replace(/\{\{resultsViewUri\}\}/g,     resultsViewUri.toString())
+      .replace(/\{\{timelineViewUri\}\}/g,    timelineViewUri.toString())
+      .replace(/\{\{testListViewUri\}\}/g,    testListViewUri.toString())
+      .replace(/\{\{timelineSidebarUri\}\}/g, timelineSidebarUri.toString())
+      .replace(/\{\{playbackEngineUri\}\}/g,  playbackEngineUri.toString());
   }
 }
 

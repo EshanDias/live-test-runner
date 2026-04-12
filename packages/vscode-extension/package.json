@@ -2,7 +2,7 @@
   "name": "live-test-runner",
   "displayName": "Live Test Runner",
   "description": "Live testing on save for Jest and other frameworks",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "icon": "resources/images/live-test-runner.png",
   "publisher": "EshLabs",
   "engines": {
@@ -87,11 +87,27 @@
       {
         "command": "liveTestRunner.focusResult",
         "title": "Live Test Runner: Focus Test in Results Panel"
+      },
+      {
+        "command": "liveTestRunner.openTimelineDebugger",
+        "title": "Open Timeline Debugger",
+        "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.dumpTraceStore",
+        "title": "Dump Trace Store (Debug)",
+        "category": "Live Test Runner",
+        "enablement": "config.liveTestRunner.devMode"
       }
     ],
     "configuration": {
       "title": "Live Test Runner",
       "properties": {
+        "liveTestRunner.devMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable developer debug commands (not intended for end users)"
+        },
         "liveTestRunner.projectRoot": {
           "type": "string",
           "default": "",

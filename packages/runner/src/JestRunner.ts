@@ -32,9 +32,10 @@ export class JestRunner implements TestRunner {
   constructor(
     jestCommand: string = '',
     logger: (msg: string) => void = () => {},
+    tmpDir?: string,
   ) {
     this.userJestCommand = jestCommand;
-    this.executor = new Executor(logger);
+    this.executor = new Executor(logger, tmpDir);
   }
 
   // ── TestRunner interface ────────────────────────────────────────────────────
@@ -208,8 +209,6 @@ export class JestRunner implements TestRunner {
     const binary = this.resolveBinary(adapter, projectRoot);
     const prefixArgs = this.resolvePrefixArgs();
     const configArgs = await this.resolveConfigArgs(adapter, projectRoot);
-    // Escape regex special chars in the test name so it matches literally
-    const escapedName = testFullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const args = [
       ...prefixArgs,
       ...configArgs,
@@ -219,7 +218,7 @@ export class JestRunner implements TestRunner {
       '--runTestsByPath',
       filePath,
       '--testNamePattern',
-      isTestSuite ? `^${escapedName}` : `^${escapedName}$`,
+      isTestSuite ? `^${testFullName}` : `^${testFullName}$`,
     ];
 
     const { passed, jsonOutput, stderr } =

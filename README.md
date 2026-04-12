@@ -6,12 +6,14 @@ A VS Code extension that runs Jest tests automatically on file save, showing res
 
 ## What it does
 
-- **On-save execution** — save any file and the relevant tests run immediately
-- **Custom test explorer** — file → suite → test tree with live status icons and duration badges
+- **Static test discovery** — the full test tree (file → suite → test) appears in the sidebar the moment you open a project, before running anything. Line numbers, pending icons, and Run/Debug CodeLens buttons are live immediately.
+- **Smart on-save execution** — save any file and only the affected tests run automatically. After the first full run, source file saves rerun individual test cases (not whole files) based on the execution trace
+- **Custom test explorer** — live status icons, duration badges, search, and per-row rerun buttons
 - **Results panel** — three-column view: test list, console output, and error details
 - **Editor decorations** — gutter icons and inline durations on every test line
-- **CodeLens buttons** — `▶ Run`, `▷ Debug`, and `◈ Results` above every `it()` and `describe()`
+- **CodeLens buttons** — `▶ Run`, `▷ Debug`, and `◈ Results` above every `it()` and `describe()` — available from project load, not just after a run
 - **Smart detection** — works with standard Jest and Create React App out of the box
+- **Test Timeline Debugger** — step-by-step replay of any test case with variable inspection, inline values, and call stack (see [extension README](packages/vscode-extension/README.md))
 
 ---
 

@@ -7,6 +7,12 @@ export interface RerunOptions {
   suiteId?: string;
   /** Narrow result application to a specific test (partial rerun) */
   testId?: string;
+  /**
+   * When set, only update tests whose fullName is in this set.
+   * Used for pattern-based runs where Jest marks non-matching tests as "skipped"
+   * even though they were never intended to run.
+   */
+  fullNames?: Set<string>;
 }
 
 /**

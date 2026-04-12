@@ -4,6 +4,7 @@ import {
   FileRunResult,
   ConsoleEntry,
 } from '@live-test-runner/runner';
+import { LTR_TMP_DIR } from '../constants';
 import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
 import {
@@ -152,7 +153,7 @@ export class JestAdapter implements IFrameworkAdapter {
     log: (msg: string) => void,
   ): JestRunner {
     const cmd = this._getCommand();
-    const runner = new JestRunner(cmd, log);
+    const runner = new JestRunner(cmd, log, LTR_TMP_DIR);
     runner.setProjectRoot(projectRoot);
     return runner;
   }
@@ -179,6 +180,9 @@ export class JestAdapter implements IFrameworkAdapter {
       const suiteId = `${filePath}::${suiteKey}`;
 
       if (opts?.suiteId && suiteId !== opts.suiteId) {
+        continue;
+      }
+      if (opts?.fullNames && !opts.fullNames.has(tc.fullName ?? tc.title)) {
         continue;
       }
       if (!store.getSuite(filePath, suiteId)) {
@@ -227,12 +231,17 @@ export class JestAdapter implements IFrameworkAdapter {
     if (file) {
       for (const suite of file.suites.values()) {
         const tests = Array.from(suite.tests.values());
-        const suiteStatus = tests.some((t) => t.status === 'failed')
+        const suiteStatus: TestStatus = tests.some((t) => t.status === 'failed')
           ? 'failed'
-          : ('passed' as TestStatus);
+          : tests.every((t) => t.status === 'skipped')
+            ? 'skipped'
+            : tests.every((t) => t.status === 'pending')
+              ? 'pending'
+              : 'passed';
         const suiteDur = tests.reduce((acc, t) => acc + (t.duration ?? 0), 0);
         store.suiteResult(filePath, suite.suiteId, suiteStatus, suiteDur);
-        fileStatus = suiteStatus === 'failed' ? 'failed' : fileStatus;
+        if (suiteStatus === 'failed') { fileStatus = 'failed'; }
+        else if (suiteStatus !== 'passed' && fileStatus !== 'failed') { fileStatus = suiteStatus; }
       }
     }
 
@@ -261,6 +270,10 @@ export class JestAdapter implements IFrameworkAdapter {
 
     store.fileResult(filePath, fileStatus, fileResult.duration);
 
+    // Remove AST-discovery placeholders for template-literal test names (name === '…' or name inicludes '"…"')
+    // now that Jest has run and emitted the real expanded names.
+    store.removePendingPlaceholders(filePath);
+
     // Populate LineMap (only clear on full-file run to preserve other tests' entries)
     if (!opts?.suiteId && !opts?.testId) {
       store.clearLineMap(filePath);
@@ -277,6 +290,20 @@ export class JestAdapter implements IFrameworkAdapter {
         suiteId,
         fileId: filePath,
       });
+    }
+
+    // Re-add describe-level entries from AST discovery data (Jest JSON has no
+    // describe line numbers so we preserve them from the suite's stored line).
+    const fileEntry = store.getFile(filePath);
+    if (fileEntry) {
+      for (const s of fileEntry.suites.values()) {
+        if (s.line) {
+          store.setLineEntry(filePath, s.line, {
+            suiteId: s.suiteId,
+            fileId: filePath,
+          });
+        }
+      }
     }
   }
 

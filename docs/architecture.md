@@ -47,12 +47,12 @@ Dependency direction: `vscode-extension` → `core` → `runner`. The runner has
 | VS Code zone | What lives there |
 |---|---|
 | Activity Bar | Beaker icon — opens the Explorer view |
-| Primary sidebar | **Explorer view** — file → suite → test tree, summary counts, search |
+| Primary sidebar | **Explorer view** — file → suite → test tree, summary counts, search; switches to **Timeline sidebar** (State / Watch / Call Stack) in timeline mode |
 | Panel › Output | **Raw output channel** — every Jest command + full stderr, unformatted ANSI |
-| Panel › Test Results | **Results view** — 3-column scoped view |
-| Editor gutter | Status icons (✓ / ✗ / ⟳ / ○) per test line |
-| Editor inline | Duration text after each test, colour-coded |
-| Editor CodeLens | `▶ Run`, `▷ Debug`, `◈ Results` above each block |
+| Panel › Test Results | **Results view** — 3-column scoped view in normal mode; **Timeline view** (bar + controls + console/errors) in timeline mode |
+| Editor gutter | Status icons (✓ / ✗ / ⟳ / ○) per test line; active-step highlight in timeline mode |
+| Editor inline | Duration text after each test (normal mode); variable ghost text at current step (timeline mode) |
+| Editor CodeLens | `▶ Run`, `▷ Debug`, `◈ Results`, `⏱ Timeline` above each block |
 | Status Bar | Live summary: `Live Tests: ✅ 12 passed` |
 
 ---
@@ -159,6 +159,48 @@ The deprecated aliases `JestJsonResult`, `JestFileResult`, `JestTestCaseResult`,
 
 ## Package: `vscode-extension`
 
+### Timeline Debugger
+
+A self-contained feature that runs alongside the existing session system. It replays a single test case step by step, showing what lines executed, what variables held at each step, and where things went wrong.
+
+**Activation:** `⏱ Timeline` CodeLens on `it`/`test` lines, or the per-row `⏱ Timeline` button in the Explorer sidebar. Both call `liveTestRunner.openTimelineDebugger(filePath, testFullName)`.
+
+**Architecture:**
+
+```
+IInstrumentedRunner (interface)
+  └── JestInstrumentedRunner
+        ├── Writes temp Jest config that adds traceTransform.js to the transform chain
+        ├── Sets TRACE_OUTPUT_FILE env var
+        ├── Spawns Jest via Executor (reused as-is)
+        └── Reads JSONL trace file → parseEvents() → TimelineStore
+
+traceTransform.js (CJS)
+  Injected into Jest's transform chain for the target file only.
+  Adds __trace.step(id, line, file, fn) before each statement
+  and __trace.var(id, name, value) after assignments.
+
+traceRuntime.js
+  Provides __trace.* — writes each event as a JSON line to TRACE_OUTPUT_FILE synchronously.
+
+TimelineStore
+  Held in extension host memory. Serialised (Maps → plain objects) before postMessage.
+  Contains: steps[], variables{stepId: VariableSnapshot[]}, logs{stepId: LogEntry[]}, errors[]
+
+PlaybackEngine (webview)
+  Pure JS class in results.html. Owns currentStepId, play/pause timer, next/prev/jumpTo.
+  On each step change, sends { type: 'step-changed' } to the extension host.
+
+TimelineDecorationManager
+  Dedicated TextEditorDecorationType (never touches DecorationManager.ts).
+  Highlights the active line; renders inline ghost text (variable values).
+  Registers a HoverProvider for variable history + [Add to Watch] / [Copy].
+```
+
+**Webview routing:** Both `ResultsView` and `ExplorerView` implement an internal JS router. On timeline activation, the extension sends `{ type: 'route', view: 'timeline' }` to `ResultsView` and `{ type: 'route', view: 'timelineSidebar' }` to `ExplorerView`. The router swaps view modules into `<div id="app">` without reloading the page.
+
+**Shared components:** `logPanel.js` and `errorPanel.js` are standalone JS modules used by both `resultsView.js` (normal mode) and `timelineView.js` (timeline mode). They accept a container element and a data payload, and render themselves with no view-specific knowledge.
+
 ### Entry point (`extension.ts`)
 
 Approximately 110 lines. Creates instances, registers VS Code commands and event handlers, hands control to `SessionManager`. Contains no business logic.
@@ -173,10 +215,17 @@ interface IResultObserver {
   onRunStart(filePath: string): void
   onFileResult(result: FileRunResult, store: ResultStore): void
   onSessionStop(): void
+
+  // Optional — discovery events (called by TestDiscoveryService)
+  onDiscoveryStarted?(total: number): void
+  onDiscoveryProgress?(file: unknown, discovered: number, total: number): void
+  onDiscoveryComplete?(): void
 }
 ```
 
-Registered observers: `ExplorerView`, `ResultsView`, `DecorationManager`.
+The discovery methods are optional so existing observers don't need to implement them. `TestDiscoveryService` checks for their presence before calling.
+
+Registered observers: `ExplorerView`, `ResultsView`, `DecorationManager`, `CodeLensProvider`.
 
 ### Data store
 
@@ -200,6 +249,39 @@ ResultStore
                                       └── failureMessages: string[]
 ```
 
+**`ExecutionTraceStore`** — derived indexes built from per-test JSONL trace files. The trace files on disk are the source of truth; these are fast-lookup caches rebuilt after each instrumented run.
+
+```
+ExecutionTraceStore
+  ├── traceIndex: Map<testId, string>
+  │     testId = full test name ("Suite > test") → absolute .jsonl path
+  │     Written to /tmp/ltr-traces/<sessionId>/<safeTestName>.jsonl
+  │     Used by: Timeline Debugger, future coverage overlay
+  │
+  ├── coverageIndex: Map<filePath, Set<lineNumber>>
+  │     Every source line executed by any test in the session.
+  │     Accumulates across runs — never resets mid-session.
+  │     Used by: session-wide gutter coverage decorations (planned)
+  │
+  └── sourceToTests: Map<sourceFilePath, SourceTestMapping>
+        {
+          [testFilePath]: {
+            [suiteName]: {
+              isSharedVars: boolean    // true → run whole suite when source changes
+              sharedVarNames: string[]
+              testCases: string[]      // full test names
+            }
+          }
+        }
+        Populated by SessionTraceRunner after each file run.
+        Used by SessionManager._runAffectedBySourceFile() for smart on-save reruns.
+```
+
+**Relationship between the stores:**
+- `ResultStore` answers "what happened" — pass/fail, output, failures
+- `ExecutionTraceStore` answers "what ran and where" — which lines executed, which tests cover which source files
+- The trace files are the ground truth; `ExecutionTraceStore` is derived. Clear both together on session reset.
+
 **`LineMap`** — inside `ResultStore`:
 
 ```
@@ -208,6 +290,11 @@ LineEntry: { testId, suiteId, fileId }   // identity only — never status or du
 ```
 
 `LineMap` stores identity only. `DecorationManager` always queries `ResultStore` for status and duration at decoration time — they are never duplicated into the map, so they are never stale.
+
+**LineMap lifecycle:**
+1. **Discovery** — `TestDiscoveryService._populateFile()` builds the initial map from AST line numbers. Gutter icons and CodeLens lenses are available immediately.
+2. **Run** — `JestAdapter._applyFileResult()` replaces the map for that file with Jest's authoritative `location.line` values. This is more accurate than AST line numbers (Jest accounts for comments, blank lines, etc.).
+3. **Session stop** — `clearAll()` wipes decoration state but the map is retained until the next run or discovery pass. Pending icons from discovery persist across session stop/start cycles.
 
 **`ScopedOutput`:**
 
@@ -228,11 +315,28 @@ interface OutputLine {
 
 **`SelectionState`** — tracks which row the user has selected in the results panel. Emits `scope-changed` messages when selection changes.
 
+### Static test discovery (`TestDiscoveryService`)
+
+Runs on extension activate — before the user clicks Start Testing.
+
+1. **`start(projectRoot, store, log, callbacks)`** — finds all test files via `vscode.workspace.findFiles`, then parses them in batches of 8 with a `setImmediate` yield between batches. This keeps the extension host responsive on large projects (500+ files, 3000+ tests).
+2. **Per-file** — reads source, runs `discoverTests()` (AST walker in `testDiscovery.js`), calls `store.fileDiscovered / suiteDiscovered / testDiscovered` (all no-op if the entry already exists — live results are never overwritten), rebuilds the `LineMap` for that file, and emits a serialised file object via `onFileDiscovered` callback.
+3. **`awaitDiscovery()`** — returns the internal `Promise`; `SessionManager.start()` awaits this so it never re-discovers files that are already populated.
+4. **`FileSystemWatcher`** — monitors `**/*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}`. New files appear immediately on create. On change/save the watcher skips files with status `'running'` (a run is already in progress for that file); for all other statuses it calls `store.removeFile()` and re-populates so newly added or renamed tests appear straight away without waiting for a run.
+
+**`testDiscovery.js`** (pure AST walker, no code injection):
+- Uses the project's own `@babel/parser` + `@babel/traverse` (lazy-loaded from the project root at first use)
+- Handles: `describe` / `it` / `test`, `.only` / `.skip`, `.each([...])(name, fn)` (curried call pattern), `.concurrent.*`, deep `MemberExpression` chains
+- Template literals: interleaves quasi text with `…` placeholders so interpolated names still appear in the tree (`"accepts valid severity …"`)
+- Returns `{ suites, rootTests }` with accurate `line` numbers for every node
+
 ### Session management (`SessionManager`)
 
-1. **Start Testing** — calls `discoverTests()`, runs warm-up (all files, up to 3 in parallel), enables on-save listener
-2. **On save** — debounced (default 300ms); classifies file as test or source; runs accordingly
+1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, runs them all (up to 3 in parallel), enables on-save listener
+2. **On save** — debounced (default 300ms); classifies file as test or source; for source files uses `_runAffectedBySourceFile` (trace-store driven with CoverageMap fallback)
 3. **Stop Testing** — kills child processes, clears decorations, disables on-save
+
+After each file run, `SessionTraceRunner` fires in the background (fire-and-forget): it re-runs the same file with the session trace transform, partitions the raw JSONL into per-test trace files, and updates all three `ExecutionTraceStore` indexes (`traceIndex`, `coverageIndex`, `sourceToTests`). Per-test console output from the trace run is applied back to `ResultStore` so the Results panel can show test-scoped logs.
 
 Concurrency is controlled by a `CONCURRENCY = 3` constant in `SessionManager`.
 
@@ -254,7 +358,7 @@ Adding a new framework = one file implementing `IFrameworkAdapter`. `SessionMana
 
 ### Editor decorations
 
-**`DecorationManager`** owns all `TextEditorDecorationType` instances. Applied to visible editors after each run and when an editor becomes active.
+**`DecorationManager`** owns all `TextEditorDecorationType` instances. Applied to visible editors after each run, after discovery, and when an editor becomes active.
 
 Gutter icons are SVG files in `resources/icons/`:
 
@@ -263,15 +367,17 @@ Gutter icons are SVG files in `resources/icons/`:
 | ✓ green | `passed.svg` | Test passed |
 | ✗ red | `failed.svg` | Test failed |
 | ⟳ amber | `running.svg` | Test running (SVG `animateTransform`) |
-| ○ grey | `pending.svg` | Not yet run |
+| ○ grey | `pending.svg` | Not yet run / discovered but not run |
 
 Inline duration text appears after each test line, colour-coded by configurable thresholds.
 
 Lifecycle:
-- Session starts → `registerCodeLensProvider` called, decorations applied to all visible editors
-- File result arrives → `LineMap` rebuilt, decorations refreshed for that file
+- Extension activates → `CodeLensProvider` registered; `TestDiscoveryService` starts
+- Discovery progresses → `DecorationManager.onDiscoveryProgress()` → `_refreshAll()` applies pending icons to visible editors; `CodeLensProvider.onDiscoveryProgress()` → `refresh()` surfaces `▶ Run` / `▷ Debug` lenses immediately
+- Discovery completes → same refresh path
+- File result arrives → `LineMap` rebuilt with Jest's authoritative `location.line`, decorations refreshed for that file
 - Editor becomes active → decorations applied from existing `LineMap`
-- Session stops → `decorationManager.dispose()` clears and destroys all decoration types
+- Session stops → `decorationManager.clearAll()` resets all icons (decoration *types* are kept alive so pending icons from discovery survive)
 
 **`CodeLensProvider`** scans files with a regex (no AST) to find `describe`, `it`, and `test` blocks:
 
@@ -284,7 +390,7 @@ Three lenses per block:
 - `▷ Debug` — launches Jest under debugger (`liveTestRunner.debugFromEditor`)
 - `◈ Results` — focuses the results panel (`liveTestRunner.focusResult`) — only on `it`/`test` lines with a known result
 
-CodeLens is session-guarded: the provider is only registered while a session is active. Disposing the registration removes all lenses immediately.
+`CodeLensProvider` is registered on extension **activate** (not on session start). It is always present — lenses appear as soon as discovery populates a `LineMap` entry for the file. Disposing the provider registration only happens on full extension deactivation.
 
 ### Views
 
@@ -336,8 +442,18 @@ Both views extend `BaseWebviewProvider`, which handles webview lifecycle, `postM
 | `rerun` | Webview → extension | User clicked a rerun button |
 | `open-file` | Webview → extension | User wants to open a file in the editor |
 | `ready` | Webview → extension | Webview signals it has initialised |
+| `route` | Extension → both | Switch view: `{ type: 'route', view: 'timeline' \| 'results' \| ... }` |
+| `timeline-loading` | Extension → ResultsView | Show spinner while instrumented run is in progress |
+| `timeline-ready` | Extension → both | Instrumented run complete; carries serialised `TimelineStore` |
+| `timeline-error` | Extension → ResultsView | Instrumented run failed |
+| `timeline-exited` | ResultsView → extension | User navigated away from timeline mode |
+| `step-changed` | ResultsView → extension | User stepped to a new step; carries `stepId`, `filePath`, `line` |
+| `step-update` | Extension → ExplorerView | Forward of step-changed to sync sidebar panels |
+| `timeline-rerun` | ExplorerView → extension | User clicked Re-run in the timeline sidebar |
 
-`scope-logs` and `scope-changed` are always sent as separate messages. Column 1 updates on every run. Columns 2 and 3 update on selection changes or when a run completes for the currently selected scope. Keeping them separate avoids unnecessary re-renders.
+`scope-logs` and `scope-changed` are always sent as separate messages.
+
+**Key design boundary:** playback state lives entirely in the `ResultsView` webview (`PlaybackEngine`). The extension host receives `step-changed` events and reacts (editor highlight, sidebar sync). The extension host never drives playback. Column 1 updates on every run. Columns 2 and 3 update on selection changes or when a run completes for the currently selected scope. Keeping them separate avoids unnecessary re-renders.
 
 ### Duration colour thresholds
 
@@ -356,9 +472,26 @@ Threshold logic lives in `src/utils/duration.ts` (TypeScript) and is mirrored in
 ## Full execution flow
 
 ```
+Extension activates
+  → extension.ts
+      → CodeLensProvider registered (always active)
+      → TestDiscoveryService.start()
+          → vscode.workspace.findFiles → test file paths
+          → Batches of 8 files, setImmediate yield between batches:
+              → Read source → discoverTests() (AST) → store.fileDiscovered/suiteDiscovered/testDiscovered
+              → LineMap built from AST line numbers
+              → onFileDiscovered callback → IResultObserver.onDiscoveryProgress()
+                  → ExplorerView.postMessage(discovery-progress) → test tree builds live
+                  → ResultsView.postMessage(discovery-progress) → test list builds live
+                  → DecorationManager._refreshAll()   → pending ○ icons appear
+                  → CodeLensProvider.refresh()         → ▶ Run / ▷ Debug lenses appear
+          → onComplete → IResultObserver.onDiscoveryComplete()
+              → Start Testing re-enabled
+
 User clicks "Start Testing"
   → extension.ts → SessionManager.start()
-      → JestAdapter.discoverTests()            jest --listTests → file paths
+      → TestDiscoveryService.awaitDiscovery()  (no-op — already done)
+      → file paths read from ResultStore
       → SessionManager._runFiles(all)          warm-up run
           → For each file (up to 3 in parallel):
               → JestRunner
@@ -366,7 +499,7 @@ User clicks "Start Testing"
                   → FrameworkAdapter           resolves binary + config
                   → Executor                   spawns jest --json --outputFile=<tmp>
                   → ResultParser               parses JSON → RunResult
-              → JestAdapter._applyFileResult() writes to ResultStore + LineMap
+              → JestAdapter._applyFileResult() writes to ResultStore + LineMap (replaces AST line numbers with Jest's authoritative location.line)
               → IResultObserver.notify() → ExplorerView, ResultsView, DecorationManager
       → CoverageMap built from coverage data
       → On-save listener enabled
@@ -375,8 +508,14 @@ User saves a file
   → SessionManager.onSave(filePath)            debounced 300ms
       → isTestFile(filePath)?
           → Yes: run that file
-          → No:  CoverageMap lookup → fallback jest --findRelatedTests
-                 run affected files
+          → No:  _runAffectedBySourceFile(filePath)
+                   ExecutionTraceStore.getAffectedTestFiles(filePath)?
+                     → Has trace data:
+                         isSharedVars:true  → run whole test file
+                         isSharedVars:false → run individual test cases
+                                              (combined --testNamePattern, one Jest process per file)
+                     → No trace data:
+                         CoverageMap lookup → fallback jest --findRelatedTests → run whole files
 
 User clicks "▶ Run" CodeLens
   → liveTestRunner.rerunFromEditor(filePath, lineNumber)
@@ -398,11 +537,10 @@ User clicks "◈ Results" CodeLens
       → selectionState.select() → scope-changed broadcast → row highlighted in both webviews
 
 User stops session
-  → decorationManager.dispose()       gutter icons cleared, decoration types destroyed
-  → codeLensDisposable.dispose()      CodeLens removed from all editors
-  → resultStore.clearAllLineMaps()    LineMap wiped
+  → decorationManager.clearAll()      gutter icons cleared; decoration types kept alive
   → child processes killed
   → on-save listener disabled
+  (CodeLensProvider remains registered; LineMaps and pending icons are preserved)
 ```
 
 ---
@@ -420,8 +558,17 @@ User stops session
 | `scope-logs` separate from `scope-changed` | Different lifecycles — avoids unnecessary re-renders in columns 2 and 3 |
 | Output stored at run scope, never back-filled | Jest JSON only reports console at file level; correct attribution, no fabricated data |
 | Custom webview, not VS Code Test Explorer API | Avoids a Mac-specific API bug; full cross-platform control |
-| Regex line scan for CodeLens (no AST) | Simpler, no parse overhead; sufficient for `describe`/`it`/`test` detection |
+| Regex line scan for CodeLens (no AST) | Simpler, no parse overhead; sufficient for line-level `describe`/`it`/`test` detection |
+| Static AST discovery on activate, not on Start Testing | Full test tree (with line numbers, pending icons, and CodeLens) appears immediately on project open. Start Testing only needs to run tests — it skips discovery entirely by awaiting the already-resolved `awaitDiscovery()` promise. |
+| Batch + `setImmediate` yield for discovery | Parsing 500+ files in one synchronous pass would block the extension host. Batches of 8 with a yield between each keep the UI responsive while the tree builds progressively. |
+| Watcher re-discovers on any non-running status | Skipping only `'running'` files (not `pending`/`passed`/`failed`) means newly added tests appear in the tree on the next save, without waiting for a full re-run. |
+| `fileStarted` preserves pre-discovered structure | When a file is already in the store (from discovery), `fileStarted` reuses the existing suite/test tree and only marks entries `running`. The tree never disappears or resets mid-run. |
+| `DecorationManager.clearAll()` instead of `dispose()` on session stop | Decoration types stay alive so pending icons from discovery survive session stop/start cycles. `dispose()` is reserved for full extension deactivation. |
 | `LineMap` stores identity only | Status and duration always read from `ResultStore` — single source of truth, never stale |
 | `extension.ts` ≤ 110 lines | Wires instances and registers commands only; no business logic |
 | `CONCURRENCY = 3` for parallel runs | Balances throughput against system load; configurable constant |
 | Session guard on all background behavior | No surprise background work; resource usage is predictable |
+| `step-changed` boundary: playback in webview, editor in host | `PlaybackEngine` drives the timeline UI inside the webview sandbox. The extension host only reacts to `step-changed` — it never drives playback. This keeps the playback loop fast (no round-trips) and the editor highlight authoritative. |
+| `TimelineDecorationManager` separate from `DecorationManager` | Timeline decorations (whole-line highlight, ghost text, hover) never touch pass/fail gutter icons. Two completely independent `TextEditorDecorationType` sets. |
+| Webview router instead of new tabs | Both `ResultsView` and `ExplorerView` implement an internal JS router. Timeline mode is a view swap inside an existing panel — no new VS Code panel is registered. |
+| `logPanel.js` / `errorPanel.js` as shared components | Same rendering code in both normal and timeline modes. Extracted from `resultsView.js` and consumed by `timelineView.js` without modification. |
