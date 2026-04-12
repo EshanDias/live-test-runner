@@ -42,17 +42,17 @@ jobs:
           npx vsce publish -p "$VSCE_PAT" \
             --no-dependencies \
             --skip-duplicate \
-            --baseContentUrl https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension
+            --baseContentUrl "https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension"
         working-directory: packages/vscode-extension
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-      
+
       - name: Publish (Open VSX)
         run: |
           npx ovsx publish -p "$OVSX_PAT" \
             --no-dependencies \
             --skip-duplicate \
-            --baseContentUrl https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension
+            --baseContentUrl "https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension"
         working-directory: packages/vscode-extension
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
