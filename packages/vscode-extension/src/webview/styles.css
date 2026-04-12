@@ -132,6 +132,21 @@ body {
   50% { opacity: 0.3; }
 }
 
+.tracing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vscode-progressBar-background);
+  animation: tracing-spin 1.4s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes tracing-spin {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
 /* ── List toolbar ──────────────────────────────────────────────────────────── */
 .list-toolbar {
   display: flex;
@@ -346,6 +361,8 @@ body {
 
 .row-folder-collapse,
 .row-folder-expand,
+.row-collapse,
+.row-expand,
 .row-rerun,
 .row-open,
 .row-copy,
@@ -359,22 +376,29 @@ body {
   font-size: 11px;
   padding: 1px 4px;
   line-height: 1.4;
-  opacity: 0;
-  pointer-events: none;
+  /* Hidden by default — use display:none so they don't create empty space */
+  display: none;
 }
 
 .test-row:hover .row-folder-collapse,
 .test-row:hover .row-folder-expand,
+.test-row:hover .row-collapse,
+.test-row:hover .row-expand,
 .test-row:hover .row-rerun,
 .test-row:hover .row-open,
 .test-row:hover .row-copy,
 .test-row:hover .row-timeline {
-  opacity: 1;
-  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
 }
+
+/* On hover: hide duration so buttons use that space */
+.test-row:hover .row-duration { display: none; }
 
 .row-folder-collapse:hover,
 .row-folder-expand:hover,
+.row-collapse:hover,
+.row-expand:hover,
 .row-rerun:hover,
 .row-open:hover,
 .row-copy:hover,
@@ -588,9 +612,41 @@ body {
 }
 
 .log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
   padding: 1px 0;
+  color: var(--vscode-foreground);
+}
+
+.log-line-text {
+  flex: 1;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.log-line-copy {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 3px;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.log-line:hover .log-line-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.log-line-copy:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2));
+  border-color: var(--vscode-toolbar-hoverOutline, transparent);
   color: var(--vscode-foreground);
 }
 
@@ -624,6 +680,40 @@ body {
   color: var(--vscode-charts-red, #f44336);
 }
 
+.error-message-wrapper {
+  position: relative;
+  margin-bottom: 4px;
+}
+
+.error-message-wrapper:last-child { margin-bottom: 0; }
+
+.error-copy-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 4px;
+  line-height: 1.6;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.error-message-wrapper:hover .error-copy-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.error-copy-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2));
+  border-color: var(--vscode-toolbar-hoverOutline, transparent);
+  color: var(--vscode-foreground);
+}
+
 .error-message {
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--vscode-editor-font-size, 12px);
@@ -639,4 +729,31 @@ body {
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
+}
+
+/* Tracing progress banner */
+.tracing-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  flex-shrink: 0;
+}
+
+.tracing-banner-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vscode-progressBar-background);
+  animation: tracing-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes tracing-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
 }

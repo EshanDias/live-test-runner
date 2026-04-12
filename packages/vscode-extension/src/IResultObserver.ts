@@ -19,7 +19,7 @@ export interface RunFinishedPayload {
   passed: number;
   failed: number;
   sessionActive: boolean;
-  totalDuration: number;
+  totalDuration: number | undefined;
 }
 
 /**
@@ -33,6 +33,7 @@ export interface IResultObserver extends vscode.Disposable {
   onFilesRerunning(fileIds: string[], suiteId?: string, testId?: string): void;
   onFileResult(filePath: string): void;
   onRunFinished(payload: RunFinishedPayload): void;
+  onTracingProgress?(completed: number, total: number, done?: boolean): void;
 
   // ── Static discovery events (optional — no-op on implementors that don't need them) ──
 

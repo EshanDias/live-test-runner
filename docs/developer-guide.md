@@ -106,11 +106,18 @@ The separation means the runner can be used independently of VS Code.
 
 Adding a framework = one class in each package. `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
 
-### Single source of truth — `ResultStore`
+### Two stores, one source of truth per concern
 
-`ResultStore` is the only place where test results live. `LineMap` (inside `ResultStore`) stores only identity references — `{ testId, suiteId, fileId }` — never status or duration.
+**`ResultStore`** is the only place where test results live (pass/fail, output, failures). `LineMap` inside it stores only identity references — `{ testId, suiteId, fileId }` — never status or duration. `DecorationManager` always queries `ResultStore` at decoration time; decorations are never stale.
 
-`DecorationManager` always queries `ResultStore` for status and duration at decoration time. This means decorations are never stale; there is no synchronisation problem.
+**`ExecutionTraceStore`** holds three derived indexes built from per-test JSONL trace files:
+- `traceIndex` — testId → path to `.jsonl` trace file
+- `coverageIndex` — source file → set of line numbers executed (session-accumulated)
+- `sourceToTests` — source file → test file → suite → `{ isSharedVars, testCases[] }`
+
+The trace files on disk are the ground truth. The store entries are caches. Rule: **indexes are always rebuilt from trace files, never written independently.** Clear both together on session reset.
+
+`SessionTraceRunner` populates `ExecutionTraceStore` after each file run (fire-and-forget background pass). `SessionManager` reads from it in `_runAffectedBySourceFile` when a source file is saved. Neither store writes to the other.
 
 ### Output attribution
 
@@ -128,9 +135,16 @@ Use `spawn`, never `exec`. `exec` has a buffer limit that silently truncates lar
 
 All on-save behavior and CodeLens buttons are session-guarded. Nothing runs in the background. Users explicitly start and stop sessions. This keeps resource usage predictable and prevents surprise background work.
 
-### Debounce on save
+### Smart on-save reruns
 
-On-save runs are debounced at 300ms (configurable). Rapid successive saves (e.g. auto-format on save + manual save) only trigger one run.
+On-save runs are debounced at 300ms (configurable). Rapid successive saves only trigger one run.
+
+When a **source file** (non-test) is saved, the rerun scope is determined by `_runAffectedBySourceFile`:
+
+1. **Trace data available** (after at least one full run): `ExecutionTraceStore.sourceToTests` is queried. For each affected test file, suites with `isSharedVars: false` rerun only their specific affected test cases (single Jest process with a combined `--testNamePattern`). Suites with `isSharedVars: true` rerun the whole file.
+2. **No trace data yet**: falls back to `CoverageMap` / `jest --findRelatedTests` and reruns whole test files (same as pre-trace behaviour).
+
+When a **test file** is saved, the whole file always reruns — discovery handles any structural changes.
 
 ### Static test discovery
 

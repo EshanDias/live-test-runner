@@ -329,8 +329,10 @@ class TestListLayout {
            data-file="${esc(file.fileId)}">
         ${toggle}
         <span class="row-status">${icon}</span>
-        <span class="row-name" title="${esc(file.name)}">${esc(displayName)}</span>
+        <span class="row-name" title="${esc(displayName)}">${esc(displayName)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
+        <button class="row-collapse" title="Collapse" data-collapse-id="${esc(file.fileId)}">⊟</button>
+        <button class="row-expand"   title="Expand"   data-expand-id="${esc(file.fileId)}">⊞</button>
         <button class="row-copy"  title="Copy file name"  data-copy-name="${esc(displayName)}">⎘</button>
         <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}">↗</button>
         <button class="row-rerun" title="Rerun file"      data-rerun="file" data-file="${esc(file.fileId)}">▶</button>
@@ -364,8 +366,10 @@ class TestListLayout {
            data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}">
         ${toggle}
         <span class="row-status">${icon}</span>
-        <span class="row-name">${esc(suite.name)}</span>
+        <span class="row-name" title="${esc(suite.name)}">${esc(suite.name)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
+        <button class="row-collapse" title="Collapse" data-collapse-id="${esc(suite.suiteId)}">⊟</button>
+        <button class="row-expand"   title="Expand"   data-expand-id="${esc(suite.suiteId)}">⊞</button>
         <button class="row-copy"  title="Copy suite name" data-copy-name="${esc(suite.name)}">⎘</button>
         <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}"${suite.line != null ? ` data-open-line="${suite.line}"` : ''}>↗</button>
         <button class="row-rerun" title="Rerun suite"     data-rerun="suite"
@@ -390,7 +394,7 @@ class TestListLayout {
            data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}" data-test="${esc(test.testId)}">
         <span class="row-toggle"></span>
         <span class="row-status">${icon}</span>
-        <span class="row-name">${esc(test.name)}</span>
+        <span class="row-name" title="${esc(test.name)}">${esc(test.name)}</span>
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
         <button class="row-copy"  title="Copy test name"  data-copy-name="${esc(test.name)}">⎘</button>
         <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}"${test.line != null ? ` data-open-line="${test.line}"` : ''}>↗</button>
@@ -410,6 +414,8 @@ class TestListLayout {
           e.target.closest('.row-open') ||
           e.target.closest('.row-copy') ||
           e.target.closest('.row-timeline') ||
+          e.target.closest('.row-collapse') ||
+          e.target.closest('.row-expand') ||
           e.target.closest('.row-folder-collapse') ||
           e.target.closest('.row-folder-expand')
         )
@@ -549,6 +555,22 @@ class TestListLayout {
           this._render();
         });
       });
+
+    this.container.querySelectorAll('.row-collapse, .row-expand').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.collapseId ?? btn.dataset.expandId;
+        const expand = btn.classList.contains('row-expand');
+        const childEl = this.container.querySelector(`[data-children="${CSS.escape(id)}"]`);
+        if (childEl) {
+          childEl.classList.toggle('expanded', expand);
+          const row = this.container.querySelector(`[data-id="${CSS.escape(id)}"]`);
+          row?.querySelector('.row-toggle')?.classList.toggle('expanded', expand);
+        }
+        if (expand) this.expanded.add(id);
+        else this.expanded.delete(id);
+      });
+    });
   }
 
   /** Expand or collapse all folder and file IDs within a given folder subtree. */

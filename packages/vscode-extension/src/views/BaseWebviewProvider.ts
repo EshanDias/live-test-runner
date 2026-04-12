@@ -166,6 +166,10 @@ export abstract class BaseWebviewProvider
     this.postMessage({ type: 'run-finished', ...payload });
   }
 
+  onTracingProgress(completed: number, total: number, done?: boolean): void {
+    this.postMessage({ type: 'tracing-progress', completed, total, done: done ?? false });
+  }
+
   onDiscoveryStarted(total: number): void {
     this._isDiscovering  = true;
     this._discoveryTotal = total;
@@ -175,8 +179,8 @@ export abstract class BaseWebviewProvider
 
   onDiscoveryProgress(file: unknown, discovered: number, total: number): void {
     this._discoveryDone = discovered;
-    const testTotal = this.store.getSummary().total;
-    this.postMessage({ type: 'discovery-progress', file, discovered, total, testTotal });
+    const summary = this.store.getSummary();
+    this.postMessage({ type: 'discovery-progress', file, discovered, fileTotal: total, total: summary.total, passed: summary.passed, failed: summary.failed });
   }
 
   onDiscoveryComplete(): void {

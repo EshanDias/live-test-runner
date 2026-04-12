@@ -4,7 +4,7 @@ import * as path from 'path';
 import { ResultStore } from '../store/ResultStore';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { discoverTests } = require('../timeline/instrumentation/testDiscovery.js') as {
+const { discoverTests } = require('./instrumentation/testDiscovery.js') as {
   discoverTests: (
     source: string,
     filePath: string,

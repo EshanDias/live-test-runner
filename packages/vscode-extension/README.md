@@ -84,7 +84,7 @@ Every `it()` and `test()` line gets:
 
 ---
 
-### Test Timeline Debugger
+### Test Timeline Debugger - Coming Soon
 
 Step through a single test case like a time-travel debugger — no breakpoints, no `debugger` statements, no terminal.
 
@@ -173,6 +173,7 @@ Control when duration badges switch from green → amber → red. Separate thres
 |-------|---------|
 | `Live Tests: Off` | No session active |
 | `Live Tests: Discovering…` | Finding test files |
+| `Live Tests: Tracing... N/M` | Collecting all traces |
 | `Live Tests: Running… N/M` | Run in progress |
 | `Live Tests: ✅ N passed` | All tests passed |
 | `Live Tests: ❌ N failed, M passed` | Failures present |
@@ -192,8 +193,8 @@ Control when duration badges switch from green → amber → red. Separate thres
 ## Known Limitations
 
 - Rerunning an individual test uses `--testNamePattern`, which may match multiple tests if names overlap
-- Logs only get capured at file level.
-- Live run only works on test file for the moment.
+- Smart on-save reruns use test-level granularity only after the first full session run completes (the background trace pass needs to finish for at least one file). Before that, whole test files are rerun as a fallback.
+- Console logs are attributed to individual tests after the background trace pass completes for that file. Before the trace finishes, logs are only available at file level.
 
 ---
 ## About

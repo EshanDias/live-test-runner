@@ -17,6 +17,8 @@ export interface ExecutorCommand {
   args: string[];
   /** Working directory (project root). */
   cwd: string;
+  /** Extra environment variables merged into the child process env. */
+  extraEnv?: Record<string, string>;
 }
 
 /**
@@ -33,9 +35,11 @@ export interface ExecutorCommand {
 export class Executor {
   private child?: ChildProcess;
   private logger: (msg: string) => void;
+  private readonly tmpDir: string;
 
-  constructor(logger: (msg: string) => void = () => {}) {
+  constructor(logger: (msg: string) => void = () => {}, tmpDir?: string) {
     this.logger = logger;
+    this.tmpDir = tmpDir ?? os.tmpdir();
   }
 
   setLogger(logger: (msg: string) => void): void {
@@ -60,7 +64,7 @@ export class Executor {
     }
 
     const tmpFile = path.join(
-      os.tmpdir(),
+      this.tmpDir,
       `ltr-jest-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
 
@@ -70,7 +74,7 @@ export class Executor {
     this.logger(`> ${binary} ${cmdArgs.join(' ')}`);
     this.kill();
 
-    const result = await this.spawn(binary, cmdArgs, command.cwd);
+    const result = await this.spawn(binary, cmdArgs, command.cwd, command.extraEnv);
 
     // Prefer the output file; fall back to captured stdout for CRA edge cases.
     let jsonOutput = '';
@@ -104,7 +108,7 @@ export class Executor {
     this.logger(`> ${binary} ${cmdArgs.join(' ')}`);
     this.kill();
 
-    return this.spawn(binary, cmdArgs, command.cwd);
+    return this.spawn(binary, cmdArgs, command.cwd, command.extraEnv);
   }
 
   kill(): void {
@@ -131,7 +135,7 @@ export class Executor {
     return { binary, cmdArgs: args };
   }
 
-  private spawn(binary: string, cmdArgs: string[], cwd: string): Promise<ExecutionResult> {
+  private spawn(binary: string, cmdArgs: string[], cwd: string, extraEnv?: Record<string, string>): Promise<ExecutionResult> {
     return new Promise((resolve) => {
       const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(binary);
 
@@ -143,6 +147,7 @@ export class Executor {
           NODE_ENV: 'test',
           BABEL_ENV: 'test',
           CI: 'true',
+          ...extraEnv,
         },
       });
 

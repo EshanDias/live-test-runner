@@ -37,6 +37,10 @@
             title="Live Test Runner is active — tests will re-run automatically when you save a file">
       <span class="watch-dot"></span>live
     </span>
+    <span   class="watch-indicator tracing-indicator hidden" id="tracingIndicator"
+            title="Collecting execution traces for smart on-save reruns">
+      <span class="tracing-dot"></span><span class="tracing-label">tracing</span>
+    </span>
   </div>
 
   <!-- Run progress -->
@@ -152,11 +156,10 @@
     sPassed.textContent = passed != null ? passed : '—';
     sFailed.textContent = failed != null ? failed : '—';
     if (durationMs != null) {
-      sDuration.textContent = `Completed in ${durationLabel(durationMs)}`;
+      sDuration.textContent = `Last full run: ${durationLabel(durationMs)}`;
       sDuration.style.display = '';
-    } else {
-      sDuration.style.display = 'none';
     }
+    // If durationMs is undefined (partial rerun), leave the label as-is
   }
 
   function _updateListCount() {
@@ -320,6 +323,7 @@
           _q('runProgress').classList.add('visible');
           applySessionState('running');
           updateSummary(null, null, null, null);
+          _q('summaryDuration').style.display = 'none';
           if (msg.files) { _list.setData(msg.files); _updateListCount(); }
           break;
 
@@ -328,6 +332,9 @@
           applySessionState(msg.sessionActive !== false ? 'watching' : 'idle');
           updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
           if (msg.failed > 0 && !_isPartialRerun) { _list.scrollToFirstFailure(); }
+          // Reset to true so the next save-triggered rerun (which never sends
+          // run-started) is treated as partial and won't scroll to first failure.
+          _isPartialRerun = true;
           break;
 
         case 'files-rerunning':
@@ -357,7 +364,7 @@
             : '';
           _q('runProgress').innerHTML = `Running — ${_completedFiles} / ${_totalFiles} files • ${durationLabel(el2)}${fl2}`;
           _list.updateFile(msg.file);
-          updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
+          updateSummary(msg.total, msg.passed, msg.failed, null);
           break;
         }
 
@@ -371,9 +378,9 @@
           break;
 
         case 'discovery-progress':
-          _applyDiscoveryProgress(msg.discovered, msg.total);
+          _applyDiscoveryProgress(msg.discovered, msg.fileTotal);
           if (msg.file) { _list.updateFile(msg.file); _updateListCount(); }
-          if (msg.testTotal != null) { updateSummary(msg.testTotal, null, null, null); }
+          updateSummary(msg.total, msg.passed, msg.failed, null);
           break;
 
         case 'discovery-complete':
@@ -384,6 +391,21 @@
           const fill = _q('coverageFill');
           if (fill) { fill.style.width = `${msg.percent}%`; }
           break;
+
+        case 'tracing-progress': {
+          const watchEl   = _q('watchIndicator');
+          const tracingEl = _q('tracingIndicator');
+          if (!watchEl || !tracingEl) { break; }
+          if (msg.done) {
+            tracingEl.classList.add('hidden');
+            if (_sessionState === 'watching') { watchEl.classList.remove('hidden'); }
+          } else {
+            watchEl.classList.add('hidden');
+            tracingEl.querySelector('.tracing-label').textContent = `tracing ${msg.completed}/${msg.total}`;
+            tracingEl.classList.remove('hidden');
+          }
+          break;
+        }
       }
     },
   };

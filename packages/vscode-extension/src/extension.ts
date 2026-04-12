@@ -10,7 +10,11 @@
  * SessionManager and JestAdapter respectively.
  */
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import { LTR_TMP_DIR } from './constants';
 import { ResultStore } from './store/ResultStore';
+import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
 import { JestAdapter } from './framework/JestAdapter';
 import { CodeLensProvider } from './editor/CodeLensProvider';
@@ -25,6 +29,20 @@ import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
 
 export function activate(context: vscode.ExtensionContext) {
+  // Ensure the shared temp directory exists as early as possible.
+  // All runners write temp files here; creating it once avoids any race where
+  // a runner tries to write before the directory exists.
+  fs.mkdirSync(LTR_TMP_DIR, { recursive: true });
+
+  // Clean up stale traces-* directories left over from previous sessions.
+  try {
+    for (const entry of fs.readdirSync(LTR_TMP_DIR)) {
+      if (entry.startsWith('traces-')) {
+        fs.rmSync(path.join(LTR_TMP_DIR, entry), { recursive: true, force: true });
+      }
+    }
+  } catch { /* ignore */ }
+
   // ── Infrastructure ─────────────────────────────────────────────────────────
   const outputChannel  = vscode.window.createOutputChannel('Live Test Runner', 'ansi');
   const statusBar      = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -148,6 +166,15 @@ export function activate(context: vscode.ExtensionContext) {
     );
   };
 
+  // ── Execution trace store + trace directory ────────────────────────────────
+  const traceStore = new ExecutionTraceStore();
+  const traceDir   = path.join(LTR_TMP_DIR, `traces-${Date.now()}`);
+
+  function cleanTraceDir() {
+    try { fs.rmSync(traceDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    traceStore.clearAll();
+  }
+
   // ── Session manager ────────────────────────────────────────────────────────
   const discovery = new TestDiscoveryService();
 
@@ -169,23 +196,27 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   const session = new SessionManager(
-    context,
     new JestAdapter(),
     store,
+    traceStore,
     selection,
     resultsView,
     observers,
     outputChannel,
     statusBar,
     discovery,
+    traceDir,
   );
+
+  // Expose cleanup so deactivate() can delete trace files on extension shutdown
+  _cleanTraceDir = cleanTraceDir;
 
   // ── Commands ───────────────────────────────────────────────────────────────
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ExplorerView.viewId, explorerView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerWebviewViewProvider(ResultsView.viewId, resultsView, { webviewOptions: { retainContextWhenHidden: true } }),
 
-    vscode.commands.registerCommand('liveTestRunner.startTesting',       () => session.start()),
+    vscode.commands.registerCommand('liveTestRunner.startTesting',       () => { cleanTraceDir(); return session.start(); }),
     vscode.commands.registerCommand('liveTestRunner.stopTesting',        () => session.stop(decorationManager)),
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot',  () => session.selectProjectRoot()),
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
@@ -210,6 +241,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.copyValue', (value: string) => {
       void vscode.env.clipboard.writeText(value);
     }),
+    vscode.commands.registerCommand('liveTestRunner.dumpTraceStore', () => {
+      outputChannel.appendLine(traceStore.dump());
+      outputChannel.show();
+    }),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) { decorationManager.applyToEditor(editor); }
@@ -224,7 +259,10 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-export function deactivate() {}
+let _cleanTraceDir: (() => void) | undefined;
+export function deactivate() {
+  _cleanTraceDir?.();
+}
 
 // ── Editor commands ───────────────────────────────────────────────────────────
 // These live here (not in SessionManager) because they need both the store
