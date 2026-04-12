@@ -37,7 +37,7 @@ const config = {
   format: 'cjs',
   platform: 'node',
   target: 'node16',
-  sourcemap: true,
+  sourcemap: minify ? false : true,
   minify,
 };
 
