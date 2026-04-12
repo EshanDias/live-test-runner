@@ -262,6 +262,10 @@ export class JestAdapter implements IFrameworkAdapter {
 
     store.fileResult(filePath, fileStatus, fileResult.duration);
 
+    // Remove AST-discovery placeholders for template-literal test names (name === '…' or name inicludes '"…"')
+    // now that Jest has run and emitted the real expanded names.
+    store.removePendingPlaceholders(filePath);
+
     // Populate LineMap (only clear on full-file run to preserve other tests' entries)
     if (!opts?.suiteId && !opts?.testId) {
       store.clearLineMap(filePath);
@@ -286,7 +290,10 @@ export class JestAdapter implements IFrameworkAdapter {
     if (fileEntry) {
       for (const s of fileEntry.suites.values()) {
         if (s.line) {
-          store.setLineEntry(filePath, s.line, { suiteId: s.suiteId, fileId: filePath });
+          store.setLineEntry(filePath, s.line, {
+            suiteId: s.suiteId,
+            fileId: filePath,
+          });
         }
       }
     }

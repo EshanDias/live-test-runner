@@ -11,7 +11,7 @@
 
 /** Location index only — status and duration are read live from the result tree. */
 export type LineEntry = {
-  testId?: string;  // absent for describe-level entries
+  testId?: string; // absent for describe-level entries
   suiteId: string;
   fileId: string;
 };
@@ -141,7 +141,9 @@ export class ResultStore {
    * No-ops if the file is already present so live results are never overwritten.
    */
   fileDiscovered(fileId: string, filePath: string, name: string): void {
-    if (this.files.has(fileId)) { return; }
+    if (this.files.has(fileId)) {
+      return;
+    }
     this.files.set(fileId, {
       fileId,
       filePath,
@@ -156,9 +158,16 @@ export class ResultStore {
    * Pre-populate a suite entry from static discovery.
    * No-ops if the suite is already present.
    */
-  suiteDiscovered(fileId: string, suiteId: string, name: string, line?: number): void {
+  suiteDiscovered(
+    fileId: string,
+    suiteId: string,
+    name: string,
+    line?: number,
+  ): void {
     const file = this.files.get(fileId);
-    if (!file || file.suites.has(suiteId)) { return; }
+    if (!file || file.suites.has(suiteId)) {
+      return;
+    }
     file.suites.set(suiteId, {
       suiteId,
       name,
@@ -183,7 +192,9 @@ export class ResultStore {
     line?: number,
   ): void {
     const suite = this.files.get(fileId)?.suites.get(suiteId);
-    if (!suite || suite.tests.has(testId)) { return; }
+    if (!suite || suite.tests.has(testId)) {
+      return;
+    }
     suite.tests.set(testId, {
       testId,
       name,
@@ -193,6 +204,23 @@ export class ResultStore {
       output: { lines: [], capturedAt: null },
       failureMessages: [],
     });
+  }
+
+  removePendingPlaceholders(fileId: string): void {
+    const file = this.files.get(fileId);
+    if (!file) {
+      return;
+    }
+    for (const suite of file.suites.values()) {
+      for (const [testId, test] of suite.tests) {
+        if (
+          (test.status === 'pending' || test.status === 'running') &&
+          (test.name === '…' || test.name.includes('…'))
+        ) {
+          suite.tests.delete(testId);
+        }
+      }
+    }
   }
 
   fileStarted(fileId: string, filePath: string, name: string): void {

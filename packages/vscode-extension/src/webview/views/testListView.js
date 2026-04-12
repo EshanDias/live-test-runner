@@ -371,9 +371,9 @@
           break;
 
         case 'discovery-progress':
-          _applyDiscoveryProgress(msg.discovered, msg.total);
+          _applyDiscoveryProgress(msg.discovered, msg.fileTotal);
           if (msg.file) { _list.updateFile(msg.file); _updateListCount(); }
-          if (msg.testTotal != null) { updateSummary(msg.testTotal, null, null, null); }
+          updateSummary(msg.total, msg.passed, msg.failed, null);
           break;
 
         case 'discovery-complete':
