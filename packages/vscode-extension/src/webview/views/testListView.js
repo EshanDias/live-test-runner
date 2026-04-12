@@ -328,6 +328,9 @@
           applySessionState(msg.sessionActive !== false ? 'watching' : 'idle');
           updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
           if (msg.failed > 0 && !_isPartialRerun) { _list.scrollToFirstFailure(); }
+          // Reset to true so the next save-triggered rerun (which never sends
+          // run-started) is treated as partial and won't scroll to first failure.
+          _isPartialRerun = true;
           break;
 
         case 'files-rerunning':

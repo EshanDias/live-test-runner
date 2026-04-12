@@ -249,6 +249,39 @@ ResultStore
                                       └── failureMessages: string[]
 ```
 
+**`ExecutionTraceStore`** — derived indexes built from per-test JSONL trace files. The trace files on disk are the source of truth; these are fast-lookup caches rebuilt after each instrumented run.
+
+```
+ExecutionTraceStore
+  ├── traceIndex: Map<testId, string>
+  │     testId = full test name ("Suite > test") → absolute .jsonl path
+  │     Written to /tmp/ltr-traces/<sessionId>/<safeTestName>.jsonl
+  │     Used by: Timeline Debugger, future coverage overlay
+  │
+  ├── coverageIndex: Map<filePath, Set<lineNumber>>
+  │     Every source line executed by any test in the session.
+  │     Accumulates across runs — never resets mid-session.
+  │     Used by: session-wide gutter coverage decorations (planned)
+  │
+  └── sourceToTests: Map<sourceFilePath, SourceTestMapping>
+        {
+          [testFilePath]: {
+            [suiteName]: {
+              isSharedVars: boolean    // true → run whole suite when source changes
+              sharedVarNames: string[]
+              testCases: string[]      // full test names
+            }
+          }
+        }
+        Populated by SessionTraceRunner after each file run.
+        Used by SessionManager._runAffectedBySourceFile() for smart on-save reruns.
+```
+
+**Relationship between the stores:**
+- `ResultStore` answers "what happened" — pass/fail, output, failures
+- `ExecutionTraceStore` answers "what ran and where" — which lines executed, which tests cover which source files
+- The trace files are the ground truth; `ExecutionTraceStore` is derived. Clear both together on session reset.
+
 **`LineMap`** — inside `ResultStore`:
 
 ```
@@ -300,8 +333,10 @@ Runs on extension activate — before the user clicks Start Testing.
 ### Session management (`SessionManager`)
 
 1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, runs them all (up to 3 in parallel), enables on-save listener
-2. **On save** — debounced (default 300ms); classifies file as test or source; runs accordingly
+2. **On save** — debounced (default 300ms); classifies file as test or source; for source files uses `_runAffectedBySourceFile` (trace-store driven with CoverageMap fallback)
 3. **Stop Testing** — kills child processes, clears decorations, disables on-save
+
+After each file run, `SessionTraceRunner` fires in the background (fire-and-forget): it re-runs the same file with the session trace transform, partitions the raw JSONL into per-test trace files, and updates all three `ExecutionTraceStore` indexes (`traceIndex`, `coverageIndex`, `sourceToTests`). Per-test console output from the trace run is applied back to `ResultStore` so the Results panel can show test-scoped logs.
 
 Concurrency is controlled by a `CONCURRENCY = 3` constant in `SessionManager`.
 
@@ -473,8 +508,14 @@ User saves a file
   → SessionManager.onSave(filePath)            debounced 300ms
       → isTestFile(filePath)?
           → Yes: run that file
-          → No:  CoverageMap lookup → fallback jest --findRelatedTests
-                 run affected files
+          → No:  _runAffectedBySourceFile(filePath)
+                   ExecutionTraceStore.getAffectedTestFiles(filePath)?
+                     → Has trace data:
+                         isSharedVars:true  → run whole test file
+                         isSharedVars:false → run individual test cases
+                                              (combined --testNamePattern, one Jest process per file)
+                     → No trace data:
+                         CoverageMap lookup → fallback jest --findRelatedTests → run whole files
 
 User clicks "▶ Run" CodeLens
   → liveTestRunner.rerunFromEditor(filePath, lineNumber)

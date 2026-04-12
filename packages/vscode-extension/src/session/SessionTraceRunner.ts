@@ -269,9 +269,75 @@ module.exports = {
       }
     }
 
+    // Build and update sourceToTests mapping.
+    // For every source file touched by this test file's trace, record which
+    // suite + test cases covered it. This drives smart on-save reruns: when
+    // a source file changes, we know exactly which tests need to rerun.
+    //
+    // isSharedVars defaults to false — AST-based shared-var detection is a
+    // future enhancement. For now every affected test can be run individually.
+    const sourceMap: {
+      [suite: string]: { isSharedVars: boolean; sharedVarNames: string[]; testCases: string[] };
+    } = {};
+
+    for (const [testName, steps] of byTest) {
+      const suiteName = _extractSuiteName(testName);
+      for (const step of steps) {
+        if (step.type === 'STEP' && step.file && step.file !== testFilePath) {
+          if (!sourceMap[suiteName]) {
+            sourceMap[suiteName] = { isSharedVars: false, sharedVarNames: [], testCases: [] };
+          }
+          if (!sourceMap[suiteName].testCases.includes(testName)) {
+            sourceMap[suiteName].testCases.push(testName);
+          }
+        }
+      }
+    }
+
+    // For each unique source file that appeared in any step, update the store.
+    const touchedSourceFiles = new Set<string>();
+    for (const steps of byTest.values()) {
+      for (const step of steps) {
+        if (step.type === 'STEP' && step.file && step.file !== testFilePath) {
+          touchedSourceFiles.add(step.file);
+        }
+      }
+    }
+
+    for (const sourceFile of touchedSourceFiles) {
+      const existing = traceStore.getSourceMapping(sourceFile) ?? {};
+      const existingForFile = existing[testFilePath] ?? {};
+
+      // Merge suites: accumulate test cases instead of replacing the whole entry
+      const mergedForFile = { ...existingForFile };
+      for (const [suiteName, suiteInfo] of Object.entries(sourceMap)) {
+        if (mergedForFile[suiteName]) {
+          const existingCases = mergedForFile[suiteName].testCases;
+          const newCases = suiteInfo.testCases.filter((t) => !existingCases.includes(t));
+          mergedForFile[suiteName] = {
+            ...mergedForFile[suiteName],
+            testCases: [...existingCases, ...newCases],
+          };
+        } else {
+          mergedForFile[suiteName] = suiteInfo;
+        }
+      }
+
+      traceStore.setSourceMapping(sourceFile, {
+        ...existing,
+        [testFilePath]: mergedForFile,
+      });
+    }
+
     emit(`[SessionTrace] Traced ${byTest.size} test(s) from ${path.basename(testFilePath)}`);
     return testLogs;
   }
+}
+
+/** Extract the suite name from a full test name ("Suite > nested > test" → "Suite > nested") */
+function _extractSuiteName(fullTestName: string): string {
+  const lastSep = fullTestName.lastIndexOf(' > ');
+  return lastSep !== -1 ? fullTestName.slice(0, lastSep) : fullTestName;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

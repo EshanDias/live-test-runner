@@ -182,6 +182,9 @@ export class JestAdapter implements IFrameworkAdapter {
       if (opts?.suiteId && suiteId !== opts.suiteId) {
         continue;
       }
+      if (opts?.fullNames && !opts.fullNames.has(tc.fullName ?? tc.title)) {
+        continue;
+      }
       if (!store.getSuite(filePath, suiteId)) {
         store.suiteStarted(filePath, suiteId, suiteKey);
       }
@@ -228,12 +231,17 @@ export class JestAdapter implements IFrameworkAdapter {
     if (file) {
       for (const suite of file.suites.values()) {
         const tests = Array.from(suite.tests.values());
-        const suiteStatus = tests.some((t) => t.status === 'failed')
+        const suiteStatus: TestStatus = tests.some((t) => t.status === 'failed')
           ? 'failed'
-          : ('passed' as TestStatus);
+          : tests.every((t) => t.status === 'skipped')
+            ? 'skipped'
+            : tests.every((t) => t.status === 'pending')
+              ? 'pending'
+              : 'passed';
         const suiteDur = tests.reduce((acc, t) => acc + (t.duration ?? 0), 0);
         store.suiteResult(filePath, suite.suiteId, suiteStatus, suiteDur);
-        fileStatus = suiteStatus === 'failed' ? 'failed' : fileStatus;
+        if (suiteStatus === 'failed') { fileStatus = 'failed'; }
+        else if (suiteStatus !== 'passed' && fileStatus !== 'failed') { fileStatus = suiteStatus; }
       }
     }
 

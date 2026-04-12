@@ -93,9 +93,11 @@ src/
 │                                   onDiscoveryStarted/Progress/Complete (optional)
 ├── store/
 │   ├── ResultStore.ts              In-memory File→Suite→Test tree + LineMap + ScopedOutput
+│   ├── ExecutionTraceStore.ts      Trace indexes: traceIndex, coverageIndex, sourceToTests
 │   └── SelectionState.ts           Tracks selected row; broadcasts scope-changed
 ├── session/
 │   ├── SessionManager.ts           Session lifecycle, run pool (CONCURRENCY=3), on-save, rerun
+│   ├── SessionTraceRunner.ts       Runs instrumented trace for each file; populates ExecutionTraceStore
 │   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
@@ -163,10 +165,19 @@ src/
 
 **On save (debounced 300ms):**
 ```
-if (isTestFile(savedFile))  → run that file
-else
-  affected = CoverageMap.get(savedFile) ?? jest --findRelatedTests savedFile
-  run affected files
+if (isTestFile(savedFile))
+  → run that file
+
+else (source file saved)
+  → _runAffectedBySourceFile(savedFile)
+      1. Check ExecutionTraceStore.getAffectedTestFiles(savedFile)
+         If trace data exists:
+           For each affected test file:
+             suites with isSharedVars:true  → run whole file
+             suites with isSharedVars:false → run individual test cases
+                                              (single Jest invocation with combined --testNamePattern)
+         If no trace data yet (first run not complete):
+           → fall back to CoverageMap / jest --findRelatedTests (whole files)
 ```
 
 **Stop:** kill child processes, `clearAll()` on decorations (types kept alive), `resultStore.clearAllLineMaps()`, disable on-save.
@@ -177,7 +188,7 @@ else
 
 ### `ResultStore`
 
-Single source of truth. All views read from here.
+Single source of truth for all test results. All views read from here.
 
 ```
 ResultStore
@@ -196,6 +207,41 @@ ResultStore
                       ├── output: ScopedOutput
                       └── failureMessages: string[]
 ```
+
+### `ExecutionTraceStore`
+
+Derived indexes built from per-test JSONL trace files written by `SessionTraceRunner` after each instrumented run. These are read-only caches — the trace files on disk are the source of truth. All three indexes are rebuilt from traces and cleared together on session reset.
+
+```
+ExecutionTraceStore
+  ├── traceIndex: Map<testId, string>
+  │     testId (full test name, e.g. "Suite > test name") → absolute path to .jsonl trace file
+  │     One file per test case written to /tmp/ltr-traces/<sessionId>/<safeTestName>.jsonl
+  │
+  ├── coverageIndex: Map<filePath, Set<lineNumber>>
+  │     Every source file line executed by any test in the session.
+  │     Accumulates across all runs — never decrements mid-session.
+  │     Used for session-wide gutter coverage decorations.
+  │
+  └── sourceToTests: Map<sourceFilePath, SourceTestMapping>
+        SourceTestMapping: {
+          [testFilePath: string]: {
+            [suiteName: string]: {
+              isSharedVars: boolean    // true → must run whole suite on rerun
+              sharedVarNames: string[] // variable names that are shared (for display)
+              testCases: string[]      // full test names in this suite
+            }
+          }
+        }
+        Populated by SessionTraceRunner after each file run.
+        Used by SessionManager._runAffectedBySourceFile() to scope on-save reruns
+        to the specific test cases that actually executed code from the changed file.
+```
+
+**Relationship between the stores:**
+- `ResultStore` answers "what happened" — pass/fail, output, failure messages
+- `ExecutionTraceStore` answers "what ran and where" — which source lines executed, which tests cover which files
+- Neither store writes to the other; `SessionManager` coordinates both
 
 ### `ScopedOutput`
 
@@ -441,6 +487,8 @@ All in `packages/vscode-extension/package.json`:
 | Shared error renderer | `packages/vscode-extension/src/webview/components/errorPanel.js` |
 | Run lifecycle | `packages/vscode-extension/src/session/SessionManager.ts` |
 | All result data | `packages/vscode-extension/src/store/ResultStore.ts` |
+| Execution trace indexes | `packages/vscode-extension/src/store/ExecutionTraceStore.ts` |
+| Per-file trace runner | `packages/vscode-extension/src/session/SessionTraceRunner.ts` |
 | Selection tracking | `packages/vscode-extension/src/store/SelectionState.ts` |
 | Jest-specific logic | `packages/vscode-extension/src/framework/JestAdapter.ts` |
 | Gutter + inline | `packages/vscode-extension/src/editor/DecorationManager.ts` |

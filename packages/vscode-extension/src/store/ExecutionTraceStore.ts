@@ -112,6 +112,41 @@ export class ExecutionTraceStore {
     return this._sourceToTests.get(sourceFilePath)?.[testFilePath] ?? {};
   }
 
+  // ── Debug ──────────────────────────────────────────────────────────────────
+
+  dump(): string {
+    const lines: string[] = [];
+
+    lines.push('=== ExecutionTraceStore dump ===\n');
+
+    lines.push(`--- traceIndex (${this._traceIndex.size} entries) ---`);
+    for (const [testId, filePath] of this._traceIndex) {
+      lines.push(`  "${testId}" → ${filePath}`);
+    }
+
+    lines.push(`\n--- coverageIndex (${this._coverageIndex.size} source files) ---`);
+    for (const [filePath, lines_] of this._coverageIndex) {
+      lines.push(`  ${filePath}: ${lines_.size} lines covered`);
+    }
+
+    lines.push(`\n--- sourceToTests (${this._sourceToTests.size} source files) ---`);
+    for (const [sourceFile, mapping] of this._sourceToTests) {
+      lines.push(`  [source] ${sourceFile}`);
+      for (const [testFile, suites] of Object.entries(mapping)) {
+        lines.push(`    [test file] ${testFile}`);
+        for (const [suiteName, info] of Object.entries(suites)) {
+          lines.push(`      [suite] "${suiteName}" isSharedVars=${info.isSharedVars}`);
+          for (const tc of info.testCases) {
+            lines.push(`        - "${tc}"`);
+          }
+        }
+      }
+    }
+
+    lines.push('\n=== end dump ===');
+    return lines.join('\n');
+  }
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   /**

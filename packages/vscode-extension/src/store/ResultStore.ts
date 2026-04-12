@@ -400,6 +400,32 @@ export class ResultStore {
     return { total, passed, failed, running, totalDuration };
   }
 
+  /**
+   * Resets all file/suite/test statuses back to 'pending' and clears outputs
+   * and durations. Preserves the tree structure (files, suites, tests and their
+   * names / line numbers) so the UI can show the full tree immediately after reset.
+   * Called by SessionManager.start() so a fresh run shows pending icons instead
+   * of stale pass/fail results.
+   */
+  resetToPending(): void {
+    for (const file of this.files.values()) {
+      file.status = 'pending';
+      file.duration = undefined;
+      file.output = { lines: [], capturedAt: null };
+      for (const suite of file.suites.values()) {
+        suite.status = 'pending';
+        suite.duration = undefined;
+        suite.output = { lines: [], capturedAt: null };
+        for (const test of suite.tests.values()) {
+          test.status = 'pending';
+          test.duration = undefined;
+          test.failureMessages = [];
+          test.output = { lines: [], capturedAt: null };
+        }
+      }
+    }
+  }
+
   /** Serialises the full tree to a plain object safe to post to a webview. */
   toJSON(): object {
     const files = Array.from(this.files.values()).map((f) => ({

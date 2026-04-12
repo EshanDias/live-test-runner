@@ -241,6 +241,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.copyValue', (value: string) => {
       void vscode.env.clipboard.writeText(value);
     }),
+    vscode.commands.registerCommand('liveTestRunner.dumpTraceStore', () => {
+      outputChannel.appendLine(traceStore.dump());
+      outputChannel.show();
+    }),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) { decorationManager.applyToEditor(editor); }
