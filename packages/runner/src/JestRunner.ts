@@ -380,13 +380,19 @@ export class JestRunner implements TestRunner {
   }
 
   /**
-   * Normalise a file path for use as a --runTestsByPath argument.
-   * On Windows, Node's path APIs return backslash-separated paths but Jest
-   * normalises its internal file list to forward slashes before regex matching.
-   * Passing a backslash path causes the pattern not to match → "No files found".
+   * Normalise a file path for use as a --runTestsByPath / --findRelatedTests argument.
+   * On Windows two issues can cause "No files found":
+   *  1. Backslash separators — Jest normalises its internal file list to forward
+   *     slashes before regex-matching paths, so backslash paths don't match.
+   *  2. Lowercase drive letter — VS Code can return `c:/...` but Jest (or the
+   *     underlying fs) may have recorded the path with an uppercase drive letter
+   *     `C:/...`, causing the match to fail on case-sensitive comparisons.
+   * Both transforms are no-ops on macOS / Linux.
    */
   private normalisePath(filePath: string): string {
-    return filePath.replace(/\\/g, '/');
+    return filePath
+      .replace(/\\/g, '/')
+      .replace(/^([a-z]):\//, (_, d: string) => `${d.toUpperCase()}:/`);
   }
 
   private discoverFromFilesystem(projectRoot: string): string[] {
