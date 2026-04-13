@@ -63,6 +63,22 @@ class TestListLayout {
       this.expanded.add(suite.suiteId);
     }
     this._expandFolderPaths(fileData.name);
+
+    // Targeted DOM update: only replace the wrapper for this one file instead
+    // of re-rendering the entire list. Falls back to a full render when the
+    // file isn't in the DOM yet or when folder-view is active.
+    if (!this.folderView && !this.query && !this.failuresOnly) {
+      const wrapper = this.container.querySelector(
+        `[data-file-wrapper="${CSS.escape(fileData.fileId)}"]`,
+      );
+      if (wrapper) {
+        const savedScroll = this.container.scrollTop;
+        wrapper.innerHTML = this._renderFile(fileData);
+        this._attachListenersIn(wrapper);
+        this.container.scrollTop = savedScroll;
+        return;
+      }
+    }
     this._render();
   }
 
@@ -219,7 +235,7 @@ class TestListLayout {
       this.container.innerHTML = this._renderFolderTree(tree);
     } else {
       this.container.innerHTML = filtered
-        .map((f) => this._renderFile(f))
+        .map((f) => `<div data-file-wrapper="${esc(f.fileId)}">${this._renderFile(f)}</div>`)
         .join('');
     }
     this._attachListeners();
@@ -405,8 +421,14 @@ class TestListLayout {
       </div>`;
   }
 
-  _attachListeners() {
-    this.container.querySelectorAll('.test-row').forEach((row) => {
+  /** Attach listeners scoped to a specific subtree (e.g. a single file wrapper). */
+  _attachListenersIn(root) {
+    this._attachListeners(root);
+  }
+
+  _attachListeners(root) {
+    const el = root ?? this.container;
+    el.querySelectorAll('.test-row').forEach((row) => {
       row.addEventListener('click', (e) => {
         // Ignore action button clicks — they have their own handlers
         if (
@@ -422,13 +444,13 @@ class TestListLayout {
           return;
 
         const id = row.dataset.id;
-        const scope = row.dataset.scope;
+        const rowScope = row.dataset.scope;
         const fileId = row.dataset.file;
         const suiteId = row.dataset.suite;
         const testId = row.dataset.test;
 
         // Folder rows toggle on any click (whole row acts as toggle)
-        if (scope === 'folder') {
+        if (rowScope === 'folder') {
           const childEl = this.container.querySelector(
             `[data-children="${CSS.escape(id)}"]`,
           );
@@ -445,7 +467,7 @@ class TestListLayout {
         }
 
         // For file/suite rows, toggle expand/collapse ONLY when the arrow is clicked
-        if (scope !== 'test' && e.target.closest('.row-toggle')) {
+        if (rowScope !== 'test' && e.target.closest('.row-toggle')) {
           const childEl = this.container.querySelector(
             `[data-children="${CSS.escape(id)}"]`,
           );
@@ -469,7 +491,7 @@ class TestListLayout {
 
         this.vscode.postMessage({
           type: 'select',
-          scope,
+          scope: rowScope,
           fileId,
           suiteId,
           testId,
@@ -477,11 +499,11 @@ class TestListLayout {
       });
     });
 
-    this.container.querySelectorAll('.row-rerun').forEach((btn) => {
+    el.querySelectorAll('.row-rerun').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const {
-          rerun: scope,
+          rerun: rerunScope,
           file: fileId,
           suite: suiteId,
           test: testId,
@@ -489,7 +511,7 @@ class TestListLayout {
         } = btn.dataset;
         this.vscode.postMessage({
           type: 'rerun',
-          scope,
+          scope: rerunScope,
           fileId,
           suiteId,
           testId,
@@ -498,7 +520,7 @@ class TestListLayout {
       });
     });
 
-    this.container.querySelectorAll('.row-open').forEach((btn) => {
+    el.querySelectorAll('.row-open').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const line =
@@ -513,7 +535,7 @@ class TestListLayout {
       });
     });
 
-    this.container.querySelectorAll('.row-copy').forEach((btn) => {
+    el.querySelectorAll('.row-copy').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const name = btn.dataset.copyName;
@@ -532,7 +554,7 @@ class TestListLayout {
       });
     });
 
-    this.container.querySelectorAll('.row-timeline').forEach((btn) => {
+    el.querySelectorAll('.row-timeline').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         // TODO: re-enable when timeline debugger is ready
@@ -544,7 +566,7 @@ class TestListLayout {
       });
     });
 
-    this.container
+    el
       .querySelectorAll('.row-folder-collapse, .row-folder-expand')
       .forEach((btn) => {
         btn.addEventListener('click', (e) => {
@@ -556,7 +578,7 @@ class TestListLayout {
         });
       });
 
-    this.container.querySelectorAll('.row-collapse, .row-expand').forEach((btn) => {
+    el.querySelectorAll('.row-collapse, .row-expand').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const id = btn.dataset.collapseId ?? btn.dataset.expandId;

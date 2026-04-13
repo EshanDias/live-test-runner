@@ -131,7 +131,7 @@ export class JestRunner implements TestRunner {
       ...this.baseArgs(),
       '--json',
       '--runTestsByPath',
-      filePath,
+      this.normalisePath(filePath),
     ];
 
     const { passed, jsonOutput, stderr } =
@@ -164,7 +164,7 @@ export class JestRunner implements TestRunner {
         ...this.baseArgs(),
         '--json',
         '--runTestsByPath',
-        ...filePaths,
+        ...filePaths.map((p) => this.normalisePath(p)),
       ];
       const { passed, jsonOutput, stderr } =
         await this.executor.runWithJsonCapture({
@@ -185,7 +185,7 @@ export class JestRunner implements TestRunner {
         ...this.baseArgs(),
         '--json',
         '--runTestsByPath',
-        ...chunk,
+        ...chunk.map((p) => this.normalisePath(p)),
       ];
       const { passed, jsonOutput, stderr } =
         await this.executor.runWithJsonCapture({
@@ -216,7 +216,7 @@ export class JestRunner implements TestRunner {
       ...this.baseArgs(),
       '--json',
       '--runTestsByPath',
-      filePath,
+      this.normalisePath(filePath),
       '--testNamePattern',
       isTestSuite ? `^${testFullName}` : `^${testFullName}$`,
     ];
@@ -244,7 +244,7 @@ export class JestRunner implements TestRunner {
       ...this.baseArgs(),
       '--json',
       '--findRelatedTests',
-      filePath,
+      this.normalisePath(filePath),
     ];
 
     const { passed, jsonOutput, stderr } =
@@ -377,6 +377,22 @@ export class JestRunner implements TestRunner {
       stderr.includes('Unknown option') ||
       stderr.includes('https://jestjs.io/docs/configuration')
     );
+  }
+
+  /**
+   * Normalise a file path for use as a --runTestsByPath / --findRelatedTests argument.
+   * On Windows two issues can cause "No files found":
+   *  1. Backslash separators — Jest normalises its internal file list to forward
+   *     slashes before regex-matching paths, so backslash paths don't match.
+   *  2. Lowercase drive letter — VS Code can return `c:/...` but Jest (or the
+   *     underlying fs) may have recorded the path with an uppercase drive letter
+   *     `C:/...`, causing the match to fail on case-sensitive comparisons.
+   * Both transforms are no-ops on macOS / Linux.
+   */
+  private normalisePath(filePath: string): string {
+    return filePath
+      .replace(/\\/g, '/')
+      .replace(/^([a-z]):\//, (_, d: string) => `${d.toUpperCase()}:/`);
   }
 
   private discoverFromFilesystem(projectRoot: string): string[] {
