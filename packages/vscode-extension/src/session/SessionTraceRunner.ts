@@ -162,7 +162,7 @@ module.exports = {
           '--forceExit',
           '--no-bail',
           '--runTestsByPath',
-          filePath,
+          filePath.replace(/\\/g, '/'),
           '--config',
           tempConfigPath,
           '--cacheDirectory',
