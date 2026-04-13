@@ -403,22 +403,112 @@ export class ResultStore {
     this._bubbleUpStatus(nodeId);
   }
 
-  removePendingPlaceholders(fileId: string): void {
-    // Collect node IDs to remove
-    const toRemove: string[] = [];
+  /**
+   * Sweeps the node tree for the file after a run completes.
+   * If Jest found and executed tests (`hadTestCases` = true), any test node STILL
+   * in 'running' state is an orphan (e.g. a placeholder for a dynamic test, or
+   * a test that was deleted from disk but remained in the AST). We remove these.
+   * We then recursively sweep any resulting empty suites to clear boilerplate.
+   *
+   * If `hadTestCases` is false (e.g. catastrophic syntax error or zero regex matches),
+   * we preserve the tree so the user doesn't lose all their tests, and simply downgrade
+   * 'running' back to 'pending'.
+   */
+  cleanupStaleNodes(fileId: string, hadTestCases: boolean): void {
+    if (!hadTestCases) {
+      for (const node of this.nodes.values()) {
+        if (node.fileId === fileId && node.status === 'running') {
+          // If the file executed zero tests, preserve the UI tree.
+          node.status = 'pending';
+        }
+      }
+      // Re-evaluate the file itself so it doesn't get stuck running
+      this._recalculateFileStatus(fileId);
+      return;
+    }
+
+    const testsToRemove: string[] = [];
     for (const [nodeId, node] of this.nodes) {
-      if (
-        node.fileId === fileId &&
-        node.type === 'test' &&
-        (node.status === 'pending' || node.status === 'running') &&
-        (node.name === '…' || node.name.includes('…') || node.name.includes('%'))
-      ) {
-        toRemove.push(nodeId);
+      // ONLY sweep leaf test nodes. Sweeping a running suite would also wipe out
+      // its 'passed' or 'failed' children!
+      if (node.fileId === fileId && node.type === 'test' && node.status === 'running') {
+        testsToRemove.push(nodeId);
       }
     }
-    for (const nodeId of toRemove) {
+
+    // Track parents so we can bubble up after removals
+    const parentsToUpdate = new Set<string>();
+
+    for (const nodeId of testsToRemove) {
+      const parentId = this.nodes.get(nodeId)?.parentId;
+      if (parentId) {
+        parentsToUpdate.add(parentId);
+      }
       this._removeNode(nodeId);
     }
+
+    // After removing stuck orphans, re-evaluate parents
+    for (const parentId of parentsToUpdate) {
+      this._recalculateSuiteAndBubbleUp(parentId);
+    }
+
+    // Now remove ANY suite in the file that has 0 children (iterating until clear).
+    // This perfectly cleans up AST placeholder suites (like describe.each)
+    // whose placeholder tests were just removed above, without touching suites that ran.
+    let sweeping = true;
+    while (sweeping) {
+      sweeping = false;
+      const suitesToRemove: string[] = [];
+      for (const [nodeId, node] of this.nodes) {
+        if (node.fileId === fileId && node.type === 'suite' && node.children.length === 0) {
+          suitesToRemove.push(nodeId);
+        }
+      }
+      if (suitesToRemove.length > 0) {
+        sweeping = true;
+        const suiteParentsToUpdate = new Set<string>();
+        for (const nodeId of suitesToRemove) {
+           const parentId = this.nodes.get(nodeId)?.parentId;
+           if (parentId) suiteParentsToUpdate.add(parentId);
+           this._removeNode(nodeId);
+        }
+        for (const parentId of suiteParentsToUpdate) {
+           this._recalculateSuiteAndBubbleUp(parentId);
+        }
+      }
+    }
+    
+    // Also re-evaluate the file itself in case root nodes were removed
+    this._recalculateFileStatus(fileId);
+  }
+
+  private _recalculateFileStatus(fileId: string): void {
+    const file = this.files.get(fileId);
+    if (!file) return;
+
+    // If there are no root nodes left, rely on the global file status
+    // which JestAdapter previously set directly in store.fileResult().
+    // We only bubble UP if there ARE root nodes.
+    if (file.rootNodeIds.length === 0) {
+      // Don't overwrite the explicit 'passed'/'failed' from fileResult
+      if (file.status === 'running') {
+        file.status = 'pending';
+      }
+      return;
+    }
+
+    const rootStatuses = file.rootNodeIds.map(
+      (id) => this.nodes.get(id)?.status ?? 'pending',
+    );
+    file.status = rootStatuses.includes('failed')
+      ? 'failed'
+      : rootStatuses.includes('running')
+        ? 'running'
+        : rootStatuses.every((s) => s === 'passed')
+          ? 'passed'
+          : rootStatuses.every((s) => s === 'skipped')
+            ? 'skipped'
+            : 'pending';
   }
 
   // ── Scoped output setters ──────────────────────────────────────────────────
@@ -591,47 +681,39 @@ export class ResultStore {
   }
 
   private _bubbleUpStatus(nodeId: string): void {
-    let current = this.nodes.get(nodeId);
-    while (current?.parentId) {
-      const parent = this.nodes.get(current.parentId);
-      if (!parent) break;
-      const childStatuses = parent.children.map(
-        (id) => this.nodes.get(id)?.status ?? 'pending',
-      );
-      parent.status = childStatuses.includes('failed')
-        ? 'failed'
-        : childStatuses.includes('running')
-          ? 'running'
-          : childStatuses.every((s) => s === 'passed')
-            ? 'passed'
-            : childStatuses.every((s) => s === 'skipped')
-              ? 'skipped'
-              : 'pending';
-      parent.duration = parent.children.reduce(
-        (sum, id) => sum + (this.nodes.get(id)?.duration ?? 0),
-        0,
-      );
-      current = parent;
-    }
-    // Update file status from root nodes
-    if (current) {
-      const file = this.files.get(current.fileId);
-      if (file) {
-        const rootStatuses = file.rootNodeIds.map(
+    const node = this.nodes.get(nodeId);
+    if (!node || !node.parentId) return;
+    this._recalculateSuiteAndBubbleUp(node.parentId);
+  }
+
+  /** Recalculates the status of a specific suite, then bubbles up to its parents. */
+  private _recalculateSuiteAndBubbleUp(suiteId: string): void {
+    let current = this.nodes.get(suiteId);
+    while (current) {
+      if (current.type === 'suite') {
+        const childStatuses = current.children.map(
           (id) => this.nodes.get(id)?.status ?? 'pending',
         );
-        file.status = rootStatuses.includes('failed')
+        current.status = childStatuses.includes('failed')
           ? 'failed'
-          : rootStatuses.includes('running')
+          : childStatuses.includes('running')
             ? 'running'
-            : rootStatuses.every((s) => s === 'passed')
+            : childStatuses.every((s) => s === 'passed')
               ? 'passed'
-              : 'pending';
-        file.duration = file.rootNodeIds.reduce(
+              : childStatuses.every((s) => s === 'skipped')
+                ? 'skipped'
+                : 'pending';
+        current.duration = current.children.reduce(
           (sum, id) => sum + (this.nodes.get(id)?.duration ?? 0),
           0,
         );
       }
+      current = current.parentId ? this.nodes.get(current.parentId) : undefined;
+    }
+    // Update file status from root nodes
+    const file = this.files.get(this.nodes.get(suiteId)?.fileId ?? '');
+    if (file) {
+      this._recalculateFileStatus(file.fileId);
     }
   }
 

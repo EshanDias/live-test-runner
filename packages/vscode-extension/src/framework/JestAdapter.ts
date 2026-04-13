@@ -289,9 +289,12 @@ export class JestAdapter implements IFrameworkAdapter {
       fileResult.status === 'passed' ? 'passed' : 'failed';
     store.fileResult(filePath, fileLevelStatus, fileResult.duration);
 
-    // Remove AST-discovery placeholders for template-literal test names
-    // now that Jest has run and emitted the real expanded names.
-    store.removePendingPlaceholders(filePath);
+    // Remove any nodes that are STILL in the 'running' state.
+    // If the file actually executed tests, any stuck 'running' nodes are orphans
+    // (either AST placeholders or deleted tests) so we remove them.
+    // If it crashed entirely (0 test cases), we'll downgrade them to 'pending'.
+    const hadTestCases = fileResult.testCases.length > 0;
+    store.cleanupStaleNodes(filePath, hadTestCases);
 
     // Populate LineMap (only clear on full-file run to preserve other tests' entries)
     if (!opts?.nodeId) {
