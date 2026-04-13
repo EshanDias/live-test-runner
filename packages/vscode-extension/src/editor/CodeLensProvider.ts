@@ -1,100 +1,78 @@
 import * as vscode from 'vscode';
 import { ResultStore } from '../store/ResultStore';
-import {
-  IResultObserver,
-  RunStartedPayload,
-  RunFinishedPayload,
-} from '../IResultObserver';
 
-const BLOCK_PATTERN = /^\s*(describe|it|test)\s*[\.(]/;
-const SUITE_PATTERN = /^\s*describe\s*[\.(]/;
-
-export class CodeLensProvider
-  implements vscode.CodeLensProvider, IResultObserver
-{
-  private _onDidChange = new vscode.EventEmitter<void>();
+/**
+ * CodeLensProvider — shows inline Run / Debug / Results actions for
+ * every test and suite in the active editor.
+ *
+ * Uses the same LineMap as DecorationManager. Each line entry maps to a
+ * node in the ResultStore's flat node pool.
+ */
+export class CodeLensProvider implements vscode.CodeLensProvider {
+  private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this._onDidChange.event;
 
-  constructor(private readonly _store: ResultStore) {}
-
-  // ── IResultObserver ────────────────────────────────────────────────────────
-
-  onSessionStarted(_payload?: RunStartedPayload): void {
-    this.refresh();
-  }
-  onSessionStopped(): void {
-    this.refresh();
-  }
-  onRunStarted(_payload: RunStartedPayload): void {}
-  onFilesRerunning(_fileIds: string[]): void {}
-  onFileResult(_filePath: string): void { this.refresh(); }
-  onRunFinished(_payload: RunFinishedPayload): void {}
-  onDiscoveryProgress(_file: unknown, _discovered: number, _total: number): void { this.refresh(); }
-  onDiscoveryComplete(): void { this.refresh(); }
-  dispose(): void {
-    this._onDidChange.dispose();
-  }
-
-  // ── CodeLensProvider ───────────────────────────────────────────────────────
+  constructor(private readonly store: ResultStore) {}
 
   refresh(): void {
     this._onDidChange.fire();
   }
 
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    const lineMap = this.store.getLineMap(document.uri.fsPath);
+    if (lineMap.size === 0) {
+      return [];
+    }
+
     const lenses: vscode.CodeLens[] = [];
     const filePath = document.uri.fsPath;
-    const lineMap = this._store.getLineMap(filePath);
 
-    for (let i = 0; i < document.lineCount; i++) {
-      const text = document.lineAt(i).text;
-      if (!BLOCK_PATTERN.test(text)) {
+    for (const [line, entry] of lineMap) {
+      const range = new vscode.Range(line - 1, 0, line - 1, 0);
+      const node = this.store.getNode(entry.nodeId);
+      if (!node) {
         continue;
       }
 
-      const lineNumber = i + 1;
-      const isSuite = SUITE_PATTERN.test(text);
-      const entry = lineMap.get(lineNumber);
-      const range = new vscode.Range(i, 0, i, 0);
-
+      // ▶ Run
       lenses.push(
         new vscode.CodeLens(range, {
           title: '▶ Run',
-          command: 'liveTestRunner.rerunFromEditor',
-          arguments: [filePath, lineNumber],
+          command: 'liveTestRunner.rerunScope',
+          arguments: [
+            {
+              scope: node.type,
+              fileId: entry.fileId,
+              nodeId: entry.nodeId,
+              fullName: node.fullName,
+            },
+          ],
         }),
       );
 
+      // ▷ Debug
       lenses.push(
         new vscode.CodeLens(range, {
           title: '▷ Debug',
           command: 'liveTestRunner.debugFromEditor',
-          arguments: [filePath, lineNumber],
+          arguments: [filePath, node.fullName],
         }),
       );
 
-      if (!isSuite && entry) {
-        lenses.push(
-          new vscode.CodeLens(range, {
-            title: '◈ Results',
-            command: 'liveTestRunner.focusResult',
-            arguments: [entry.fileId, entry.suiteId, entry.testId],
-          }),
-        );
-
-        // TODO: re-enable when timeline debugger is ready
-        // const test = this._store.getTest(entry.fileId, entry.suiteId, entry.testId);
-        // if (test?.fullName) {
-        //   lenses.push(new vscode.CodeLens(range, {
-        //     title: '⏱ Timeline',
-        //     command: 'liveTestRunner.openTimelineDebugger',
-        //     arguments: [filePath, test.fullName],
-        //   }));
-        // }
-        lenses.push(new vscode.CodeLens(range, { title: '⏱ Timeline (coming soon)', command: '' }));
-      }
+      // ◈ Results — jump to this node in the results panel
+      lenses.push(
+        new vscode.CodeLens(range, {
+          title: '◈ Results',
+          command: 'liveTestRunner.focusResult',
+          arguments: [entry.fileId, entry.nodeId],
+        }),
+      );
     }
 
     return lenses;
+  }
+
+  dispose(): void {
+    this._onDidChange.dispose();
   }
 }

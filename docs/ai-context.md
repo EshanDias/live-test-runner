@@ -92,7 +92,7 @@ src/
 ├── IResultObserver.ts              Interface: onSessionStart/Stop, onRunStart, onFileResult,
 │                                   onDiscoveryStarted/Progress/Complete (optional)
 ├── store/
-│   ├── ResultStore.ts              In-memory File→Suite→Test tree + LineMap + ScopedOutput
+│   ├── ResultStore.ts              In-memory File→Node tree (recursive) + LineMap + ScopedOutput
 │   ├── ExecutionTraceStore.ts      Trace indexes: traceIndex, coverageIndex, sourceToTests
 │   └── SelectionState.ts           Tracks selected row; broadcasts scope-changed
 ├── session/
@@ -150,7 +150,7 @@ src/
 **On extension activate (before any user action):**
 1. `TestDiscoveryService.start()` → `vscode.workspace.findFiles` → list of test file paths
 2. `onDiscoveryStarted(total)` fired → sidebar shows `⟳ Discovering… 0 / N`, Start Testing disabled
-3. Files parsed in batches of 8 (event-loop yield between batches) — each file: read source → `@babel/parser` AST walk → extract suites + tests with 1-based line numbers → `store.fileDiscovered / suiteDiscovered / testDiscovered` → `onDiscoveryProgress(file, n, total)` → sidebar list and gutter icons update incrementally
+3. Files parsed in batches of 8 (event-loop yield between batches) — each file: read source → `@babel/parser` AST walk → extract suites + tests with 1-based line numbers → `store.nodeStarted` / `store.nodeResult` → `onDiscoveryProgress(file, n, total)` → sidebar list and gutter icons update incrementally
 4. `onDiscoveryComplete()` → Start Testing re-enabled
 5. `FileSystemWatcher` activated — new/changed test files are re-discovered immediately (guard: skip files with `running` status)
 
@@ -190,23 +190,32 @@ else (source file saved)
 
 Single source of truth for all test results. All views read from here.
 
+Uses a **flat node pool** (`Map<string, TestNode>`) with tree relationships managed via `parentId` and `children` arrays. Supports unlimited nesting depth.
+
 ```
 ResultStore
-  Map<filePath, FileResult>
-    FileResult
-      ├── status, duration
-      ├── output: ScopedOutput
-      └── suites: Map<suiteId, SuiteResult>
-            SuiteResult
-              ├── name, status, duration
-              ├── output: ScopedOutput
-              └── tests: Map<testId, TestResult>
-                    TestResult
-                      ├── name, fullName, status, duration
-                      ├── location?: { line, column }
-                      ├── output: ScopedOutput
-                      └── failureMessages: string[]
+  ├── files: Map<filePath, FileResult>
+  │     FileResult
+  │       ├── filePath, name, status, duration
+  │       ├── output: ScopedOutput
+  │       └── rootNodeIds: string[]      ← top-level nodes in this file
+  │
+  └── nodes: Map<nodeId, TestNode>       ← flat pool, O(1) lookup
+        TestNode
+          ├── id, type ('suite' | 'test')
+          ├── name, fullName, status, duration
+          ├── parentId: string | null
+          ├── children: string[]
+          ├── line?: number
+          ├── output: ScopedOutput
+          └── failureMessages: string[]
 ```
+
+**Node IDs** follow a stable, path-based convention: `{filePath}::{suite1}::{suite2}::…::{name}`. Static discovery and Jest results automatically match without a lookup table.
+
+**Status rollup:** `bubbleUpStatus(nodeId)` propagates worst-case status from a leaf node up through all ancestors in O(depth). Priority: `running > failed > passed > skipped > pending`.
+
+**Incremental summary:** A running counter tracks test counts so `getSummary()` is O(1), not O(n).
 
 ### `ExecutionTraceStore`
 
@@ -259,18 +268,18 @@ interface OutputLine {
 
 **Output attribution:**
 - Full file run → `FileResult.output` set only
-- Suite rerun → `SuiteResult.output` set
-- Test rerun → `TestResult.output` set
-- **Never back-fill** suite/test output from file-level output
+- Suite/node rerun → that node's `output` set
+- Test rerun → `TestNode.output` set
+- **Never back-fill** node output from file-level output
 
 ### `LineMap`
 
 ```typescript
 LineMap: Map<filePath, Map<lineNumber, LineEntry>>
-LineEntry: { testId: string, suiteId: string, fileId: string }
+LineEntry: { nodeId: string, fileId: string }
 ```
 
-Identity only — **never status or duration**. `DecorationManager` always queries `ResultStore` for those values.
+Identity only — **never status or duration**. `DecorationManager` always queries `ResultStore.getNode(nodeId)` for those values.
 
 **Lifecycle:**
 - Discovery → `clearLineMap(filePath)` then populate from AST line numbers — pending icons appear immediately

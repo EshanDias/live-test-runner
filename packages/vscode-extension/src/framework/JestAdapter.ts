@@ -13,6 +13,7 @@ import {
   OutputLevel,
   OutputLine,
   ScopedOutput,
+  makeNodeId,
 } from '../store/ResultStore';
 
 // eslint-disable-next-line no-control-regex
@@ -105,10 +106,14 @@ export class JestAdapter implements IFrameworkAdapter {
     opts?: RerunOptions,
   ): Promise<void> {
     const runner = this._createRunner(projectRoot, log);
+    // Determine if this is a suite-level rerun (no individual test node)
+    const isSuiteRun = opts?.nodeId
+      ? store.getNode(opts.nodeId)?.type === 'suite'
+      : false;
     const jsonResult = await runner.runTestCaseJson(
       filePath,
       fullName,
-      !!opts?.suiteId && !opts?.testId,
+      isSuiteRun,
     );
     const fileResult = jsonResult.fileResults[0];
     if (fileResult) {
@@ -172,38 +177,65 @@ export class JestAdapter implements IFrameworkAdapter {
     fileResult: FileRunResult,
     opts?: RerunOptions,
   ): void {
-    const touchedSuiteIds = new Set<string>();
-    let touchedTestId: string | undefined;
+    // Track which node IDs we've applied so we can scope output correctly.
+    let lastTouchedTestNodeId: string | undefined;
+    let touchedNodeIds = new Set<string>();
 
     for (const tc of fileResult.testCases) {
-      const suiteKey = tc.ancestorTitles.join(' > ') || '(root)';
-      const suiteId = `${filePath}::${suiteKey}`;
+      // Build hierarchical suite nodes from ancestorTitles
+      const ancestors = tc.ancestorTitles.length > 0 ? tc.ancestorTitles : ['(root)'];
 
-      if (opts?.suiteId && suiteId !== opts.suiteId) {
-        continue;
-      }
-      if (opts?.fullNames && !opts.fullNames.has(tc.fullName ?? tc.title)) {
-        continue;
-      }
-      if (!store.getSuite(filePath, suiteId)) {
-        store.suiteStarted(filePath, suiteId, suiteKey);
-      }
-      touchedSuiteIds.add(suiteId);
+      // Ensure all ancestor suite nodes exist
+      let parentId: string | null = null;
+      for (let i = 0; i < ancestors.length; i++) {
+        const ancestorChain = ancestors.slice(0, i);
+        const suiteNodeId = makeNodeId(filePath, ancestorChain, ancestors[i]);
 
-      const testId = `${suiteId}::${tc.fullName || tc.title}`;
-      if (opts?.testId && testId !== opts.testId) {
-        continue;
+        // If filtering to a specific node, skip test cases outside the subtree
+        if (opts?.nodeId) {
+          const targetNode = store.getNode(opts.nodeId);
+          if (targetNode) {
+            // The node ID should be an ancestor of or equal to the current suite
+            const isInScope = suiteNodeId === opts.nodeId ||
+                              suiteNodeId.startsWith(opts.nodeId + '::') ||
+                              opts.nodeId.startsWith(suiteNodeId + '::');
+            // We only check at the deepest suite level
+            if (i === ancestors.length - 1 && !isInScope) {
+              // Skip this test case entirely
+              parentId = null;
+              break;
+            }
+          }
+        }
+
+        if (opts?.fullNames && !opts.fullNames.has(tc.fullName ?? tc.title)) {
+          parentId = null;
+          break;
+        }
+
+        // Create suite node if it doesn't exist
+        const suiteName = ancestors[i];
+        const suiteFullName = ancestors.slice(0, i + 1).join(' ');
+        store.nodeStarted(filePath, suiteNodeId, parentId, 'suite', suiteName, suiteFullName);
+        touchedNodeIds.add(suiteNodeId);
+        parentId = suiteNodeId;
       }
 
-      store.testStarted(
+      if (parentId === null) {
+        continue; // Skipped due to filtering
+      }
+
+      // Create/update the test node
+      const testNodeId = makeNodeId(filePath, ancestors, tc.title);
+      store.nodeStarted(
         filePath,
-        suiteId,
-        testId,
+        testNodeId,
+        parentId,
+        'test',
         tc.title,
         tc.fullName || tc.title,
         tc.location?.line,
       );
-      touchedTestId = testId;
 
       const status: TestStatus =
         tc.status === 'passed'
@@ -214,35 +246,18 @@ export class JestAdapter implements IFrameworkAdapter {
               ? 'skipped'
               : 'pending';
 
-      store.testResult(
-        filePath,
-        suiteId,
-        testId,
+      store.nodeResult(
+        testNodeId,
         status,
         tc.duration,
         (tc.failureMessages ?? []).map(stripAnsi),
       );
-    }
 
-    // Roll up statuses
-    const file = store.getFile(filePath);
-    let fileStatus: TestStatus =
-      fileResult.status === 'passed' ? 'passed' : 'failed';
-    if (file) {
-      for (const suite of file.suites.values()) {
-        const tests = Array.from(suite.tests.values());
-        const suiteStatus: TestStatus = tests.some((t) => t.status === 'failed')
-          ? 'failed'
-          : tests.every((t) => t.status === 'skipped')
-            ? 'skipped'
-            : tests.every((t) => t.status === 'pending')
-              ? 'pending'
-              : 'passed';
-        const suiteDur = tests.reduce((acc, t) => acc + (t.duration ?? 0), 0);
-        store.suiteResult(filePath, suite.suiteId, suiteStatus, suiteDur);
-        if (suiteStatus === 'failed') { fileStatus = 'failed'; }
-        else if (suiteStatus !== 'passed' && fileStatus !== 'failed') { fileStatus = suiteStatus; }
-      }
+      // Bubble up status through parents
+      store.bubbleUpStatus(testNodeId);
+
+      touchedNodeIds.add(testNodeId);
+      lastTouchedTestNodeId = testNodeId;
     }
 
     // Store console output at the appropriate scope
@@ -256,54 +271,70 @@ export class JestAdapter implements IFrameworkAdapter {
       capturedAt: now,
     };
 
-    if (opts?.testId && touchedTestId) {
-      const suiteId = [...touchedSuiteIds][0];
-      store.setTestOutput(filePath, suiteId, touchedTestId, output);
-    } else if (opts?.suiteId && touchedSuiteIds.size > 0) {
-      const suiteId = [...touchedSuiteIds][0];
-      if (suiteId) {
-        store.setSuiteOutput(filePath, suiteId, output);
+    if (opts?.nodeId && lastTouchedTestNodeId) {
+      const targetNode = store.getNode(opts.nodeId);
+      if (targetNode?.type === 'test') {
+        store.setNodeOutput(lastTouchedTestNodeId, output);
+      } else if (targetNode?.type === 'suite') {
+        store.setNodeOutput(opts.nodeId, output);
+      } else {
+        store.setFileOutput(filePath, output);
       }
     } else {
       store.setFileOutput(filePath, output);
     }
 
-    store.fileResult(filePath, fileStatus, fileResult.duration);
+    // Set file-level status
+    const fileLevelStatus: TestStatus =
+      fileResult.status === 'passed' ? 'passed' : 'failed';
+    store.fileResult(filePath, fileLevelStatus, fileResult.duration);
 
-    // Remove AST-discovery placeholders for template-literal test names (name === '…' or name inicludes '"…"')
+    // Remove AST-discovery placeholders for template-literal test names
     // now that Jest has run and emitted the real expanded names.
     store.removePendingPlaceholders(filePath);
 
     // Populate LineMap (only clear on full-file run to preserve other tests' entries)
-    if (!opts?.suiteId && !opts?.testId) {
+    if (!opts?.nodeId) {
       store.clearLineMap(filePath);
     }
     for (const tc of fileResult.testCases) {
       if (tc.location?.line == null) {
         continue;
       }
-      const suiteKey = tc.ancestorTitles.join(' > ') || '(root)';
-      const suiteId = `${filePath}::${suiteKey}`;
-      const testId = `${suiteId}::${tc.fullName || tc.title}`;
+      const ancestors = tc.ancestorTitles.length > 0 ? tc.ancestorTitles : ['(root)'];
+      const testNodeId = makeNodeId(filePath, ancestors, tc.title);
       store.setLineEntry(filePath, tc.location.line, {
-        testId,
-        suiteId,
+        nodeId: testNodeId,
         fileId: filePath,
       });
     }
 
-    // Re-add describe-level entries from AST discovery data (Jest JSON has no
-    // describe line numbers so we preserve them from the suite's stored line).
-    const fileEntry = store.getFile(filePath);
-    if (fileEntry) {
-      for (const s of fileEntry.suites.values()) {
-        if (s.line) {
-          store.setLineEntry(filePath, s.line, {
-            suiteId: s.suiteId,
-            fileId: filePath,
-          });
-        }
+    // Re-add describe-level entries from stored node line numbers
+    // (Jest JSON has no describe line numbers so we preserve them from AST discovery).
+    const file = store.getFile(filePath);
+    if (file) {
+      for (const rootNodeId of file.rootNodeIds) {
+        this._addSuiteLineEntries(store, filePath, rootNodeId);
       }
+    }
+  }
+
+  /** Recursively add LineMap entries for suite nodes that have a stored line number. */
+  private _addSuiteLineEntries(
+    store: ResultStore,
+    filePath: string,
+    nodeId: string,
+  ): void {
+    const node = store.getNode(nodeId);
+    if (!node) return;
+    if (node.type === 'suite' && node.line) {
+      store.setLineEntry(filePath, node.line, {
+        nodeId: node.id,
+        fileId: filePath,
+      });
+    }
+    for (const childId of node.children) {
+      this._addSuiteLineEntries(store, filePath, childId);
     }
   }
 

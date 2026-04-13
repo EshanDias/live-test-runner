@@ -1,49 +1,46 @@
+import * as vscode from 'vscode';
+
+/** Scope of the current selection. */
 export type SelectionScope = 'file' | 'suite' | 'test';
 
+/**
+ * Lightweight selection model — identifies the currently selected item.
+ * The `nodeId` references a TestNode in the ResultStore's flat node pool.
+ * When nodeId is undefined, the entire file is selected.
+ */
 export interface Selection {
   scope: SelectionScope;
   fileId: string;
-  suiteId?: string;
-  testId?: string;
+  nodeId?: string;
 }
 
-type WebviewLike = { postMessage(msg: unknown): Thenable<boolean> };
-
 /**
- * SelectionState — tracks the currently selected test scope and broadcasts
- * scope-changed messages to all registered webviews when it changes.
+ * SelectionState — shared selection model for sidebar and panel.
+ *
+ * When the user clicks a row in the sidebar or panel, the webview posts
+ * a 'select' message which calls `select()` here. That broadcasts the
+ * new state to all registered webviews via postMessage.
  */
 export class SelectionState {
-  private current: Selection | undefined;
-  private webviews: Set<WebviewLike> = new Set();
+  private _current: Selection | null = null;
+  private readonly _webviews = new Set<vscode.Webview>();
 
-  register(webview: WebviewLike): void {
-    this.webviews.add(webview);
+  get(): Selection | null {
+    return this._current;
   }
 
-  unregister(webview: WebviewLike): void {
-    this.webviews.delete(webview);
+  register(webview: vscode.Webview): void {
+    this._webviews.add(webview);
   }
 
-  /** Called by extension when a webview posts a 'select' message. */
-  select(selection: Selection): void {
-    this.current = selection;
-    this.broadcast({ type: 'scope-changed', ...selection });
+  unregister(webview: vscode.Webview): void {
+    this._webviews.delete(webview);
   }
 
-  get(): Selection | undefined {
-    return this.current;
-  }
-
-  clear(): void {
-    this.current = undefined;
-  }
-
-  private broadcast(msg: unknown): void {
-    for (const wv of this.webviews) {
-      wv.postMessage(msg).then(undefined, (err: unknown) => {
-        console.error('[LiveTestRunner] SelectionState broadcast failed:', err);
-      });
+  select(sel: Selection): void {
+    this._current = sel;
+    for (const wv of this._webviews) {
+      wv.postMessage({ type: 'scope-changed', ...sel });
     }
   }
 }

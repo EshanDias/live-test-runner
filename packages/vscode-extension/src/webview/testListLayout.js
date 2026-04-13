@@ -4,6 +4,10 @@
  *
  * Expects a global `vscode` postMessage API (acquired via acquireVsCodeApi()).
  * Exports a single `TestListLayout` class to be instantiated per container.
+ *
+ * Data model: each file has `rootNodeIds: string[]` and `nodes: Node[]`
+ * where each node has `{ id, type, name, fullName, parentId, children, status, duration, line, failureMessages }`.
+ * The `nodes` array is a flat pool; tree structure is defined by `parentId`/`children`.
  */
 
 // durationLabel, durationClass, durationTooltip are globals injected by utils.js
@@ -42,6 +46,17 @@ class TestListLayout {
     this._render();
   }
 
+  // ── Helpers to build a nodeMap from a file's flat nodes array ─────────────
+
+  /** Build an id→node lookup map from a file's nodes array. */
+  _buildNodeMap(file) {
+    const map = {};
+    for (const node of (file.nodes ?? [])) {
+      map[node.id] = node;
+    }
+    return map;
+  }
+
   /** Replace the full data tree and re-render. */
   setData(files) {
     this.data = files;
@@ -57,11 +72,10 @@ class TestListLayout {
     } else {
       this.data.push(fileData);
     }
-    // Auto-expand the file and its suites whenever it's updated
+    // Auto-expand the file and its root nodes whenever it's updated
     this.expanded.add(fileData.fileId);
-    for (const suite of fileData.suites ?? []) {
-      this.expanded.add(suite.suiteId);
-    }
+    const nodeMap = this._buildNodeMap(fileData);
+    this._expandAllNodeIds(fileData, nodeMap);
     this._expandFolderPaths(fileData.name);
 
     // Targeted DOM update: only replace the wrapper for this one file instead
@@ -105,9 +119,8 @@ class TestListLayout {
   expandAll() {
     for (const file of this.data) {
       this.expanded.add(file.fileId);
-      for (const suite of file.suites ?? []) {
-        this.expanded.add(suite.suiteId);
-      }
+      const nodeMap = this._buildNodeMap(file);
+      this._expandAllNodeIds(file, nodeMap);
       this._expandFolderPaths(file.name);
     }
     this._render();
@@ -134,29 +147,34 @@ class TestListLayout {
   }
 
   /** Mark a single file as running (partial rerun) without wiping other files. */
-  markFileRunning(fileId, suiteId = null, testId = null) {
+  markFileRunning(fileId, nodeId = null) {
     const file = this.data.find((f) => f.fileId === fileId);
     if (!file) {
       return;
     }
     file.status = 'running';
-    for (const suite of file.suites.values()) {
-      if (!!suiteId && suite.suiteId !== suiteId) {
-        continue;
-      }
-      suite.status = 'running';
-      for (const test of suite.tests.values()) {
-        if (!!testId && test.testId !== testId) {
-          continue;
-        }
-        test.status = 'running';
+    const nodeMap = this._buildNodeMap(file);
+    if (nodeId) {
+      this._markNodeRunning(nodeMap, nodeId);
+    } else {
+      for (const rootId of (file.rootNodeIds ?? [])) {
+        this._markNodeRunning(nodeMap, rootId);
       }
     }
     this._render();
   }
 
-  setSelected(fileId, suiteId, testId) {
-    this.selectedId = testId ?? suiteId ?? fileId ?? null;
+  _markNodeRunning(nodeMap, nodeId) {
+    const node = nodeMap[nodeId];
+    if (!node) return;
+    node.status = 'running';
+    for (const childId of (node.children ?? [])) {
+      this._markNodeRunning(nodeMap, childId);
+    }
+  }
+
+  setSelected(fileId, nodeId) {
+    this.selectedId = nodeId ?? fileId ?? null;
     this.selectedFileId = fileId ?? null;
     this._render();
     this.scrollToSelected();
@@ -167,10 +185,27 @@ class TestListLayout {
   _autoExpand(files) {
     for (const file of files) {
       this.expanded.add(file.fileId);
-      for (const suite of file.suites ?? []) {
-        this.expanded.add(suite.suiteId);
-      }
+      const nodeMap = this._buildNodeMap(file);
+      this._expandAllNodeIds(file, nodeMap);
       this._expandFolderPaths(file.name);
+    }
+  }
+
+  /** Expand all suite node IDs in a file's node tree. */
+  _expandAllNodeIds(file, nodeMap) {
+    for (const rootId of (file.rootNodeIds ?? [])) {
+      this._expandNodeTree(nodeMap, rootId);
+    }
+  }
+
+  _expandNodeTree(nodeMap, nodeId) {
+    const node = nodeMap[nodeId];
+    if (!node) return;
+    if (node.type === 'suite') {
+      this.expanded.add(node.id);
+      for (const childId of (node.children ?? [])) {
+        this._expandNodeTree(nodeMap, childId);
+      }
     }
   }
 
@@ -192,30 +227,22 @@ class TestListLayout {
   _fileMatches(file) {
     if (this._matches(file.name)) return true;
     if (this._matches(basename(file.name))) return true;
-    for (const suite of file.suites) {
-      if (this._matches(suite.name)) return true;
-      for (const test of suite.tests) {
-        if (this._matches(test.name)) return true;
-      }
+    const nodeMap = this._buildNodeMap(file);
+    for (const node of (file.nodes ?? [])) {
+      if (this._matches(node.name)) return true;
     }
     return false;
   }
 
-  /** Returns true if the suite or any of its tests match the current query. */
-  _suiteMatchesQuery(suite) {
-    if (this._matches(suite.name)) return true;
-    return suite.tests.some((t) => this._matches(t.name));
-  }
-
-  /**
-   * When a query is active, filter tests within a suite:
-   * - If the suite name itself matches, show all tests.
-   * - Otherwise, show only tests whose name matches.
-   */
-  _filterTests(tests, suite) {
-    if (!this.query) return tests;
-    if (this._matches(suite.name)) return tests;
-    return tests.filter((t) => this._matches(t.name));
+  /** Returns true if the node or any of its descendants match the current query. */
+  _nodeMatchesQuery(nodeMap, nodeId) {
+    const node = nodeMap[nodeId];
+    if (!node) return false;
+    if (this._matches(node.name)) return true;
+    for (const childId of (node.children ?? [])) {
+      if (this._nodeMatchesQuery(nodeMap, childId)) return true;
+    }
+    return false;
   }
 
   _render() {
@@ -325,19 +352,28 @@ class TestListLayout {
       : '<span class="row-toggle">▶</span>';
     const displayName = basename(file.name);
 
-    // When a query is active, only render suites (and their tests) that match.
-    // Suites named '(root)' are a synthetic wrapper for top-level tests written
-    // without a describe() block — render their tests directly under the file.
-    const suitesToRender = this.query
-      ? (file.suites ?? []).filter((s) => this._suiteMatchesQuery(s))
-      : (file.suites ?? []);
-    const children = suitesToRender
-      .map((s) =>
-        s.name === '(root)'
-          ? this._filterTests(s.tests, s).map((t) => this._renderTest(file, s, t)).join('')
-          : this._renderSuite(file, s),
-      )
-      .join('');
+    const nodeMap = this._buildNodeMap(file);
+
+    // Render root-level node children
+    const rootNodeIds = file.rootNodeIds ?? [];
+    let children = '';
+
+    if (isExpanded || this.query) {
+      children = rootNodeIds
+        .map((rootId) => {
+          const node = nodeMap[rootId];
+          if (!node) return '';
+          // (root) suite: render its children directly under the file
+          if (node.type === 'suite' && node.name === '(root)') {
+            return (node.children ?? [])
+              .map((childId) => this._renderNode(file, nodeMap, nodeMap[childId], 1))
+              .filter(Boolean)
+              .join('');
+          }
+          return this._renderNode(file, nodeMap, node, 1);
+        })
+        .join('');
+    }
 
     return `
       <div class="test-row level-file ${sel}"
@@ -358,65 +394,91 @@ class TestListLayout {
       </div>`;
   }
 
-  _renderSuite(file, suite) {
-    const isExpanded = this.expanded.has(suite.suiteId) || !!this.query;
-    const icon = STATUS_ICON[suite.status] ?? STATUS_ICON.pending;
-    const dur = durationLabel(suite.duration);
-    const durClass = durationClass(suite.duration, 'suite');
-    const durTip = durationTooltip(suite.duration, 'suite');
-    const sel = this.selectedId === suite.suiteId ? 'selected' : '';
-    const toggle =
-      suite.tests.length > 0
-        ? isExpanded
-          ? '<span class="row-toggle expanded">▶</span>'
-          : '<span class="row-toggle">▶</span>'
-        : '<span class="row-toggle"></span>';
+  /**
+   * Recursively render a node (suite or test) at a given depth level.
+   * @param {object} file     - The parent file data
+   * @param {object} nodeMap  - id→node lookup map
+   * @param {object} node     - The current node to render
+   * @param {number} depth    - Nesting depth (1 = direct child of file)
+   */
+  _renderNode(file, nodeMap, node, depth) {
+    if (!node) return '';
 
-    const children = this._filterTests(suite.tests, suite)
-      .map((t) => this._renderTest(file, suite, t))
-      .join('');
+    // Query filtering: skip nodes that don't match
+    if (this.query && !this._nodeMatchesQuery(nodeMap, node.id)) {
+      return '';
+    }
+
+    if (node.type === 'test') {
+      return this._renderTestNode(file, node, depth);
+    }
+    return this._renderSuiteNode(file, nodeMap, node, depth);
+  }
+
+  _renderSuiteNode(file, nodeMap, node, depth) {
+    const isExpanded = this.expanded.has(node.id) || !!this.query;
+    const icon = STATUS_ICON[node.status] ?? STATUS_ICON.pending;
+    const dur = durationLabel(node.duration);
+    const durCls = durationClass(node.duration, 'suite');
+    const durTip = durationTooltip(node.duration, 'suite');
+    const sel = this.selectedId === node.id ? 'selected' : '';
+    const hasChildren = (node.children ?? []).length > 0;
+    const toggle = hasChildren
+      ? (isExpanded
+        ? '<span class="row-toggle expanded">▶</span>'
+        : '<span class="row-toggle">▶</span>')
+      : '<span class="row-toggle"></span>';
+
+    // Render children (both sub-suites and tests) only when expanded
+    let children = '';
+    if (isExpanded && hasChildren) {
+      children = (node.children ?? [])
+        .map((childId) => this._renderNode(file, nodeMap, nodeMap[childId], depth + 1))
+        .filter(Boolean)
+        .join('');
+    }
 
     return `
       <div class="test-row level-suite ${sel}"
-           data-id="${esc(suite.suiteId)}" data-scope="suite"
-           data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}">
+           data-id="${esc(node.id)}" data-scope="suite"
+           data-file="${esc(file.fileId)}" data-node="${esc(node.id)}">
         ${toggle}
         <span class="row-status">${icon}</span>
-        <span class="row-name" title="${esc(suite.name)}">${esc(suite.name)}</span>
-        ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
-        <button class="row-collapse" title="Collapse" data-collapse-id="${esc(suite.suiteId)}">⊟</button>
-        <button class="row-expand"   title="Expand"   data-expand-id="${esc(suite.suiteId)}">⊞</button>
-        <button class="row-copy"  title="Copy suite name" data-copy-name="${esc(suite.name)}">⎘</button>
-        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}"${suite.line != null ? ` data-open-line="${suite.line}"` : ''}>↗</button>
+        <span class="row-name" title="${esc(node.name)}">${esc(node.name)}</span>
+        ${dur ? `<span class="row-duration ${durCls}" title="${durTip}">${dur}</span>` : ''}
+        <button class="row-collapse" title="Collapse" data-collapse-id="${esc(node.id)}">⊟</button>
+        <button class="row-expand"   title="Expand"   data-expand-id="${esc(node.id)}">⊞</button>
+        <button class="row-copy"  title="Copy suite name" data-copy-name="${esc(node.name)}">⎘</button>
+        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}"${node.line != null ? ` data-open-line="${node.line}"` : ''}>↗</button>
         <button class="row-rerun" title="Rerun suite"     data-rerun="suite"
-                data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}"
-                data-full-name="${esc(suite.name)}">▶</button>
+                data-file="${esc(file.fileId)}" data-node="${esc(node.id)}"
+                data-full-name="${esc(node.fullName)}">▶</button>
       </div>
-      <div class="children ${isExpanded ? 'expanded' : ''}" data-children="${esc(suite.suiteId)}">
+      <div class="children ${isExpanded ? 'expanded' : ''}" data-children="${esc(node.id)}">
         ${children}
       </div>`;
   }
 
-  _renderTest(file, suite, test) {
-    const icon = STATUS_ICON[test.status] ?? STATUS_ICON.pending;
-    const dur = durationLabel(test.duration);
-    const durClass = durationClass(test.duration, 'test');
-    const durTip = durationTooltip(test.duration, 'test');
-    const sel = this.selectedId === test.testId ? 'selected' : '';
+  _renderTestNode(file, node, depth) {
+    const icon = STATUS_ICON[node.status] ?? STATUS_ICON.pending;
+    const dur = durationLabel(node.duration);
+    const durCls = durationClass(node.duration, 'test');
+    const durTip = durationTooltip(node.duration, 'test');
+    const sel = this.selectedId === node.id ? 'selected' : '';
 
     return `
       <div class="test-row level-test ${sel}"
-           data-id="${esc(test.testId)}" data-scope="test"
-           data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}" data-test="${esc(test.testId)}">
+           data-id="${esc(node.id)}" data-scope="test"
+           data-file="${esc(file.fileId)}" data-node="${esc(node.id)}">
         <span class="row-toggle"></span>
         <span class="row-status">${icon}</span>
-        <span class="row-name" title="${esc(test.name)}">${esc(test.name)}</span>
-        ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
-        <button class="row-copy"  title="Copy test name"  data-copy-name="${esc(test.name)}">⎘</button>
-        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}"${test.line != null ? ` data-open-line="${test.line}"` : ''}>↗</button>
+        <span class="row-name" title="${esc(node.name)}">${esc(node.name)}</span>
+        ${dur ? `<span class="row-duration ${durCls}" title="${durTip}">${dur}</span>` : ''}
+        <button class="row-copy"  title="Copy test name"  data-copy-name="${esc(node.name)}">⎘</button>
+        <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}"${node.line != null ? ` data-open-line="${node.line}"` : ''}>↗</button>
         <button class="row-rerun" title="Rerun test"      data-rerun="test"
-                data-file="${esc(file.fileId)}" data-suite="${esc(suite.suiteId)}" data-test="${esc(test.testId)}"
-                data-full-name="${esc(test.fullName ?? test.name)}">▶</button>
+                data-file="${esc(file.fileId)}" data-node="${esc(node.id)}"
+                data-full-name="${esc(node.fullName ?? node.name)}">▶</button>
         ${this._showTimelineButton ? `<button class="row-timeline row-timeline--disabled" title="Timeline Debugger — Coming Soon" disabled>⏱</button>` : ''}
       </div>`;
   }
@@ -446,8 +508,7 @@ class TestListLayout {
         const id = row.dataset.id;
         const rowScope = row.dataset.scope;
         const fileId = row.dataset.file;
-        const suiteId = row.dataset.suite;
-        const testId = row.dataset.test;
+        const nodeId = row.dataset.node;
 
         // Folder rows toggle on any click (whole row acts as toggle)
         if (rowScope === 'folder') {
@@ -493,8 +554,7 @@ class TestListLayout {
           type: 'select',
           scope: rowScope,
           fileId,
-          suiteId,
-          testId,
+          nodeId,
         });
       });
     });
@@ -505,16 +565,14 @@ class TestListLayout {
         const {
           rerun: rerunScope,
           file: fileId,
-          suite: suiteId,
-          test: testId,
+          node: nodeId,
           fullName,
         } = btn.dataset;
         this.vscode.postMessage({
           type: 'rerun',
           scope: rerunScope,
           fileId,
-          suiteId,
-          testId,
+          nodeId,
           fullName,
         });
       });
@@ -558,11 +616,6 @@ class TestListLayout {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         // TODO: re-enable when timeline debugger is ready
-        // this.vscode.postMessage({
-        //   type:         'open-timeline',
-        //   filePath:     btn.dataset.openPath,
-        //   testFullName: btn.dataset.fullName,
-        // });
       });
     });
 
@@ -611,8 +664,8 @@ class TestListLayout {
         const name = (file.name ?? '').replace(/\\/g, '/');
         if (name.startsWith(prefix)) {
           this.expanded.add(file.fileId);
-          for (const suite of file.suites ?? [])
-            this.expanded.add(suite.suiteId);
+          const nodeMap = this._buildNodeMap(file);
+          this._expandAllNodeIds(file, nodeMap);
           this._expandFolderPaths(name);
         }
       }
@@ -623,8 +676,10 @@ class TestListLayout {
         const name = (file.name ?? '').replace(/\\/g, '/');
         if (name.startsWith(prefix)) {
           this.expanded.delete(file.fileId);
-          for (const suite of file.suites ?? [])
-            this.expanded.delete(suite.suiteId);
+          const nodeMap = this._buildNodeMap(file);
+          for (const node of (file.nodes ?? [])) {
+            this.expanded.delete(node.id);
+          }
         }
       }
       // Also remove any deeper folder IDs
