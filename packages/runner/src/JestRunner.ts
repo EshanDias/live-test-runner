@@ -131,7 +131,7 @@ export class JestRunner implements TestRunner {
       ...this.baseArgs(),
       '--json',
       '--runTestsByPath',
-      filePath,
+      this.normalisePath(filePath),
     ];
 
     const { passed, jsonOutput, stderr } =
@@ -164,7 +164,7 @@ export class JestRunner implements TestRunner {
         ...this.baseArgs(),
         '--json',
         '--runTestsByPath',
-        ...filePaths,
+        ...filePaths.map((p) => this.normalisePath(p)),
       ];
       const { passed, jsonOutput, stderr } =
         await this.executor.runWithJsonCapture({
@@ -185,7 +185,7 @@ export class JestRunner implements TestRunner {
         ...this.baseArgs(),
         '--json',
         '--runTestsByPath',
-        ...chunk,
+        ...chunk.map((p) => this.normalisePath(p)),
       ];
       const { passed, jsonOutput, stderr } =
         await this.executor.runWithJsonCapture({
@@ -216,7 +216,7 @@ export class JestRunner implements TestRunner {
       ...this.baseArgs(),
       '--json',
       '--runTestsByPath',
-      filePath,
+      this.normalisePath(filePath),
       '--testNamePattern',
       isTestSuite ? `^${testFullName}` : `^${testFullName}$`,
     ];
@@ -244,7 +244,7 @@ export class JestRunner implements TestRunner {
       ...this.baseArgs(),
       '--json',
       '--findRelatedTests',
-      filePath,
+      this.normalisePath(filePath),
     ];
 
     const { passed, jsonOutput, stderr } =
@@ -377,6 +377,16 @@ export class JestRunner implements TestRunner {
       stderr.includes('Unknown option') ||
       stderr.includes('https://jestjs.io/docs/configuration')
     );
+  }
+
+  /**
+   * Normalise a file path for use as a --runTestsByPath argument.
+   * On Windows, Node's path APIs return backslash-separated paths but Jest
+   * normalises its internal file list to forward slashes before regex matching.
+   * Passing a backslash path causes the pattern not to match → "No files found".
+   */
+  private normalisePath(filePath: string): string {
+    return filePath.replace(/\\/g, '/');
   }
 
   private discoverFromFilesystem(projectRoot: string): string[] {
