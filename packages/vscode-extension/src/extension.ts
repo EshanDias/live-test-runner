@@ -57,7 +57,7 @@ export function activate(context: vscode.ExtensionContext) {
   // ── Views and editor providers ─────────────────────────────────────────────
   const explorerView      = new ExplorerView(context.extensionUri, store, selection);
   const resultsView       = new ResultsView(context.extensionUri, store, selection);
-  const decorationManager = new DecorationManager(store);
+  const decorationManager = new DecorationManager(store, context);
   const codeLensProvider  = new CodeLensProvider(store);
   const observers: IResultObserver[] = [explorerView, resultsView, decorationManager];
 

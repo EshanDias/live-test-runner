@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ResultStore, TestNode, LineEntry } from '../store/ResultStore';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResultObserver';
-import { getThresholds, DurationThresholds } from '../utils/duration';
+import { getThresholds, DurationThresholds, durationColorVar, durationLabel } from '../utils/duration';
 
 /**
  * DecorationManager — drives the gutter icons and inline duration badges.
@@ -15,7 +15,10 @@ import { getThresholds, DurationThresholds } from '../utils/duration';
 export class DecorationManager implements IResultObserver {
   private readonly _decorations: Map<string, vscode.TextEditorDecorationType> = new Map();
 
-  constructor(private readonly store: ResultStore) {
+  constructor(
+    private readonly store: ResultStore,
+    private readonly context: vscode.ExtensionContext,
+  ) {
     this._ensureDecorations();
   }
 
@@ -105,23 +108,29 @@ export class DecorationManager implements IResultObserver {
       const status = node.status;
       const statusKey = `status-${status}`;
 
-      if (buckets[statusKey]) {
-        buckets[statusKey].push({ range });
+      // Handle duration
+      let durationText = '';
+      let durationColor = '';
+      if (node.type === 'test' && node.duration != null && status !== 'running') {
+        durationText = `  ${durationLabel(node.duration)}`;
+        durationColor = durationColorVar(node.duration, 'test', thresholds);
+      } else if (node.type === 'suite' && node.duration != null && status !== 'running') {
+        durationText = `  ${durationLabel(node.duration)}`;
+        durationColor = durationColorVar(node.duration, 'suite', thresholds);
       }
 
-      // Duration badge — only for test nodes with a duration
-      if (node.type === 'test' && node.duration != null) {
-        const level: keyof DurationThresholds = 'test';
-        const durKey = this._durationBucket(node.duration, level, thresholds);
-        if (durKey && buckets[durKey]) {
-          const label = `${node.duration}ms`;
-          buckets[durKey].push({
-            range,
-            renderOptions: {
-              after: { contentText: ` ${label}`, fontStyle: 'italic' },
+      if (buckets[statusKey]) {
+        buckets[statusKey].push({
+          range,
+          renderOptions: {
+            after: {
+              contentText: durationText,
+              color: durationColor,
+              fontStyle: 'normal',
+              margin: '0 0 0 16px',
             },
-          });
-        }
+          },
+        });
       }
     }
 
@@ -130,19 +139,13 @@ export class DecorationManager implements IResultObserver {
     }
   }
 
-  private _durationBucket(
-    ms: number,
-    level: keyof DurationThresholds,
-    thresholds: DurationThresholds,
-  ): string | null {
-    const [amber, red] = thresholds[level];
-    if (ms >= red) {
-      return 'dur-warn';
-    }
-    if (ms >= amber) {
-      return 'dur-slow';
-    }
-    return 'dur-ok';
+  private _icon(name: string): vscode.Uri {
+    return vscode.Uri.joinPath(
+      this.context.extensionUri,
+      'resources',
+      'icons',
+      `${name}.svg`,
+    );
   }
 
   private _ensureDecorations(): void {
@@ -152,36 +155,24 @@ export class DecorationManager implements IResultObserver {
       }
     };
     add('status-passed', {
-      gutterIconPath: undefined,
-      overviewRulerColor: 'green',
+      gutterIconPath: this._icon('passed'),
       gutterIconSize: 'contain',
-      light: { gutterIconPath: undefined },
-      dark: { gutterIconPath: undefined },
     });
     add('status-failed', {
-      overviewRulerColor: 'red',
+      gutterIconPath: this._icon('failed'),
       gutterIconSize: 'contain',
     });
     add('status-running', {
-      overviewRulerColor: 'yellow',
+      gutterIconPath: this._icon('running'),
       gutterIconSize: 'contain',
     });
     add('status-pending', {
-      overviewRulerColor: 'gray',
+      gutterIconPath: this._icon('pending'),
       gutterIconSize: 'contain',
     });
     add('status-skipped', {
-      overviewRulerColor: 'gray',
+      gutterIconPath: this._icon('pending'),
       gutterIconSize: 'contain',
-    });
-    add('dur-ok', {
-      after: { color: new vscode.ThemeColor('editorCodeLens.foreground') },
-    });
-    add('dur-slow', {
-      after: { color: 'orange' },
-    });
-    add('dur-warn', {
-      after: { color: 'red' },
     });
   }
 }
