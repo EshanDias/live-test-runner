@@ -197,17 +197,22 @@
     "compile": "node esbuild.js",
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "test": "jest"
   },
   "dependencies": {
     "@live-test-runner/core": "workspace:*",
     "@live-test-runner/runner": "workspace:*"
   },
   "devDependencies": {
-    "@types/vscode": "^1.74.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "16.x",
-    "typescript": "^4.9.4",
+    "@types/vscode": "^1.74.0",
+    "esbuild": "^0.25.0",
     "eslint": "^8.28.0",
-    "esbuild": "^0.25.0"
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^4.9.4"
   }
 }
