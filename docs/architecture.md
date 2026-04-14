@@ -241,16 +241,18 @@ ResultStore
   │
   └── nodes: Map<nodeId, TestNode>         ← flat pool, O(1) lookup
         └── TestNode
-              ├── id, type ('suite' | 'test')
+              ├── id, type ('suite' | 'test' | 'template')
               ├── name, fullName, status, duration
               ├── parentId: string | null
-              ├── children: string[]
+              ├── children: string[]       ← dynamic variations attached here
               ├── line?: number
               ├── output: ScopedOutput     ← populated only on scoped reruns
               └── failureMessages: string[]
 ```
 
-Node IDs follow a stable path convention: `{filePath}::{suite1}::…::{name}`. Status rolls up via `bubbleUpStatus()` in O(depth). Summary counter is incremental (O(1)).
+Node IDs follow a stable path convention: `{filePath}::{suite1}::…::{name}`. Status rolls up via `bubbleUpStatus()` in O(depth). Summary counter is incremental (O(1)). Empty `template` nodes are ignored by status rollups to prevent ancestors from showing incorrect passed/failed status during partial child execution.
+
+**Nested Branch Compatibility:** The recursive node tree supports arbitrary depth (10+ levels) of `describe` blocks. When a test result arrives deep within a nested branch, the `ResultStore` automatically bubbles the status up the chain. For partial runs (where only a specific nested test is executed), the extension correctly resets the status of every ancestor in the branch to `running` before applying the new result, ensuring that high-level "failed" or "passed" icons don't stick when their children are still in flight.
 
 **`ExecutionTraceStore`** — derived indexes built from per-test JSONL trace files. The trace files on disk are the source of truth; these are fast-lookup caches rebuilt after each instrumented run.
 
@@ -258,7 +260,7 @@ Node IDs follow a stable path convention: `{filePath}::{suite1}::…::{name}`. S
 ExecutionTraceStore
   ├── traceIndex: Map<testId, string>
   │     testId = full test name ("Suite > test") → absolute .jsonl path
-  │     Written to /tmp/ltr-traces/<sessionId>/<safeTestName>.jsonl
+  │     Written to a window-unique trace directory within the user's temp storage.
   │     Used by: Timeline Debugger, future coverage overlay
   │
   ├── coverageIndex: Map<filePath, Set<lineNumber>>
@@ -325,6 +327,7 @@ Runs on extension activate — before the user clicks Start Testing.
 1. **`start(projectRoot, store, log, callbacks)`** — finds all test files via `vscode.workspace.findFiles`, then parses them in batches of 8 with a `setImmediate` yield between batches. This keeps the extension host responsive on large projects (500+ files, 3000+ tests).
 2. **Per-file** — reads source, runs `discoverTests()` (AST walker in `testDiscovery.js`), recursively walks the returned suite tree calling `store.nodeStarted` / `store.nodeResult` to build the hierarchical node tree. Rebuilds the `LineMap` for that file, and emits a serialised file object via `onFileDiscovered` callback.
 3. **`awaitDiscovery()`** — returns the internal `Promise`; `SessionManager.start()` awaits this so it never re-discovers files that are already populated.
+4. **PID Cleanup** — during activation, the service scans the shared temporary root and prunes session folders whose owning process ID is no longer active (verified via `process.kill(pid, 0)`).
 4. **`FileSystemWatcher`** — monitors `**/*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}`. New files appear immediately on create. On change/save the watcher skips files with status `'running'` (a run is already in progress for that file); for all other statuses it calls `store.removeFile()` and re-populates so newly added or renamed tests appear straight away without waiting for a run.
 
 **`testDiscovery.js`** (pure AST walker, no code injection):
@@ -506,6 +509,8 @@ User clicks "Start Testing"
               → IResultObserver.notify() → ExplorerView, ResultsView, DecorationManager
       → CoverageMap built from coverage data
       → On-save listener enabled
+
+**Session Isolation** — every window uses a unique `session-<pid>-<ts>` directory. The extension host creates this on startup and injects it into all internal components (`SessionManager`, `JestAdapter`, `SessionTraceRunner`). This ensures that multiple VS Code windows never conflict on shared temporary filenames.
 
 User saves a file
   → SessionManager.onSave(filePath)            debounced 300ms

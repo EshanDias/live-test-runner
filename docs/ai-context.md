@@ -8,7 +8,7 @@ Paste this document into a conversation to give an AI assistant complete knowled
 
 **Live Test Runner** is a VS Code extension that runs Jest tests automatically on file save and shows results directly in the editor. It is a Wallaby-lite tool — session-based, explicit start/stop, focused on speed.
 
-**Current version:** 2.2.0  
+**Current version:** 2.3.0  
 **Language:** TypeScript  
 **Package manager:** pnpm (monorepo)
 
@@ -202,10 +202,10 @@ ResultStore
   │
   └── nodes: Map<nodeId, TestNode>       ← flat pool, O(1) lookup
         TestNode
-          ├── id, type ('suite' | 'test')
+          ├── id, type ('suite' | 'test' | 'template')
           ├── name, fullName, status, duration
           ├── parentId: string | null
-          ├── children: string[]
+          ├── children: string[]            ← dynamic variations attached here
           ├── line?: number
           ├── output: ScopedOutput
           └── failureMessages: string[]
@@ -213,7 +213,7 @@ ResultStore
 
 **Node IDs** follow a stable, path-based convention: `{filePath}::{suite1}::{suite2}::…::{name}`. Static discovery and Jest results automatically match without a lookup table.
 
-**Status rollup:** `bubbleUpStatus(nodeId)` propagates worst-case status from a leaf node up through all ancestors in O(depth). Priority: `running > failed > passed > skipped > pending`.
+**Status rollup:** `bubbleUpStatus(nodeId)` propagates worst-case status from a leaf node up through all ancestors in O(depth). Priority: `running > failed > passed > skipped > pending`. Empty `template` nodes are ignored during rollup.
 
 **Incremental summary:** A running counter tracks test counts so `getSummary()` is O(1), not O(n).
 
@@ -224,8 +224,8 @@ Derived indexes built from per-test JSONL trace files written by `SessionTraceRu
 ```
 ExecutionTraceStore
   ├── traceIndex: Map<testId, string>
-  │     testId (full test name, e.g. "Suite > test name") → absolute path to .jsonl trace file
-  │     One file per test case written to /tmp/ltr-traces/<sessionId>/<safeTestName>.jsonl
+       testId (full test name, e.g. "Suite > test name") → absolute path to .jsonl trace file
+      One file per test case written to session-specific trace directory.
   │
   ├── coverageIndex: Map<filePath, Set<lineNumber>>
   │     Every source file line executed by any test in the session.
@@ -525,7 +525,11 @@ All in `packages/vscode-extension/package.json`:
 5. **Never back-fill suite/test output from file-level output.** Empty output is correct for scopes that haven't been individually run.
 6. **Never add business logic to `extension.ts`.** It wires instances and registers commands only.
 7. **`SessionManager`, `ResultStore`, views, and observers must be framework-agnostic.** All framework differences live in `IFrameworkAdapter` implementations.
-8. **`scope-logs` and `scope-changed` are always separate messages.** They have different lifecycles.
-9. **`IInstrumentedRunner` is the only abstraction for instrumented runs.** `extension.ts` holds a reference typed as `IInstrumentedRunner` — never as the concrete `JestInstrumentedRunner`. Adding Vitest or Mocha timeline support = one new file implementing this interface.
-10. **`TimelineDecorationManager` is separate from `DecorationManager`.** It never touches pass/fail gutter icons — completely independent decoration types.
-11. **Timeline Maps are serialised before postMessage.** `TimelineStore.variables` and `TimelineStore.logs` are `Map<number, ...>` in the extension host. They are converted to plain objects (`Object.fromEntries`) before sending to webviews, since Maps are not JSON-serialisable.
+8. **Multi-Session Isolation is mandatory.** Never use global shared temporary directories for runner configs or traces. Always use the window-local `LTR_SESSION_TMP_DIR` injected via constructors.
+9. **Safe Cleanup.** On activation, the extension host must only delete stale session folders belonging to dead processes (verified via `process.kill(pid, 0)`). Never perform recursive blind deletions in the base temp root.
+10. **Persistent Templates.** AST-discovered dynamic test headers (`.each`) are `template` nodes. They must survive cleanup and status rollups even when childless.
+11. **Nested Branch Compatibility.** The recursive tree must support arbitrary depth. High-level status rollups must be reliable even when only deep-nested leaves are rerun. Always bubble status changes up the full ancestor chain.
+12. **`IInstrumentedRunner` is the only abstraction for instrumented runs.** `extension.ts` holds a reference typed as `IInstrumentedRunner` — never as the concrete `JestInstrumentedRunner`. Adding Vitest or Mocha timeline support = one new file implementing this interface.
+13. **`TimelineDecorationManager` is separate from `DecorationManager`.** It never touches pass/fail gutter icons — completely independent decoration types.
+14. **Timeline Maps are serialised before postMessage.** `TimelineStore.variables` and `TimelineStore.logs` are `Map<number, ...>` in the extension host. They are converted to plain objects (`Object.fromEntries`) before sending to webviews, since Maps are not JSON-serialisable.
+15. **`scope-logs` and `scope-changed` are always separate messages.** They have different lifecycles.

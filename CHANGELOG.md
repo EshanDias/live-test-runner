@@ -2,6 +2,26 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [1.3.0] — 2026-04-14
+
+### Dynamic Test Groups & Multi-Session Isolation
+
+#### Added
+- **Persistent dynamic anchors** — parameterized tests (`test.each`, loops) are now elevated to permanent "template" nodes in the sidebar. They remain visible as structural anchors even if they temporarily have zero children.
+- **Lazy variation attachment** — dynamic test variations are attached as children to their parent templates in real-time as Jest emits results.
+- **Multi-session isolation** — each VSCode window now uses a unique `session-<pid>-<timestamp>` temporary directory. This prevents concurrent windows from deleting or overwriting each other's temporary Jest configs and trace files.
+- **Safe stale-data cleanup** — the extension now performs a PID-check on startup (`process.kill(pid, 0)`) to safely prune temporary session folders from previous crashes while leaving active sessions untouched.
+- **Command pivoting** — clicking a dynamic variation in the sidebar now correctly reruns the parent template, ensuring that the full parameterized suite is executed.
+
+#### Changed
+- **Recursive status bubbling** — finalized the "nested branch compatibility." Status changes (pass/fail/running) deep in the tree correctly bubble up through all ancestors, including complex nested `describe` blocks and dynamic groups.
+- **Real-time gutter synchronization** — gutter icons now flip to spinners the moment a test starts (even in scoped reruns) and update to their final result state without delay.
+- **Unified LineMap management** — moved mapping responsibility into `ResultStore`, eliminating desync bugs where icons wouldn't update after partial test runs.
+
+#### Internal
+- `LTR_TMP_DIR` renamed to `LTR_BASE_TMP_DIR`; all internal components now use an injected `_tmpDir` or `_sessionDir` path for isolation.
+- `ResultStore.cleanupStaleNodes` now explicitly ignores `template` nodes to preserve the structural anchors.
+
 ---
 
 ## [1.2.0] — 2026-04-14
