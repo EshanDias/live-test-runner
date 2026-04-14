@@ -1,4 +1,4 @@
-import { OutputLine } from '../store/ResultStore';
+import { OutputLine, TestNode } from '../store/ResultStore';
 import { BaseWebviewProvider } from './BaseWebviewProvider';
 import { RunFinishedPayload } from '../IResultObserver';
 import * as vscode from 'vscode';
@@ -41,7 +41,7 @@ export class ResultsView extends BaseWebviewProvider {
     super.onFileResult(filePath);
     const sel = this.selection.get();
     if (sel?.fileId === filePath) {
-      this.sendScopedData(sel.fileId, sel.suiteId, sel.testId);
+      this.sendScopedData(sel.fileId, sel.nodeId);
     }
   }
 
@@ -51,8 +51,8 @@ export class ResultsView extends BaseWebviewProvider {
 
   // ── Results-view-specific ──────────────────────────────────────────────────
 
-  sendScopedData(fileId: string, suiteId?: string, testId?: string): void {
-    this._sendScopedLogs(fileId, suiteId, testId);
+  sendScopedData(fileId: string, nodeId?: string): void {
+    this._sendScopedLogs(fileId, nodeId);
   }
 
   /** Called by extension.ts so it can forward step-changed to ExplorerView. */
@@ -63,7 +63,7 @@ export class ResultsView extends BaseWebviewProvider {
   /** Called when timeline UI asks host to exit timeline mode. */
   onTimelineExitRequest: (() => void) | null = null;
 
-  protected handleExtraMessage(msg: { type: string; fileId?: string; suiteId?: string; testId?: string; stepId?: number; filePath?: string; line?: number; view?: string; testFullName?: string }): void {
+  protected handleExtraMessage(msg: { type: string; fileId?: string; nodeId?: string; stepId?: number; filePath?: string; line?: number; view?: string; testFullName?: string }): void {
     if (msg.type === 'open-timeline' && msg.filePath && msg.testFullName) {
       vscode.commands.executeCommand(
         'liveTestRunner.openTimelineDebugger',
@@ -95,14 +95,15 @@ export class ResultsView extends BaseWebviewProvider {
 
   // ── Scoped log builders ────────────────────────────────────────────────────
 
-  private _sendScopedLogs(fileId: string, suiteId?: string, testId?: string): void {
-    const payload = this._buildScopedLogPayload(fileId, suiteId, testId);
+  private _sendScopedLogs(fileId: string, nodeId?: string): void {
+    const payload = this._buildScopedLogPayload(fileId, nodeId);
     this.postMessage({ type: 'scope-logs', payload });
   }
 
-  private _buildScopedLogPayload(fileId: string, suiteId?: string, testId?: string): ScopedLogPayload {
-    if (testId && suiteId) { return this._buildTestPayload(fileId, suiteId, testId); }
-    if (suiteId)           { return this._buildSuitePayload(fileId, suiteId); }
+  private _buildScopedLogPayload(fileId: string, nodeId?: string): ScopedLogPayload {
+    if (nodeId) {
+      return this._buildNodePayload(fileId, nodeId);
+    }
     return this._buildFilePayload(fileId);
   }
 
@@ -116,29 +117,28 @@ export class ResultsView extends BaseWebviewProvider {
       capturedAt: fileOutput.capturedAt, lines: fileOutput.lines,
     }];
 
-    for (const [suiteId, suite] of fileResult.suites) {
-      const suiteOutput = this.store.getSuiteOutput(fileId, suiteId);
-      if (suiteOutput.capturedAt !== null && suiteOutput.lines.length > 0) {
-        logSections.push({ label: suite.name, scope: 'suite', capturedAt: suiteOutput.capturedAt, lines: suiteOutput.lines });
-      }
-      for (const [testId, test] of suite.tests) {
-        const testOutput = this.store.getTestOutput(fileId, suiteId, testId);
-        if (testOutput.capturedAt !== null && testOutput.lines.length > 0) {
-          logSections.push({ label: test.name, scope: 'test', capturedAt: testOutput.capturedAt, lines: testOutput.lines });
-        }
+    // Walk all nodes in this file, collecting logs and errors
+    const allNodes = this.store.getFileNodes(fileId);
+    for (const node of allNodes) {
+      if (node.output.capturedAt !== null && node.output.lines.length > 0) {
+        logSections.push({
+          label: node.name,
+          scope: node.type === 'test' ? 'test' : 'suite',
+          capturedAt: node.output.capturedAt,
+          lines: node.output.lines,
+        });
       }
     }
 
+    // Collect errors from all test nodes
     const fileErrors: ErrorEntry[] = [];
-    for (const [suiteId, suite] of fileResult.suites) {
-      for (const [testId, test] of suite.tests) {
-        if (test.failureMessages.length > 0) {
-          fileErrors.push({
-            testName: test.name,
-            failureMessages: test.failureMessages,
-            capturedAt: this.store.getTestOutput(fileId, suiteId, testId).capturedAt ?? fileOutput.capturedAt,
-          });
-        }
+    for (const node of allNodes) {
+      if (node.type === 'test' && node.failureMessages.length > 0) {
+        fileErrors.push({
+          testName: node.name,
+          failureMessages: node.failureMessages,
+          capturedAt: node.output.capturedAt ?? fileOutput.capturedAt,
+        });
       }
     }
 
@@ -149,56 +149,71 @@ export class ResultsView extends BaseWebviewProvider {
     return { logSections, errorSections };
   }
 
-  private _buildSuitePayload(fileId: string, suiteId: string): ScopedLogPayload {
-    const suite = this.store.getSuite(fileId, suiteId);
-    if (!suite) { return { logSections: [], errorSections: [] }; }
+  private _buildNodePayload(fileId: string, nodeId: string): ScopedLogPayload {
+    const node = this.store.getNode(nodeId);
+    if (!node) { return { logSections: [], errorSections: [] }; }
 
-    const suiteOutput = this.store.getSuiteOutput(fileId, suiteId);
+    const nodeOutput = this.store.getNodeOutput(nodeId);
+    const scope: 'suite' | 'test' = node.type === 'test' ? 'test' : 'suite';
+
     const logSections: LogSection[] = [{
-      label: suite.name, scope: 'suite',
-      capturedAt: suiteOutput.capturedAt, lines: suiteOutput.lines,
+      label: node.name, scope,
+      capturedAt: nodeOutput.capturedAt, lines: nodeOutput.lines,
     }];
 
-    for (const [testId, test] of suite.tests) {
-      const testOutput = this.store.getTestOutput(fileId, suiteId, testId);
-      if (testOutput.capturedAt !== null && testOutput.lines.length > 0) {
-        logSections.push({ label: test.name, scope: 'test', capturedAt: testOutput.capturedAt, lines: testOutput.lines });
+    // For suites: include descendant nodes' logs and errors
+    if (node.type === 'suite') {
+      const descendants = this._collectDescendants(nodeId);
+      for (const desc of descendants) {
+        if (desc.output.capturedAt !== null && desc.output.lines.length > 0) {
+          logSections.push({
+            label: desc.name,
+            scope: desc.type === 'test' ? 'test' : 'suite',
+            capturedAt: desc.output.capturedAt,
+            lines: desc.output.lines,
+          });
+        }
       }
+
+      const errors: ErrorEntry[] = [];
+      for (const desc of descendants) {
+        if (desc.type === 'test' && desc.failureMessages.length > 0) {
+          errors.push({
+            testName: desc.name,
+            failureMessages: desc.failureMessages,
+            capturedAt: desc.output.capturedAt,
+          });
+        }
+      }
+
+      const errorSections: ErrorSection[] = errors.length > 0
+        ? [{ label: node.name, scope: 'suite', errors }]
+        : [];
+
+      return { logSections, errorSections };
     }
 
-    const suiteErrors: ErrorEntry[] = [];
-    for (const [testId, test] of suite.tests) {
-      if (test.failureMessages.length > 0) {
-        suiteErrors.push({
-          testName: test.name,
-          failureMessages: test.failureMessages,
-          capturedAt: this.store.getTestOutput(fileId, suiteId, testId).capturedAt,
-        });
-      }
-    }
-
-    const errorSections: ErrorSection[] = suiteErrors.length > 0
-      ? [{ label: suite.name, scope: 'suite', errors: suiteErrors }]
+    // For tests: just this node's errors
+    const errorSections: ErrorSection[] = node.failureMessages.length > 0
+      ? [{ label: node.name, scope: 'test', errors: [{ testName: node.name, failureMessages: node.failureMessages, capturedAt: nodeOutput.capturedAt }] }]
       : [];
 
     return { logSections, errorSections };
   }
 
-  private _buildTestPayload(fileId: string, suiteId: string, testId: string): ScopedLogPayload {
-    const test = this.store.getTest(fileId, suiteId, testId);
-    if (!test) { return { logSections: [], errorSections: [] }; }
-
-    const testOutput = this.store.getTestOutput(fileId, suiteId, testId);
-
-    const logSections: LogSection[] = [{
-      label: test.name, scope: 'test',
-      capturedAt: testOutput.capturedAt, lines: testOutput.lines,
-    }];
-
-    const errorSections: ErrorSection[] = test.failureMessages.length > 0
-      ? [{ label: test.name, scope: 'test', errors: [{ testName: test.name, failureMessages: test.failureMessages, capturedAt: testOutput.capturedAt }] }]
-      : [];
-
-    return { logSections, errorSections };
+  /** Collect all descendant nodes (children, grandchildren, etc.) of a given node. */
+  private _collectDescendants(nodeId: string): TestNode[] {
+    const result: TestNode[] = [];
+    const stack = [...(this.store.getNode(nodeId)?.children ?? [])];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      const node = this.store.getNode(id);
+      if (!node) continue;
+      result.push(node);
+      for (const childId of node.children) {
+        stack.push(childId);
+      }
+    }
+    return result;
   }
 }

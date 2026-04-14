@@ -33,7 +33,7 @@ No configuration required for standard Jest projects. No dependency on the VS Co
 
 ### Static test discovery on project open
 
-The full test tree — every file, suite, and test case — appears in the sidebar the moment you open a project, before you click Start Testing. Line numbers, pending `○` icons, and `▶ Run` / `▷ Debug` CodeLens buttons are all live from the first file scan. No warm-up run required.
+The full test tree — every file, suite (at any nesting depth), and test case — appears in the sidebar the moment you open a project, before you click Start Testing. Line numbers, pending `○` icons, and `▶ Run` / `▷ Debug` CodeLens buttons are all live from the first file scan. No warm-up run required.
 
 The extension parses your test files in the background using Babel's AST (your project's own Babel — nothing extra to install). Large projects (500+ files, 3000+ tests) stay responsive because discovery runs in batches with event-loop yields between them.
 
@@ -51,7 +51,7 @@ Tests re-run automatically on every save. A status bar badge gives you a one-gla
 
 ### Custom Test Explorer
 
-A sidebar panel shows your full test suite as a **file → suite → test** tree. Every row has live status icons and color-coded duration badges.
+A sidebar panel shows your full test suite as a recursive **file → suite → … → test** tree with unlimited nesting depth. Every row has live status icons and color-coded duration badges. When one test fails, its parent suites light up in red all the way to the file level.
 
 ![Explorer Test Cases View](resources/images/explorer-test-run.png)
 ---
@@ -62,7 +62,7 @@ A three-column split view for deep inspection:
 
 | Column | What it shows |
 |--------|--------------|
-| **Tests** | The same file → suite → test tree, with search and filters |
+| **Tests** | The same recursive test tree, with search and filters |
 | **Output** | Console logs for the selected test, tabbed by level (All / Logs / Info / Warn / Error) |
 | **Errors** | Failure messages and stack traces for the selection |
 

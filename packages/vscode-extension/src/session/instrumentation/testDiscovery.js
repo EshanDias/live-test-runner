@@ -274,6 +274,10 @@ function _analyseDescribeBody(bodyStatements, fileScopeVars) {
 /**
  * Statically discovers all suites and tests in a source file using AST traversal.
  *
+ * Returns a **nested** tree of suites — each suite can have `children` sub-suites
+ * in addition to `tests`. This directly reflects the nesting of `describe` blocks
+ * in the source code.
+ *
  * @param {string} sourceCode  — raw file content
  * @param {string} sourcePath  — absolute file path (used only for error context)
  * @param {string} rootDir     — project root for resolving Babel packages
@@ -282,6 +286,7 @@ function _analyseDescribeBody(bodyStatements, fileScopeVars) {
  *   suites: Array<{
  *     name: string; line: number;
  *     tests: Array<{ name: string; line: number; fullName: string }>;
+ *     children: Array<Suite>;
  *     isSharedVars: boolean; sharedVarNames: string[];
  *   }>;
  *   rootTests: Array<{ name: string; line: number; fullName: string }>;
@@ -301,11 +306,14 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
     return null;
   }
 
-  // Stack of { name: string, line: number } for nested describe blocks
+  /**
+   * Stack of suite nodes for nested describe blocks.
+   * Each entry is a direct reference to the suite object in the tree.
+   */
   const describeStack = [];
 
-  // Suites keyed by full joined name (e.g. "Outer > Inner") — insertion order preserved
-  const suiteMap = new Map();
+  /** Top-level suites (direct children of the file). */
+  const rootSuites = [];
 
   const rootTests = [];
 
@@ -313,15 +321,11 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
   // These can create cross-test dependencies for every suite in the file.
   const fileScopeVars = _collectDescribeScopeVars(ast.program.body);
 
-  function currentSuiteKey() {
-    return describeStack.length ? describeStack.map((d) => d.name).join(' > ') : null;
-  }
-
-  function ensureSuite(key, line) {
-    if (!suiteMap.has(key)) {
-      suiteMap.set(key, { name: key, line, tests: [], isSharedVars: false, sharedVarNames: [] });
-    }
-    return suiteMap.get(key);
+  /** Build the space-separated fullName prefix from the describe stack. */
+  function currentFullNamePrefix() {
+    return describeStack.length
+      ? describeStack.map((d) => d.name).join(' ')
+      : null;
   }
 
   _traverse(ast, {
@@ -342,12 +346,17 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
         const line = nodePath.node.loc?.start?.line ?? 0;
 
         if (callType === 'describe') {
-          describeStack.push({ name, line });
-          // Register the suite immediately so it appears even if tests are found later.
-          const suite = ensureSuite(currentSuiteKey(), line);
+          // Create a new suite node
+          const suite = {
+            name,
+            line,
+            tests: [],
+            children: [],
+            isSharedVars: false,
+            sharedVarNames: [],
+          };
 
           // Analyse the describe callback body for shared variables.
-          // The callback is the last function argument.
           const cb = args.find(
             (a) => a.type === 'FunctionExpression' || a.type === 'ArrowFunctionExpression',
           );
@@ -359,16 +368,25 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
             suite.isSharedVars   = isSharedVars;
             suite.sharedVarNames = sharedVarNames;
           }
+
+          // Attach to parent suite or to root
+          if (describeStack.length > 0) {
+            describeStack[describeStack.length - 1].children.push(suite);
+          } else {
+            rootSuites.push(suite);
+          }
+
+          describeStack.push(suite);
           return;
         }
 
         // callType === 'test'
-        const suiteKey = currentSuiteKey();
-        // fullName matches Jest's test.fullName: "<suite> <test>"
-        const fullName = suiteKey ? `${suiteKey} ${name}` : name;
+        const prefix = currentFullNamePrefix();
+        // fullName matches Jest's test.fullName: "<suite chain> <test>"
+        const fullName = prefix ? `${prefix} ${name}` : name;
 
-        if (suiteKey) {
-          ensureSuite(suiteKey, line).tests.push({ name, line, fullName });
+        if (describeStack.length > 0) {
+          describeStack[describeStack.length - 1].tests.push({ name, line, fullName });
         } else {
           rootTests.push({ name, line, fullName });
         }
@@ -383,7 +401,7 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
   });
 
   return {
-    suites:    Array.from(suiteMap.values()),
+    suites:    rootSuites,
     rootTests,
   };
 }

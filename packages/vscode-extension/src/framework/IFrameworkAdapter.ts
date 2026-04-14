@@ -3,10 +3,8 @@ import { TestSession } from '@live-test-runner/core';
 import { ResultStore } from '../store/ResultStore';
 
 export interface RerunOptions {
-  /** Narrow result application to a specific suite (partial rerun) */
-  suiteId?: string;
-  /** Narrow result application to a specific test (partial rerun) */
-  testId?: string;
+  /** Narrow result application to a specific node (partial rerun) */
+  nodeId?: string;
   /**
    * When set, only update tests whose fullName is in this set.
    * Used for pattern-based runs where Jest marks non-matching tests as "skipped"

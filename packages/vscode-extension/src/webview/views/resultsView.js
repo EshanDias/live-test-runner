@@ -223,7 +223,7 @@
 
         case 'files-rerunning':
           for (const fileId of (msg.fileIds ?? [])) {
-            _list.markFileRunning(fileId, msg.suiteId, msg.testId);
+            _list.markFileRunning(fileId, msg.nodeId);
           }
           break;
 
@@ -237,7 +237,7 @@
           break;
 
         case 'scope-changed':
-          _list.setSelected(msg.fileId, msg.suiteId, msg.testId);
+          _list.setSelected(msg.fileId, msg.nodeId);
           break;
 
         case 'scope-logs':

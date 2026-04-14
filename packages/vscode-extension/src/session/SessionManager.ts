@@ -20,8 +20,9 @@ import { LTR_TMP_DIR } from '../constants';
  */
 function nameToPattern(name: string): string {
   const escLiteral = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Expand '…', '<dynamic>', and Jest's % placeholders (%s, %d, %i, etc.) into wildcard matching
   return name
-    .split(/…|<dynamic>/)
+    .split(/…|<dynamic>|%[sdifjo#%]/)
     .map(escLiteral)
     .join('.*');
 }
@@ -182,8 +183,7 @@ export class SessionManager {
   async rerunScope(args: {
     scope: string;
     fileId: string;
-    suiteId?: string;
-    testId?: string;
+    nodeId?: string;
     fullName?: string;
   }): Promise<void> {
     const projectRoot = this._getProjectRoot();
@@ -195,8 +195,7 @@ export class SessionManager {
       this._notify(
         'onFilesRerunning',
         [args.fileId],
-        args.suiteId,
-        args.testId,
+        args.nodeId,
       );
       this._updateStatusBar('Running… 1/1');
       try {
@@ -206,7 +205,7 @@ export class SessionManager {
           nameToPattern(args.fullName),
           projectRoot,
           (msg) => this._outputChannel.appendLine(msg),
-          { suiteId: args.suiteId, testId: args.testId },
+          { nodeId: args.nodeId },
         );
       } catch (error) {
         this._outputChannel.appendLine(
@@ -341,19 +340,23 @@ export class SessionManager {
         sourceFilePath,
         testFilePath,
       );
-      const suites = Object.values(suiteInfo);
 
-      if (suites.length === 0) {
+      if (Object.keys(suiteInfo).length === 0) {
         filesToRunFull.push(testFilePath);
         continue;
       }
 
-      for (const suite of suites) {
+      for (const [suiteName, suite] of Object.entries(suiteInfo)) {
         if (suite.isSharedVars) {
           // Shared state — must run the whole file to get correct results
           if (!filesToRunFull.includes(testFilePath)) {
             filesToRunFull.push(testFilePath);
           }
+        } else if (suite.testCases.length === 0) {
+          // If the suite was explicitly traced but had 0 individual tests execute
+          // (e.g. an empty test.each([]) or for loop array), we MUST still run the suite 
+          // recursively by its name since modifying the dependency might have populated it.
+          testCasesToRun.push({ filePath: testFilePath, fullName: suiteName });
         } else {
           for (const testCase of suite.testCases) {
             testCasesToRun.push({ filePath: testFilePath, fullName: testCase });
@@ -403,16 +406,14 @@ export class SessionManager {
     }
 
     // Determine the run scope for each file by comparing the requested names
-    // against what the store knows about the file's suites/tests.
+    // against what the store knows about the file's node tree.
     //
     // Promotion rules (applied per file):
-    //  - All suites fully covered → promote to full file run
-    //  - One suite fully covered  → run with suiteId opt (no testId)
-    //  - Single test              → run with suiteId + testId opts
-    //  - Everything else          → run with pattern only (no opts)
+    //  - All tests in the file covered → promote to full file run
+    //  - Single test → run with nodeId opt
+    //  - Everything else → run with pattern only (no opts)
     type ScopedRun =
-      | { kind: 'suite'; filePath: string; names: string[]; suiteId: string }
-      | { kind: 'test';  filePath: string; names: string[]; suiteId: string; testId: string }
+      | { kind: 'node'; filePath: string; names: string[]; nodeId: string }
       | { kind: 'pattern'; filePath: string; names: string[] };
 
     const filesToRunFull: string[] = [];
@@ -426,48 +427,27 @@ export class SessionManager {
         continue;
       }
 
-      const allSuites = Array.from(file.suites.values());
       const nameSet = new Set(names);
 
       // Check if every test in the file is covered → full file run
-      const allTestFullNames = allSuites.flatMap((s) =>
-        Array.from(s.tests.values()).map((t) => t.fullName),
-      );
+      const allFileTests = this._store.getFileNodes(filePath).filter(n => n.type === 'test');
+      const allTestFullNames = allFileTests.map(n => n.fullName);
       if (allTestFullNames.length > 0 && allTestFullNames.every((n) => nameSet.has(n))) {
         filesToRunFull.push(filePath);
         continue;
       }
 
-      // Find which suites have at least one test in the name set
-      const touchedSuites = allSuites.filter((s) =>
-        Array.from(s.tests.values()).some((t) => nameSet.has(t.fullName)),
-      );
-
-      if (touchedSuites.length === 1) {
-        const suite = touchedSuites[0];
-        const suiteTests = Array.from(suite.tests.values());
-        const coveredTests = suiteTests.filter((t) => nameSet.has(t.fullName));
-
-        if (coveredTests.length === suiteTests.length) {
-          // Whole suite covered
-          scopedRuns.push({ kind: 'suite', filePath, names, suiteId: suite.suiteId });
-        } else if (coveredTests.length === 1) {
-          // Single test
-          scopedRuns.push({
-            kind: 'test',
-            filePath,
-            names,
-            suiteId: suite.suiteId,
-            testId: coveredTests[0].testId,
-          });
-        } else {
-          // Subset of one suite — pattern only
-          scopedRuns.push({ kind: 'pattern', filePath, names });
+      // Try to find a single matching test node for targeted run
+      if (names.length === 1) {
+        const testNode = allFileTests.find(n => n.fullName === names[0]);
+        if (testNode) {
+          scopedRuns.push({ kind: 'node', filePath, names, nodeId: testNode.id });
+          continue;
         }
-      } else {
-        // Multiple suites touched — pattern only
-        scopedRuns.push({ kind: 'pattern', filePath, names });
       }
+
+      // Fallback: pattern-only run
+      scopedRuns.push({ kind: 'pattern', filePath, names });
     }
 
     // Promote full-file runs to _runFiles
@@ -479,21 +459,13 @@ export class SessionManager {
       return;
     }
 
-    // Mark affected tests as running and push to webview
+    // Mark affected nodes (and their descendants) as running
     for (const run of scopedRuns) {
-      const file = this._store.getFile(run.filePath);
-      if (file) {
-        const namesToMark = new Set(run.names);
-        for (const suite of file.suites.values()) {
-          for (const test of suite.tests.values()) {
-            if (namesToMark.has(test.fullName)) {
-              this._store.markTestsRunning(
-                run.filePath,
-                suite.suiteId,
-                test.testId,
-              );
-            }
-          }
+      const allNodes = this._store.getFileNodes(run.filePath);
+      const namesToMark = new Set(run.names);
+      for (const node of allNodes) {
+        if (namesToMark.has(node.fullName)) {
+          this._store.markTestsRunning(run.filePath, node.id);
         }
       }
       this._notify('onFileResult', run.filePath);
@@ -518,8 +490,7 @@ export class SessionManager {
             const pattern = names.map(nameToPattern).join('|');
 
             const opts =
-              run.kind === 'suite'   ? { suiteId: run.suiteId } :
-              run.kind === 'test'    ? { suiteId: run.suiteId, testId: run.testId } :
+              run.kind === 'node' ? { nodeId: run.nodeId } :
               /* pattern */ { fullNames: new Set(run.names) };
 
             try {
@@ -714,20 +685,16 @@ export class SessionManager {
     filePath: string,
     testLogs: Map<string, OutputLine[]>,
   ): void {
-    const file = this._store.getFile(filePath);
-    if (!file) {
-      return;
-    }
+    // Walk all test nodes in this file and match by fullName
+    const allTestNodes = this._store.getFileNodes(filePath).filter(n => n.type === 'test');
     const now = Date.now();
-    for (const suite of file.suites.values()) {
-      for (const [testId, test] of suite.tests) {
-        const lines = testLogs.get(test.fullName);
-        if (lines) {
-          this._store.setTestOutput(filePath, suite.suiteId, testId, {
-            lines,
-            capturedAt: now,
-          });
-        }
+    for (const testNode of allTestNodes) {
+      const lines = testLogs.get(testNode.fullName);
+      if (lines) {
+        this._store.setNodeOutput(testNode.id, {
+          lines,
+          capturedAt: now,
+        });
       }
     }
   }
@@ -735,7 +702,7 @@ export class SessionManager {
   private _refreshScopedLogs(fileId: string): void {
     const sel = this._selection.get();
     if (sel?.fileId === fileId) {
-      this._resultsView.sendScopedData(sel.fileId, sel.suiteId, sel.testId);
+      this._resultsView.sendScopedData(sel.fileId, sel.nodeId);
     }
   }
 
