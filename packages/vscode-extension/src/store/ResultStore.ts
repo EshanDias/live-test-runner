@@ -22,7 +22,8 @@ export type TestStatus =
   | 'running'
   | 'passed'
   | 'failed'
-  | 'skipped';
+  | 'skipped'
+  | 'template';
 
 export type OutputLevel = 'log' | 'info' | 'warn' | 'error';
 
@@ -57,6 +58,7 @@ export interface TestNode {
   duration?: number;
   /** 1-based source line reported by the framework or AST */
   line?: number;
+  isDynamicTemplate?: boolean;
 
   output: ScopedOutput;
   failureMessages: string[];
@@ -252,6 +254,7 @@ export class ResultStore {
     name: string,
     fullName: string,
     line?: number,
+    isDynamicTemplate?: boolean,
   ): void {
     if (this.nodes.has(nodeId)) {
       return;
@@ -264,8 +267,9 @@ export class ResultStore {
       fileId,
       parentId,
       children: [],
-      status: 'pending',
+      status: isDynamicTemplate ? 'template' : 'pending',
       line,
+      isDynamicTemplate,
       output: { lines: [], capturedAt: null },
       failureMessages: [],
     });
@@ -414,32 +418,62 @@ export class ResultStore {
    * we preserve the tree so the user doesn't lose all their tests, and simply downgrade
    * 'running' back to 'pending'.
    */
-  cleanupStaleNodes(fileId: string, hadTestCases: boolean): void {
-    if (!hadTestCases) {
-      for (const node of this.nodes.values()) {
-        if (node.fileId === fileId && node.status === 'running') {
-          // If the file executed zero tests, preserve the UI tree.
-          node.status = 'pending';
+  cleanupStaleNodes(fileId: string, hadTestCases: boolean, scopeNodeId?: string): void {
+    const nodesToRemove: string[] = [];
+    for (const [nodeId, node] of this.nodes) {
+      if (node.fileId !== fileId || node.status !== 'running') {
+        continue;
+      }
+
+      // If a scope was provided, only touch 'running' nodes within that subtree.
+      if (scopeNodeId) {
+        let inScope = false;
+        let p: string | null | undefined = nodeId;
+        while (p) {
+          if (p === scopeNodeId) {
+            inScope = true;
+            break;
+          }
+          p = this.nodes.get(p)?.parentId;
+        }
+        if (!inScope) {
+          continue;
         }
       }
-      // Re-evaluate the file itself so it doesn't get stuck running
-      this._recalculateFileStatus(fileId);
-      return;
-    }
 
-    const testsToRemove: string[] = [];
-    for (const [nodeId, node] of this.nodes) {
-      // ONLY sweep leaf test nodes. Sweeping a running suite would also wipe out
-      // its 'passed' or 'failed' children!
-      if (node.fileId === fileId && node.type === 'test' && node.status === 'running') {
-        testsToRemove.push(nodeId);
+      // If a node is a dynamic anchor, we NEVER remove it, just revert status.
+      if (node.isDynamicTemplate) {
+        node.status = 'template';
+        continue;
+      }
+
+      // We remove'running' nodes if:
+      // 1. Jest successfully ran at least one test in the file (normal cleanup).
+      // 2. OR the node is a child of a dynamic template (always prune stale variations).
+      let shouldRemove = hadTestCases;
+      if (!shouldRemove && node.parentId) {
+        let p = this.nodes.get(node.parentId);
+        while (p) {
+          if (p.isDynamicTemplate) {
+            shouldRemove = true;
+            break;
+          }
+          p = p.parentId ? this.nodes.get(p.parentId) : undefined;
+        }
+      }
+
+      if (shouldRemove) {
+        nodesToRemove.push(nodeId);
+      } else {
+        // Syntax error or zero matches: preserve static structure
+        node.status = 'pending';
       }
     }
 
     // Track parents so we can bubble up after removals
     const parentsToUpdate = new Set<string>();
 
-    for (const nodeId of testsToRemove) {
+    for (const nodeId of nodesToRemove) {
       const parentId = this.nodes.get(nodeId)?.parentId;
       if (parentId) {
         parentsToUpdate.add(parentId);
@@ -461,7 +495,11 @@ export class ResultStore {
       const suitesToRemove: string[] = [];
       for (const [nodeId, node] of this.nodes) {
         if (node.fileId === fileId && node.type === 'suite' && node.children.length === 0) {
-          suitesToRemove.push(nodeId);
+          if (node.isDynamicTemplate) {
+            node.status = 'template';
+          } else {
+            suitesToRemove.push(nodeId);
+          }
         }
       }
       if (suitesToRemove.length > 0) {
@@ -500,15 +538,18 @@ export class ResultStore {
     const rootStatuses = file.rootNodeIds.map(
       (id) => this.nodes.get(id)?.status ?? 'pending',
     );
+    const activeStatuses = rootStatuses.filter((s) => s !== 'pending' && s !== 'skipped' && s !== 'template');
     file.status = rootStatuses.includes('failed')
       ? 'failed'
       : rootStatuses.includes('running')
         ? 'running'
-        : rootStatuses.every((s) => s === 'passed')
+        : activeStatuses.length > 0 && activeStatuses.every((s) => s === 'passed')
           ? 'passed'
           : rootStatuses.every((s) => s === 'skipped')
             ? 'skipped'
-            : 'pending';
+            : rootStatuses.includes('template')
+              ? 'template'
+              : 'pending';
   }
 
   // ── Scoped output setters ──────────────────────────────────────────────────
@@ -673,6 +714,7 @@ export class ResultStore {
         status: node.status,
         duration: node.duration,
         line: node.line,
+        isDynamicTemplate: node.isDynamicTemplate,
         failureMessages: node.failureMessages,
         // output omitted — fetched on demand via scope-logs
       });
@@ -694,15 +736,18 @@ export class ResultStore {
         const childStatuses = current.children.map(
           (id) => this.nodes.get(id)?.status ?? 'pending',
         );
+        const activeStatuses = childStatuses.filter((s) => s !== 'pending' && s !== 'skipped' && s !== 'template');
         current.status = childStatuses.includes('failed')
           ? 'failed'
           : childStatuses.includes('running')
             ? 'running'
-            : childStatuses.every((s) => s === 'passed')
+            : activeStatuses.length > 0 && activeStatuses.every((s) => s === 'passed')
               ? 'passed'
               : childStatuses.every((s) => s === 'skipped')
                 ? 'skipped'
-                : 'pending';
+                : childStatuses.includes('template')
+                  ? 'template'
+                  : 'pending';
         current.duration = current.children.reduce(
           (sum, id) => sum + (this.nodes.get(id)?.duration ?? 0),
           0,

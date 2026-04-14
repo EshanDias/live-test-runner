@@ -216,8 +216,18 @@ export class TestDiscoveryService {
       const rootSuiteId = makeNodeId(filePath, [], '(root)');
       store.nodeDiscovered(filePath, rootSuiteId, null, 'suite', '(root)', '(root)');
       for (const t of result.rootTests) {
+        const isDynamic = t.name.match(/…|%[isdjpxofc]/);
         const testId = makeNodeId(filePath, ['(root)'], t.fullName);
-        store.nodeDiscovered(filePath, testId, rootSuiteId, 'test', t.name, t.fullName, t.line);
+        store.nodeDiscovered(
+          filePath,
+          testId,
+          rootSuiteId,
+          isDynamic ? 'suite' : 'test',
+          t.name,
+          t.fullName,
+          t.line,
+          !!isDynamic
+        );
         if (t.line) {
           store.setLineEntry(filePath, t.line, { nodeId: testId, fileId: filePath });
         }
@@ -249,8 +259,18 @@ export class TestDiscoveryService {
     store: ResultStore,
   ): void {
     for (const suite of suites) {
+      const isDynamic = suite.name.match(/…|%[isdjpxofc]/);
       const suiteId = makeNodeId(filePath, ancestorNames, suite.name);
-      store.nodeDiscovered(filePath, suiteId, parentId, 'suite', suite.name, [...ancestorNames, suite.name].join(' '), suite.line);
+      store.nodeDiscovered(
+        filePath,
+        suiteId,
+        parentId,
+        'suite',
+        suite.name,
+        [...ancestorNames, suite.name].join(' '),
+        suite.line,
+        !!isDynamic
+      );
       if (suite.line) {
         store.setLineEntry(filePath, suite.line, { nodeId: suiteId, fileId: filePath });
       }
@@ -258,8 +278,18 @@ export class TestDiscoveryService {
       // Populate direct test children
       const testAncestors = [...ancestorNames, suite.name];
       for (const t of suite.tests) {
+        const isDynamic = t.name.match(/…|%[isdjpxofc]/);
         const testId = makeNodeId(filePath, testAncestors, t.name);
-        store.nodeDiscovered(filePath, testId, suiteId, 'test', t.name, t.fullName, t.line);
+        store.nodeDiscovered(
+          filePath,
+          testId,
+          suiteId,
+          isDynamic ? 'suite' : 'test',
+          t.name,
+          t.fullName,
+          t.line,
+          !!isDynamic
+        );
         if (t.line) {
           store.setLineEntry(filePath, t.line, { nodeId: testId, fileId: filePath });
         }

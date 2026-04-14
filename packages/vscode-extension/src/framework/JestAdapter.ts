@@ -16,6 +16,8 @@ import {
   makeNodeId,
 } from '../store/ResultStore';
 
+import { nameToPattern } from '../session/SessionManager';
+
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
 function stripAnsi(s: string): string {
@@ -187,21 +189,38 @@ export class JestAdapter implements IFrameworkAdapter {
 
       // Ensure all ancestor suite nodes exist
       let parentId: string | null = null;
+      const ancsForId: string[] = [];
+
       for (let i = 0; i < ancestors.length; i++) {
-        const ancestorChain = ancestors.slice(0, i);
-        const suiteNodeId = makeNodeId(filePath, ancestorChain, ancestors[i]);
+        const title = ancestors[i];
+
+        // 1. Check if current parent contains an isDynamicTemplate child matching this title
+        const siblings = parentId
+          ? store.getChildren(parentId)
+          : store.getFileNodes(filePath).filter((n) => !n.parentId);
+
+        const template = siblings.find(
+          (s) =>
+            s.isDynamicTemplate &&
+            title.match(new RegExp('^' + nameToPattern(s.name) + '$')),
+        );
+
+        if (template) {
+          parentId = template.id;
+          ancsForId.push(template.name);
+        }
+
+        const suiteNodeId = makeNodeId(filePath, ancsForId, title);
 
         // If filtering to a specific node, skip test cases outside the subtree
         if (opts?.nodeId) {
           const targetNode = store.getNode(opts.nodeId);
           if (targetNode) {
-            // The node ID should be an ancestor of or equal to the current suite
-            const isInScope = suiteNodeId === opts.nodeId ||
-                              suiteNodeId.startsWith(opts.nodeId + '::') ||
-                              opts.nodeId.startsWith(suiteNodeId + '::');
-            // We only check at the deepest suite level
+            const isInScope =
+              suiteNodeId === opts.nodeId ||
+              suiteNodeId.startsWith(opts.nodeId + '::') ||
+              opts.nodeId.startsWith(suiteNodeId + '::');
             if (i === ancestors.length - 1 && !isInScope) {
-              // Skip this test case entirely
               parentId = null;
               break;
             }
@@ -214,19 +233,32 @@ export class JestAdapter implements IFrameworkAdapter {
         }
 
         // Create suite node if it doesn't exist
-        const suiteName = ancestors[i];
         const suiteFullName = ancestors.slice(0, i + 1).join(' ');
-        store.nodeStarted(filePath, suiteNodeId, parentId, 'suite', suiteName, suiteFullName);
+        store.nodeStarted(filePath, suiteNodeId, parentId, 'suite', title, suiteFullName);
         touchedNodeIds.add(suiteNodeId);
         parentId = suiteNodeId;
+        ancsForId.push(title);
       }
 
       if (parentId === null) {
         continue; // Skipped due to filtering
       }
 
+      // Check if the leaf test title matches a dynamic template under the current parent
+      const leafSiblings = store.getChildren(parentId);
+      const leafTemplate = leafSiblings.find(
+        (s) =>
+          s.isDynamicTemplate &&
+          tc.title.match(new RegExp('^' + nameToPattern(s.name) + '$')),
+      );
+
+      if (leafTemplate) {
+        parentId = leafTemplate.id;
+        ancsForId.push(leafTemplate.name);
+      }
+
       // Create/update the test node
-      const testNodeId = makeNodeId(filePath, ancestors, tc.title);
+      const testNodeId = makeNodeId(filePath, ancsForId, tc.title);
       store.nodeStarted(
         filePath,
         testNodeId,
@@ -294,7 +326,7 @@ export class JestAdapter implements IFrameworkAdapter {
     // (either AST placeholders or deleted tests) so we remove them.
     // If it crashed entirely (0 test cases), we'll downgrade them to 'pending'.
     const hadTestCases = fileResult.testCases.length > 0;
-    store.cleanupStaleNodes(filePath, hadTestCases);
+    store.cleanupStaleNodes(filePath, hadTestCases, opts?.nodeId);
 
     // Populate LineMap (only clear on full-file run to preserve other tests' entries)
     if (!opts?.nodeId) {

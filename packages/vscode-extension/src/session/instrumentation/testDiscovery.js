@@ -112,6 +112,19 @@ function getCallType(node) {
     }
   }
 
+  // ── Curried .each with table: test.each`table`(name, fn) ────────────────
+  if (callee.type === 'TaggedTemplateExpression') {
+    const inner = callee.tag;
+    if (inner.type === 'MemberExpression') {
+      const root = _memberRoot(inner);
+      const prop = _memberLeaf(inner);
+      if (prop === 'each') {
+        if (root === 'describe') { return 'describe'; }
+        if (root === 'it' || root === 'test') { return 'test'; }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -331,7 +344,7 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
   _traverse(ast, {
     CallExpression: {
       enter(nodePath) {
-        const callType = getCallType(nodePath.node);
+        let callType = getCallType(nodePath.node);
         if (!callType) { return; }
 
         const args = nodePath.node.arguments;

@@ -18,7 +18,7 @@ import { LTR_TMP_DIR } from '../constants';
  * '…' and '<dynamic>' placeholders (from template-literal test discovery) are
  * expanded to '.*' so they match the real names Jest emits at runtime.
  */
-function nameToPattern(name: string): string {
+export function nameToPattern(name: string): string {
   const escLiteral = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // Expand '…', '<dynamic>', and Jest's % placeholders (%s, %d, %i, etc.) into wildcard matching
   return name
@@ -191,12 +191,33 @@ export class SessionManager {
       return;
     }
 
+    // If running a dynamic test variation, we must pivot to the parent template anchor
+    // because individual variations cannot be isolated by Jest name-filtering patterns.
+    if (args.nodeId) {
+      const node = this._store.getNode(args.nodeId);
+      if (node) {
+        let p: typeof node | undefined = node;
+        while (p) {
+          if (p.isDynamicTemplate) {
+            args.nodeId = p.id;
+            args.fullName = p.fullName;
+            args.scope = 'suite';
+            break;
+          }
+          p = p.parentId ? this._store.getNode(p.parentId) : undefined;
+        }
+      }
+    }
+
     if ((args.scope === 'test' || args.scope === 'suite') && args.fullName) {
       this._notify(
         'onFilesRerunning',
         [args.fileId],
         args.nodeId,
       );
+      if (args.nodeId) {
+        this._store.markNodeRunning(args.nodeId);
+      }
       this._updateStatusBar('Running… 1/1');
       try {
         await this._adapter.runTestCase(

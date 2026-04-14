@@ -23,6 +23,7 @@ const STATUS_ICON = {
   failed: '<span class="status-failed">✗</span>',
   skipped: '<span class="status-skipped">—</span>',
   pending: '<span class="status-pending">○</span>',
+  template: '<span class="status-template">⬚</span>',
 };
 
 /* TestListLayout ─────────────────────────────────────────────────────────── */
@@ -378,7 +379,8 @@ class TestListLayout {
     return `
       <div class="test-row level-file ${sel}"
            data-id="${esc(file.fileId)}" data-scope="file"
-           data-file="${esc(file.fileId)}">
+           data-file="${esc(file.fileId)}"
+           style="padding-left: calc(12px + var(--indent-offset, 0px))">
         ${toggle}
         <span class="row-status">${icon}</span>
         <span class="row-name" title="${esc(displayName)}">${esc(displayName)}</span>
@@ -441,7 +443,9 @@ class TestListLayout {
     return `
       <div class="test-row level-suite ${sel}"
            data-id="${esc(node.id)}" data-scope="suite"
-           data-file="${esc(file.fileId)}" data-node="${esc(node.id)}">
+           data-file="${esc(file.fileId)}" data-node="${esc(node.id)}"
+           data-dynamic-template="${!!node.isDynamicTemplate}"
+           style="padding-left: calc(${12 + depth * 14}px + var(--indent-offset, 0px))">
         ${toggle}
         <span class="row-status">${icon}</span>
         <span class="row-name" title="${esc(node.name)}">${esc(node.name)}</span>
@@ -469,7 +473,9 @@ class TestListLayout {
     return `
       <div class="test-row level-test ${sel}"
            data-id="${esc(node.id)}" data-scope="test"
-           data-file="${esc(file.fileId)}" data-node="${esc(node.id)}">
+           data-file="${esc(file.fileId)}" data-node="${esc(node.id)}"
+           data-dynamic-template="${!!node.isDynamicTemplate}"
+           style="padding-left: calc(${12 + depth * 14}px + var(--indent-offset, 0px))">
         <span class="row-toggle"></span>
         <span class="row-status">${icon}</span>
         <span class="row-name" title="${esc(node.name)}">${esc(node.name)}</span>
