@@ -28,6 +28,20 @@
         nameEl.textContent = entry.testName;
         entryEl.appendChild(nameEl);
 
+        // Add "Update Snapshot" button if this is a snapshot failure
+        if (entry.isSnapshot) {
+          const updateBtn = document.createElement('button');
+          updateBtn.className = 'error-action-btn update-snapshot-btn';
+          updateBtn.title = 'Update Snapshot';
+          updateBtn.innerHTML = '📷 <span>Update Snapshot</span>';
+          updateBtn.addEventListener('click', () => {
+            if (window.onUpdateSnapshot) {
+              window.onUpdateSnapshot(entry);
+            }
+          });
+          nameEl.appendChild(updateBtn);
+        }
+
         for (const msg of entry.failureMessages) {
           const wrapper = document.createElement('div');
           wrapper.className = 'error-message-wrapper';

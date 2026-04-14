@@ -82,6 +82,17 @@ export class JestAdapter implements IFrameworkAdapter {
     return /\.(test|spec)\.[jt]sx?$/.test(filePath);
   }
 
+  isSnapshotError(message: string): boolean {
+    // Jest snapshot mismatch detection:
+    // 1. Snapshot name: `...`
+    // 2. - Snapshot
+    // 3. + Received
+    return (
+      message.includes('Snapshot name: \x60') ||
+      (message.includes('- Snapshot') && message.includes('+ Received'))
+    );
+  }
+
   // ── Run operations ─────────────────────────────────────────────────────────
 
   async runFile(
@@ -117,6 +128,7 @@ export class JestAdapter implements IFrameworkAdapter {
       filePath,
       fullName,
       isSuiteRun,
+      !!opts?.updateSnapshots,
     );
     const fileResult = jsonResult.fileResults[0];
     if (fileResult) {
@@ -300,11 +312,14 @@ export class JestAdapter implements IFrameworkAdapter {
               ? 'skipped'
               : 'pending';
 
+      const isSnapshot = tc.failureMessages.some((m) => this.isSnapshotError(m));
+
       store.nodeResult(
         testNodeId,
         status,
         tc.duration,
         (tc.failureMessages ?? []).map(stripAnsi),
+        isSnapshot,
       );
 
       // Bubble up status through parents

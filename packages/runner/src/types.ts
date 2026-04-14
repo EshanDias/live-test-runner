@@ -25,6 +25,8 @@ export interface TestCaseRunResult {
   status: 'passed' | 'failed' | 'pending' | 'todo' | 'skipped';
   duration?: number;
   failureMessages: string[];
+  /** Whether any failure in this test case is a snapshot mismatch */
+  isSnapshotFailure?: boolean;
   /** 1-based source location reported by the framework (requires framework support) */
   location?: { line: number; column: number };
 }

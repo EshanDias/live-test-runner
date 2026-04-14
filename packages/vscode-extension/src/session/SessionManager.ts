@@ -186,6 +186,7 @@ export class SessionManager {
     fileId: string;
     nodeId?: string;
     fullName?: string;
+    updateSnapshots?: boolean;
   }): Promise<void> {
     const projectRoot = this._getProjectRoot();
     if (!projectRoot) {
@@ -227,7 +228,7 @@ export class SessionManager {
           nameToPattern(args.fullName),
           projectRoot,
           (msg) => this._outputChannel.appendLine(msg),
-          { nodeId: args.nodeId },
+          { nodeId: args.nodeId, updateSnapshots: args.updateSnapshots },
         );
       } catch (error) {
         this._outputChannel.appendLine(

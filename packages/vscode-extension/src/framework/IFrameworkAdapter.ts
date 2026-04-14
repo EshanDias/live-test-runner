@@ -11,6 +11,8 @@ export interface RerunOptions {
    * even though they were never intended to run.
    */
   fullNames?: Set<string>;
+  /** When true, pass the framework-specific --updateSnapshot flag */
+  updateSnapshots?: boolean;
 }
 
 /**
@@ -32,6 +34,9 @@ export interface IFrameworkAdapter {
 
   /** Quick synchronous check used by the on-save handler. */
   isTestFile(filePath: string): boolean;
+
+  /** Returns true if the given failure message represents a snapshot mismatch. */
+  isSnapshotError(message: string): boolean;
 
   /**
    * Run a full test file. Writes results into the store and returns pass/fail.

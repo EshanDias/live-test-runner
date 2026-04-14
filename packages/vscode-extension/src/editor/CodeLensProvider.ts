@@ -67,6 +67,25 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
           arguments: [entry.fileId, entry.nodeId],
         }),
       );
+
+      // 📷 Update Snapshot
+      if (node.isSnapshot) {
+        lenses.push(
+          new vscode.CodeLens(range, {
+            title: '📷 Update Snapshot',
+            command: 'liveTestRunner.rerunScope',
+            arguments: [
+              {
+                scope: node.type,
+                fileId: entry.fileId,
+                nodeId: entry.nodeId,
+                fullName: node.fullName,
+                updateSnapshots: true,
+              },
+            ],
+          }),
+        );
+      }
     }
 
     return lenses;

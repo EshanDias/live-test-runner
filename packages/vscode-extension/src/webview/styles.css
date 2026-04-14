@@ -685,6 +685,30 @@ body {
   font-size: 12px;
   margin-bottom: 6px;
   color: var(--vscode-charts-red, #f44336);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.error-action-btn {
+  background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  border: none;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.error-action-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, rgba(128,128,128,0.3));
+}
+
+.error-action-btn span {
+  font-weight: normal;
 }
 
 .error-message-wrapper {

@@ -199,6 +199,14 @@
         _list.setData(payload.files);
         updateListCount();
       }
+
+      window.onUpdateSnapshot = (entry) => {
+        _vscode.postMessage({
+          type: 'update-snapshot',
+          fileId: _list.selectedFileId,
+          nodeId: _list.selectedNodeId
+        });
+      };
     },
 
     unmount() {

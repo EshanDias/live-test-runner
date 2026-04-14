@@ -87,6 +87,7 @@ export class JestRunner implements TestRunner {
   async runFullSuiteJson(
     projectRoot: string,
     withCoverage = false,
+    updateSnapshot = false,
   ): Promise<RunResult> {
     this.initAdapter(projectRoot);
     const adapter = this.requireAdapter();
@@ -108,6 +109,7 @@ export class JestRunner implements TestRunner {
       ...configArgs,
       ...adapter.getExtraArgs(projectRoot),
       ...this.baseArgs(),
+      ...(updateSnapshot ? ['--updateSnapshot'] : []),
       '--json',
       ...coverageArgs,
     ];
@@ -117,7 +119,7 @@ export class JestRunner implements TestRunner {
     return this.parser.parse(passed, jsonOutput, stderr);
   }
 
-  async runTestFileJson(filePath: string): Promise<RunResult> {
+  async runTestFileJson(filePath: string, updateSnapshot = false): Promise<RunResult> {
     const projectRoot = this.requireProjectRoot();
     const adapter = this.requireAdapter();
 
@@ -129,6 +131,7 @@ export class JestRunner implements TestRunner {
       ...configArgs,
       ...adapter.getExtraArgs(projectRoot),
       ...this.baseArgs(),
+      ...(updateSnapshot ? ['--updateSnapshot'] : []),
       '--json',
       '--runTestsByPath',
       this.normalisePath(filePath),
@@ -143,9 +146,9 @@ export class JestRunner implements TestRunner {
     return this.parser.parse(passed, jsonOutput, stderr);
   }
 
-  async runTestFilesJson(filePaths: string[]): Promise<RunResult> {
+  async runTestFilesJson(filePaths: string[], updateSnapshot = false): Promise<RunResult> {
     if (filePaths.length === 0) return this.parser.empty(true, []);
-    if (filePaths.length === 1) return this.runTestFileJson(filePaths[0]);
+    if (filePaths.length === 1) return this.runTestFileJson(filePaths[0], updateSnapshot);
 
     const projectRoot = this.requireProjectRoot();
     const adapter = this.requireAdapter();
@@ -162,6 +165,7 @@ export class JestRunner implements TestRunner {
         ...configArgs,
         ...adapter.getExtraArgs(projectRoot),
         ...this.baseArgs(),
+        ...(updateSnapshot ? ['--updateSnapshot'] : []),
         '--json',
         '--runTestsByPath',
         ...filePaths.map((p) => this.normalisePath(p)),
@@ -183,6 +187,7 @@ export class JestRunner implements TestRunner {
         ...configArgs,
         ...adapter.getExtraArgs(projectRoot),
         ...this.baseArgs(),
+        ...(updateSnapshot ? ['--updateSnapshot'] : []),
         '--json',
         '--runTestsByPath',
         ...chunk.map((p) => this.normalisePath(p)),
@@ -202,6 +207,7 @@ export class JestRunner implements TestRunner {
     filePath: string,
     testFullName: string,
     isTestSuite: boolean = false,
+    updateSnapshot: boolean = false,
   ): Promise<RunResult> {
     const projectRoot = this.requireProjectRoot();
     const adapter = this.requireAdapter();
@@ -214,6 +220,7 @@ export class JestRunner implements TestRunner {
       ...configArgs,
       ...adapter.getExtraArgs(projectRoot),
       ...this.baseArgs(),
+      ...(updateSnapshot ? ['--updateSnapshot'] : []),
       '--json',
       '--runTestsByPath',
       this.normalisePath(filePath),

@@ -62,6 +62,7 @@ export interface TestNode {
 
   output: ScopedOutput;
   failureMessages: string[];
+  isSnapshot?: boolean;
 }
 
 export interface FileResult {
@@ -441,6 +442,7 @@ export class ResultStore {
     status: TestStatus,
     duration?: number,
     failureMessages: string[] = [],
+    isSnapshot?: boolean,
   ): void {
     const node = this.nodes.get(nodeId);
     if (!node) return;
@@ -450,6 +452,7 @@ export class ResultStore {
     node.status = status;
     node.duration = duration;
     node.failureMessages = failureMessages;
+    node.isSnapshot = isSnapshot;
     if (node.type === 'test') {
       this._adjustSummary(status, +1);
     }

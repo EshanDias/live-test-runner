@@ -16,6 +16,7 @@ export type ErrorEntry = {
   testName: string;
   failureMessages: string[];
   capturedAt: number | null;
+  isSnapshot?: boolean;
 };
 
 export type ErrorSection = {
@@ -82,6 +83,16 @@ export class ResultsView extends BaseWebviewProvider {
     }
     if (msg.type === 'timeline-exit-request') {
       this.onTimelineExitRequest?.();
+      return;
+    }
+    if (msg.type === 'update-snapshot' && msg.fileId) {
+      vscode.commands.executeCommand('liveTestRunner.rerunScope', {
+        scope: msg.nodeId ? (this.store.getNode(msg.nodeId)?.type === 'test' ? 'test' : 'suite') : 'file',
+        fileId: msg.fileId,
+        nodeId: msg.nodeId,
+        fullName: msg.nodeId ? this.store.getNode(msg.nodeId)?.fullName : undefined,
+        updateSnapshots: true,
+      });
     }
   }
 
@@ -138,6 +149,7 @@ export class ResultsView extends BaseWebviewProvider {
           testName: node.name,
           failureMessages: node.failureMessages,
           capturedAt: node.output.capturedAt ?? fileOutput.capturedAt,
+          isSnapshot: node.isSnapshot,
         });
       }
     }
@@ -182,6 +194,7 @@ export class ResultsView extends BaseWebviewProvider {
             testName: desc.name,
             failureMessages: desc.failureMessages,
             capturedAt: desc.output.capturedAt,
+            isSnapshot: desc.isSnapshot,
           });
         }
       }
@@ -195,7 +208,7 @@ export class ResultsView extends BaseWebviewProvider {
 
     // For tests: just this node's errors
     const errorSections: ErrorSection[] = node.failureMessages.length > 0
-      ? [{ label: node.name, scope: 'test', errors: [{ testName: node.name, failureMessages: node.failureMessages, capturedAt: nodeOutput.capturedAt }] }]
+      ? [{ label: node.name, scope: 'test', errors: [{ testName: node.name, failureMessages: node.failureMessages, capturedAt: nodeOutput.capturedAt, isSnapshot: node.isSnapshot }] }]
       : [];
 
     return { logSections, errorSections };
