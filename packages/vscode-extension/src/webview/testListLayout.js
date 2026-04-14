@@ -223,6 +223,16 @@ class TestListLayout {
     }
   }
 
+  _nodeMatchesFailures(nodeMap, nodeId) {
+    const node = nodeMap[nodeId];
+    if (!node) return false;
+    if (node.status === 'failed' || node.status === 'running') return true;
+    for (const childId of (node.children ?? [])) {
+      if (this._nodeMatchesFailures(nodeMap, childId)) return true;
+    }
+    return false;
+  }
+
   /** Expand all suite node IDs in a file's node tree. */
   _expandAllNodeIds(file, nodeMap) {
     for (const rootId of (file.rootNodeIds ?? [])) {
@@ -373,7 +383,7 @@ class TestListLayout {
   // ── Row renderers ────────────────────────────────────────────────────────
 
   _renderFile(file) {
-    const isExpanded = this.expanded.has(file.fileId) || !!this.query;
+    const isExpanded = this.expanded.has(file.fileId) || !!this.query || this.failuresOnly;
     const icon = STATUS_ICON[file.status] ?? STATUS_ICON.pending;
     const dur = durationLabel(file.duration);
     const durClass = durationClass(file.duration, 'file');
@@ -442,6 +452,11 @@ class TestListLayout {
       return '';
     }
 
+    // Failures filtering: skip nodes that don't match when failuresOnly is active
+    if (this.failuresOnly && !this._nodeMatchesFailures(nodeMap, node.id)) {
+      return '';
+    }
+
     if (node.type === 'test') {
       return this._renderTestNode(file, node, depth);
     }
@@ -449,7 +464,7 @@ class TestListLayout {
   }
 
   _renderSuiteNode(file, nodeMap, node, depth) {
-    const isExpanded = this.expanded.has(node.id) || !!this.query;
+    const isExpanded = this.expanded.has(node.id) || !!this.query || this.failuresOnly;
     const icon = STATUS_ICON[node.status] ?? STATUS_ICON.pending;
     const dur = durationLabel(node.duration);
     const durCls = durationClass(node.duration, 'suite');
