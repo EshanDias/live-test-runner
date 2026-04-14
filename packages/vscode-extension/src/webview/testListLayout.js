@@ -395,6 +395,7 @@ class TestListLayout {
     const displayName = basename(file.name);
 
     const nodeMap = this._buildNodeMap(file);
+    const fileMatched = this._matches(file.name) || this._matches(displayName);
 
     // Render root-level node children
     const rootNodeIds = file.rootNodeIds ?? [];
@@ -407,12 +408,13 @@ class TestListLayout {
           if (!node) return '';
           // (root) suite: render its children directly under the file
           if (node.type === 'suite' && node.name === '(root)') {
+            const suiteMatched = fileMatched || this._matches(node.name);
             return (node.children ?? [])
-              .map((childId) => this._renderNode(file, nodeMap, nodeMap[childId], 1))
+              .map((childId) => this._renderNode(file, nodeMap, nodeMap[childId], 1, suiteMatched))
               .filter(Boolean)
               .join('');
           }
-          return this._renderNode(file, nodeMap, node, 1);
+          return this._renderNode(file, nodeMap, node, 1, fileMatched);
         })
         .join('');
     }
@@ -443,12 +445,13 @@ class TestListLayout {
    * @param {object} nodeMap  - id→node lookup map
    * @param {object} node     - The current node to render
    * @param {number} depth    - Nesting depth (1 = direct child of file)
+   * @param {boolean} forceShow - If true, search filtering is bypassed for this node
    */
-  _renderNode(file, nodeMap, node, depth) {
+  _renderNode(file, nodeMap, node, depth, forceShow = false) {
     if (!node) return '';
 
-    // Query filtering: skip nodes that don't match
-    if (this.query && !this._nodeMatchesQuery(nodeMap, node.id)) {
+    // Query filtering: skip nodes that don't match, unless an ancestor already matched
+    if (this.query && !forceShow && !this._nodeMatchesQuery(nodeMap, node.id)) {
       return '';
     }
 
@@ -460,10 +463,10 @@ class TestListLayout {
     if (node.type === 'test') {
       return this._renderTestNode(file, node, depth);
     }
-    return this._renderSuiteNode(file, nodeMap, node, depth);
+    return this._renderSuiteNode(file, nodeMap, node, depth, forceShow);
   }
 
-  _renderSuiteNode(file, nodeMap, node, depth) {
+  _renderSuiteNode(file, nodeMap, node, depth, forceShow = false) {
     const isExpanded = this.expanded.has(node.id) || !!this.query || this.failuresOnly;
     const icon = STATUS_ICON[node.status] ?? STATUS_ICON.pending;
     const dur = durationLabel(node.duration);
@@ -480,8 +483,9 @@ class TestListLayout {
     // Render children (both sub-suites and tests) only when expanded
     let children = '';
     if (isExpanded && hasChildren) {
+      const suiteMatched = forceShow || this._matches(node.name);
       children = (node.children ?? [])
-        .map((childId) => this._renderNode(file, nodeMap, nodeMap[childId], depth + 1))
+        .map((childId) => this._renderNode(file, nodeMap, nodeMap[childId], depth + 1, suiteMatched))
         .filter(Boolean)
         .join('');
     }
