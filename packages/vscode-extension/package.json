@@ -205,6 +205,8 @@
     "@live-test-runner/runner": "workspace:*"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.2",
+    "@babel/traverse": "^7.29.0",
     "@types/jest": "^30.0.0",
     "@types/node": "16.x",
     "@types/vscode": "^1.74.0",
