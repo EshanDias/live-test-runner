@@ -3,9 +3,6 @@
 All notable changes to Live Test Runner are documented here.
 
 ---
-## [1.1.1] - 2026-04-13
-- Fixed tests not running on large projects
-- Fiixed tests not running on windows machines
 
 ## [1.2.0] — 2026-04-14
 
@@ -27,6 +24,12 @@ All notable changes to Live Test Runner are documented here.
 #### Internal
 - `ResultStore` rewritten: flat `Map<string, TestNode>` pool, `rootNodeIds` per file, `makeNodeId()` helper, `serialiseFile()` for recursive JSON output.
 - `DecorationManager`, `CodeLensProvider`, `BaseWebviewProvider`, `ExplorerView`, `ResultsView`, `SessionManager`, and `extension.ts` all updated to use `nodeId` throughout.
+
+---
+
+## [1.1.1] - 2026-04-13
+- Fixed tests not running on large projects
+- Fiixed tests not running on windows machines
 
 ---
 

@@ -27,6 +27,12 @@ All notable changes to Live Test Runner are documented here.
 
 ---
 
+## [1.1.1] - 2026-04-13
+- Fixed tests not running on large projects
+- Fiixed tests not running on windows machines
+
+---
+
 ## [1.1.0] — 2026-04-12
 
 ### Static Test Discovery, Smart On-Save Reruns & Execution Trace Store
