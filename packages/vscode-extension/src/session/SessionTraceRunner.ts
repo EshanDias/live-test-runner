@@ -18,7 +18,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Executor, BinaryResolver } from '@live-test-runner/runner';
-import { LTR_TMP_DIR } from '../constants';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { OutputLine } from '../store/ResultStore';
 
@@ -51,6 +50,8 @@ export class SessionTraceRunner {
   private readonly _executor = new Executor();
   private readonly _binaryResolver = new BinaryResolver();
 
+  constructor(private readonly _tmpDir: string) {}
+
   /**
    * Run a test file with instrumentation. Partitions the trace per test case
    * and writes JSONL files into traceDir. Updates the ExecutionTraceStore.
@@ -72,17 +73,17 @@ export class SessionTraceRunner {
     const { filePath, projectRoot, traceDir, traceStore, log } = options;
     const emit = log ?? (() => {});
 
-    // Ensure the per-session trace dir exists (LTR_TMP_DIR itself is created at activation)
+    // Ensure the per-session trace dir exists
     fs.mkdirSync(traceDir, { recursive: true });
 
     const rand = Math.random().toString(36).slice(2);
     const ts   = Date.now();
 
     // Temp file: the raw JSONL from this file's run (all tests combined)
-    const rawTraceFile = path.join(LTR_TMP_DIR, `ltr-raw-${ts}-${rand}.jsonl`);
+    const rawTraceFile = path.join(this._tmpDir, `ltr-raw-${ts}-${rand}.jsonl`);
 
     // Temp Jest config
-    const tempConfigPath = path.join(LTR_TMP_DIR, `ltr-session-cfg-${ts}-${rand}.js`);
+    const tempConfigPath = path.join(this._tmpDir, `ltr-session-cfg-${ts}-${rand}.js`);
 
     const escapedRoot = escapeRegex(projectRoot).replace(/\//g, '\\/');
     const srcTransformPattern = `^${escapedRoot}\\/(?!node_modules\\/).+\\.[jt]sx?$`;
@@ -149,7 +150,7 @@ module.exports = {
 
     // Use a unique cache directory per run to prevent transform-cache races
     // when multiple trace processes run in parallel on the same project.
-    const cacheDir = path.join(LTR_TMP_DIR, `jest-trace-cache-${ts}-${rand}`);
+    const cacheDir = path.join(this._tmpDir, `jest-trace-cache-${ts}-${rand}`);
 
     try {
       const binary = this._binaryResolver.resolve(projectRoot);

@@ -12,7 +12,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { LTR_TMP_DIR } from './constants';
+import { LTR_BASE_TMP_DIR } from './constants';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
@@ -28,20 +28,46 @@ import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
 import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
 
-export function activate(context: vscode.ExtensionContext) {
-  // Ensure the shared temp directory exists as early as possible.
-  // All runners write temp files here; creating it once avoids any race where
-  // a runner tries to write before the directory exists.
-  fs.mkdirSync(LTR_TMP_DIR, { recursive: true });
-
-  // Clean up stale traces-* directories left over from previous sessions.
+function isProcessAlive(pid: number): boolean {
   try {
-    for (const entry of fs.readdirSync(LTR_TMP_DIR)) {
+    process.kill(pid, 0);
+    return true;
+  } catch (e: any) {
+    return e.code === 'EPERM'; // Alive but no permission to signal
+  }
+}
+
+export function activate(context: vscode.ExtensionContext) {
+  // Ensure the shared base temp directory exists.
+  fs.mkdirSync(LTR_BASE_TMP_DIR, { recursive: true });
+
+  // Clean up stale session directories from previous or crashed windows.
+  try {
+    for (const entry of fs.readdirSync(LTR_BASE_TMP_DIR)) {
+      const fullPath = path.join(LTR_BASE_TMP_DIR, entry);
+      
+      // Handle new-style session directories: session-<pid>-<timestamp>
+      const sessionMatch = entry.match(/^session-(\d+)-/);
+      if (sessionMatch) {
+        const pid = parseInt(sessionMatch[1], 10);
+        if (!isProcessAlive(pid)) {
+          fs.rmSync(fullPath, { recursive: true, force: true });
+        }
+        continue;
+      }
+
+      // Handle legacy trace directories (blindly clean up to migrate)
       if (entry.startsWith('traces-')) {
-        fs.rmSync(path.join(LTR_TMP_DIR, entry), { recursive: true, force: true });
+        fs.rmSync(fullPath, { recursive: true, force: true });
       }
     }
   } catch { /* ignore */ }
+
+  // Create a unique isolated directory for THIS session.
+  const sessionDirName = `session-${process.pid}-${Date.now()}`;
+  const LTR_SESSION_TMP_DIR = path.join(LTR_BASE_TMP_DIR, sessionDirName);
+  fs.mkdirSync(LTR_SESSION_TMP_DIR, { recursive: true });
+
 
   // ── Infrastructure ─────────────────────────────────────────────────────────
   const outputChannel  = vscode.window.createOutputChannel('Live Test Runner', 'ansi');
@@ -79,7 +105,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // ── Timeline debugger ──────────────────────────────────────────────────────
   // Reference typed as the interface — never as the concrete class.
-  const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner();
+  const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner(LTR_SESSION_TMP_DIR);
   const timelineDecorations = new TimelineDecorationManager();
 
   // Last timeline run context, used by the Re-run button in the sidebar.
@@ -168,7 +194,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // ── Execution trace store + trace directory ────────────────────────────────
   const traceStore = new ExecutionTraceStore();
-  const traceDir   = path.join(LTR_TMP_DIR, `traces-${Date.now()}`);
+  const traceDir   = path.join(LTR_SESSION_TMP_DIR, 'traces');
 
   function cleanTraceDir() {
     try { fs.rmSync(traceDir, { recursive: true, force: true }); } catch { /* ignore */ }
@@ -196,7 +222,7 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   const session = new SessionManager(
-    new JestAdapter(),
+    new JestAdapter(LTR_SESSION_TMP_DIR),
     store,
     traceStore,
     selection,
@@ -205,7 +231,7 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel,
     statusBar,
     discovery,
-    traceDir,
+    LTR_SESSION_TMP_DIR,
   );
 
   // Expose cleanup so deactivate() can delete trace files on extension shutdown

@@ -11,7 +11,6 @@ import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import { SessionTraceRunner } from './SessionTraceRunner';
-import { LTR_TMP_DIR } from '../constants';
 
 /**
  * Convert a test full-name to a regex pattern suitable for --testNamePattern.
@@ -43,7 +42,7 @@ export function nameToPattern(name: string): string {
  */
 export class SessionManager {
   private _session: TestSession | undefined;
-  private readonly _traceRunner = new SessionTraceRunner();
+  private readonly _traceRunner: SessionTraceRunner;
 
   constructor(
     private readonly _adapter: IFrameworkAdapter,
@@ -55,8 +54,10 @@ export class SessionManager {
     private readonly _outputChannel: vscode.OutputChannel,
     private readonly _statusBar: vscode.StatusBarItem,
     private readonly _discovery: TestDiscoveryService,
-    private readonly _traceDir: string,
-  ) {}
+    private readonly _sessionDir: string,
+  ) {
+    this._traceRunner = new SessionTraceRunner(this._sessionDir);
+  }
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
 
@@ -97,7 +98,7 @@ export class SessionManager {
     const bootstrapRunner = new JestRunner(
       cmd,
       (msg) => this._outputChannel.appendLine(msg),
-      LTR_TMP_DIR,
+      this._sessionDir,
     );
     this._session = new TestSession(bootstrapRunner);
 
@@ -135,7 +136,7 @@ export class SessionManager {
       // ── Run the tests ──────────────────────────────────────────────────────
       await this._runFiles(testFiles, projectRoot, true);
       this._outputChannel.appendLine(
-        `[Live Test Runner] Temporary trace files: ${this._traceDir}`,
+        `[Live Test Runner] Temporary trace files: ${this._sessionDir}`,
       );
     } catch (error) {
       this._updateStatusBar('❌ Error');
@@ -661,7 +662,7 @@ export class SessionManager {
               const testLogs = await this._traceRunner.runFile({
                 filePath,
                 projectRoot,
-                traceDir: this._traceDir,
+                traceDir: this._sessionDir,
                 traceStore: this._traceStore,
                 log,
               });

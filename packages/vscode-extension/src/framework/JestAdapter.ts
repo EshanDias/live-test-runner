@@ -4,7 +4,6 @@ import {
   FileRunResult,
   ConsoleEntry,
 } from '@live-test-runner/runner';
-import { LTR_TMP_DIR } from '../constants';
 import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
 import {
@@ -39,6 +38,8 @@ function escapeRegex(str: string): string {
  * then swap `new JestAdapter()` in extension.ts (or add auto-detection logic there).
  */
 export class JestAdapter implements IFrameworkAdapter {
+  constructor(private readonly _tmpDir: string) {}
+
   // ── Detection ──────────────────────────────────────────────────────────────
 
   async detect(projectRoot: string): Promise<boolean> {
@@ -160,7 +161,7 @@ export class JestAdapter implements IFrameworkAdapter {
     log: (msg: string) => void,
   ): JestRunner {
     const cmd = this._getCommand();
-    const runner = new JestRunner(cmd, log, LTR_TMP_DIR);
+    const runner = new JestRunner(cmd, log, this._tmpDir);
     runner.setProjectRoot(projectRoot);
     return runner;
   }
