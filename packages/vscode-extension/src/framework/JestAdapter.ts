@@ -4,7 +4,6 @@ import {
   FileRunResult,
   ConsoleEntry,
 } from '@live-test-runner/runner';
-import { LTR_TMP_DIR } from '../constants';
 import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
 import {
@@ -13,7 +12,10 @@ import {
   OutputLevel,
   OutputLine,
   ScopedOutput,
+  makeNodeId,
 } from '../store/ResultStore';
+
+import { nameToPattern } from '../session/SessionManager';
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
@@ -36,6 +38,8 @@ function escapeRegex(str: string): string {
  * then swap `new JestAdapter()` in extension.ts (or add auto-detection logic there).
  */
 export class JestAdapter implements IFrameworkAdapter {
+  constructor(private readonly _tmpDir: string) {}
+
   // ── Detection ──────────────────────────────────────────────────────────────
 
   async detect(projectRoot: string): Promise<boolean> {
@@ -105,10 +109,14 @@ export class JestAdapter implements IFrameworkAdapter {
     opts?: RerunOptions,
   ): Promise<void> {
     const runner = this._createRunner(projectRoot, log);
+    // Determine if this is a suite-level rerun (no individual test node)
+    const isSuiteRun = opts?.nodeId
+      ? store.getNode(opts.nodeId)?.type === 'suite'
+      : false;
     const jsonResult = await runner.runTestCaseJson(
       filePath,
       fullName,
-      !!opts?.suiteId && !opts?.testId,
+      isSuiteRun,
     );
     const fileResult = jsonResult.fileResults[0];
     if (fileResult) {
@@ -153,7 +161,7 @@ export class JestAdapter implements IFrameworkAdapter {
     log: (msg: string) => void,
   ): JestRunner {
     const cmd = this._getCommand();
-    const runner = new JestRunner(cmd, log, LTR_TMP_DIR);
+    const runner = new JestRunner(cmd, log, this._tmpDir);
     runner.setProjectRoot(projectRoot);
     return runner;
   }
@@ -172,38 +180,116 @@ export class JestAdapter implements IFrameworkAdapter {
     fileResult: FileRunResult,
     opts?: RerunOptions,
   ): void {
-    const touchedSuiteIds = new Set<string>();
-    let touchedTestId: string | undefined;
+    // Track which node IDs we've applied so we can scope output correctly.
+    let lastTouchedTestNodeId: string | undefined;
+    let touchedNodeIds = new Set<string>();
 
     for (const tc of fileResult.testCases) {
-      const suiteKey = tc.ancestorTitles.join(' > ') || '(root)';
-      const suiteId = `${filePath}::${suiteKey}`;
+      // Build hierarchical suite nodes from ancestorTitles
+      const ancestors =
+        tc.ancestorTitles.length > 0 ? tc.ancestorTitles : ['(root)'];
 
-      if (opts?.suiteId && suiteId !== opts.suiteId) {
-        continue;
-      }
-      if (opts?.fullNames && !opts.fullNames.has(tc.fullName ?? tc.title)) {
-        continue;
-      }
-      if (!store.getSuite(filePath, suiteId)) {
-        store.suiteStarted(filePath, suiteId, suiteKey);
-      }
-      touchedSuiteIds.add(suiteId);
+      // Ensure all ancestor suite nodes exist
+      let parentId: string | null = null;
+      const ancsForId: string[] = [];
 
-      const testId = `${suiteId}::${tc.fullName || tc.title}`;
-      if (opts?.testId && testId !== opts.testId) {
-        continue;
+      for (let i = 0; i < ancestors.length; i++) {
+        const title = ancestors[i];
+
+        // 1. Check if current parent contains an isDynamicTemplate child matching this title
+        const siblings = parentId
+          ? store.getChildren(parentId)
+          : store.getFileNodes(filePath).filter((n) => !n.parentId);
+
+        const template = siblings.find(
+          (s) =>
+            s.isDynamicTemplate &&
+            title.match(new RegExp('^' + nameToPattern(s.name) + '$')),
+        );
+
+        if (template) {
+          parentId = template.id;
+          ancsForId.push(template.name);
+        }
+
+        const suiteNodeId = makeNodeId(filePath, ancsForId, title);
+
+        // If filtering to a specific node, skip test cases outside the subtree
+        if (opts?.nodeId) {
+          const targetNode = store.getNode(opts.nodeId);
+          if (targetNode) {
+            const isInScope =
+              suiteNodeId === opts.nodeId ||
+              suiteNodeId.startsWith(opts.nodeId + '::') ||
+              opts.nodeId.startsWith(suiteNodeId + '::');
+            if (i === ancestors.length - 1 && !isInScope) {
+              parentId = null;
+              break;
+            }
+          }
+        }
+
+        if (opts?.fullNames && !opts.fullNames.has(tc.fullName ?? tc.title)) {
+          parentId = null;
+          break;
+        }
+
+        // Create suite node if it doesn't exist
+        const suiteFullName = ancestors.slice(0, i + 1).join(' ');
+        store.nodeStarted(
+          filePath,
+          suiteNodeId,
+          parentId,
+          'suite',
+          title,
+          suiteFullName,
+        );
+        touchedNodeIds.add(suiteNodeId);
+        parentId = suiteNodeId;
+        ancsForId.push(title);
       }
 
-      store.testStarted(
+      if (parentId === null) {
+        continue; // Skipped due to filtering
+      }
+
+      // Check if the leaf test title matches a dynamic template under the current parent
+      const leafSiblings = store.getChildren(parentId);
+      const leafTemplate = leafSiblings.find(
+        (s) =>
+          s.isDynamicTemplate &&
+          tc.title.match(new RegExp('^' + nameToPattern(s.name) + '$')),
+      );
+
+      if (leafTemplate) {
+        parentId = leafTemplate.id;
+        ancsForId.push(leafTemplate.name);
+      }
+
+      // Create/update the test node
+      const testNodeId = makeNodeId(filePath, ancsForId, tc.title);
+
+      // If we are in a scoped run, only update the store for nodes within that scope.
+      // This ensures that non-matching tests reported by Jest ('pending' or 'skipped')
+      // do not overwrite your existing results.
+      if (opts?.nodeId) {
+        // Find if this node is exactly the target or a descendant of the target.
+        const inScope =
+          testNodeId === opts.nodeId || testNodeId.startsWith(opts.nodeId + '::');
+        if (!inScope) {
+          continue;
+        }
+      }
+
+      store.nodeStarted(
         filePath,
-        suiteId,
-        testId,
+        testNodeId,
+        parentId,
+        'test',
         tc.title,
         tc.fullName || tc.title,
         tc.location?.line,
       );
-      touchedTestId = testId;
 
       const status: TestStatus =
         tc.status === 'passed'
@@ -214,35 +300,18 @@ export class JestAdapter implements IFrameworkAdapter {
               ? 'skipped'
               : 'pending';
 
-      store.testResult(
-        filePath,
-        suiteId,
-        testId,
+      store.nodeResult(
+        testNodeId,
         status,
         tc.duration,
         (tc.failureMessages ?? []).map(stripAnsi),
       );
-    }
 
-    // Roll up statuses
-    const file = store.getFile(filePath);
-    let fileStatus: TestStatus =
-      fileResult.status === 'passed' ? 'passed' : 'failed';
-    if (file) {
-      for (const suite of file.suites.values()) {
-        const tests = Array.from(suite.tests.values());
-        const suiteStatus: TestStatus = tests.some((t) => t.status === 'failed')
-          ? 'failed'
-          : tests.every((t) => t.status === 'skipped')
-            ? 'skipped'
-            : tests.every((t) => t.status === 'pending')
-              ? 'pending'
-              : 'passed';
-        const suiteDur = tests.reduce((acc, t) => acc + (t.duration ?? 0), 0);
-        store.suiteResult(filePath, suite.suiteId, suiteStatus, suiteDur);
-        if (suiteStatus === 'failed') { fileStatus = 'failed'; }
-        else if (suiteStatus !== 'passed' && fileStatus !== 'failed') { fileStatus = suiteStatus; }
-      }
+      // Bubble up status through parents
+      store.bubbleUpStatus(testNodeId);
+
+      touchedNodeIds.add(testNodeId);
+      lastTouchedTestNodeId = testNodeId;
     }
 
     // Store console output at the appropriate scope
@@ -256,56 +325,34 @@ export class JestAdapter implements IFrameworkAdapter {
       capturedAt: now,
     };
 
-    if (opts?.testId && touchedTestId) {
-      const suiteId = [...touchedSuiteIds][0];
-      store.setTestOutput(filePath, suiteId, touchedTestId, output);
-    } else if (opts?.suiteId && touchedSuiteIds.size > 0) {
-      const suiteId = [...touchedSuiteIds][0];
-      if (suiteId) {
-        store.setSuiteOutput(filePath, suiteId, output);
+    if (opts?.nodeId && lastTouchedTestNodeId) {
+      const targetNode = store.getNode(opts.nodeId);
+      if (targetNode?.type === 'test') {
+        store.setNodeOutput(lastTouchedTestNodeId, output);
+      } else if (targetNode?.type === 'suite') {
+        store.setNodeOutput(opts.nodeId, output);
+      } else {
+        store.setFileOutput(filePath, output);
       }
     } else {
       store.setFileOutput(filePath, output);
     }
 
-    store.fileResult(filePath, fileStatus, fileResult.duration);
+    // We no longer set file-level status directly from Jest's file result because
+    // it can be misleading during partial/scoped runs. Instead, we rely on the
+    // ResultStore bubbling up the aggregate status from the actual test nodes.
 
-    // Remove AST-discovery placeholders for template-literal test names (name === '…' or name inicludes '"…"')
-    // now that Jest has run and emitted the real expanded names.
-    store.removePendingPlaceholders(filePath);
+    // Remove any nodes that are STILL in the 'running' state.
+    // If the file actually executed tests, any stuck 'running' nodes are orphans
+    // (either AST placeholders or deleted tests) so we remove them.
+    // If it crashed entirely (0 test cases), we'll downgrade them to 'pending'.
+    const hadTestCases = fileResult.testCases.length > 0;
+    store.cleanupStaleNodes(filePath, hadTestCases, opts?.nodeId);
 
-    // Populate LineMap (only clear on full-file run to preserve other tests' entries)
-    if (!opts?.suiteId && !opts?.testId) {
-      store.clearLineMap(filePath);
-    }
-    for (const tc of fileResult.testCases) {
-      if (tc.location?.line == null) {
-        continue;
-      }
-      const suiteKey = tc.ancestorTitles.join(' > ') || '(root)';
-      const suiteId = `${filePath}::${suiteKey}`;
-      const testId = `${suiteId}::${tc.fullName || tc.title}`;
-      store.setLineEntry(filePath, tc.location.line, {
-        testId,
-        suiteId,
-        fileId: filePath,
-      });
-    }
-
-    // Re-add describe-level entries from AST discovery data (Jest JSON has no
-    // describe line numbers so we preserve them from the suite's stored line).
-    const fileEntry = store.getFile(filePath);
-    if (fileEntry) {
-      for (const s of fileEntry.suites.values()) {
-        if (s.line) {
-          store.setLineEntry(filePath, s.line, {
-            suiteId: s.suiteId,
-            fileId: filePath,
-          });
-        }
-      }
-    }
   }
+
+
+
 
   private _buildOutputLines(
     entries: ConsoleEntry[],

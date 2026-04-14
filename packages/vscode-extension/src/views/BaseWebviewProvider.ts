@@ -68,16 +68,14 @@ export abstract class BaseWebviewProvider
           this.selection.select({
             scope: msg.scope,
             fileId: msg.fileId,
-            suiteId: msg.suiteId,
-            testId: msg.testId,
+            nodeId: msg.nodeId,
           });
           break;
         case 'rerun':
           vscode.commands.executeCommand('liveTestRunner.rerunScope', {
             scope:    msg.scope,
             fileId:   msg.fileId,
-            suiteId:  msg.suiteId,
-            testId:   msg.testId,
+            nodeId:   msg.nodeId,
             fullName: msg.fullName,
           });
           break;
@@ -122,39 +120,19 @@ export abstract class BaseWebviewProvider
     this.postMessage({ type: 'run-started', fileCount: payload.fileCount, files: payload.files });
   }
 
-  onFilesRerunning(fileIds: string[], suiteId?: string, testId?: string): void {
-    this.postMessage({ type: 'files-rerunning', fileIds, suiteId, testId });
+  onFilesRerunning(fileIds: string[], nodeId?: string): void {
+    this.postMessage({ type: 'files-rerunning', fileIds, nodeId });
   }
 
   onFileResult(filePath: string): void {
     const fileData = this.store.getFile(filePath);
     if (!fileData) { return; }
     const summary = this.store.getSummary();
+    const serialised = this.store.serialiseFile(filePath);
+    if (!serialised) { return; }
     this.postMessage({
       type: 'full-file-result',
-      file: {
-        fileId:   fileData.fileId,
-        filePath: fileData.filePath,
-        name:     fileData.name,
-        status:   fileData.status,
-        duration: fileData.duration,
-        suites: Array.from(fileData.suites.values()).map((s) => ({
-          suiteId:  s.suiteId,
-          name:     s.name,
-          status:   s.status,
-          duration: s.duration,
-          line:     s.line,
-          tests: Array.from(s.tests.values()).map((t) => ({
-            testId:          t.testId,
-            name:            t.name,
-            fullName:        t.fullName,
-            status:          t.status,
-            duration:        t.duration,
-            line:            t.line,
-            failureMessages: t.failureMessages,
-          })),
-        })),
-      },
+      file: serialised,
       total:         summary.total,
       passed:        summary.passed,
       failed:        summary.failed,

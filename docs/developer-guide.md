@@ -108,7 +108,11 @@ Adding a framework = one class in each package. `SessionManager`, `ResultStore`,
 
 ### Two stores, one source of truth per concern
 
-**`ResultStore`** is the only place where test results live (pass/fail, output, failures). `LineMap` inside it stores only identity references — `{ testId, suiteId, fileId }` — never status or duration. `DecorationManager` always queries `ResultStore` at decoration time; decorations are never stale.
+**`ResultStore`** is the only place where test results live (pass/fail, output, failures). Uses a flat node pool (`Map<string, TestNode>`) with tree relationships via `parentId`/`children`, supporting unlimited nesting. 
+
+- **Node Types**: Supports `suite`, `test`, and `template`.
+- **Templates**: Dynamic test headers (`.each`) are `template` nodes. They act as persistent anchors and are never removed by `cleanupStaleNodes` even if they have zero variations.
+- **LineMap**: Inside the store; stores only identity references — `{ nodeId, fileId }` — never status or duration. `DecorationManager` always queries `ResultStore.getNode(nodeId)` at decoration time; decorations are never stale.
 
 **`ExecutionTraceStore`** holds three derived indexes built from per-test JSONL trace files:
 - `traceIndex` — testId → path to `.jsonl` trace file
@@ -128,6 +132,14 @@ The runner reports console output at the **file level only** (this is a Jest/CRA
 ### Child process isolation
 
 Jest always runs in a child process via `Executor.ts`. The extension host never imports or executes Jest code. This keeps the extension host memory-stable and prevents one failing project from crashing another.
+
+### Multi-Session Isolation (PID-based)
+
+To support multiple concurrent VS Code windows, every extension instance must operate in a strictly isolated temporary directory.
+
+1. **Partitioning**: Session directories are named `session-<pid>-<timestamp>`.
+2. **Injection**: All runners and managers receive this directory via constructor injection. NEVER use global temporary constants for file writes.
+3. **Safe Cleanup**: On activate, scan the temp root and prune only session folders whose owning PID is inactive (verified via `process.kill(pid, 0)`). 
 
 Use `spawn`, never `exec`. `exec` has a buffer limit that silently truncates large outputs. `spawn` streams.
 
@@ -152,7 +164,8 @@ When a **test file** is saved, the whole file always reruns — discovery handle
 
 - Uses `@babel/parser` + `@babel/traverse` (lazy-loaded from the project's own `node_modules`). No extra dependencies.
 - Parses files in batches of 8 with a `setImmediate` yield between batches. Safe on 500+ file projects.
-- Calls `store.fileDiscovered / suiteDiscovered / testDiscovered` — all no-op if an entry already exists so live run results are never overwritten.
+- **Dynamic Anchors**: `discoverTests` identifies `.each` calls and creates `template` nodes. These provide a stable UI target even before Jest runs.
+- Calls `store.nodeStarted` / `store.nodeResult` to build the hierarchical node tree — no-ops if the entry already exists so live run results are never overwritten.
 - Calls `IResultObserver.onDiscoveryProgress` on every file. Observers are free to ignore it if they don't implement the optional methods.
 - `SessionManager.start()` awaits `discovery.awaitDiscovery()` instead of running its own discovery. On a normal project load this is already resolved; it only blocks if Start Testing is clicked during the first discovery pass.
 
@@ -465,7 +478,7 @@ engine.jumpTo(stepId)
 ## Roadmap
 
 - [ ] Vitest support — `ViteAdapter` stub exists in `packages/runner`; implement `resolveBinary` and `resolveConfig`
-- [ ] Suite/test-case level nodes in Test Explorer
+- [x] ~~Suite/test-case level nodes in Test Explorer~~ — completed in 1.2.0 (recursive node tree with unlimited nesting)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
 - [ ] Streaming live output during a run (message type stubbed, not wired)
 - [ ] Coverage overlay in the file tree

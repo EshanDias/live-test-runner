@@ -2,10 +2,56 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [1.3.0] — 2026-04-14
+
+### Dynamic Test Groups & Multi-Session Isolation
+
+#### Added
+- **Persistent dynamic anchors** — parameterized tests (`test.each`, loops) are now elevated to permanent "template" nodes in the sidebar. They remain visible as structural anchors even if they temporarily have zero children.
+- **Lazy variation attachment** — dynamic test variations are attached as children to their parent templates in real-time as Jest emits results.
+- **Multi-session isolation** — each VSCode window now uses a unique `session-<pid>-<timestamp>` temporary directory. This prevents concurrent windows from deleting or overwriting each other's temporary Jest configs and trace files.
+- **Safe stale-data cleanup** — the extension now performs a PID-check on startup (`process.kill(pid, 0)`) to safely prune temporary session folders from previous crashes while leaving active sessions untouched.
+- **Command pivoting** — clicking a dynamic variation in the sidebar now correctly reruns the parent template, ensuring that the full parameterized suite is executed.
+
+#### Changed
+- **Recursive status bubbling** — finalized the "nested branch compatibility." Status changes (pass/fail/running) deep in the tree correctly bubble up through all ancestors, including complex nested `describe` blocks and dynamic groups.
+- **Real-time gutter synchronization** — gutter icons now flip to spinners the moment a test starts (even in scoped reruns) and update to their final result state without delay.
+- **Unified LineMap management** — moved mapping responsibility into `ResultStore`, eliminating desync bugs where icons wouldn't update after partial test runs.
+
+#### Internal
+- `LTR_TMP_DIR` renamed to `LTR_BASE_TMP_DIR`; all internal components now use an injected `_tmpDir` or `_sessionDir` path for isolation.
+- `ResultStore.cleanupStaleNodes` now explicitly ignores `template` nodes to preserve the structural anchors.
+
 ---
+
+## [1.2.0] — 2026-04-14
+
+### Recursive Nested Node Tree
+
+#### Changed
+- **Unlimited `describe` nesting** — the test tree now supports deeply nested `describe` blocks (5+, 10+, or more levels). The old rigid File → Suite → Test hierarchy has been replaced with a recursive `File → Node[]` tree. Every suite and test is a `TestNode` in a flat pool with `parentId`/`children` references.
+- **Stable node IDs** — node IDs use the convention `{filePath}::{suite1}::…::{name}`. Static discovery and Jest results match automatically without a lookup table. Dynamic tests (`.each`, template literals, loops) use placeholder nodes cleaned up once Jest emits real results.
+- **Live status rollup** — `bubbleUpStatus()` propagates worst-case status from any leaf up through all ancestors in O(depth). If one test fails deep in the tree, every parent suite and the file itself show a failure icon in real time.
+- **O(1) summary counter** — `getSummary()` uses an incremental running counter instead of scanning all nodes. Safe for 10,000+ tests.
+- **Scoped output at any level** — clicking any node in the tree (file, suite at any depth, or individual test) scopes the Output and Errors columns to that subtree. Output is never back-filled from parent scopes.
+- **Webview renders recursively** — `testListLayout.js` uses `_renderNode()` for unlimited nesting depth with lazy child rendering (collapsed nodes don't generate DOM).
+- **`SelectionState`**, **`IResultObserver`**, and **`IFrameworkAdapter`** interfaces all use `nodeId` instead of `suiteId`/`testId`.
+- **`LineMap`** entries are now `{ nodeId, fileId }` instead of `{ suiteId, testId, fileId }`.
+- **`testDiscovery.js`** returns a nested suite tree with `children[]` arrays instead of a flat map.
+- **`TestDiscoveryService`** recursively walks the discovery tree using `_populateSuiteTree()`.
+- **`JestAdapter._applyFileResult()`** builds node hierarchy from `ancestorTitles` and calls `bubbleUpStatus()` after each test result.
+
+#### Internal
+- `ResultStore` rewritten: flat `Map<string, TestNode>` pool, `rootNodeIds` per file, `makeNodeId()` helper, `serialiseFile()` for recursive JSON output.
+- `DecorationManager`, `CodeLensProvider`, `BaseWebviewProvider`, `ExplorerView`, `ResultsView`, `SessionManager`, and `extension.ts` all updated to use `nodeId` throughout.
+
+---
+
 ## [1.1.1] - 2026-04-13
 - Fixed tests not running on large projects
 - Fiixed tests not running on windows machines
+
+---
 
 ## [1.1.0] — 2026-04-12
 

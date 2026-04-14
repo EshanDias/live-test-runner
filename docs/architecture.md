@@ -47,7 +47,7 @@ Dependency direction: `vscode-extension` → `core` → `runner`. The runner has
 | VS Code zone | What lives there |
 |---|---|
 | Activity Bar | Beaker icon — opens the Explorer view |
-| Primary sidebar | **Explorer view** — file → suite → test tree, summary counts, search; switches to **Timeline sidebar** (State / Watch / Call Stack) in timeline mode |
+| Primary sidebar | **Explorer view** — recursive file → node tree (unlimited nesting), summary counts, search; switches to **Timeline sidebar** (State / Watch / Call Stack) in timeline mode |
 | Panel › Output | **Raw output channel** — every Jest command + full stderr, unformatted ANSI |
 | Panel › Test Results | **Results view** — 3-column scoped view in normal mode; **Timeline view** (bar + controls + console/errors) in timeline mode |
 | Editor gutter | Status icons (✓ / ✗ / ⟳ / ○) per test line; active-step highlight in timeline mode |
@@ -229,25 +229,30 @@ Registered observers: `ExplorerView`, `ResultsView`, `DecorationManager`, `CodeL
 
 ### Data store
 
-**`ResultStore`** — the single source of truth for all result data.
+**`ResultStore`** — the single source of truth for all result data. Uses a **flat node pool** (`Map<string, TestNode>`) for O(1) lookups with tree relationships managed via `parentId`/`children`. Supports unlimited nesting depth.
 
 ```
 ResultStore
-  └── Map<filePath, FileResult>
-        └── FileResult
-              ├── status, duration
-              ├── output: ScopedOutput     ← console lines captured at file level
-              └── suites: Map<suiteId, SuiteResult>
-                    └── SuiteResult
-                          ├── name, status, duration
-                          ├── output: ScopedOutput   ← populated only on suite-level reruns
-                          └── tests: Map<testId, TestResult>
-                                └── TestResult
-                                      ├── name, fullName, status, duration
-                                      ├── location?: { line, column }
-                                      ├── output: ScopedOutput  ← populated only on test-level reruns
-                                      └── failureMessages: string[]
+  ├── files: Map<filePath, FileResult>
+  │     └── FileResult
+  │           ├── filePath, name, status, duration
+  │           ├── output: ScopedOutput     ← console lines captured at file level
+  │           └── rootNodeIds: string[]    ← top-level nodes in this file
+  │
+  └── nodes: Map<nodeId, TestNode>         ← flat pool, O(1) lookup
+        └── TestNode
+              ├── id, type ('suite' | 'test' | 'template')
+              ├── name, fullName, status, duration
+              ├── parentId: string | null
+              ├── children: string[]       ← dynamic variations attached here
+              ├── line?: number
+              ├── output: ScopedOutput     ← populated only on scoped reruns
+              └── failureMessages: string[]
 ```
+
+Node IDs follow a stable path convention: `{filePath}::{suite1}::…::{name}`. Status rolls up via `bubbleUpStatus()` in O(depth). Summary counter is incremental (O(1)). Empty `template` nodes are ignored by status rollups to prevent ancestors from showing incorrect passed/failed status during partial child execution.
+
+**Nested Branch Compatibility:** The recursive node tree supports arbitrary depth (10+ levels) of `describe` blocks. When a test result arrives deep within a nested branch, the `ResultStore` automatically bubbles the status up the chain. For partial runs (where only a specific nested test is executed), the extension correctly resets the status of every ancestor in the branch to `running` before applying the new result, ensuring that high-level "failed" or "passed" icons don't stick when their children are still in flight.
 
 **`ExecutionTraceStore`** — derived indexes built from per-test JSONL trace files. The trace files on disk are the source of truth; these are fast-lookup caches rebuilt after each instrumented run.
 
@@ -255,7 +260,7 @@ ResultStore
 ExecutionTraceStore
   ├── traceIndex: Map<testId, string>
   │     testId = full test name ("Suite > test") → absolute .jsonl path
-  │     Written to /tmp/ltr-traces/<sessionId>/<safeTestName>.jsonl
+  │     Written to a window-unique trace directory within the user's temp storage.
   │     Used by: Timeline Debugger, future coverage overlay
   │
   ├── coverageIndex: Map<filePath, Set<lineNumber>>
@@ -286,13 +291,13 @@ ExecutionTraceStore
 
 ```
 LineMap: Map<filePath, Map<lineNumber, LineEntry>>
-LineEntry: { testId, suiteId, fileId }   // identity only — never status or duration
+LineEntry: { nodeId, fileId }   // identity only — never status or duration
 ```
 
-`LineMap` stores identity only. `DecorationManager` always queries `ResultStore` for status and duration at decoration time — they are never duplicated into the map, so they are never stale.
+`LineMap` stores identity only. `DecorationManager` always queries `ResultStore.getNode(nodeId)` for status and duration at decoration time — they are never duplicated into the map, so they are never stale.
 
 **LineMap lifecycle:**
-1. **Discovery** — `TestDiscoveryService._populateFile()` builds the initial map from AST line numbers. Gutter icons and CodeLens lenses are available immediately.
+1. **Discovery** — `TestDiscoveryService._populateSuiteTree()` builds the initial map from AST line numbers. Gutter icons and CodeLens lenses are available immediately.
 2. **Run** — `JestAdapter._applyFileResult()` replaces the map for that file with Jest's authoritative `location.line` values. This is more accurate than AST line numbers (Jest accounts for comments, blank lines, etc.).
 3. **Session stop** — `clearAll()` wipes decoration state but the map is retained until the next run or discovery pass. Pending icons from discovery persist across session stop/start cycles.
 
@@ -311,7 +316,7 @@ interface OutputLine {
 }
 ```
 
-**Output scoping rules:** Jest JSON reports console output at file level only. When a file runs, only `FileResult.output` is set. Suite and test output are set only when that scope is individually rerun via `--testNamePattern`. Output is never back-filled or fabricated for scopes that haven't been run individually.
+**Output scoping rules:** Jest JSON reports console output at file level only. When a file runs, only `FileResult.output` is set. Node output is set only when that scope is individually rerun via `--testNamePattern`. Output is never back-filled or fabricated for scopes that haven't been run individually.
 
 **`SelectionState`** — tracks which row the user has selected in the results panel. Emits `scope-changed` messages when selection changes.
 
@@ -320,8 +325,9 @@ interface OutputLine {
 Runs on extension activate — before the user clicks Start Testing.
 
 1. **`start(projectRoot, store, log, callbacks)`** — finds all test files via `vscode.workspace.findFiles`, then parses them in batches of 8 with a `setImmediate` yield between batches. This keeps the extension host responsive on large projects (500+ files, 3000+ tests).
-2. **Per-file** — reads source, runs `discoverTests()` (AST walker in `testDiscovery.js`), calls `store.fileDiscovered / suiteDiscovered / testDiscovered` (all no-op if the entry already exists — live results are never overwritten), rebuilds the `LineMap` for that file, and emits a serialised file object via `onFileDiscovered` callback.
+2. **Per-file** — reads source, runs `discoverTests()` (AST walker in `testDiscovery.js`), recursively walks the returned suite tree calling `store.nodeStarted` / `store.nodeResult` to build the hierarchical node tree. Rebuilds the `LineMap` for that file, and emits a serialised file object via `onFileDiscovered` callback.
 3. **`awaitDiscovery()`** — returns the internal `Promise`; `SessionManager.start()` awaits this so it never re-discovers files that are already populated.
+4. **PID Cleanup** — during activation, the service scans the shared temporary root and prunes session folders whose owning process ID is no longer active (verified via `process.kill(pid, 0)`).
 4. **`FileSystemWatcher`** — monitors `**/*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}`. New files appear immediately on create. On change/save the watcher skips files with status `'running'` (a run is already in progress for that file); for all other statuses it calls `store.removeFile()` and re-populates so newly added or renamed tests appear straight away without waiting for a run.
 
 **`testDiscovery.js`** (pure AST walker, no code injection):
@@ -396,7 +402,7 @@ Three lenses per block:
 
 Both views extend `BaseWebviewProvider`, which handles webview lifecycle, `postMessage` routing, and the `IResultObserver` base.
 
-**`ExplorerView`** (sidebar) — always visible during a session. Shows the file → suite → test tree with live status icons, duration badges, search, and per-row rerun buttons.
+**`ExplorerView`** (sidebar) — always visible during a session. Shows the recursive file → node tree (unlimited nesting) with live status icons, duration badges, search, and per-row rerun buttons.
 
 **`ResultsView`** (editor panel) — three resizable columns:
 
@@ -504,6 +510,8 @@ User clicks "Start Testing"
       → CoverageMap built from coverage data
       → On-save listener enabled
 
+**Session Isolation** — every window uses a unique `session-<pid>-<ts>` directory. The extension host creates this on startup and injects it into all internal components (`SessionManager`, `JestAdapter`, `SessionTraceRunner`). This ensures that multiple VS Code windows never conflict on shared temporary filenames.
+
 User saves a file
   → SessionManager.onSave(filePath)            debounced 300ms
       → isTestFile(filePath)?
@@ -562,7 +570,7 @@ User stops session
 | Static AST discovery on activate, not on Start Testing | Full test tree (with line numbers, pending icons, and CodeLens) appears immediately on project open. Start Testing only needs to run tests — it skips discovery entirely by awaiting the already-resolved `awaitDiscovery()` promise. |
 | Batch + `setImmediate` yield for discovery | Parsing 500+ files in one synchronous pass would block the extension host. Batches of 8 with a yield between each keep the UI responsive while the tree builds progressively. |
 | Watcher re-discovers on any non-running status | Skipping only `'running'` files (not `pending`/`passed`/`failed`) means newly added tests appear in the tree on the next save, without waiting for a full re-run. |
-| `fileStarted` preserves pre-discovered structure | When a file is already in the store (from discovery), `fileStarted` reuses the existing suite/test tree and only marks entries `running`. The tree never disappears or resets mid-run. |
+| `fileStarted` preserves pre-discovered structure | When a file is already in the store (from discovery), `fileStarted` reuses the existing node tree and only marks entries `running`. The tree never disappears or resets mid-run. |
 | `DecorationManager.clearAll()` instead of `dispose()` on session stop | Decoration types stay alive so pending icons from discovery survive session stop/start cycles. `dispose()` is reserved for full extension deactivation. |
 | `LineMap` stores identity only | Status and duration always read from `ResultStore` — single source of truth, never stale |
 | `extension.ts` ≤ 110 lines | Wires instances and registers commands only; no business logic |

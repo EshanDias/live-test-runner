@@ -13,4 +13,4 @@ import * as path from 'path';
  *     session-cfg-<ts>.js   ← ephemeral Jest config for session trace runs
  *     jest-cfg-<ts>.js      ← ephemeral Jest config for timeline debugger runs
  */
-export const LTR_TMP_DIR = path.join(os.tmpdir(), 'com.eshLabs', 'live-test-runner');
+export const LTR_BASE_TMP_DIR = path.join(os.tmpdir(), 'com.eshLabs', 'live-test-runner');

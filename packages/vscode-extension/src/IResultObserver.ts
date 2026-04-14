@@ -30,7 +30,7 @@ export interface IResultObserver extends vscode.Disposable {
   onSessionStarted(): void;
   onSessionStopped(): void;
   onRunStarted(payload: RunStartedPayload): void;
-  onFilesRerunning(fileIds: string[], suiteId?: string, testId?: string): void;
+  onFilesRerunning(fileIds: string[], nodeId?: string): void;
   onFileResult(filePath: string): void;
   onRunFinished(payload: RunFinishedPayload): void;
   onTracingProgress?(completed: number, total: number, done?: boolean): void;

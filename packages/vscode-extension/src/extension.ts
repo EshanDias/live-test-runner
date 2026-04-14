@@ -12,7 +12,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { LTR_TMP_DIR } from './constants';
+import { LTR_BASE_TMP_DIR } from './constants';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
@@ -28,20 +28,46 @@ import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
 import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
 
-export function activate(context: vscode.ExtensionContext) {
-  // Ensure the shared temp directory exists as early as possible.
-  // All runners write temp files here; creating it once avoids any race where
-  // a runner tries to write before the directory exists.
-  fs.mkdirSync(LTR_TMP_DIR, { recursive: true });
-
-  // Clean up stale traces-* directories left over from previous sessions.
+function isProcessAlive(pid: number): boolean {
   try {
-    for (const entry of fs.readdirSync(LTR_TMP_DIR)) {
+    process.kill(pid, 0);
+    return true;
+  } catch (e: any) {
+    return e.code === 'EPERM'; // Alive but no permission to signal
+  }
+}
+
+export function activate(context: vscode.ExtensionContext) {
+  // Ensure the shared base temp directory exists.
+  fs.mkdirSync(LTR_BASE_TMP_DIR, { recursive: true });
+
+  // Clean up stale session directories from previous or crashed windows.
+  try {
+    for (const entry of fs.readdirSync(LTR_BASE_TMP_DIR)) {
+      const fullPath = path.join(LTR_BASE_TMP_DIR, entry);
+      
+      // Handle new-style session directories: session-<pid>-<timestamp>
+      const sessionMatch = entry.match(/^session-(\d+)-/);
+      if (sessionMatch) {
+        const pid = parseInt(sessionMatch[1], 10);
+        if (!isProcessAlive(pid)) {
+          fs.rmSync(fullPath, { recursive: true, force: true });
+        }
+        continue;
+      }
+
+      // Handle legacy trace directories (blindly clean up to migrate)
       if (entry.startsWith('traces-')) {
-        fs.rmSync(path.join(LTR_TMP_DIR, entry), { recursive: true, force: true });
+        fs.rmSync(fullPath, { recursive: true, force: true });
       }
     }
   } catch { /* ignore */ }
+
+  // Create a unique isolated directory for THIS session.
+  const sessionDirName = `session-${process.pid}-${Date.now()}`;
+  const LTR_SESSION_TMP_DIR = path.join(LTR_BASE_TMP_DIR, sessionDirName);
+  fs.mkdirSync(LTR_SESSION_TMP_DIR, { recursive: true });
+
 
   // ── Infrastructure ─────────────────────────────────────────────────────────
   const outputChannel  = vscode.window.createOutputChannel('Live Test Runner', 'ansi');
@@ -59,7 +85,7 @@ export function activate(context: vscode.ExtensionContext) {
   const resultsView       = new ResultsView(context.extensionUri, store, selection);
   const decorationManager = new DecorationManager(store, context);
   const codeLensProvider  = new CodeLensProvider(store);
-  const observers         = [explorerView, resultsView, decorationManager, codeLensProvider];
+  const observers: IResultObserver[] = [explorerView, resultsView, decorationManager];
 
   // Register CodeLens immediately so ▶ Run / ▷ Debug appear as soon as
   // discovery populates the line map — no need to click Start Testing first.
@@ -74,12 +100,12 @@ export function activate(context: vscode.ExtensionContext) {
   const origSelect = selection.select.bind(selection);
   selection.select = (sel) => {
     origSelect(sel);
-    resultsView.sendScopedData(sel.fileId, sel.suiteId, sel.testId);
+    resultsView.sendScopedData(sel.fileId, sel.nodeId);
   };
 
   // ── Timeline debugger ──────────────────────────────────────────────────────
   // Reference typed as the interface — never as the concrete class.
-  const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner();
+  const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner(LTR_SESSION_TMP_DIR);
   const timelineDecorations = new TimelineDecorationManager();
 
   // Last timeline run context, used by the Re-run button in the sidebar.
@@ -168,7 +194,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // ── Execution trace store + trace directory ────────────────────────────────
   const traceStore = new ExecutionTraceStore();
-  const traceDir   = path.join(LTR_TMP_DIR, `traces-${Date.now()}`);
+  const traceDir   = path.join(LTR_SESSION_TMP_DIR, 'traces');
 
   function cleanTraceDir() {
     try { fs.rmSync(traceDir, { recursive: true, force: true }); } catch { /* ignore */ }
@@ -184,19 +210,19 @@ export function activate(context: vscode.ExtensionContext) {
   if (activationRoot) {
     discovery.start(activationRoot, store, (msg) => outputChannel.appendLine(msg), {
       onFilesFound: (total) => {
-        (observers as IResultObserver[]).forEach((o) => o.onDiscoveryStarted?.(total));
+        observers.forEach((o) => o.onDiscoveryStarted?.(total));
       },
       onFileDiscovered: (file, discovered, total) => {
-        (observers as IResultObserver[]).forEach((o) => o.onDiscoveryProgress?.(file, discovered, total));
+        observers.forEach((o) => o.onDiscoveryProgress?.(file, discovered, total));
       },
       onComplete: () => {
-        (observers as IResultObserver[]).forEach((o) => o.onDiscoveryComplete?.());
+        observers.forEach((o) => o.onDiscoveryComplete?.());
       },
     });
   }
 
   const session = new SessionManager(
-    new JestAdapter(),
+    new JestAdapter(LTR_SESSION_TMP_DIR),
     store,
     traceStore,
     selection,
@@ -205,7 +231,7 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel,
     statusBar,
     discovery,
-    traceDir,
+    LTR_SESSION_TMP_DIR,
   );
 
   // Expose cleanup so deactivate() can delete trace files on extension shutdown
@@ -227,7 +253,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.rerunScope',         (args) => session.rerunScope(args)),
     vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath, line) => rerunFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath, line) => debugFromEditor(filePath, line, store, session)),
-    vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, suiteId, testId) => focusResult(fileId, suiteId, testId, selection, resultsView)),
+    vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, nodeId) => focusResult(fileId, nodeId, store, selection, resultsView)),
     vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) => {
       lastTimelineOptions = { filePath, testFullName };
       return openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, outputChannel, lastTimelineOptions,
@@ -247,7 +273,13 @@ export function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-      if (editor) { decorationManager.applyToEditor(editor); }
+      if (editor) { codeLensProvider.refresh(); }
+    }),
+
+    vscode.window.onDidChangeVisibleTextEditors((editors) => {
+      for (const editor of editors) {
+        decorationManager.applyToEditor(editor);
+      }
     }),
 
     vscode.workspace.onDidSaveTextDocument((doc) => session.onSave(doc)),
@@ -276,18 +308,18 @@ async function rerunFromEditor(
 ): Promise<void> {
   const entry = store.getLineMap(filePath).get(line);
   if (entry) {
-    const test = store.getTest(entry.fileId, entry.suiteId, entry.testId);
-    if (test) {
-      session.rerunScope({ scope: 'test', fileId: entry.fileId, suiteId: entry.suiteId, testId: entry.testId, fullName: test.fullName });
+    const node = store.getNode(entry.nodeId);
+    if (node) {
+      session.rerunScope({ scope: node.type, fileId: entry.fileId, nodeId: entry.nodeId, fullName: node.fullName });
       return;
     }
   }
-  // describe blocks are not in the LineMap (Jest doesn't report their location).
-  // Try to extract the suite title from the source line and find the matching suite.
-  const suiteId = await _resolveSuiteAtLine(filePath, line, store);
-  if (suiteId) {
-    const suite = store.getSuite(filePath, suiteId);
-    session.rerunScope({ scope: 'suite', fileId: filePath, suiteId, fullName: suite?.name });
+  // describe blocks might not be in the LineMap at this exact line.
+  // Try to extract the suite title from the source line and find the matching node.
+  const nodeId = await _resolveNodeAtLine(filePath, line, store);
+  if (nodeId) {
+    const node = store.getNode(nodeId);
+    session.rerunScope({ scope: 'suite', fileId: filePath, nodeId, fullName: node?.fullName });
     return;
   }
   session.rerunScope({ scope: 'file', fileId: filePath });
@@ -301,18 +333,18 @@ async function debugFromEditor(
 ): Promise<void> {
   const entry = store.getLineMap(filePath).get(line);
   if (entry) {
-    const testFullName = store.getTest(entry.fileId, entry.suiteId, entry.testId)?.fullName;
-    await session.debugFromEditor(filePath, testFullName);
+    const node = store.getNode(entry.nodeId);
+    await session.debugFromEditor(filePath, node?.fullName);
     return;
   }
-  // describe block — use suite name as testNamePattern so Jest runs all tests within it
-  const suiteId = await _resolveSuiteAtLine(filePath, line, store);
-  const suiteName = suiteId ? store.getSuite(filePath, suiteId)?.name : undefined;
-  await session.debugFromEditor(filePath, suiteName);
+  // describe block — use node fullName as testNamePattern so Jest runs all tests within it
+  const nodeId = await _resolveNodeAtLine(filePath, line, store);
+  const fullName = nodeId ? store.getNode(nodeId)?.fullName : undefined;
+  await session.debugFromEditor(filePath, fullName);
 }
 
-/** Extracts the describe title from a source line and looks it up in the store. */
-async function _resolveSuiteAtLine(
+/** Extracts the describe title from a source line and looks it up in the store's node pool. */
+async function _resolveNodeAtLine(
   filePath: string,
   line: number,
   store: ResultStore,
@@ -322,8 +354,10 @@ async function _resolveSuiteAtLine(
     const lineText = doc.lineAt(line - 1).text;
     const m = lineText.match(/describe\s*[\.(]\s*['"`]([^'"`]+)['"`]/);
     if (!m) { return undefined; }
-    const suiteId = `${filePath}::${m[1]}`;
-    return store.getSuite(filePath, suiteId) ? suiteId : undefined;
+    // Search all nodes in this file for one matching the describe name
+    const allNodes = store.getFileNodes(filePath);
+    const match = allNodes.find(n => n.type === 'suite' && n.name === m[1]);
+    return match?.id;
   } catch {
     return undefined;
   }
@@ -387,12 +421,14 @@ function _resolveProjectRoot(): string | undefined {
 
 function focusResult(
   fileId: string,
-  suiteId: string,
-  testId: string,
+  nodeId: string,
+  store: ResultStore,
   selection: SelectionState,
   resultsView: ResultsView,
 ): void {
   vscode.commands.executeCommand('liveTestRunner.results.focus');
-  selection.select({ scope: 'test', fileId, suiteId, testId });
-  resultsView.postMessage({ type: 'scope-changed', scope: 'test', fileId, suiteId, testId });
+  const node = store.getNode(nodeId);
+  const scope = node?.type === 'test' ? 'test' : node?.type === 'suite' ? 'suite' : 'file';
+  selection.select({ scope, fileId, nodeId });
+  resultsView.postMessage({ type: 'scope-changed', scope, fileId, nodeId });
 }

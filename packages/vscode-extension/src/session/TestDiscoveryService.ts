@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ResultStore } from '../store/ResultStore';
+import { ResultStore, makeNodeId } from '../store/ResultStore';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { discoverTests } = require('./instrumentation/testDiscovery.js') as {
@@ -10,7 +10,14 @@ const { discoverTests } = require('./instrumentation/testDiscovery.js') as {
     filePath: string,
     rootDir: string,
   ) => {
-    suites: Array<{ name: string; line: number; tests: Array<{ name: string; line: number; fullName: string }> }>;
+    suites: Array<{
+      name: string;
+      line: number;
+      tests: Array<{ name: string; line: number; fullName: string }>;
+      children: Array<any>;
+      isSharedVars: boolean;
+      sharedVarNames: string[];
+    }>;
     rootTests: Array<{ name: string; line: number; fullName: string }>;
   } | null;
 };
@@ -153,11 +160,11 @@ export class TestDiscoveryService {
 
     const handleChange = (uri: vscode.Uri) => {
       const existing = store.getFile(uri.fsPath);
-      // Only skip if the file is mid-run — don't interfere with in-progress results.
-      // For any other status (pending, passed, failed, skipped) drop and re-populate
-      // so new/renamed/deleted tests appear in the tree immediately.
       if (existing?.status === 'running') { return; }
-      if (existing) { store.removeFile(uri.fsPath); }
+
+      // Clear the line map before re-discovery so that decorations are
+      // correctly repositioned (orphans cleared, moves updated).
+      store.clearLineMap(uri.fsPath);
 
       log(`[TestDiscovery] Re-discovering: ${uri.fsPath}`);
       const fileData = this._populateFile(uri.fsPath, projectRoot, store, log);
@@ -203,60 +210,95 @@ export class TestDiscoveryService {
     // reflected immediately (the watcher calls this on every save).
     store.clearLineMap(filePath);
 
-    // Root-level tests (no enclosing describe) → '(root)' suite key,
+    // Root-level tests (no enclosing describe) → '(root)' suite node,
     // matching the convention used by JestAdapter._applyFileResult.
     if (result.rootTests.length > 0) {
-      const suiteId = `${filePath}::(root)`;
-      store.suiteDiscovered(filePath, suiteId, '(root)');
+      const rootSuiteId = makeNodeId(filePath, [], '(root)');
+      store.nodeDiscovered(filePath, rootSuiteId, null, 'suite', '(root)', '(root)');
       for (const t of result.rootTests) {
-        const testId = `${suiteId}::${t.fullName}`;
-        store.testDiscovered(filePath, suiteId, testId, t.name, t.fullName, t.line);
+        const isDynamic = t.name.match(/…|%[isdjpxofc]/);
+        const testId = makeNodeId(filePath, ['(root)'], t.fullName);
+        store.nodeDiscovered(
+          filePath,
+          testId,
+          rootSuiteId,
+          isDynamic ? 'suite' : 'test',
+          t.name,
+          t.fullName,
+          t.line,
+          !!isDynamic
+        );
         if (t.line) {
-          store.setLineEntry(filePath, t.line, { testId, suiteId, fileId: filePath });
+          store.setLineEntry(filePath, t.line, { nodeId: testId, fileId: filePath });
         }
       }
     }
 
-    // Named suites
-    for (const suite of result.suites) {
-      const suiteId = `${filePath}::${suite.name}`;
-      store.suiteDiscovered(filePath, suiteId, suite.name, suite.line);
+    // Named suites — walk the recursive tree
+    this._populateSuiteTree(filePath, result.suites, [], null, store);
+
+    // Return the serialised file for the webview
+    return store.serialiseFile(filePath);
+  }
+
+  /**
+   * Recursively populate the store with suite nodes and their children.
+   */
+  private _populateSuiteTree(
+    filePath: string,
+    suites: Array<{
+      name: string;
+      line: number;
+      tests: Array<{ name: string; line: number; fullName: string }>;
+      children: Array<any>;
+      isSharedVars: boolean;
+      sharedVarNames: string[];
+    }>,
+    ancestorNames: string[],
+    parentId: string | null,
+    store: ResultStore,
+  ): void {
+    for (const suite of suites) {
+      const isDynamic = suite.name.match(/…|%[isdjpxofc]/);
+      const suiteId = makeNodeId(filePath, ancestorNames, suite.name);
+      store.nodeDiscovered(
+        filePath,
+        suiteId,
+        parentId,
+        'suite',
+        suite.name,
+        [...ancestorNames, suite.name].join(' '),
+        suite.line,
+        !!isDynamic
+      );
       if (suite.line) {
-        store.setLineEntry(filePath, suite.line, { suiteId, fileId: filePath });
+        store.setLineEntry(filePath, suite.line, { nodeId: suiteId, fileId: filePath });
       }
+
+      // Populate direct test children
+      const testAncestors = [...ancestorNames, suite.name];
       for (const t of suite.tests) {
-        const testId = `${suiteId}::${t.fullName}`;
-        store.testDiscovered(filePath, suiteId, testId, t.name, t.fullName, t.line);
+        const isDynamic = t.name.match(/…|%[isdjpxofc]/);
+        const testId = makeNodeId(filePath, testAncestors, t.name);
+        store.nodeDiscovered(
+          filePath,
+          testId,
+          suiteId,
+          isDynamic ? 'suite' : 'test',
+          t.name,
+          t.fullName,
+          t.line,
+          !!isDynamic
+        );
         if (t.line) {
-          store.setLineEntry(filePath, t.line, { testId, suiteId, fileId: filePath });
+          store.setLineEntry(filePath, t.line, { nodeId: testId, fileId: filePath });
         }
       }
+
+      // Recurse into child suites
+      if (suite.children && suite.children.length > 0) {
+        this._populateSuiteTree(filePath, suite.children, testAncestors, suiteId, store);
+      }
     }
-
-    // Serialise to the same shape that BaseWebviewProvider.onFileResult produces
-    // so testListView.js can call _list.updateFile() directly.
-    const file = store.getFile(filePath);
-    if (!file) { return null; }
-
-    return {
-      fileId:   file.fileId,
-      filePath: file.filePath,
-      name:     file.name,
-      status:   file.status,
-      suites: Array.from(file.suites.values()).map((s) => ({
-        suiteId:  s.suiteId,
-        name:     s.name,
-        status:   s.status,
-        line:     s.line,
-        tests: Array.from(s.tests.values()).map((t) => ({
-          testId:          t.testId,
-          name:            t.name,
-          fullName:        t.fullName,
-          status:          t.status,
-          line:            t.line,
-          failureMessages: t.failureMessages,
-        })),
-      })),
-    };
   }
 }

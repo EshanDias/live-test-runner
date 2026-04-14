@@ -417,6 +417,13 @@ body {
 .status-failed  { color: var(--vscode-charts-red, #f44336); }
 .status-skipped { color: var(--vscode-descriptionForeground); }
 .status-pending { color: var(--vscode-descriptionForeground); opacity: 0.5; }
+.status-template { color: var(--vscode-descriptionForeground); opacity: 0.7; }
+
+/* ── Dynamic Template Styling ────────────────────────────────────────────── */
+.test-row[data-dynamic-template="true"] .row-name {
+  font-style: italic;
+  opacity: 0.7;
+}
 
 @keyframes spin {
   from { transform: rotate(0deg); }

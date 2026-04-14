@@ -8,7 +8,7 @@ Paste this document into a conversation to give an AI assistant complete knowled
 
 **Live Test Runner** is a VS Code extension that runs Jest tests automatically on file save and shows results directly in the editor. It is a Wallaby-lite tool — session-based, explicit start/stop, focused on speed.
 
-**Current version:** 2.2.0  
+**Current version:** 2.3.0  
 **Language:** TypeScript  
 **Package manager:** pnpm (monorepo)
 
@@ -92,7 +92,7 @@ src/
 ├── IResultObserver.ts              Interface: onSessionStart/Stop, onRunStart, onFileResult,
 │                                   onDiscoveryStarted/Progress/Complete (optional)
 ├── store/
-│   ├── ResultStore.ts              In-memory File→Suite→Test tree + LineMap + ScopedOutput
+│   ├── ResultStore.ts              In-memory File→Node tree (recursive) + LineMap + ScopedOutput
 │   ├── ExecutionTraceStore.ts      Trace indexes: traceIndex, coverageIndex, sourceToTests
 │   └── SelectionState.ts           Tracks selected row; broadcasts scope-changed
 ├── session/
@@ -150,7 +150,7 @@ src/
 **On extension activate (before any user action):**
 1. `TestDiscoveryService.start()` → `vscode.workspace.findFiles` → list of test file paths
 2. `onDiscoveryStarted(total)` fired → sidebar shows `⟳ Discovering… 0 / N`, Start Testing disabled
-3. Files parsed in batches of 8 (event-loop yield between batches) — each file: read source → `@babel/parser` AST walk → extract suites + tests with 1-based line numbers → `store.fileDiscovered / suiteDiscovered / testDiscovered` → `onDiscoveryProgress(file, n, total)` → sidebar list and gutter icons update incrementally
+3. Files parsed in batches of 8 (event-loop yield between batches) — each file: read source → `@babel/parser` AST walk → extract suites + tests with 1-based line numbers → `store.nodeStarted` / `store.nodeResult` → `onDiscoveryProgress(file, n, total)` → sidebar list and gutter icons update incrementally
 4. `onDiscoveryComplete()` → Start Testing re-enabled
 5. `FileSystemWatcher` activated — new/changed test files are re-discovered immediately (guard: skip files with `running` status)
 
@@ -190,23 +190,32 @@ else (source file saved)
 
 Single source of truth for all test results. All views read from here.
 
+Uses a **flat node pool** (`Map<string, TestNode>`) with tree relationships managed via `parentId` and `children` arrays. Supports unlimited nesting depth.
+
 ```
 ResultStore
-  Map<filePath, FileResult>
-    FileResult
-      ├── status, duration
-      ├── output: ScopedOutput
-      └── suites: Map<suiteId, SuiteResult>
-            SuiteResult
-              ├── name, status, duration
-              ├── output: ScopedOutput
-              └── tests: Map<testId, TestResult>
-                    TestResult
-                      ├── name, fullName, status, duration
-                      ├── location?: { line, column }
-                      ├── output: ScopedOutput
-                      └── failureMessages: string[]
+  ├── files: Map<filePath, FileResult>
+  │     FileResult
+  │       ├── filePath, name, status, duration
+  │       ├── output: ScopedOutput
+  │       └── rootNodeIds: string[]      ← top-level nodes in this file
+  │
+  └── nodes: Map<nodeId, TestNode>       ← flat pool, O(1) lookup
+        TestNode
+          ├── id, type ('suite' | 'test' | 'template')
+          ├── name, fullName, status, duration
+          ├── parentId: string | null
+          ├── children: string[]            ← dynamic variations attached here
+          ├── line?: number
+          ├── output: ScopedOutput
+          └── failureMessages: string[]
 ```
+
+**Node IDs** follow a stable, path-based convention: `{filePath}::{suite1}::{suite2}::…::{name}`. Static discovery and Jest results automatically match without a lookup table.
+
+**Status rollup:** `bubbleUpStatus(nodeId)` propagates worst-case status from a leaf node up through all ancestors in O(depth). Priority: `running > failed > passed > skipped > pending`. Empty `template` nodes are ignored during rollup.
+
+**Incremental summary:** A running counter tracks test counts so `getSummary()` is O(1), not O(n).
 
 ### `ExecutionTraceStore`
 
@@ -215,8 +224,8 @@ Derived indexes built from per-test JSONL trace files written by `SessionTraceRu
 ```
 ExecutionTraceStore
   ├── traceIndex: Map<testId, string>
-  │     testId (full test name, e.g. "Suite > test name") → absolute path to .jsonl trace file
-  │     One file per test case written to /tmp/ltr-traces/<sessionId>/<safeTestName>.jsonl
+       testId (full test name, e.g. "Suite > test name") → absolute path to .jsonl trace file
+      One file per test case written to session-specific trace directory.
   │
   ├── coverageIndex: Map<filePath, Set<lineNumber>>
   │     Every source file line executed by any test in the session.
@@ -259,18 +268,18 @@ interface OutputLine {
 
 **Output attribution:**
 - Full file run → `FileResult.output` set only
-- Suite rerun → `SuiteResult.output` set
-- Test rerun → `TestResult.output` set
-- **Never back-fill** suite/test output from file-level output
+- Suite/node rerun → that node's `output` set
+- Test rerun → `TestNode.output` set
+- **Never back-fill** node output from file-level output
 
 ### `LineMap`
 
 ```typescript
 LineMap: Map<filePath, Map<lineNumber, LineEntry>>
-LineEntry: { testId: string, suiteId: string, fileId: string }
+LineEntry: { nodeId: string, fileId: string }
 ```
 
-Identity only — **never status or duration**. `DecorationManager` always queries `ResultStore` for those values.
+Identity only — **never status or duration**. `DecorationManager` always queries `ResultStore.getNode(nodeId)` for those values.
 
 **Lifecycle:**
 - Discovery → `clearLineMap(filePath)` then populate from AST line numbers — pending icons appear immediately
@@ -516,7 +525,11 @@ All in `packages/vscode-extension/package.json`:
 5. **Never back-fill suite/test output from file-level output.** Empty output is correct for scopes that haven't been individually run.
 6. **Never add business logic to `extension.ts`.** It wires instances and registers commands only.
 7. **`SessionManager`, `ResultStore`, views, and observers must be framework-agnostic.** All framework differences live in `IFrameworkAdapter` implementations.
-8. **`scope-logs` and `scope-changed` are always separate messages.** They have different lifecycles.
-9. **`IInstrumentedRunner` is the only abstraction for instrumented runs.** `extension.ts` holds a reference typed as `IInstrumentedRunner` — never as the concrete `JestInstrumentedRunner`. Adding Vitest or Mocha timeline support = one new file implementing this interface.
-10. **`TimelineDecorationManager` is separate from `DecorationManager`.** It never touches pass/fail gutter icons — completely independent decoration types.
-11. **Timeline Maps are serialised before postMessage.** `TimelineStore.variables` and `TimelineStore.logs` are `Map<number, ...>` in the extension host. They are converted to plain objects (`Object.fromEntries`) before sending to webviews, since Maps are not JSON-serialisable.
+8. **Multi-Session Isolation is mandatory.** Never use global shared temporary directories for runner configs or traces. Always use the window-local `LTR_SESSION_TMP_DIR` injected via constructors.
+9. **Safe Cleanup.** On activation, the extension host must only delete stale session folders belonging to dead processes (verified via `process.kill(pid, 0)`). Never perform recursive blind deletions in the base temp root.
+10. **Persistent Templates.** AST-discovered dynamic test headers (`.each`) are `template` nodes. They must survive cleanup and status rollups even when childless.
+11. **Nested Branch Compatibility.** The recursive tree must support arbitrary depth. High-level status rollups must be reliable even when only deep-nested leaves are rerun. Always bubble status changes up the full ancestor chain.
+12. **`IInstrumentedRunner` is the only abstraction for instrumented runs.** `extension.ts` holds a reference typed as `IInstrumentedRunner` — never as the concrete `JestInstrumentedRunner`. Adding Vitest or Mocha timeline support = one new file implementing this interface.
+13. **`TimelineDecorationManager` is separate from `DecorationManager`.** It never touches pass/fail gutter icons — completely independent decoration types.
+14. **Timeline Maps are serialised before postMessage.** `TimelineStore.variables` and `TimelineStore.logs` are `Map<number, ...>` in the extension host. They are converted to plain objects (`Object.fromEntries`) before sending to webviews, since Maps are not JSON-serialisable.
+15. **`scope-logs` and `scope-changed` are always separate messages.** They have different lifecycles.
