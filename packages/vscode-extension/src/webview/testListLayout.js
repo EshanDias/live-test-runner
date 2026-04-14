@@ -525,34 +525,19 @@ class TestListLayout {
 
         // Folder rows toggle on any click (whole row acts as toggle)
         if (rowScope === 'folder') {
-          const childEl = this.container.querySelector(
-            `[data-children="${CSS.escape(id)}"]`,
-          );
-          if (childEl) {
-            const isNowExpanded = !childEl.classList.contains('expanded');
-            childEl.classList.toggle('expanded', isNowExpanded);
-            row
-              .querySelector('.row-toggle')
-              ?.classList.toggle('expanded', isNowExpanded);
-            if (isNowExpanded) this.expanded.add(id);
-            else this.expanded.delete(id);
-          }
+          const isNowExpanded = !this.expanded.has(id);
+          if (isNowExpanded) this.expanded.add(id);
+          else this.expanded.delete(id);
+          this._render();
           return;
         }
 
         // For file/suite rows, toggle expand/collapse ONLY when the arrow is clicked
         if (rowScope !== 'test' && e.target.closest('.row-toggle')) {
-          const childEl = this.container.querySelector(
-            `[data-children="${CSS.escape(id)}"]`,
-          );
-          if (childEl) {
-            const isNowExpanded = !childEl.classList.contains('expanded');
-            childEl.classList.toggle('expanded', isNowExpanded);
-            const toggle = row.querySelector('.row-toggle');
-            if (toggle) toggle.classList.toggle('expanded', isNowExpanded);
-            if (isNowExpanded) this.expanded.add(id);
-            else this.expanded.delete(id);
-          }
+          const isNowExpanded = !this.expanded.has(id);
+          if (isNowExpanded) this.expanded.add(id);
+          else this.expanded.delete(id);
+          this._render();
         }
 
         // Highlight selected row and notify extension
@@ -649,14 +634,9 @@ class TestListLayout {
         e.stopPropagation();
         const id = btn.dataset.collapseId ?? btn.dataset.expandId;
         const expand = btn.classList.contains('row-expand');
-        const childEl = this.container.querySelector(`[data-children="${CSS.escape(id)}"]`);
-        if (childEl) {
-          childEl.classList.toggle('expanded', expand);
-          const row = this.container.querySelector(`[data-id="${CSS.escape(id)}"]`);
-          row?.querySelector('.row-toggle')?.classList.toggle('expanded', expand);
-        }
         if (expand) this.expanded.add(id);
         else this.expanded.delete(id);
+        this._render();
       });
     });
   }
