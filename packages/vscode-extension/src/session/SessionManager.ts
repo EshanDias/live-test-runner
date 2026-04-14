@@ -20,8 +20,9 @@ import { LTR_TMP_DIR } from '../constants';
  */
 function nameToPattern(name: string): string {
   const escLiteral = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Expand '…', '<dynamic>', and Jest's % placeholders (%s, %d, %i, etc.) into wildcard matching
   return name
-    .split(/…|<dynamic>/)
+    .split(/…|<dynamic>|%[sdifjo#%]/)
     .map(escLiteral)
     .join('.*');
 }
@@ -339,19 +340,23 @@ export class SessionManager {
         sourceFilePath,
         testFilePath,
       );
-      const suites = Object.values(suiteInfo);
 
-      if (suites.length === 0) {
+      if (Object.keys(suiteInfo).length === 0) {
         filesToRunFull.push(testFilePath);
         continue;
       }
 
-      for (const suite of suites) {
+      for (const [suiteName, suite] of Object.entries(suiteInfo)) {
         if (suite.isSharedVars) {
           // Shared state — must run the whole file to get correct results
           if (!filesToRunFull.includes(testFilePath)) {
             filesToRunFull.push(testFilePath);
           }
+        } else if (suite.testCases.length === 0) {
+          // If the suite was explicitly traced but had 0 individual tests execute
+          // (e.g. an empty test.each([]) or for loop array), we MUST still run the suite 
+          // recursively by its name since modifying the dependency might have populated it.
+          testCasesToRun.push({ filePath: testFilePath, fullName: suiteName });
         } else {
           for (const testCase of suite.testCases) {
             testCasesToRun.push({ filePath: testFilePath, fullName: testCase });
@@ -454,13 +459,13 @@ export class SessionManager {
       return;
     }
 
-    // Mark affected tests as running and push to webview
+    // Mark affected nodes (and their descendants) as running
     for (const run of scopedRuns) {
-      const allFileTests = this._store.getFileNodes(run.filePath).filter(n => n.type === 'test');
+      const allNodes = this._store.getFileNodes(run.filePath);
       const namesToMark = new Set(run.names);
-      for (const test of allFileTests) {
-        if (namesToMark.has(test.fullName)) {
-          this._store.markTestsRunning(run.filePath, test.id);
+      for (const node of allNodes) {
+        if (namesToMark.has(node.fullName)) {
+          this._store.markTestsRunning(run.filePath, node.id);
         }
       }
       this._notify('onFileResult', run.filePath);
