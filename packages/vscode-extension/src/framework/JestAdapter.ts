@@ -185,7 +185,8 @@ export class JestAdapter implements IFrameworkAdapter {
 
     for (const tc of fileResult.testCases) {
       // Build hierarchical suite nodes from ancestorTitles
-      const ancestors = tc.ancestorTitles.length > 0 ? tc.ancestorTitles : ['(root)'];
+      const ancestors =
+        tc.ancestorTitles.length > 0 ? tc.ancestorTitles : ['(root)'];
 
       // Ensure all ancestor suite nodes exist
       let parentId: string | null = null;
@@ -234,7 +235,14 @@ export class JestAdapter implements IFrameworkAdapter {
 
         // Create suite node if it doesn't exist
         const suiteFullName = ancestors.slice(0, i + 1).join(' ');
-        store.nodeStarted(filePath, suiteNodeId, parentId, 'suite', title, suiteFullName);
+        store.nodeStarted(
+          filePath,
+          suiteNodeId,
+          parentId,
+          'suite',
+          title,
+          suiteFullName,
+        );
         touchedNodeIds.add(suiteNodeId);
         parentId = suiteNodeId;
         ancsForId.push(title);
@@ -259,6 +267,19 @@ export class JestAdapter implements IFrameworkAdapter {
 
       // Create/update the test node
       const testNodeId = makeNodeId(filePath, ancsForId, tc.title);
+
+      // If we are in a scoped run, only update the store for nodes within that scope.
+      // This ensures that non-matching tests reported by Jest ('pending' or 'skipped')
+      // do not overwrite your existing results.
+      if (opts?.nodeId) {
+        // Find if this node is exactly the target or a descendant of the target.
+        const inScope =
+          testNodeId === opts.nodeId || testNodeId.startsWith(opts.nodeId + '::');
+        if (!inScope) {
+          continue;
+        }
+      }
+
       store.nodeStarted(
         filePath,
         testNodeId,
@@ -316,10 +337,9 @@ export class JestAdapter implements IFrameworkAdapter {
       store.setFileOutput(filePath, output);
     }
 
-    // Set file-level status
-    const fileLevelStatus: TestStatus =
-      fileResult.status === 'passed' ? 'passed' : 'failed';
-    store.fileResult(filePath, fileLevelStatus, fileResult.duration);
+    // We no longer set file-level status directly from Jest's file result because
+    // it can be misleading during partial/scoped runs. Instead, we rely on the
+    // ResultStore bubbling up the aggregate status from the actual test nodes.
 
     // Remove any nodes that are STILL in the 'running' state.
     // If the file actually executed tests, any stuck 'running' nodes are orphans
@@ -336,7 +356,8 @@ export class JestAdapter implements IFrameworkAdapter {
       if (tc.location?.line == null) {
         continue;
       }
-      const ancestors = tc.ancestorTitles.length > 0 ? tc.ancestorTitles : ['(root)'];
+      const ancestors =
+        tc.ancestorTitles.length > 0 ? tc.ancestorTitles : ['(root)'];
       const testNodeId = makeNodeId(filePath, ancestors, tc.title);
       store.setLineEntry(filePath, tc.location.line, {
         nodeId: testNodeId,

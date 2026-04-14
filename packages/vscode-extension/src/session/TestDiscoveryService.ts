@@ -160,11 +160,7 @@ export class TestDiscoveryService {
 
     const handleChange = (uri: vscode.Uri) => {
       const existing = store.getFile(uri.fsPath);
-      // Only skip if the file is mid-run — don't interfere with in-progress results.
-      // For any other status (pending, passed, failed, skipped) drop and re-populate
-      // so new/renamed/deleted tests appear in the tree immediately.
       if (existing?.status === 'running') { return; }
-      if (existing) { store.removeFile(uri.fsPath); }
 
       log(`[TestDiscovery] Re-discovering: ${uri.fsPath}`);
       const fileData = this._populateFile(uri.fsPath, projectRoot, store, log);

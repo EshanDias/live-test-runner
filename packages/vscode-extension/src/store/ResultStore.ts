@@ -211,7 +211,20 @@ export class ResultStore {
       if (file) {
         file.status = 'running';
       }
+      // Mark subtree
       this.markNodeRunning(nodeId);
+
+      // Also mark ancestors as running so they show spinners in the UI
+      let pId = this.nodes.get(nodeId)?.parentId;
+      while (pId) {
+        const p = this.nodes.get(pId);
+        if (p) {
+          p.status = 'running';
+          pId = p.parentId;
+        } else {
+          break;
+        }
+      }
       // Bubble up to mark ancestor suites as running
       const node = this.nodes.get(nodeId);
       if (node) {
@@ -256,9 +269,30 @@ export class ResultStore {
     line?: number,
     isDynamicTemplate?: boolean,
   ): void {
-    if (this.nodes.has(nodeId)) {
+    const existing = this.nodes.get(nodeId);
+    if (existing) {
+      // Update metadata but preserve status and results
+      existing.line = line;
+      existing.isDynamicTemplate = isDynamicTemplate;
+      if (existing.parentId !== parentId) {
+        // Move to new parent
+        if (existing.parentId) {
+          const oldParent = this.nodes.get(existing.parentId);
+          if (oldParent) {
+            oldParent.children = oldParent.children.filter((id) => id !== nodeId);
+          }
+        }
+        existing.parentId = parentId;
+        if (parentId) {
+          const newParent = this.nodes.get(parentId);
+          if (newParent && !newParent.children.includes(nodeId)) {
+            newParent.children.push(nodeId);
+          }
+        }
+      }
       return;
     }
+
     this.nodes.set(nodeId, {
       id: nodeId,
       type,
@@ -273,6 +307,7 @@ export class ResultStore {
       output: { lines: [], capturedAt: null },
       failureMessages: [],
     });
+
     // Register as child of parent or as root node of file
     if (parentId) {
       const parent = this.nodes.get(parentId);
@@ -425,18 +460,39 @@ export class ResultStore {
         continue;
       }
 
-      // If a scope was provided, only touch 'running' nodes within that subtree.
+      // If a scope was provided, only touch 'running' nodes within that subtree
+      // or ancestors of the scope (so they can be recalculated).
       if (scopeNodeId) {
-        let inScope = false;
+        let inSubtree = false;
+        let isAncestor = false;
+
+        // Check subtree
         let p: string | null | undefined = nodeId;
         while (p) {
           if (p === scopeNodeId) {
-            inScope = true;
+            inSubtree = true;
             break;
           }
           p = this.nodes.get(p)?.parentId;
         }
-        if (!inScope) {
+
+        // Check ancestors
+        let p2: string | null | undefined = scopeNodeId;
+        while (p2) {
+          if (p2 === nodeId) {
+            isAncestor = true;
+            break;
+          }
+          p2 = this.nodes.get(p2)?.parentId;
+        }
+
+        if (!inSubtree && !isAncestor) {
+          continue;
+        }
+
+        // If it is an ancestor, we NEVER remove it, just revert status so rollup fixes it.
+        if (isAncestor && !inSubtree) {
+          node.status = 'pending';
           continue;
         }
       }
@@ -470,20 +526,28 @@ export class ResultStore {
       }
     }
 
-    // Track parents so we can bubble up after removals
-    const parentsToUpdate = new Set<string>();
+    // Track nodes that need their status recalculated (bubbles up to the file)
+    const nodesToRecalculate = new Set<string>();
+
+    if (scopeNodeId) {
+      nodesToRecalculate.add(scopeNodeId);
+      const p = this.nodes.get(scopeNodeId)?.parentId;
+      if (p) {
+        nodesToRecalculate.add(p);
+      }
+    }
 
     for (const nodeId of nodesToRemove) {
-      const parentId = this.nodes.get(nodeId)?.parentId;
-      if (parentId) {
-        parentsToUpdate.add(parentId);
+      const pId = this.nodes.get(nodeId)?.parentId;
+      if (pId) {
+        nodesToRecalculate.add(pId);
       }
       this._removeNode(nodeId);
     }
 
-    // After removing stuck orphans, re-evaluate parents
-    for (const parentId of parentsToUpdate) {
-      this._recalculateSuiteAndBubbleUp(parentId);
+    // After cleanup or scoped run, re-evaluate affected branches
+    for (const nodeId of nodesToRecalculate) {
+      this._recalculateSuiteAndBubbleUp(nodeId);
     }
 
     // Now remove ANY suite in the file that has 0 children (iterating until clear).

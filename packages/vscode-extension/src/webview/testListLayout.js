@@ -157,6 +157,13 @@ class TestListLayout {
     const nodeMap = this._buildNodeMap(file);
     if (nodeId) {
       this._markNodeRunning(nodeMap, nodeId);
+      
+      // Also mark ancestors as running
+      let curr = nodeMap[nodeId];
+      while (curr && curr.parentId) {
+        curr = nodeMap[curr.parentId];
+        if (curr) curr.status = 'running';
+      }
     } else {
       for (const rootId of (file.rootNodeIds ?? [])) {
         this._markNodeRunning(nodeMap, rootId);
