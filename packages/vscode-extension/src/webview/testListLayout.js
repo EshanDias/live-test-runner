@@ -184,6 +184,9 @@ class TestListLayout {
   setSelected(fileId, nodeId) {
     this.selectedId = nodeId ?? fileId ?? null;
     this.selectedFileId = fileId ?? null;
+    if (fileId) {
+      this._expandAncestors(fileId, nodeId);
+    }
     this._render();
     this.scrollToSelected();
   }
@@ -196,6 +199,27 @@ class TestListLayout {
       const nodeMap = this._buildNodeMap(file);
       this._expandAllNodeIds(file, nodeMap);
       this._expandFolderPaths(file.name);
+    }
+  }
+
+  /** Expand all ancestors (folders, file, and parent suites) of a given node/file. */
+  _expandAncestors(fileId, nodeId) {
+    if (!fileId) return;
+    const file = this.data.find((f) => f.fileId === fileId);
+    if (!file) return;
+
+    // Expand the file and its folder path
+    this.expanded.add(file.fileId);
+    this._expandFolderPaths(file.name);
+
+    // If a node is selected, expand all its parent suites
+    if (nodeId) {
+      const nodeMap = this._buildNodeMap(file);
+      let curr = nodeMap[nodeId];
+      while (curr && curr.parentId) {
+        this.expanded.add(curr.parentId);
+        curr = nodeMap[curr.parentId];
+      }
     }
   }
 
