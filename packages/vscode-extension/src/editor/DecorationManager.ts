@@ -61,14 +61,14 @@ export class DecorationManager implements IResultObserver {
 
   private _refreshAll(): void {
     for (const editor of vscode.window.visibleTextEditors) {
-      this._applyToEditor(editor);
+      this.applyToEditor(editor);
     }
   }
 
   private _refreshFile(filePath: string): void {
     for (const editor of vscode.window.visibleTextEditors) {
       if (editor.document.uri.fsPath === filePath) {
-        this._applyToEditor(editor);
+        this.applyToEditor(editor);
       }
     }
   }
@@ -81,7 +81,7 @@ export class DecorationManager implements IResultObserver {
     }
   }
 
-  private _applyToEditor(editor: vscode.TextEditor): void {
+  public applyToEditor(editor: vscode.TextEditor): void {
     const filePath = editor.document.uri.fsPath;
     const lineMap = this.store.getLineMap(filePath);
     if (lineMap.size === 0) {

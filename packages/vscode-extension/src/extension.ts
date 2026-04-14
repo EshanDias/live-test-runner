@@ -250,6 +250,12 @@ export function activate(context: vscode.ExtensionContext) {
       if (editor) { codeLensProvider.refresh(); }
     }),
 
+    vscode.window.onDidChangeVisibleTextEditors((editors) => {
+      for (const editor of editors) {
+        decorationManager.applyToEditor(editor);
+      }
+    }),
+
     vscode.workspace.onDidSaveTextDocument((doc) => session.onSave(doc)),
     vscode.workspace.onDidChangeWorkspaceFolders(() => session.onWorkspaceFoldersChanged()),
 
