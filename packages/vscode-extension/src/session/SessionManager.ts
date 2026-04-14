@@ -210,14 +210,14 @@ export class SessionManager {
     }
 
     if ((args.scope === 'test' || args.scope === 'suite') && args.fullName) {
+      if (args.nodeId) {
+        this._store.markNodeRunning(args.nodeId);
+      }
       this._notify(
         'onFilesRerunning',
         [args.fileId],
         args.nodeId,
       );
-      if (args.nodeId) {
-        this._store.markNodeRunning(args.nodeId);
-      }
       this._updateStatusBar('Running… 1/1');
       try {
         await this._adapter.runTestCase(

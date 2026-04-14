@@ -348,51 +348,10 @@ export class JestAdapter implements IFrameworkAdapter {
     const hadTestCases = fileResult.testCases.length > 0;
     store.cleanupStaleNodes(filePath, hadTestCases, opts?.nodeId);
 
-    // Populate LineMap (only clear on full-file run to preserve other tests' entries)
-    if (!opts?.nodeId) {
-      store.clearLineMap(filePath);
-    }
-    for (const tc of fileResult.testCases) {
-      if (tc.location?.line == null) {
-        continue;
-      }
-      const ancestors =
-        tc.ancestorTitles.length > 0 ? tc.ancestorTitles : ['(root)'];
-      const testNodeId = makeNodeId(filePath, ancestors, tc.title);
-      store.setLineEntry(filePath, tc.location.line, {
-        nodeId: testNodeId,
-        fileId: filePath,
-      });
-    }
-
-    // Re-add describe-level entries from stored node line numbers
-    // (Jest JSON has no describe line numbers so we preserve them from AST discovery).
-    const file = store.getFile(filePath);
-    if (file) {
-      for (const rootNodeId of file.rootNodeIds) {
-        this._addSuiteLineEntries(store, filePath, rootNodeId);
-      }
-    }
   }
 
-  /** Recursively add LineMap entries for suite nodes that have a stored line number. */
-  private _addSuiteLineEntries(
-    store: ResultStore,
-    filePath: string,
-    nodeId: string,
-  ): void {
-    const node = store.getNode(nodeId);
-    if (!node) return;
-    if (node.type === 'suite' && node.line) {
-      store.setLineEntry(filePath, node.line, {
-        nodeId: node.id,
-        fileId: filePath,
-      });
-    }
-    for (const childId of node.children) {
-      this._addSuiteLineEntries(store, filePath, childId);
-    }
-  }
+
+
 
   private _buildOutputLines(
     entries: ConsoleEntry[],

@@ -162,6 +162,10 @@ export class TestDiscoveryService {
       const existing = store.getFile(uri.fsPath);
       if (existing?.status === 'running') { return; }
 
+      // Clear the line map before re-discovery so that decorations are
+      // correctly repositioned (orphans cleared, moves updated).
+      store.clearLineMap(uri.fsPath);
+
       log(`[TestDiscovery] Re-discovering: ${uri.fsPath}`);
       const fileData = this._populateFile(uri.fsPath, projectRoot, store, log);
       if (fileData) {

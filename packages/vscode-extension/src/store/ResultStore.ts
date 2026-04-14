@@ -187,6 +187,14 @@ export class ResultStore {
     } else {
       node.status = 'running';
     }
+
+    if (node.line != null) {
+      this.setLineEntry(node.fileId, node.line, {
+        nodeId: node.id,
+        fileId: node.fileId,
+      });
+    }
+
     for (const childId of node.children) {
       this.markNodeRunning(childId);
     }
@@ -290,6 +298,9 @@ export class ResultStore {
           }
         }
       }
+      if (line != null) {
+        this.setLineEntry(fileId, line, { nodeId, fileId });
+      }
       return;
     }
 
@@ -307,6 +318,10 @@ export class ResultStore {
       output: { lines: [], capturedAt: null },
       failureMessages: [],
     });
+
+    if (line != null) {
+      this.setLineEntry(fileId, line, { nodeId, fileId });
+    }
 
     // Register as child of parent or as root node of file
     if (parentId) {
@@ -381,6 +396,9 @@ export class ResultStore {
       if (existing.type === 'test') {
         this._adjustSummary('running', +1);
       }
+      if (line != null) {
+        this.setLineEntry(fileId, line, { nodeId, fileId });
+      }
       return;
     }
     // New node
@@ -397,6 +415,9 @@ export class ResultStore {
       output: { lines: [], capturedAt: null },
       failureMessages: [],
     });
+    if (line != null) {
+      this.setLineEntry(fileId, line, { nodeId, fileId });
+    }
     // Register as child of parent or as root node of file
     if (parentId) {
       const parent = this.nodes.get(parentId);
@@ -431,6 +452,13 @@ export class ResultStore {
     node.failureMessages = failureMessages;
     if (node.type === 'test') {
       this._adjustSummary(status, +1);
+    }
+
+    if (node.line != null) {
+      this.setLineEntry(node.fileId, node.line, {
+        nodeId: node.id,
+        fileId: node.fileId,
+      });
     }
   }
 
