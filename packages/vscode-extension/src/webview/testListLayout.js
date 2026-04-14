@@ -184,6 +184,9 @@ class TestListLayout {
   setSelected(fileId, nodeId) {
     this.selectedId = nodeId ?? fileId ?? null;
     this.selectedFileId = fileId ?? null;
+    if (fileId) {
+      this._expandAncestors(fileId, nodeId);
+    }
     this._render();
     this.scrollToSelected();
   }
@@ -197,6 +200,37 @@ class TestListLayout {
       this._expandAllNodeIds(file, nodeMap);
       this._expandFolderPaths(file.name);
     }
+  }
+
+  /** Expand all ancestors (folders, file, and parent suites) of a given node/file. */
+  _expandAncestors(fileId, nodeId) {
+    if (!fileId) return;
+    const file = this.data.find((f) => f.fileId === fileId);
+    if (!file) return;
+
+    // Expand the file and its folder path
+    this.expanded.add(file.fileId);
+    this._expandFolderPaths(file.name);
+
+    // If a node is selected, expand all its parent suites
+    if (nodeId) {
+      const nodeMap = this._buildNodeMap(file);
+      let curr = nodeMap[nodeId];
+      while (curr && curr.parentId) {
+        this.expanded.add(curr.parentId);
+        curr = nodeMap[curr.parentId];
+      }
+    }
+  }
+
+  _nodeMatchesFailures(nodeMap, nodeId) {
+    const node = nodeMap[nodeId];
+    if (!node) return false;
+    if (node.status === 'failed' || node.status === 'running') return true;
+    for (const childId of (node.children ?? [])) {
+      if (this._nodeMatchesFailures(nodeMap, childId)) return true;
+    }
+    return false;
   }
 
   /** Expand all suite node IDs in a file's node tree. */
@@ -349,7 +383,7 @@ class TestListLayout {
   // ── Row renderers ────────────────────────────────────────────────────────
 
   _renderFile(file) {
-    const isExpanded = this.expanded.has(file.fileId) || !!this.query;
+    const isExpanded = this.expanded.has(file.fileId) || !!this.query || this.failuresOnly;
     const icon = STATUS_ICON[file.status] ?? STATUS_ICON.pending;
     const dur = durationLabel(file.duration);
     const durClass = durationClass(file.duration, 'file');
@@ -361,6 +395,7 @@ class TestListLayout {
     const displayName = basename(file.name);
 
     const nodeMap = this._buildNodeMap(file);
+    const fileMatched = this._matches(file.name) || this._matches(displayName);
 
     // Render root-level node children
     const rootNodeIds = file.rootNodeIds ?? [];
@@ -373,12 +408,13 @@ class TestListLayout {
           if (!node) return '';
           // (root) suite: render its children directly under the file
           if (node.type === 'suite' && node.name === '(root)') {
+            const suiteMatched = fileMatched || this._matches(node.name);
             return (node.children ?? [])
-              .map((childId) => this._renderNode(file, nodeMap, nodeMap[childId], 1))
+              .map((childId) => this._renderNode(file, nodeMap, nodeMap[childId], 1, suiteMatched))
               .filter(Boolean)
               .join('');
           }
-          return this._renderNode(file, nodeMap, node, 1);
+          return this._renderNode(file, nodeMap, node, 1, fileMatched);
         })
         .join('');
     }
@@ -409,23 +445,29 @@ class TestListLayout {
    * @param {object} nodeMap  - id→node lookup map
    * @param {object} node     - The current node to render
    * @param {number} depth    - Nesting depth (1 = direct child of file)
+   * @param {boolean} forceShow - If true, search filtering is bypassed for this node
    */
-  _renderNode(file, nodeMap, node, depth) {
+  _renderNode(file, nodeMap, node, depth, forceShow = false) {
     if (!node) return '';
 
-    // Query filtering: skip nodes that don't match
-    if (this.query && !this._nodeMatchesQuery(nodeMap, node.id)) {
+    // Query filtering: skip nodes that don't match, unless an ancestor already matched
+    if (this.query && !forceShow && !this._nodeMatchesQuery(nodeMap, node.id)) {
+      return '';
+    }
+
+    // Failures filtering: skip nodes that don't match when failuresOnly is active
+    if (this.failuresOnly && !this._nodeMatchesFailures(nodeMap, node.id)) {
       return '';
     }
 
     if (node.type === 'test') {
       return this._renderTestNode(file, node, depth);
     }
-    return this._renderSuiteNode(file, nodeMap, node, depth);
+    return this._renderSuiteNode(file, nodeMap, node, depth, forceShow);
   }
 
-  _renderSuiteNode(file, nodeMap, node, depth) {
-    const isExpanded = this.expanded.has(node.id) || !!this.query;
+  _renderSuiteNode(file, nodeMap, node, depth, forceShow = false) {
+    const isExpanded = this.expanded.has(node.id) || !!this.query || this.failuresOnly;
     const icon = STATUS_ICON[node.status] ?? STATUS_ICON.pending;
     const dur = durationLabel(node.duration);
     const durCls = durationClass(node.duration, 'suite');
@@ -441,8 +483,9 @@ class TestListLayout {
     // Render children (both sub-suites and tests) only when expanded
     let children = '';
     if (isExpanded && hasChildren) {
+      const suiteMatched = forceShow || this._matches(node.name);
       children = (node.children ?? [])
-        .map((childId) => this._renderNode(file, nodeMap, nodeMap[childId], depth + 1))
+        .map((childId) => this._renderNode(file, nodeMap, nodeMap[childId], depth + 1, suiteMatched))
         .filter(Boolean)
         .join('');
     }
@@ -525,34 +568,19 @@ class TestListLayout {
 
         // Folder rows toggle on any click (whole row acts as toggle)
         if (rowScope === 'folder') {
-          const childEl = this.container.querySelector(
-            `[data-children="${CSS.escape(id)}"]`,
-          );
-          if (childEl) {
-            const isNowExpanded = !childEl.classList.contains('expanded');
-            childEl.classList.toggle('expanded', isNowExpanded);
-            row
-              .querySelector('.row-toggle')
-              ?.classList.toggle('expanded', isNowExpanded);
-            if (isNowExpanded) this.expanded.add(id);
-            else this.expanded.delete(id);
-          }
+          const isNowExpanded = !this.expanded.has(id);
+          if (isNowExpanded) this.expanded.add(id);
+          else this.expanded.delete(id);
+          this._render();
           return;
         }
 
         // For file/suite rows, toggle expand/collapse ONLY when the arrow is clicked
         if (rowScope !== 'test' && e.target.closest('.row-toggle')) {
-          const childEl = this.container.querySelector(
-            `[data-children="${CSS.escape(id)}"]`,
-          );
-          if (childEl) {
-            const isNowExpanded = !childEl.classList.contains('expanded');
-            childEl.classList.toggle('expanded', isNowExpanded);
-            const toggle = row.querySelector('.row-toggle');
-            if (toggle) toggle.classList.toggle('expanded', isNowExpanded);
-            if (isNowExpanded) this.expanded.add(id);
-            else this.expanded.delete(id);
-          }
+          const isNowExpanded = !this.expanded.has(id);
+          if (isNowExpanded) this.expanded.add(id);
+          else this.expanded.delete(id);
+          this._render();
         }
 
         // Highlight selected row and notify extension
@@ -649,14 +677,9 @@ class TestListLayout {
         e.stopPropagation();
         const id = btn.dataset.collapseId ?? btn.dataset.expandId;
         const expand = btn.classList.contains('row-expand');
-        const childEl = this.container.querySelector(`[data-children="${CSS.escape(id)}"]`);
-        if (childEl) {
-          childEl.classList.toggle('expanded', expand);
-          const row = this.container.querySelector(`[data-id="${CSS.escape(id)}"]`);
-          row?.querySelector('.row-toggle')?.classList.toggle('expanded', expand);
-        }
         if (expand) this.expanded.add(id);
         else this.expanded.delete(id);
+        this._render();
       });
     });
   }
