@@ -30,6 +30,7 @@ function loadBabel(rootDir) {
     _rootDir = rootDir;
     return true;
   } catch (e) {
+    console.error(`[TestDiscovery] Failed to load Babel from "${rootDir}":`, e && (e.message || e));
     return false;
   }
 }
@@ -316,6 +317,7 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
       plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport'],
     });
   } catch (_e) {
+    console.error(`[TestDiscovery] Babel parse error in "${sourcePath}":`, _e && (_e.message || _e));
     return null;
   }
 
