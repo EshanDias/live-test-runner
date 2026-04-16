@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ResultStore, makeNodeId } from '../store/ResultStore';
+import { logger } from '../utils/logger';
+
+const FILE = 'TestDiscoveryService.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { discoverTests } = require('./instrumentation/testDiscovery.js') as {
@@ -83,6 +86,7 @@ export class TestDiscoveryService {
     this._discoveryPromise = this._run(projectRoot, store, log, callbacks)
       .catch((err) => {
         log(`[TestDiscovery] Error during discovery: ${err}`);
+        logger.error(FILE, 'start', `Discovery run failed for root="${projectRoot}"`, err);
       })
       .finally(() => {
         this._isDiscovering = false;
@@ -193,12 +197,22 @@ export class TestDiscoveryService {
     let source: string;
     try {
       source = fs.readFileSync(filePath, 'utf8');
-    } catch {
+    } catch (err) {
+      logger.error(FILE, '_populateFile', `Could not read test file: "${filePath}"`, err);
       return null;
     }
 
-    const result = discoverTests(source, filePath, projectRoot);
+    let result: ReturnType<typeof discoverTests>;
+    try {
+      result = discoverTests(source, filePath, projectRoot);
+    } catch (err) {
+      logger.error(FILE, '_populateFile', `discoverTests threw for "${filePath}"`, err);
+      log(`[TestDiscovery] AST parse error: ${filePath}`);
+      return null;
+    }
+
     if (!result) {
+      logger.warn(FILE, '_populateFile', `AST parse returned null for "${filePath}"`);
       log(`[TestDiscovery] AST parse failed: ${filePath}`);
       return null;
     }

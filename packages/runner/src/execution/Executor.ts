@@ -3,6 +3,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { BinaryResolver } from '../resolution/BinaryResolver';
+import { logger } from '../utils/logger';
+
+const FILE = 'Executor.ts';
 
 export interface ExecutionResult {
   passed: boolean;
@@ -55,6 +58,7 @@ export class Executor {
    */
   async runWithJsonCapture(command: ExecutorCommand): Promise<ExecutionResult & { jsonOutput: string }> {
     if (!fs.existsSync(command.cwd)) {
+      logger.error(FILE, 'runWithJsonCapture', `Project root does not exist: "${command.cwd}"`);
       return {
         passed: false,
         stdout: '',
@@ -81,9 +85,16 @@ export class Executor {
     try {
       if (fs.existsSync(tmpFile)) {
         jsonOutput = fs.readFileSync(tmpFile, 'utf8');
+        if (!jsonOutput.trim()) {
+          logger.warn(FILE, 'runWithJsonCapture', `Output file exists but is empty — falling back to stdout. tmpFile="${tmpFile}"`);
+          jsonOutput = result.stdout;
+        }
+      } else {
+        logger.warn(FILE, 'runWithJsonCapture', `Output file not produced by Jest — falling back to stdout. tmpFile="${tmpFile}"`);
+        jsonOutput = result.stdout;
       }
       if (!jsonOutput.trim()) {
-        jsonOutput = result.stdout;
+        logger.error(FILE, 'runWithJsonCapture', `No JSON output produced (file empty and stdout empty) — binary="${command.binary}" cwd="${command.cwd}"`);
       }
     } finally {
       try { fs.unlinkSync(tmpFile); } catch { /* ignore cleanup errors */ }
@@ -97,6 +108,7 @@ export class Executor {
    */
   async run(command: ExecutorCommand): Promise<ExecutionResult> {
     if (!fs.existsSync(command.cwd)) {
+      logger.error(FILE, 'run', `Project root does not exist: "${command.cwd}"`);
       return {
         passed: false,
         stdout: '',
@@ -182,6 +194,7 @@ export class Executor {
 
       child.on('error', (err) => {
         if (resolved) return;
+        logger.error(FILE, 'spawn', `Child process error — binary="${binary}" cwd="${cwd}"`, err);
         resolved = true;
         this.child = undefined;
         resolve({ passed: false, stdout: '', stderr: err.message });

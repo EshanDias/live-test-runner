@@ -14,8 +14,10 @@ import {
   ScopedOutput,
   makeNodeId,
 } from '../store/ResultStore';
-
 import { nameToPattern } from '../session/SessionManager';
+import { logger } from '../utils/logger';
+
+const FILE = 'JestAdapter.ts';
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
@@ -54,7 +56,8 @@ export class JestAdapter implements IFrameworkAdapter {
         !!pkg.devDependencies?.jest ||
         !!pkg.scripts?.test?.includes('jest')
       );
-    } catch {
+    } catch (err) {
+      logger.warn(FILE, 'detect', `Could not read package.json at "${projectRoot}" — assuming not a Jest project`, err);
       return false;
     }
   }
@@ -90,13 +93,26 @@ export class JestAdapter implements IFrameworkAdapter {
     projectRoot: string,
     log: (msg: string) => void,
   ): Promise<'passed' | 'failed'> {
+    logger.debug(FILE, 'runFile', `Running file: "${filePath}"`);
     const runner = this._createRunner(projectRoot, log);
-    const jsonResult = await runner.runTestFileJson(filePath);
-    const fileResult = jsonResult.fileResults[0];
-    if (!fileResult) {
+    let jsonResult: Awaited<ReturnType<typeof runner.runTestFileJson>>;
+    try {
+      jsonResult = await runner.runTestFileJson(filePath);
+    } catch (err) {
+      logger.error(FILE, 'runFile', `runTestFileJson threw for "${filePath}"`, err);
       return 'failed';
     }
-    this._applyFileResult(store, filePath, fileResult);
+    const fileResult = jsonResult.fileResults[0];
+    if (!fileResult) {
+      logger.warn(FILE, 'runFile', `No fileResult returned for "${filePath}" — treating as failed`);
+      return 'failed';
+    }
+    try {
+      this._applyFileResult(store, filePath, fileResult);
+    } catch (err) {
+      logger.error(FILE, 'runFile', `_applyFileResult threw for "${filePath}"`, err);
+    }
+    logger.debug(FILE, 'runFile', `File result: ${fileResult.status} — "${filePath}"`);
     return fileResult.status === 'passed' ? 'passed' : 'failed';
   }
 
@@ -108,19 +124,28 @@ export class JestAdapter implements IFrameworkAdapter {
     log: (msg: string) => void,
     opts?: RerunOptions,
   ): Promise<void> {
+    logger.debug(FILE, 'runTestCase', `Running test case — file="${filePath}" pattern="${fullName}"`);
     const runner = this._createRunner(projectRoot, log);
     // Determine if this is a suite-level rerun (no individual test node)
     const isSuiteRun = opts?.nodeId
       ? store.getNode(opts.nodeId)?.type === 'suite'
       : false;
-    const jsonResult = await runner.runTestCaseJson(
-      filePath,
-      fullName,
-      isSuiteRun,
-    );
+    let jsonResult: Awaited<ReturnType<typeof runner.runTestCaseJson>>;
+    try {
+      jsonResult = await runner.runTestCaseJson(filePath, fullName, isSuiteRun);
+    } catch (err) {
+      logger.error(FILE, 'runTestCase', `runTestCaseJson threw — file="${filePath}" pattern="${fullName}"`, err);
+      return;
+    }
     const fileResult = jsonResult.fileResults[0];
     if (fileResult) {
-      this._applyFileResult(store, filePath, fileResult, opts);
+      try {
+        this._applyFileResult(store, filePath, fileResult, opts);
+      } catch (err) {
+        logger.error(FILE, 'runTestCase', `_applyFileResult threw — file="${filePath}" pattern="${fullName}"`, err);
+      }
+    } else {
+      logger.warn(FILE, 'runTestCase', `No fileResult for "${filePath}" pattern="${fullName}"`);
     }
   }
 

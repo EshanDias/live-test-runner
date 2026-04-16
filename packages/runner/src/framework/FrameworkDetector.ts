@@ -3,6 +3,9 @@ import { FrameworkAdapter } from './adapters/FrameworkAdapter';
 import { CRAAdapter } from './adapters/CRAAdapter';
 import { JestAdapter } from './adapters/JestAdapter';
 import { ViteAdapter } from './adapters/ViteAdapter';
+import { logger } from '../utils/logger';
+
+const FILE = 'FrameworkDetector.ts';
 
 /**
  * Detects which test framework a project uses and returns the matching adapter.
@@ -29,12 +32,18 @@ export class FrameworkDetector {
    */
   detect(projectRoot: string): FrameworkAdapter {
     for (const adapter of ADAPTER_PRIORITY) {
-      if (adapter.detect(projectRoot)) {
-        return adapter;
+      try {
+        if (adapter.detect(projectRoot)) {
+          logger.info(FILE, 'detect', `Detected framework="${adapter.framework}" for "${projectRoot}"`);
+          return adapter;
+        }
+      } catch (err) {
+        logger.warn(FILE, 'detect', `Adapter "${adapter.framework}" threw during detect for "${projectRoot}" — skipping`, err);
       }
     }
 
     // Last-resort fallback so we never leave the caller without an adapter.
+    logger.info(FILE, 'detect', `No specific framework detected for "${projectRoot}" — falling back to plain Jest`);
     return new JestAdapter();
   }
 

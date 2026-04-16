@@ -20,6 +20,9 @@ import * as path from 'path';
 import { Executor, BinaryResolver } from '@live-test-runner/runner';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { OutputLine } from '../store/ResultStore';
+import { logger } from '../utils/logger';
+
+const FILE = 'SessionTraceRunner.ts';
 
 // At runtime __dirname is out/ (the esbuild output directory).
 // esbuild.js copies sessionTraceTransform.js → out/instrumentation/.
@@ -153,8 +156,15 @@ module.exports = {
     const cacheDir = path.join(this._tmpDir, `jest-trace-cache-${ts}-${rand}`);
 
     try {
-      const binary = this._binaryResolver.resolve(projectRoot);
+      let binary: string;
+      try {
+        binary = this._binaryResolver.resolve(projectRoot);
+      } catch (err) {
+        logger.error(FILE, 'runFile', `Failed to resolve Jest binary for "${projectRoot}"`, err);
+        throw err;
+      }
       emit(`[SessionTrace] Running instrumented: ${path.relative(projectRoot, filePath)}`);
+      logger.debug(FILE, 'runFile', `SessionTrace start — file="${filePath}" binary="${binary}"`);
 
       const result = await this._executor.run({
         binary,
@@ -179,6 +189,7 @@ module.exports = {
         emit(`[SessionTrace] stderr for ${path.basename(filePath)}:\n${result.stderr.trim()}`);
       }
     } catch (err) {
+      logger.error(FILE, 'runFile', `Jest instrumented run threw for "${filePath}"`, err);
       emit(`[SessionTrace] Jest run error: ${(err as Error).message}`);
       // Don't rethrow — a test failure is not a runner error; we still parse what we got
     } finally {
@@ -188,7 +199,12 @@ module.exports = {
 
     // Parse and partition the raw trace
     try {
-      return this._partitionAndStore(rawTraceFile, filePath, traceDir, traceStore, emit);
+      const result = this._partitionAndStore(rawTraceFile, filePath, traceDir, traceStore, emit);
+      logger.debug(FILE, 'runFile', `Partition complete — ${result.size} test(s) with logs for "${path.basename(filePath)}"`);
+      return result;
+    } catch (err) {
+      logger.error(FILE, 'runFile', `_partitionAndStore failed for "${filePath}"`, err);
+      return new Map();
     } finally {
       try { fs.unlinkSync(rawTraceFile); } catch { /* ignore */ }
     }
@@ -204,11 +220,18 @@ module.exports = {
     emit: (msg: string) => void,
   ): Map<string, OutputLine[]> {
     if (!fs.existsSync(rawTraceFile)) {
+      logger.warn(FILE, '_partitionAndStore', `No trace output produced — rawTraceFile="${rawTraceFile}" testFile="${testFilePath}"`);
       emit(`[SessionTrace] No trace output produced for ${testFilePath}`);
       return new Map();
     }
 
-    const raw = fs.readFileSync(rawTraceFile, 'utf8');
+    let raw: string;
+    try {
+      raw = fs.readFileSync(rawTraceFile, 'utf8');
+    } catch (err) {
+      logger.error(FILE, '_partitionAndStore', `Could not read raw trace file: "${rawTraceFile}"`, err);
+      return new Map();
+    }
     const lines = raw.split('\n').filter((l) => l.trim().length > 0);
 
     // Group steps by testName — preserving insertion order so steps stay ordered

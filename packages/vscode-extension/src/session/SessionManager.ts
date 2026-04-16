@@ -11,6 +11,9 @@ import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import { SessionTraceRunner } from './SessionTraceRunner';
+import { logger } from '../utils/logger';
+
+const FILE = 'SessionManager.ts';
 
 /**
  * Convert a test full-name to a regex pattern suitable for --testNamePattern.
@@ -62,8 +65,10 @@ export class SessionManager {
   // ── Session lifecycle ──────────────────────────────────────────────────────
 
   async start(): Promise<void> {
+    logger.info(FILE, 'start', 'Session start requested');
     const projectRoot = this._getProjectRoot();
     if (!projectRoot) {
+      logger.warn(FILE, 'start', 'No project root configured — prompting user');
       const pick = await vscode.window.showErrorMessage(
         'No project root found. Open a single folder or configure liveTestRunner.projectRoot.',
         'Select Project Root',
@@ -74,7 +79,10 @@ export class SessionManager {
       return;
     }
 
+    logger.info(FILE, 'start', `Project root: ${projectRoot}`);
+
     if (this._session) {
+      logger.debug(FILE, 'start', 'Stopping existing session before starting a new one');
       this._session.stop();
       this._session = undefined;
     }
@@ -139,12 +147,14 @@ export class SessionManager {
         `[Live Test Runner] Temporary trace files: ${this._sessionDir}`,
       );
     } catch (error) {
+      logger.error(FILE, 'start', 'Unhandled error starting test session', error);
       this._updateStatusBar('❌ Error');
       vscode.window.showErrorMessage(`Failed to start testing: ${error}`);
     }
   }
 
   stop(decorationManager: DecorationManager): void {
+    logger.info(FILE, 'stop', 'Session stop requested');
     if (this._session) {
       this._session.stop();
       this._session = undefined;
@@ -221,6 +231,7 @@ export class SessionManager {
       );
       this._updateStatusBar('Running… 1/1');
       try {
+        logger.debug(FILE, 'rerunScope', `Running scoped test — scope=${args.scope} fileId="${args.fileId}" fullName="${args.fullName}"`);
         await this._adapter.runTestCase(
           this._store,
           args.fileId,
@@ -230,6 +241,7 @@ export class SessionManager {
           { nodeId: args.nodeId },
         );
       } catch (error) {
+        logger.error(FILE, 'rerunScope', `runTestCase failed — fileId="${args.fileId}" fullName="${args.fullName}"`, error);
         this._outputChannel.appendLine(
           `[Live Test Runner] Error: ${(error as Error).message}`,
         );
@@ -249,19 +261,25 @@ export class SessionManager {
     filePath: string,
     testFullName?: string,
   ): Promise<void> {
+    logger.info(FILE, 'debugFromEditor', `Debug session requested — file="${filePath}" testFullName="${testFullName ?? '(all)'}"`);
     const projectRoot = this._getProjectRoot();
     if (!projectRoot) {
+      logger.warn(FILE, 'debugFromEditor', 'No project root — aborting debug');
       return;
     }
-    const folder = vscode.workspace.getWorkspaceFolder(
-      vscode.Uri.file(filePath),
-    );
-    const config = this._adapter.getDebugConfig(
-      projectRoot,
-      filePath,
-      testFullName,
-    );
-    await vscode.debug.startDebugging(folder, config);
+    try {
+      const folder = vscode.workspace.getWorkspaceFolder(
+        vscode.Uri.file(filePath),
+      );
+      const config = this._adapter.getDebugConfig(
+        projectRoot,
+        filePath,
+        testFullName,
+      );
+      await vscode.debug.startDebugging(folder, config);
+    } catch (err) {
+      logger.error(FILE, 'debugFromEditor', `Failed to start debug session for "${filePath}"`, err);
+    }
   }
 
   // ── On-save handler ────────────────────────────────────────────────────────
@@ -291,6 +309,7 @@ export class SessionManager {
           await this._runAffectedBySourceFile(document.uri.fsPath, projectRoot);
         }
       } catch (error) {
+        logger.error(FILE, 'onSave', `Error during on-save rerun for "${document.uri.fsPath}"`, error);
         this._updateStatusBar('✅ Ready');
         this._outputChannel.appendLine(
           `[Live Test Runner] Error: ${(error as Error).message}`,
@@ -525,6 +544,7 @@ export class SessionManager {
                 opts,
               );
             } catch (err) {
+              logger.error(FILE, '_runTestCases', `runTestCase failed — file="${run.filePath}" pattern="${pattern}"`, err);
               this._outputChannel.appendLine(
                 `[Live Test Runner] Error: ${(err as Error).message}`,
               );
@@ -604,7 +624,8 @@ export class SessionManager {
               } else {
                 numFailed++;
               }
-            } catch {
+            } catch (err) {
+              logger.error(FILE, '_runFiles', `runFile threw unexpectedly for "${filePath}"`, err);
               this._store.fileResult(filePath, 'failed');
               numFailed++;
             }
@@ -671,6 +692,7 @@ export class SessionManager {
                 this._refreshScopedLogs(filePath);
               }
             } catch (err) {
+              logger.error(FILE, '_runFiles', `SessionTrace failed for "${filePath}"`, err);
               this._outputChannel.appendLine(
                 `[SessionTrace] Error for ${filePath}: ${(err as Error).message}`,
               );
