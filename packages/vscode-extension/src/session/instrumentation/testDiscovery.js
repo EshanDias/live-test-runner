@@ -314,11 +314,75 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
     ast = _parser.parse(sourceCode, {
       sourceType: 'module',
       allowReturnOutsideFunction: true,
-      plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport'],
+      errorRecovery: true,
+      plugins: [
+        // Core syntax
+        'jsx',
+        'typescript',          // NOTE: conflicts with 'flow' — we prefer typescript
+
+        // Class features
+        'classProperties',
+        'classPrivateProperties',
+        'classPrivateMethods',
+        'classStaticBlock',
+        'decoratorAutoAccessors',
+        ['decorators', { version: '2023-11' }],
+
+        // Import/export
+        'dynamicImport',
+        'importAssertions',    // import x assert { type: 'json' }
+        'importAttributes',    // import x with { type: 'json' } (newer spec)
+        'importMeta',          // import.meta
+        'exportDefaultFrom',   // export v from 'mod'
+        'exportNamespaceFrom', // export * as ns from 'mod'
+
+        // Operators & expressions
+        'optionalChaining',           // a?.b
+        'nullishCoalescingOperator',  // a ?? b
+        'logicalAssignment',          // a ||= b, a &&= b, a ??= b
+        'optionalCatchBinding',       // catch { }
+        'throwExpressions',           // () => throw new Error()
+        'doExpressions',              // do { }
+        'asyncDoExpressions',         // async do { }
+        'partialApplication',         // fn(?, 1)
+
+        // Literals & types
+        'numericSeparator',    // 1_000_000
+        'bigInt',              // 100n
+        'decimal',             // 1.5m
+        'recordAndTuple',      // #{ }, #[ ]
+        'moduleBlocks',        // module { }
+
+        // Async / generators
+        'asyncGenerators',     // async function*
+
+        // Misc
+        'topLevelAwait',
+        'privateIn',           // #x in obj
+        'moduleStringNames',   // import { "foo bar" as x }
+        'explicitResourceManagement', // using x = ...
+        'regexpUnicodeSets',   // /[...]/v
+        'functionBind',        // obj::fn
+        'functionSent',        // function.sent
+        ['pipelineOperator', { proposal: 'minimal' }], // x |> fn
+        'v8intrinsic',         // %DebugPrint()
+      ],
     });
   } catch (_e) {
-    console.error(`[TestDiscovery] Babel parse error in "${sourcePath}":`, _e && (_e.message || _e));
-    return null;
+    // Full plugin list failed — could be an older @babel/parser that doesn't support
+    // a newer plugin. Retry with a minimal stable set so the file isn't lost entirely.
+    console.warn(`[TestDiscovery] Full-plugin parse failed for "${sourcePath}", retrying with minimal plugins. Error: ${_e && (_e.message || _e)}`);
+    try {
+      ast = _parser.parse(sourceCode, {
+        sourceType: 'module',
+        allowReturnOutsideFunction: true,
+        errorRecovery: true,
+        plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator'],
+      });
+    } catch (_e2) {
+      console.error(`[TestDiscovery] Minimal-plugin parse also failed for "${sourcePath}":`, _e2 && (_e2.message || _e2));
+      return null;
+    }
   }
 
   /**
