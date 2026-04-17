@@ -32,6 +32,8 @@ export interface DiscoveryCallbacks {
   onBatchDiscovered(files: unknown[], discovered: number, total: number): void;
   /** Called when all files have been parsed (or 0 files were found). */
   onComplete(): void;
+  /** Called when a watched test file is deleted (e.g. temp files from e2e tests). */
+  onFileRemoved?(fileId: string): void;
 }
 
 // Number of files to parse per event-loop batch. Larger batches mean fewer
@@ -183,7 +185,10 @@ export class TestDiscoveryService {
 
     this._watcher.onDidChange(handleChange);
     this._watcher.onDidCreate(handleChange);
-    // Deleted files: leave stale data in place — it disappears on the next run.
+    this._watcher.onDidDelete((uri) => {
+      store.removeFile(uri.fsPath);
+      callbacks.onFileRemoved?.(uri.fsPath);
+    });
   }
 
   // ── Private: per-file AST parse + store populate ──────────────────────────
@@ -218,6 +223,14 @@ export class TestDiscoveryService {
     if (!result) {
       logger.warn(FILE, '_populateFile', `AST parse returned null for "${filePath}"`);
       log(`[TestDiscovery] AST parse failed: ${filePath}`);
+      return null;
+    }
+
+    // If no tests were found (e.g. all describe/test calls are imported from a
+    // non-Jest package like tstyche), skip this file entirely so it doesn't
+    // appear as an empty entry in the test list.
+    if (result.suites.length === 0 && result.rootTests.length === 0) {
+      log(`[TestDiscovery] No Jest tests found, skipping: ${filePath}`);
       return null;
     }
 
