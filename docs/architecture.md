@@ -109,17 +109,26 @@ Current adapters:
 
 ### Jest invocation
 
-Every run uses the same deterministic command:
+Two different command shapes are used depending on context:
 
+**Batch run — `SessionTraceRunner` (initial run + on-save file reruns):**
+```sh
+jest --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
+     --config <ltr-temp-cfg.js> --cacheDirectory <ltr-cache> \
+     --maxWorkers=1 --testLocationInResults
+```
+The temp config merges the project's `jest.config.*` with `sessionTraceTransform.js` (light trace transform) and `liveReporter.js` (streaming reporter). Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
+
+`--maxWorkers=1` keeps each Jest process single-threaded so batches can run in parallel without competing for CPU.
+
+**Single-test / scoped-rerun — `JestRunner` (CodeLens `▶ Run`, suite/test reruns):**
 ```sh
 jest --config <resolved> --watchAll=false --forceExit --no-bail --json \
      --outputFile=<tmpfile> --testLocationInResults [--testNamePattern <name>]
 ```
-
-- `--outputFile=<tmpfile>` — primary JSON output path; avoids Windows pipe-buffering truncation for large payloads
-- Stdout is **still captured** in parallel as a fallback — CRA occasionally skips `--outputFile` on a bailed run and writes JSON to stdout instead. `Executor` reads the tmpfile first; if it is missing or empty, it falls back to the captured stdout.
+- `--outputFile=<tmpfile>` — avoids Windows pipe-buffering truncation for large JSON payloads
+- Stdout is captured as a fallback — CRA occasionally skips `--outputFile` on bailed runs
 - `--no-bail` — collects all failures in a single pass
-- `--testLocationInResults` — populates `location.line` used by gutter icons
 
 ### CRA-specific behavior
 

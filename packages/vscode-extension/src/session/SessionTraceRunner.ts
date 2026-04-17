@@ -1,52 +1,102 @@
 /**
- * SessionTraceRunner — runs a test file with full instrumentation and writes
- * per-test JSONL trace files to the session trace directory.
+ * SessionTraceRunner — runs a batch of test files under light-trace
+ * instrumentation and streams per-file results back to the caller.
  *
- * This is entirely separate from JestInstrumentedRunner (which serves the
- * Timeline Debugger). It uses sessionTraceTransform.js and sessionTraceRuntime.js.
+ * A single Jest process handles all files in the batch:
+ *   - liveReporter.js appends one JSON record per completed file to
+ *     LTR_REPORTER_FILE. The parent polls that file and fires onFileDone
+ *     as each record arrives, giving the UI progressive updates.
+ *   - sessionTraceTransform.js instruments source files; sessionTraceRuntime.js
+ *     flushes compact hit records to SESSION_TRACE_FILE. After Jest exits the
+ *     parent parses that file and updates ExecutionTraceStore.
  *
- * Flow for each file:
- *  1. Write a temp Jest config that injects sessionTraceTransform for all project files.
- *  2. Set SESSION_TRACE_FILE env var — the runtime writes all steps there.
- *  3. Run Jest on the full file (no --testNamePattern — all tests execute in order).
- *  4. Read the single raw JSONL, partition steps by testName.
- *  5. Write one JSONL file per test case into the session trace directory.
- *  6. Update ExecutionTraceStore (trace index + coverage index).
- *  7. Clean up temp files.
+ * One pass does both jobs — no second "trace" phase is needed.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult } from '@live-test-runner/runner';
+import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
-import { OutputLine } from '../store/ResultStore';
 import { logger } from '../utils/logger';
 
 const FILE = 'SessionTraceRunner.ts';
 
-// At runtime __dirname is out/ (the esbuild output directory).
-// esbuild.js copies sessionTraceTransform.js → out/instrumentation/.
 const SESSION_TRANSFORM_PATH = path.resolve(
   __dirname,
   'instrumentation',
   'sessionTraceTransform.js',
 );
 
+const LIVE_REPORTER_PATH = path.resolve(
+  __dirname,
+  'instrumentation',
+  'liveReporter.js',
+);
+
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** One line from the raw JSONL trace file */
-interface RawStep {
-  type: 'STEP' | 'VAR' | 'LOG';
-  line?: number;
-  file?: string;
-  name?: string;
-  value?: unknown;
-  level?: string;
-  args?: string[];
-  context: string | null;
-  testName: string | null;
+/** Light-trace record emitted by sessionTraceRuntime.js */
+interface TestHitRecord {
+  type: 'T';
+  tf: string;
+  tn: string;
+  fh: { [srcFile: string]: number[] };
+}
+interface HookHitRecord {
+  type: 'H';
+  tf: string;
+  fh: { [srcFile: string]: number[] };
+}
+type HitRecord = TestHitRecord | HookHitRecord;
+
+/** Per-file record written by liveReporter.js */
+interface ReporterRecord {
+  testFilePath: string;
+  status: 'passed' | 'failed';
+  failureMessage?: string;
+  testResults: Array<{
+    ancestorTitles: string[];
+    title: string;
+    fullName: string;
+    status: string;
+    duration?: number;
+    failureMessages: string[];
+    location?: { line: number; column?: number };
+  }>;
+  console: Array<{ message: string; type: string; origin: string }>;
+  startTime?: number;
+  endTime?: number;
+}
+
+function toFileRunResult(rec: ReporterRecord): FileRunResult {
+  return {
+    testFilePath: rec.testFilePath,
+    status: rec.status,
+    failureMessage: rec.failureMessage,
+    testCases: rec.testResults.map((tc): TestCaseRunResult => ({
+      ancestorTitles: tc.ancestorTitles,
+      title: tc.title,
+      fullName: tc.fullName,
+      status: tc.status as TestCaseRunResult['status'],
+      duration: tc.duration,
+      failureMessages: tc.failureMessages,
+      location: tc.location
+        ? { line: tc.location.line, column: tc.location.column ?? 0 }
+        : undefined,
+    })),
+    consoleOutput: rec.console.map((c) => ({
+      message: c.message,
+      type: c.type,
+      origin: c.origin,
+    })),
+    duration:
+      rec.startTime != null && rec.endTime != null
+        ? rec.endTime - rec.startTime
+        : undefined,
+  };
 }
 
 export class SessionTraceRunner {
@@ -56,44 +106,42 @@ export class SessionTraceRunner {
   constructor(private readonly _tmpDir: string) {}
 
   /**
-   * Run a test file with instrumentation. Partitions the trace per test case
-   * and writes JSONL files into traceDir. Updates the ExecutionTraceStore.
+   * Run a batch of test files under combined test+trace instrumentation.
    *
-   * @param filePath       Absolute path to the test file
-   * @param projectRoot    Project root (used for binary resolution + config)
-   * @param traceDir       Directory where per-test JSONL files will be written
-   * @param traceStore     Store to update with trace index + coverage data
-   * @param log            Optional log callback (for output channel)
+   * - Calls applyFileResult for each file as results arrive (streaming).
+   * - Calls onFileDone after each file so the UI status bar stays live.
+   * - Updates traceStore with the source→test dependency map after the run.
+   * - Returns the list of files that produced no result (crashed mid-batch).
    */
-  /** Maps full test name → log lines captured during the trace run. */
-  async runFile(options: {
-    filePath: string;
+  async runFiles(options: {
+    filePaths: string[];
     projectRoot: string;
-    traceDir: string;
     traceStore: ExecutionTraceStore;
+    store: ResultStore;
+    applyFileResult: (filePath: string, fileResult: FileRunResult) => void;
+    onFileDone: (filePath: string, status: 'passed' | 'failed') => void;
     log?: (msg: string) => void;
-  }): Promise<Map<string, OutputLine[]>> {
-    const { filePath, projectRoot, traceDir, traceStore, log } = options;
+  }): Promise<{ missing: string[] }> {
+    const { filePaths, projectRoot, traceStore, store: _store, applyFileResult, onFileDone, log } = options;
+    if (filePaths.length === 0) { return { missing: [] }; }
     const emit = log ?? (() => {});
 
-    // Ensure the per-session trace dir exists
-    fs.mkdirSync(traceDir, { recursive: true });
+    fs.mkdirSync(this._tmpDir, { recursive: true });
 
     const rand = Math.random().toString(36).slice(2);
     const ts   = Date.now();
 
-    // Temp file: the raw JSONL from this file's run (all tests combined)
-    const rawTraceFile = path.join(this._tmpDir, `ltr-raw-${ts}-${rand}.jsonl`);
-
-    // Temp Jest config
-    const tempConfigPath = path.join(this._tmpDir, `ltr-session-cfg-${ts}-${rand}.js`);
+    const reporterFile  = path.join(this._tmpDir, `ltr-reporter-${ts}-${rand}.jsonl`);
+    const traceFile     = path.join(this._tmpDir, `ltr-trace-${ts}-${rand}.jsonl`);
+    const tempConfigPath = path.join(this._tmpDir, `ltr-cfg-${ts}-${rand}.js`);
+    const cacheDir      = path.join(this._tmpDir, `ltr-cache-${ts}-${rand}`);
 
     const escapedRoot = escapeRegex(projectRoot).replace(/\//g, '\\/');
-    const srcTransformPattern = `^${escapedRoot}\\/(?!node_modules\\/).+\\.[jt]sx?$`;
+    const srcPattern  = `^${escapedRoot}\\/(?!node_modules\\/).+\\.[jt]sx?$`;
 
     const configContent = `
 'use strict';
-// Temporary Jest config — Live Test Runner session trace
+// Temporary Jest config — Live Test Runner combined test+trace run
 let baseConfig = {};
 try {
   const e = require(${JSON.stringify(path.join(projectRoot, 'jest.config.js'))});
@@ -129,9 +177,7 @@ if (!hasGeneralJsTransform) {
     try {
       const presetEnv = require.resolve('@babel/preset-env', { paths: [${JSON.stringify(projectRoot)}] });
       presets = [[presetEnv, { targets: { node: 'current' } }]];
-    } catch(_) {
-      presets = [];
-    }
+    } catch(_) { presets = []; }
   }
   if (presets.length > 0) {
     fallbackTransform = { ['^.+\\\\.[jt]sx?$']: [babelJestPath, { configFile: false, presets }] };
@@ -142,242 +188,227 @@ module.exports = {
   ...baseConfig,
   rootDir: ${JSON.stringify(projectRoot)},
   transform: {
-    [${JSON.stringify(srcTransformPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
+    [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
     ...baseTransformObj,
     ...fallbackTransform,
   },
+  reporters: [
+    'default',
+    [${JSON.stringify(LIVE_REPORTER_PATH)}, { outputFile: ${JSON.stringify(reporterFile)} }],
+  ],
 };
 `;
 
     fs.writeFileSync(tempConfigPath, configContent, 'utf8');
 
-    // Use a unique cache directory per run to prevent transform-cache races
-    // when multiple trace processes run in parallel on the same project.
-    const cacheDir = path.join(this._tmpDir, `jest-trace-cache-${ts}-${rand}`);
+    // Track which files received reporter results for missing-file detection.
+    const received = new Set<string>();
+
+    const onRecord = (raw: unknown) => {
+      const rec = raw as ReporterRecord;
+      if (!rec || !rec.testFilePath) { return; }
+      received.add(rec.testFilePath);
+      try {
+        const fileResult = toFileRunResult(rec);
+        applyFileResult(rec.testFilePath, fileResult);
+        onFileDone(rec.testFilePath, rec.status);
+      } catch (err) {
+        logger.error(FILE, 'runFiles', `Failed to apply result for "${rec.testFilePath}"`, err);
+      }
+    };
 
     try {
       let binary: string;
       try {
         binary = this._binaryResolver.resolve(projectRoot);
       } catch (err) {
-        logger.error(FILE, 'runFile', `Failed to resolve Jest binary for "${projectRoot}"`, err);
+        logger.error(FILE, 'runFiles', `Failed to resolve Jest binary for "${projectRoot}"`, err);
         throw err;
       }
-      emit(`[SessionTrace] Running instrumented: ${path.relative(projectRoot, filePath)}`);
-      logger.debug(FILE, 'runFile', `SessionTrace start — file="${filePath}" binary="${binary}"`);
 
-      const result = await this._executor.run({
-        binary,
-        args: [
-          '--watchAll=false',
-          '--forceExit',
-          '--no-bail',
-          '--runTestsByPath',
-          filePath.replace(/\\/g, '/'),
-          '--config',
-          tempConfigPath,
-          '--cacheDirectory',
-          cacheDir,
-          '--maxWorkers=2',
-        ],
-        cwd: projectRoot,
-        extraEnv: { SESSION_TRACE_FILE: rawTraceFile },
-      });
+      const relNames = filePaths
+        .map((p) => path.relative(projectRoot, p))
+        .join(', ');
+      emit(`[SessionTrace] Running batch (${filePaths.length}): ${relNames}`);
 
-      // Log all stderr so transform/runtime errors are visible in the output channel.
+      const result = await this._executor.runWithReporterPolling(
+        {
+          binary,
+          args: [
+            '--watchAll=false',
+            '--forceExit',
+            '--no-bail',
+            '--runTestsByPath',
+            ...filePaths.map((p) => p.replace(/\\/g, '/')),
+            '--config', tempConfigPath,
+            '--cacheDirectory', cacheDir,
+            '--maxWorkers=1',
+            '--testLocationInResults',
+          ],
+          cwd: projectRoot,
+          extraEnv: { SESSION_TRACE_FILE: traceFile },
+        },
+        reporterFile,
+        onRecord,
+      );
+
       if (result.stderr) {
-        emit(`[SessionTrace] stderr for ${path.basename(filePath)}:\n${result.stderr.trim()}`);
+        emit(`[SessionTrace] stderr:\n${result.stderr.trim()}`);
       }
     } catch (err) {
-      logger.error(FILE, 'runFile', `Jest instrumented run threw for "${filePath}"`, err);
+      logger.error(FILE, 'runFiles', `Jest batch run threw`, err);
       emit(`[SessionTrace] Jest run error: ${(err as Error).message}`);
-      // Don't rethrow — a test failure is not a runner error; we still parse what we got
     } finally {
-      try { fs.unlinkSync(tempConfigPath); } catch { /* ignore */ }
-      try { fs.rmSync(cacheDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      try { fs.unlinkSync(tempConfigPath); } catch {}
+      try { fs.rmSync(cacheDir, { recursive: true, force: true }); } catch {}
     }
 
-    // Parse and partition the raw trace
+    // Parse trace hits and update ExecutionTraceStore.
     try {
-      const result = this._partitionAndStore(rawTraceFile, filePath, traceDir, traceStore, emit);
-      logger.debug(FILE, 'runFile', `Partition complete — ${result.size} test(s) with logs for "${path.basename(filePath)}"`);
-      return result;
+      this._parseTrace(traceFile, traceStore, emit);
     } catch (err) {
-      logger.error(FILE, 'runFile', `_partitionAndStore failed for "${filePath}"`, err);
-      return new Map();
+      logger.error(FILE, 'runFiles', `_parseTrace failed`, err);
     } finally {
-      try { fs.unlinkSync(rawTraceFile); } catch { /* ignore */ }
+      try { fs.unlinkSync(traceFile); } catch {}
+      try { fs.unlinkSync(reporterFile); } catch {}
     }
+
+    const missing = filePaths.filter((fp) => !received.has(fp));
+    return { missing };
   }
 
-  // ── Private: partition raw JSONL into per-test files ──────────────────────
+  // ── Private: parse light-trace JSONL and update ExecutionTraceStore ──────────
 
-  private _partitionAndStore(
-    rawTraceFile: string,
-    testFilePath: string,
-    traceDir: string,
+  private _parseTrace(
+    traceFile: string,
     traceStore: ExecutionTraceStore,
     emit: (msg: string) => void,
-  ): Map<string, OutputLine[]> {
-    if (!fs.existsSync(rawTraceFile)) {
-      logger.warn(FILE, '_partitionAndStore', `No trace output produced — rawTraceFile="${rawTraceFile}" testFile="${testFilePath}"`);
-      emit(`[SessionTrace] No trace output produced for ${testFilePath}`);
-      return new Map();
+  ): void {
+    if (!fs.existsSync(traceFile)) {
+      emit('[SessionTrace] No trace output produced');
+      return;
     }
 
     let raw: string;
     try {
-      raw = fs.readFileSync(rawTraceFile, 'utf8');
+      raw = fs.readFileSync(traceFile, 'utf8');
     } catch (err) {
-      logger.error(FILE, '_partitionAndStore', `Could not read raw trace file: "${rawTraceFile}"`, err);
-      return new Map();
+      logger.error(FILE, '_parseTrace', `Could not read trace file: "${traceFile}"`, err);
+      return;
     }
+
     const lines = raw.split('\n').filter((l) => l.trim().length > 0);
 
-    // Group steps by testName — preserving insertion order so steps stay ordered
-    // Steps with testName === null belong to beforeAll/afterAll with no active test
-    const byTest = new Map<string, RawStep[]>();
-    // Track beforeAll steps (no testName) — included in every test in the suite
-    const beforeAllSteps: RawStep[] = [];
+    const testsByFile  = new Map<string, TestHitRecord[]>();
+    const hooksByFile  = new Map<string, HookHitRecord[]>();
 
     for (const line of lines) {
-      let step: RawStep;
-      try { step = JSON.parse(line) as RawStep; } catch { continue; }
+      let rec: HitRecord;
+      try { rec = JSON.parse(line) as HitRecord; } catch { continue; }
+      if (!rec || !rec.tf) { continue; }
+      if (rec.type === 'T') {
+        const bucket = testsByFile.get(rec.tf) ?? [];
+        bucket.push(rec);
+        testsByFile.set(rec.tf, bucket);
+      } else if (rec.type === 'H') {
+        const bucket = hooksByFile.get(rec.tf) ?? [];
+        bucket.push(rec);
+        hooksByFile.set(rec.tf, bucket);
+      }
+    }
 
-      if (step.type === 'STEP' || step.type === 'VAR' || step.type === 'LOG') {
-        if (step.testName) {
-          let bucket = byTest.get(step.testName);
-          if (!bucket) {
-            bucket = [];
-            byTest.set(step.testName, bucket);
+    // Coverage index — aggregate all hit lines across every test + hook.
+    for (const recs of testsByFile.values()) {
+      for (const rec of recs) {
+        for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
+          traceStore.addCoveredLines(srcFile, linesArr);
+        }
+      }
+    }
+    for (const recs of hooksByFile.values()) {
+      for (const rec of recs) {
+        for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
+          traceStore.addCoveredLines(srcFile, linesArr);
+        }
+      }
+    }
+
+    // sourceToTests index — for each test file, map source files to the tests that hit them.
+    for (const [testFilePath, testRecs] of testsByFile) {
+      const testNames = testRecs.map((r) => r.tn);
+
+      const hookFiles = new Set<string>();
+      for (const hookRec of hooksByFile.get(testFilePath) ?? []) {
+        for (const srcFile of Object.keys(hookRec.fh)) {
+          if (srcFile !== testFilePath) { hookFiles.add(srcFile); }
+        }
+      }
+
+      const perTestFiles = new Map<string, string[]>();
+      for (const rec of testRecs) {
+        const files: string[] = [];
+        for (const srcFile of Object.keys(rec.fh)) {
+          if (srcFile !== testFilePath) { files.push(srcFile); }
+        }
+        perTestFiles.set(rec.tn, files);
+      }
+
+      const touchedSourceFiles = new Set<string>(hookFiles);
+      for (const files of perTestFiles.values()) {
+        for (const f of files) { touchedSourceFiles.add(f); }
+      }
+
+      for (const sourceFile of touchedSourceFiles) {
+        const touchingTests: string[] = [];
+        for (const tn of testNames) {
+          const files = perTestFiles.get(tn) ?? [];
+          if (files.includes(sourceFile) || hookFiles.has(sourceFile)) {
+            touchingTests.push(tn);
           }
-          bucket.push(step);
-        } else if (step.context === 'beforeAll' || step.context === 'afterAll') {
-          // Suite-level hooks — prepended to every test's trace
-          beforeAllSteps.push(step);
         }
-        // null context + null testName = top-level module code; skip
-      }
-    }
 
-    const now = Date.now();
-    const testLogs = new Map<string, OutputLine[]>();
-
-    // Write per-test JSONL files and update coverage index
-    for (const [testName, steps] of byTest) {
-      const testId = testName;  // stable key is the full test name
-      const safeFileName = _safeFileName(testId);
-      const traceFilePath = path.join(traceDir, `${safeFileName}.jsonl`);
-
-      // Prepend beforeAll steps to every test's trace
-      const allSteps = [...beforeAllSteps, ...steps];
-
-      // Write the JSONL file
-      const content = allSteps
-        .map((s) => JSON.stringify(s))
-        .join('\n') + '\n';
-      fs.writeFileSync(traceFilePath, content, 'utf8');
-
-      // Register in store
-      traceStore.setTraceFile(testId, traceFilePath);
-
-      // Accumulate coverage for each source file referenced in this test's steps
-      for (const step of allSteps) {
-        if (step.type === 'STEP' && step.file && step.line != null) {
-          traceStore.addCoveredLines(step.file, [step.line]);
-        }
-      }
-
-      // Collect LOG steps for this test to return to the caller
-      const logLines: OutputLine[] = allSteps
-        .filter((s): s is RawStep & { type: 'LOG' } => s.type === 'LOG')
-        .map((s) => ({
-          text:      (s.args ?? []).join(' '),
-          level:     (s.level as OutputLine['level']) ?? 'log',
-          timestamp: now,
-        }));
-      if (logLines.length > 0) {
-        testLogs.set(testName, logLines);
-      }
-    }
-
-    // Build and update sourceToTests mapping.
-    // For every source file touched by this test file's trace, record which
-    // suite + test cases covered it. This drives smart on-save reruns: when
-    // a source file changes, we know exactly which tests need to rerun.
-    //
-    // isSharedVars defaults to false — AST-based shared-var detection is a
-    // future enhancement. For now every affected test can be run individually.
-    const sourceMap: {
-      [suite: string]: { isSharedVars: boolean; sharedVarNames: string[]; testCases: string[] };
-    } = {};
-
-    for (const [testName, steps] of byTest) {
-      const suiteName = _extractSuiteName(testName);
-      for (const step of steps) {
-        if (step.type === 'STEP' && step.file && step.file !== testFilePath) {
+        const sourceMap: {
+          [suite: string]: { isSharedVars: boolean; sharedVarNames: string[]; testCases: string[] };
+        } = {};
+        for (const tn of touchingTests) {
+          const suiteName = _extractSuiteName(tn);
           if (!sourceMap[suiteName]) {
             sourceMap[suiteName] = { isSharedVars: false, sharedVarNames: [], testCases: [] };
           }
-          if (!sourceMap[suiteName].testCases.includes(testName)) {
-            sourceMap[suiteName].testCases.push(testName);
+          if (!sourceMap[suiteName].testCases.includes(tn)) {
+            sourceMap[suiteName].testCases.push(tn);
           }
         }
-      }
-    }
 
-    // For each unique source file that appeared in any step, update the store.
-    const touchedSourceFiles = new Set<string>();
-    for (const steps of byTest.values()) {
-      for (const step of steps) {
-        if (step.type === 'STEP' && step.file && step.file !== testFilePath) {
-          touchedSourceFiles.add(step.file);
+        const existing = traceStore.getSourceMapping(sourceFile) ?? {};
+        const existingForFile = existing[testFilePath] ?? {};
+        const mergedForFile = { ...existingForFile };
+        for (const [suiteName, suiteInfo] of Object.entries(sourceMap)) {
+          if (mergedForFile[suiteName]) {
+            const existingCases = mergedForFile[suiteName].testCases;
+            const newCases = suiteInfo.testCases.filter((t) => !existingCases.includes(t));
+            mergedForFile[suiteName] = {
+              ...mergedForFile[suiteName],
+              testCases: [...existingCases, ...newCases],
+            };
+          } else {
+            mergedForFile[suiteName] = suiteInfo;
+          }
         }
+
+        traceStore.setSourceMapping(sourceFile, {
+          ...existing,
+          [testFilePath]: mergedForFile,
+        });
       }
     }
 
-    for (const sourceFile of touchedSourceFiles) {
-      const existing = traceStore.getSourceMapping(sourceFile) ?? {};
-      const existingForFile = existing[testFilePath] ?? {};
-
-      // Merge suites: accumulate test cases instead of replacing the whole entry
-      const mergedForFile = { ...existingForFile };
-      for (const [suiteName, suiteInfo] of Object.entries(sourceMap)) {
-        if (mergedForFile[suiteName]) {
-          const existingCases = mergedForFile[suiteName].testCases;
-          const newCases = suiteInfo.testCases.filter((t) => !existingCases.includes(t));
-          mergedForFile[suiteName] = {
-            ...mergedForFile[suiteName],
-            testCases: [...existingCases, ...newCases],
-          };
-        } else {
-          mergedForFile[suiteName] = suiteInfo;
-        }
-      }
-
-      traceStore.setSourceMapping(sourceFile, {
-        ...existing,
-        [testFilePath]: mergedForFile,
-      });
-    }
-
-    emit(`[SessionTrace] Traced ${byTest.size} test(s) from ${path.basename(testFilePath)}`);
-    return testLogs;
+    const totalTests = Array.from(testsByFile.values()).reduce((n, recs) => n + recs.length, 0);
+    emit(`[SessionTrace] Traced ${totalTests} test(s) across ${testsByFile.size} file(s)`);
   }
 }
 
-/** Extract the suite name from a full test name ("Suite > nested > test" → "Suite > nested") */
 function _extractSuiteName(fullTestName: string): string {
   const lastSep = fullTestName.lastIndexOf(' > ');
   return lastSep !== -1 ? fullTestName.slice(0, lastSep) : fullTestName;
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Convert a test ID (full name) to a safe filename */
-function _safeFileName(testId: string): string {
-  return testId
-    .replace(/[^a-zA-Z0-9_\-. ]/g, '_')
-    .replace(/\s+/g, '_')
-    .slice(0, 200);  // cap length
 }

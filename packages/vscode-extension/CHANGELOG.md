@@ -2,6 +2,28 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [1.4.0] — 2026-04-18
+
+### Batch Execution & Streaming Results
+
+#### Added
+- **Batched Jest runs** — the initial run and on-save file reruns now group multiple test files into a single Jest process per batch (`BATCH_SIZE = clamp(ceil(N/CONCURRENCY), 5, 50)`), reducing process-spawn overhead significantly on large projects.
+- **Streaming per-file results** — a custom Jest reporter (`liveReporter.js`) appends one JSON record per completed file to a JSONL file as Jest runs. The extension polls this file every 200 ms, so results appear in the UI as each file finishes rather than after the whole batch.
+- **Combined test + trace pass** — test execution and source-dependency tracing now happen in the same Jest process. The old separate trace phase (which effectively doubled total run time) is eliminated.
+- **Light trace format** — `sessionTraceTransform.js` and `sessionTraceRuntime.js` now record only `(file, line)` hit maps per test/hook (compact `T`/`H` JSONL records), approximately 100× less data than the previous per-statement STEP/VAR/LOG format.
+- **Running state feedback** — files are marked `running` in the store as soon as their batch is dequeued, with a single bulk `onFilesRerunning` notification so the UI flips to spinner icons immediately.
+
+#### Changed
+- **Discovery batch size** reduced from 50 → 5 files per event-loop batch. The sidebar now updates progressively every 5 files instead of every 50, making discovery visible on any project size.
+- **Notification efficiency** — the running-state update uses one `onFilesRerunning` batch notification per batch (not N individual `onFileResult` calls), preventing postMessage storms when a saved source file affects the entire test suite.
+
+#### Internal
+- `Executor.runWithReporterPolling` — new method that polls a reporter JSONL file while a Jest child process runs, calling a callback for each parsed record.
+- `IFrameworkAdapter.applyFileResult` — new interface method; `JestAdapter` exposes the existing `_applyFileResult` logic publicly so `SessionTraceRunner` can apply liveReporter records into the store without bypassing the adapter.
+- `SessionTraceRunner.runFiles` replaces the old `runFile` (per-file trace) method entirely.
+
+---
+
 ## [1.3.0] — 2026-04-14
 
 ### Dynamic Test Groups & Multi-Session Isolation

@@ -2,7 +2,7 @@ import * as os from 'os';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
 import { JestRunner } from '@live-test-runner/runner';
-import { ResultStore, OutputLine } from '../store/ResultStore';
+import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver } from '../IResultObserver';
@@ -599,13 +599,12 @@ export class SessionManager {
     projectRoot: string,
     isFullSuite = false,
   ): Promise<void> {
-    // Each Jest process uses up to (numCPUs - 1) workers by default, so limit
-    // concurrent file runs to avoid saturating the CPU.
     const CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
-    const queue = [...filePaths];
-    let completed = 0,
-      numPassed = 0,
-      numFailed = 0;
+    const totalFiles  = filePaths.length;
+
+    // Batch heuristic: amortise Jest startup across multiple files while keeping
+    // batches small enough that the UI stays responsive (results stream per file).
+    const BATCH_SIZE = Math.max(5, Math.min(50, Math.ceil(totalFiles / CONCURRENCY)));
 
     for (const fp of filePaths) {
       this._store.fileStarted(fp, fp, vscode.workspace.asRelativePath(fp));
@@ -614,46 +613,77 @@ export class SessionManager {
     if (!isFullSuite) {
       this._notify('onFilesRerunning', filePaths);
     }
-    this._updateStatusBar(`Running… 0/${filePaths.length}`);
+    this._updateStatusBar(`Running… 0/${totalFiles}`);
 
     const totalStart = Date.now();
     const log = (msg: string) => this._outputChannel.appendLine(msg);
-    const traceQueue: string[] = [];
+
+    let completed = 0;
+    let numPassed  = 0;
+    let numFailed  = 0;
+
+    const onFileDone = (filePath: string, status: 'passed' | 'failed') => {
+      if (status === 'passed') { numPassed++; } else { numFailed++; }
+      completed++;
+      this._updateStatusBar(`Running… ${completed}/${totalFiles}`);
+      this._notify('onFileResult', filePath);
+      this._refreshScopedLogs(filePath);
+    };
+
+    /** Split-on-crash: retry files that produced no result by halving the batch. */
+    const runBatch = async (batch: string[]): Promise<void> => {
+      if (batch.length === 0) { return; }
+      // Mark all files in this batch as running immediately so the UI flips
+      // from pending → running. One bulk notification per batch (not per file)
+      // keeps the postMessage rate sane for large affected-file sets.
+      for (const fp of batch) {
+        this._store.markFileRunning(fp);
+      }
+      this._notify('onFilesRerunning', batch);
+      let missing: string[];
+      try {
+        const r = await this._traceRunner.runFiles({
+          filePaths: batch,
+          projectRoot,
+          traceStore: this._traceStore,
+          store: this._store,
+          applyFileResult: (fp, fr) => this._adapter.applyFileResult(this._store, fp, fr),
+          onFileDone,
+          log,
+        });
+        missing = r.missing;
+      } catch (err) {
+        logger.error(FILE, '_runFiles', `runFiles threw for batch of ${batch.length}`, err);
+        missing = batch.slice();
+      }
+
+      if (missing.length === 0) { return; }
+      if (missing.length === 1) {
+        const fp = missing[0];
+        logger.warn(FILE, '_runFiles', `No result for "${fp}" — marking failed`);
+        this._store.fileResult(fp, 'failed');
+        onFileDone(fp, 'failed');
+        return;
+      }
+      const half = Math.ceil(missing.length / 2);
+      await runBatch(missing.slice(0, half));
+      await runBatch(missing.slice(half));
+    };
+
+    // Build batch queue up-front and drain it with CONCURRENCY workers.
+    const batchQueue: string[][] = [];
+    for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
+      batchQueue.push(filePaths.slice(i, i + BATCH_SIZE));
+    }
 
     await Promise.all(
       Array.from(
-        { length: Math.min(CONCURRENCY, filePaths.length) },
+        { length: Math.min(CONCURRENCY, batchQueue.length) },
         async () => {
           while (true) {
-            const filePath = queue.shift();
-            if (!filePath) {
-              break;
-            }
-
-            try {
-              const status = await this._adapter.runFile(
-                this._store,
-                filePath,
-                projectRoot,
-                log,
-              );
-              if (status === 'passed') {
-                numPassed++;
-              } else {
-                numFailed++;
-              }
-            } catch (err) {
-              logger.error(FILE, '_runFiles', `runFile threw unexpectedly for "${filePath}"`, err);
-              this._store.fileResult(filePath, 'failed');
-              numFailed++;
-            }
-
-            completed++;
-            this._updateStatusBar(`Running… ${completed}/${filePaths.length}`);
-            this._notify('onFileResult', filePath);
-            this._refreshScopedLogs(filePath);
-
-            traceQueue.push(filePath);
+            const batch = batchQueue.shift();
+            if (!batch) { break; }
+            await runBatch(batch);
           }
         },
       ),
@@ -678,61 +708,6 @@ export class SessionManager {
       this._updateStatusBar(`✅ ${numPassed} passed`);
     }
 
-    // Run instrumented trace jobs in parallel (each gets its own Jest cache dir
-    // so there are no transform-cache races between concurrent processes).
-    // Each trace process uses --maxWorkers=2, so TRACE_CONCURRENCY × 2 = total
-    // trace workers. Use cpus/4 so total trace workers = cpus/2, leaving the
-    // other half free for the OS and extension host.
-    const TRACE_CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
-    if (traceQueue.length > 0) {
-      let traceCompleted = 0;
-      const total = traceQueue.length;
-      const notifyTrace = (completed: number, done = false) => {
-        this._updateStatusBar(`Tracing… ${completed}/${total}`);
-        for (const obs of this._observers) { obs.onTracingProgress?.(completed, total, done); }
-      };
-      notifyTrace(0);
-      const tracePool = [...traceQueue];
-      await Promise.all(
-        Array.from({ length: Math.min(TRACE_CONCURRENCY, total) }, async () => {
-          while (true) {
-            const filePath = tracePool.shift();
-            if (!filePath) { break; }
-            try {
-              const testLogs = await this._traceRunner.runFile({
-                filePath,
-                projectRoot,
-                traceDir: this._sessionDir,
-                traceStore: this._traceStore,
-                log,
-              });
-              if (testLogs.size > 0) {
-                this._applyTraceLogs(filePath, testLogs);
-                this._refreshScopedLogs(filePath);
-              }
-            } catch (err) {
-              logger.error(FILE, '_runFiles', `SessionTrace failed for "${filePath}"`, err);
-              this._outputChannel.appendLine(
-                `[SessionTrace] Error for ${filePath}: ${(err as Error).message}`,
-              );
-            }
-            notifyTrace(++traceCompleted);
-          }
-        }),
-      );
-      notifyTrace(total, true);
-      this._updateStatusBar(
-        numFailed > 0
-          ? `❌ ${numFailed} failed, ${numPassed} passed`
-          : `✅ ${numPassed} passed`,
-      );
-    }
-
-    // After both the main run and trace pool have finished, evict any ghost
-    // file entries whose paths no longer exist on disk.  This catches files
-    // created by e2e tests (e.g. via writeFiles()) whose parent directory was
-    // deleted as a whole — VS Code's watcher only sees the directory deletion,
-    // not the individual file deletions inside it, so onDidDelete never fires.
     this._discovery.pruneGhostFiles();
   }
 
@@ -748,24 +723,6 @@ export class SessionManager {
   ): void {
     for (const obs of this._observers) {
       (obs[method] as (...a: unknown[]) => void)(...(args as unknown[]));
-    }
-  }
-
-  private _applyTraceLogs(
-    filePath: string,
-    testLogs: Map<string, OutputLine[]>,
-  ): void {
-    // Walk all test nodes in this file and match by fullName
-    const allTestNodes = this._store.getFileNodes(filePath).filter(n => n.type === 'test');
-    const now = Date.now();
-    for (const testNode of allTestNodes) {
-      const lines = testLogs.get(testNode.fullName);
-      if (lines) {
-        this._store.setNodeOutput(testNode.id, {
-          lines,
-          capturedAt: now,
-        });
-      }
     }
   }
 

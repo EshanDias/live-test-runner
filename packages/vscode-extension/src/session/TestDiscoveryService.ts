@@ -36,9 +36,9 @@ export interface DiscoveryCallbacks {
   onFileRemoved?(fileId: string): void;
 }
 
-// Number of files to parse per event-loop batch. Larger batches mean fewer
-// event-loop yields and fewer webview postMessages on large projects.
-const BATCH_SIZE = 50;
+// Number of files to parse per event-loop batch. Small enough to give
+// progressive UI feedback; large enough to avoid excessive postMessages.
+const BATCH_SIZE = 5;
 
 /** Yields to the event loop so VS Code can process messages between batches. */
 function yieldToEventLoop(): Promise<void> {

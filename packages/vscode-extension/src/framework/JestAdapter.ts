@@ -226,6 +226,15 @@ export class JestAdapter implements IFrameworkAdapter {
     return cfg.get<string>('jestCommand') || '';
   }
 
+  applyFileResult(
+    store: ResultStore,
+    filePath: string,
+    fileResult: FileRunResult,
+    opts?: RerunOptions,
+  ): void {
+    this._applyFileResult(store, filePath, fileResult, opts);
+  }
+
   private _applyFileResult(
     store: ResultStore,
     filePath: string,
