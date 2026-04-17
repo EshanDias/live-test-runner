@@ -727,6 +727,13 @@ export class SessionManager {
           : `✅ ${numPassed} passed`,
       );
     }
+
+    // After both the main run and trace pool have finished, evict any ghost
+    // file entries whose paths no longer exist on disk.  This catches files
+    // created by e2e tests (e.g. via writeFiles()) whose parent directory was
+    // deleted as a whole — VS Code's watcher only sees the directory deletion,
+    // not the individual file deletions inside it, so onDidDelete never fires.
+    this._discovery.pruneGhostFiles();
   }
 
   // ── Private: helpers ───────────────────────────────────────────────────────

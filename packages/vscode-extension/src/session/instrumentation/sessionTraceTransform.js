@@ -84,15 +84,23 @@ function chainTransform(sourceCode, sourcePath, options) {
         || (babelJest.default && babelJest.default.createTransformer);
       if (createTransformer) {
         let presets;
-        const reactAppPreset = path.join(rootDir, 'node_modules', 'babel-preset-react-app');
-        const presetEnv      = path.join(rootDir, 'node_modules', '@babel', 'preset-env');
-        const presetReact    = path.join(rootDir, 'node_modules', '@babel', 'preset-react');
+        const reactAppPreset  = path.join(rootDir, 'node_modules', 'babel-preset-react-app');
+        const presetEnv       = path.join(rootDir, 'node_modules', '@babel', 'preset-env');
+        const presetReact     = path.join(rootDir, 'node_modules', '@babel', 'preset-react');
+        const presetTypescript = path.join(rootDir, 'node_modules', '@babel', 'preset-typescript');
+        const isTs = /\.(ts|tsx)$/.test(sourcePath);
         try {
           require(reactAppPreset);
+          // babel-preset-react-app already handles TypeScript — no extra preset needed
           presets = [[reactAppPreset, { runtime: 'automatic' }]];
         } catch (_) {
           const ps = [[presetEnv, { targets: { node: 'current' } }]];
           try { require(presetReact); ps.push([presetReact, {}]); } catch (_) {}
+          // Add TypeScript preset for .ts/.tsx files so inline `type` imports and
+          // other TS-only syntax transpile correctly (TypeScript 4.5+ features).
+          if (isTs) {
+            try { require(presetTypescript); ps.push([presetTypescript, { allExtensions: true, isTSX: /\.tsx$/.test(sourcePath) }]); } catch (_) {}
+          }
           presets = ps;
         }
         const transformer = createTransformer({ configFile: false, presets });

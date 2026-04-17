@@ -65,6 +65,9 @@ export class TestDiscoveryService {
   private _watcher: vscode.FileSystemWatcher | undefined;
   private _discoveryPromise: Promise<void> = Promise.resolve();
   private _isDiscovering = false;
+  private _store: ResultStore | undefined;
+  private _log: ((msg: string) => void) | undefined;
+  private _callbacks: DiscoveryCallbacks | undefined;
 
   get isDiscovering(): boolean {
     return this._isDiscovering;
@@ -84,6 +87,9 @@ export class TestDiscoveryService {
   ): void {
     this._watcher?.dispose();
     this._isDiscovering = true;
+    this._store = store;
+    this._log = log;
+    this._callbacks = callbacks;
 
     this._discoveryPromise = this._run(projectRoot, store, log, callbacks)
       .catch((err) => {
@@ -95,6 +101,28 @@ export class TestDiscoveryService {
         callbacks.onComplete();
         this._setupWatcher(projectRoot, store, log, callbacks);
       });
+  }
+
+  /**
+   * Scans every file currently in the store and removes any whose path no
+   * longer exists on disk.  Call this after a test run or trace completes to
+   * evict ghost entries left behind when an e2e test deletes a whole directory
+   * (e.g. via rimraf) — VS Code's file-system watcher only sees the directory
+   * deletion, not the individual file deletions inside it.
+   */
+  pruneGhostFiles(): void {
+    const store = this._store;
+    const callbacks = this._callbacks;
+    const log = this._log;
+    if (!store || !callbacks) { return; }
+    for (const file of store.getAllFiles()) {
+      if (!fs.existsSync(file.filePath)) {
+        log?.(`[TestDiscovery] Pruning ghost file: ${file.filePath}`);
+        logger.debug(FILE, 'pruneGhostFiles', `Removing ghost: "${file.filePath}"`);
+        store.removeFile(file.fileId);
+        callbacks.onFileRemoved?.(file.fileId);
+      }
+    }
   }
 
   /**
@@ -171,6 +199,19 @@ export class TestDiscoveryService {
     const handleChange = (uri: vscode.Uri) => {
       const existing = store.getFile(uri.fsPath);
       if (existing?.status === 'running') { return; }
+
+      // Guard against create-then-delete races: VS Code may fire onDidCreate for
+      // a file that is already gone by the time we process the event (e.g. a
+      // temporary test file written and deleted by an e2e test).  If the file no
+      // longer exists, treat it as a deletion so it doesn't remain as a ghost.
+      if (!fs.existsSync(uri.fsPath)) {
+        if (existing) {
+          log(`[TestDiscovery] File gone before processing, removing: ${uri.fsPath}`);
+          store.removeFile(uri.fsPath);
+          callbacks.onFileRemoved?.(uri.fsPath);
+        }
+        return;
+      }
 
       // Clear the line map before re-discovery so that decorations are
       // correctly repositioned (orphans cleared, moves updated).
