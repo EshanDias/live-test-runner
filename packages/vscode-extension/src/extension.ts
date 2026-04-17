@@ -235,8 +235,8 @@ export function activate(context: vscode.ExtensionContext) {
       onFilesFound: (total) => {
         observers.forEach((o) => o.onDiscoveryStarted?.(total));
       },
-      onFileDiscovered: (file, discovered, total) => {
-        observers.forEach((o) => o.onDiscoveryProgress?.(file, discovered, total));
+      onBatchDiscovered: (files, discovered, total) => {
+        observers.forEach((o) => o.onDiscoveryProgress?.(files, discovered, total));
       },
       onComplete: () => {
         observers.forEach((o) => o.onDiscoveryComplete?.());

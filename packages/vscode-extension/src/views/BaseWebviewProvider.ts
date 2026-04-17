@@ -155,10 +155,10 @@ export abstract class BaseWebviewProvider
     this.postMessage({ type: 'discovery-started', total });
   }
 
-  onDiscoveryProgress(file: unknown, discovered: number, total: number): void {
+  onDiscoveryProgress(files: unknown[], discovered: number, total: number): void {
     this._discoveryDone = discovered;
     const summary = this.store.getSummary();
-    this.postMessage({ type: 'discovery-progress', file, discovered, fileTotal: total, total: summary.total, passed: summary.passed, failed: summary.failed });
+    this.postMessage({ type: 'discovery-progress', files, discovered, fileTotal: total, total: summary.total, passed: summary.passed, failed: summary.failed });
   }
 
   onDiscoveryComplete(): void {

@@ -28,15 +28,15 @@ const { discoverTests } = require('./instrumentation/testDiscovery.js') as {
 export interface DiscoveryCallbacks {
   /** Called once the file list is known, before any AST parsing starts. */
   onFilesFound(total: number): void;
-  /** Called after each file is parsed — carries the serialised FileResult for the webview. */
-  onFileDiscovered(file: unknown, discovered: number, total: number): void;
+  /** Called once per batch with all files parsed in that batch. */
+  onBatchDiscovered(files: unknown[], discovered: number, total: number): void;
   /** Called when all files have been parsed (or 0 files were found). */
   onComplete(): void;
 }
 
-// Number of files to parse per event-loop batch. Keeps the host responsive
-// between batches while still processing multiple files per tick.
-const BATCH_SIZE = 8;
+// Number of files to parse per event-loop batch. Larger batches mean fewer
+// event-loop yields and fewer webview postMessages on large projects.
+const BATCH_SIZE = 50;
 
 /** Yields to the event loop so VS Code can process messages between batches. */
 function yieldToEventLoop(): Promise<void> {
@@ -138,12 +138,16 @@ export class TestDiscoveryService {
       await yieldToEventLoop();
 
       const batch = paths.slice(i, i + BATCH_SIZE);
+      const batchFiles: unknown[] = [];
       for (const filePath of batch) {
         const fileData = this._populateFile(filePath, projectRoot, store, log);
         discovered++;
         if (fileData) {
-          callbacks.onFileDiscovered(fileData, discovered, paths.length);
+          batchFiles.push(fileData);
         }
+      }
+      if (batchFiles.length > 0) {
+        callbacks.onBatchDiscovered(batchFiles, discovered, paths.length);
       }
     }
   }
@@ -173,7 +177,7 @@ export class TestDiscoveryService {
       log(`[TestDiscovery] Re-discovering: ${uri.fsPath}`);
       const fileData = this._populateFile(uri.fsPath, projectRoot, store, log);
       if (fileData) {
-        callbacks.onFileDiscovered(fileData, 1, 1);
+        callbacks.onBatchDiscovered([fileData], 1, 1);
       }
     };
 

@@ -40,11 +40,10 @@ export interface IResultObserver extends vscode.Disposable {
   /** Fired once when the file list is known. `total` is the number of files to parse. */
   onDiscoveryStarted?(total: number): void;
   /**
-   * Fired after each file's AST is parsed and its pending tree is in the store.
-   * `file` is the serialised FileResult (same shape as full-file-result).
-   * `discovered` / `total` drive the progress counter.
+   * Fired once per batch of parsed files. `files` are the serialised FileResults.
+   * `discovered` is the running total so far; `total` is the full file count.
    */
-  onDiscoveryProgress?(file: unknown, discovered: number, total: number): void;
+  onDiscoveryProgress?(files: unknown[], discovered: number, total: number): void;
   /** Fired when all files have been parsed. Start Testing can now be enabled. */
   onDiscoveryComplete?(): void;
 }

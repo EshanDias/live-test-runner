@@ -228,7 +228,10 @@
           break;
 
         case 'discovery-progress':
-          if (msg.file) { _list.updateFile(msg.file); updateListCount(); }
+          if (msg.files && msg.files.length > 0) {
+            for (const f of msg.files) { _list.updateFile(f); }
+            updateListCount();
+          }
           break;
 
         case 'full-file-result':
