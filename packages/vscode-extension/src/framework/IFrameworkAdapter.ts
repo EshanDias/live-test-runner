@@ -63,6 +63,18 @@ export interface IFrameworkAdapter {
    */
   getAffectedTests(session: TestSession, changedFile: string): string[];
 
+  /**
+   * Use the framework's own static-analysis fallback (e.g. jest --findRelatedTests)
+   * to find and run tests related to the changed source file.
+   * Called when no trace data exists for the changed file.
+   */
+  runRelatedTests(
+    store: ResultStore,
+    sourceFilePath: string,
+    projectRoot: string,
+    log: (msg: string) => void,
+  ): Promise<string[]>;
+
   /** VS Code debug launch configuration for running a test under the debugger. */
   getDebugConfig(
     projectRoot: string,

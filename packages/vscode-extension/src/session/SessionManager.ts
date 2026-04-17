@@ -357,18 +357,36 @@ export class SessionManager {
       this._traceStore.getAffectedTestFiles(sourceFilePath);
 
     if (affectedTestFiles.length === 0) {
-      // No trace data — fall back to CoverageMap / jest --findRelatedTests
-      if (!this._session) {
-        return;
-      }
-      const affected = this._adapter.getAffectedTests(
-        this._session,
+      // No trace data — use jest --findRelatedTests as fallback. This runs Jest's
+      // own static import-graph analysis: it finds test files that (transitively)
+      // import the changed source file and reruns them whole. Less precise than
+      // trace (whole file, not individual test cases) but correct as a safety net.
+      logger.debug(FILE, '_runAffectedBySourceFile', `No trace data for "${sourceFilePath}" — falling back to --findRelatedTests`);
+      const affectedPaths = await this._adapter.runRelatedTests(
+        this._store,
         sourceFilePath,
+        projectRoot,
+        (msg) => this._outputChannel.appendLine(msg),
       );
-      if (affected.length === 0) {
-        return;
+      for (const fp of affectedPaths) {
+        this._notify('onFileResult', fp);
+        this._refreshScopedLogs(fp);
       }
-      await this._runFiles(affected, projectRoot);
+      if (affectedPaths.length > 0) {
+        const summary = this._store.getSummary();
+        this._notify('onRunFinished', {
+          total: summary.total,
+          passed: summary.passed,
+          failed: summary.failed,
+          totalDuration: undefined,
+          sessionActive: this.isActive(),
+        });
+        this._updateStatusBar(
+          summary.failed > 0
+            ? `❌ ${summary.failed} failed, ${summary.passed} passed`
+            : `✅ ${summary.passed} passed`,
+        );
+      }
       return;
     }
 
@@ -662,9 +680,10 @@ export class SessionManager {
 
     // Run instrumented trace jobs in parallel (each gets its own Jest cache dir
     // so there are no transform-cache races between concurrent processes).
-    // Each trace process uses --maxWorkers=2, so cap at half the CPU count to
-    // keep total workers within the machine's core count.
-    const TRACE_CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 2));
+    // Each trace process uses --maxWorkers=2, so TRACE_CONCURRENCY × 2 = total
+    // trace workers. Use cpus/4 so total trace workers = cpus/2, leaving the
+    // other half free for the OS and extension host.
+    const TRACE_CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
     if (traceQueue.length > 0) {
       let traceCompleted = 0;
       const total = traceQueue.length;

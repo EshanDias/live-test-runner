@@ -149,10 +149,37 @@ export class JestAdapter implements IFrameworkAdapter {
     }
   }
 
-  // ── Coverage ───────────────────────────────────────────────────────────────
+  // ── Coverage / affected tests ──────────────────────────────────────────────
 
   getAffectedTests(session: TestSession, changedFile: string): string[] {
     return Array.from(session.getCoverageMap().getAffectedTests(changedFile));
+  }
+
+  async runRelatedTests(
+    store: ResultStore,
+    sourceFilePath: string,
+    projectRoot: string,
+    log: (msg: string) => void,
+  ): Promise<string[]> {
+    logger.debug(FILE, 'runRelatedTests', `Running --findRelatedTests for "${sourceFilePath}"`);
+    const runner = this._createRunner(projectRoot, log);
+    let jsonResult: Awaited<ReturnType<typeof runner.runRelatedTestsJson>>;
+    try {
+      jsonResult = await runner.runRelatedTestsJson(sourceFilePath);
+    } catch (err) {
+      logger.error(FILE, 'runRelatedTests', `runRelatedTestsJson threw for "${sourceFilePath}"`, err);
+      return [];
+    }
+    const affectedPaths: string[] = [];
+    for (const fileResult of jsonResult.fileResults) {
+      try {
+        this._applyFileResult(store, fileResult.testFilePath, fileResult);
+        affectedPaths.push(fileResult.testFilePath);
+      } catch (err) {
+        logger.error(FILE, 'runRelatedTests', `_applyFileResult threw for "${fileResult.testFilePath}"`, err);
+      }
+    }
+    return affectedPaths;
   }
 
   // ── Debug ──────────────────────────────────────────────────────────────────

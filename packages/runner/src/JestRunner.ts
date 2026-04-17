@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { TestRunner } from './TestRunner';
 import { RunResult } from './types';
@@ -347,11 +348,17 @@ export class JestRunner implements TestRunner {
 
   /** Args that every Jest invocation needs regardless of framework or mode. */
   private baseArgs(): string[] {
+    // Cap Jest's internal worker count so multiple concurrent Jest processes
+    // (controlled by CONCURRENCY in SessionManager) don't saturate all CPUs.
+    // Formula: leave at least half the cores free for the OS + extension host.
+    const cpus = os.cpus().length;
+    const maxWorkers = Math.max(1, Math.floor(cpus / 4));
     return [
       '--watchAll=false', // prevent Jest from entering watch mode
       '--forceExit', // prevent Jest from hanging after completion
       '--no-bail', // always run all tests, never stop on first failure
       '--testLocationInResults', // populate location.line in JSON output (needed for gutter decorations)
+      `--maxWorkers=${maxWorkers}`,
     ];
   }
 
