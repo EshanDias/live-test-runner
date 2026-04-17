@@ -241,6 +241,9 @@ export function activate(context: vscode.ExtensionContext) {
       onComplete: () => {
         observers.forEach((o) => o.onDiscoveryComplete?.());
       },
+      onFileRemoved: (fileId) => {
+        observers.forEach((o) => o.onDiscoveryFileRemoved?.(fileId));
+      },
     });
   }
 

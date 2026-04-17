@@ -234,6 +234,13 @@
           }
           break;
 
+        case 'discovery-file-removed':
+          if (msg.fileId) {
+            _list.removeFile(msg.fileId);
+            updateListCount();
+          }
+          break;
+
         case 'full-file-result':
           _list.updateFile(msg.file);
           updateListCount();

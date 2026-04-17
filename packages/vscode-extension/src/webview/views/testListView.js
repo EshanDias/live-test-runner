@@ -390,6 +390,13 @@
           applySessionState('idle');
           break;
 
+        case 'discovery-file-removed':
+          if (msg.fileId) {
+            _list.removeFile(msg.fileId);
+            _updateListCount();
+          }
+          break;
+
         case 'coverage-update':
           const fill = _q('coverageFill');
           if (fill) { fill.style.width = `${msg.percent}%`; }

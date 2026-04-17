@@ -65,6 +65,22 @@ class TestListLayout {
     this._render();
   }
 
+  /** Remove a file by ID and re-render. */
+  removeFile(fileId) {
+    const idx = this.data.findIndex((f) => f.fileId === fileId);
+    if (idx < 0) { return; }
+    this.data.splice(idx, 1);
+    this.expanded.delete(fileId);
+    const wrapper = this.container.querySelector(
+      `[data-file-wrapper="${CSS.escape(fileId)}"]`,
+    );
+    if (wrapper) {
+      wrapper.remove();
+    } else {
+      this._render();
+    }
+  }
+
   /** Update a single file's data in-place and re-render. */
   updateFile(fileData) {
     const idx = this.data.findIndex((f) => f.fileId === fileData.fileId);

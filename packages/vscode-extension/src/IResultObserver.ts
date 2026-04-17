@@ -46,4 +46,6 @@ export interface IResultObserver extends vscode.Disposable {
   onDiscoveryProgress?(files: unknown[], discovered: number, total: number): void;
   /** Fired when all files have been parsed. Start Testing can now be enabled. */
   onDiscoveryComplete?(): void;
+  /** Fired when a watched test file is deleted (e.g. temp files written by e2e tests). */
+  onDiscoveryFileRemoved?(fileId: string): void;
 }

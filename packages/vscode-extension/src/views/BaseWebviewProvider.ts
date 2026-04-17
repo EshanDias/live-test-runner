@@ -166,6 +166,10 @@ export abstract class BaseWebviewProvider
     this.postMessage({ type: 'discovery-complete' });
   }
 
+  onDiscoveryFileRemoved(fileId: string): void {
+    this.postMessage({ type: 'discovery-file-removed', fileId });
+  }
+
   dispose(): void {}
 
   // ── Public helpers ─────────────────────────────────────────────────────────
