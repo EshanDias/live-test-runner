@@ -5,6 +5,9 @@ import {
   TestCaseRunResult,
   ConsoleEntry,
 } from "../types";
+import { logger } from "../utils/logger";
+
+const FILE = "ResultParser.ts";
 
 /**
  * Parses the JSON output produced by `jest --json --outputFile=<file>` into
@@ -130,7 +133,8 @@ export class ResultParser {
         fileResults,
         errors: passed ? [] : [stderr || "Tests failed"],
       };
-    } catch {
+    } catch (err) {
+      logger.error(FILE, 'parse', `Failed to parse Jest JSON output — stderr="${stderr.slice(0, 300)}" rawSnippet="${raw.slice(0, 200)}"`, err);
       return this.empty(false, [
         stderr || raw || "Jest failed to produce JSON output",
       ]);
@@ -185,7 +189,8 @@ export class ResultParser {
           .slice(0, stackIndex === -1 ? lines.length : stackIndex)
           .join("\n");
       });
-    } catch {
+    } catch (err) {
+      logger.warn(FILE, 'stripStackTraces', 'Failed to strip stack traces from failure messages', err);
       return [];
     }
   }

@@ -1,5 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { logger } from '../utils/logger';
+
+const FILE = 'BinaryResolver.ts';
 
 /**
  * Resolves the Jest binary for standard (non-CRA) projects.
@@ -21,27 +24,36 @@ export class BinaryResolver {
    */
   resolve(projectRoot: string, userOverride?: string): string {
     if (userOverride?.trim()) {
+      logger.debug(FILE, 'resolve', `Using user-provided override: "${userOverride.trim()}"`);
       return userOverride.trim();
     }
 
     // 1. Local .bin/jest symlink (most projects)
     const localBin = path.join(projectRoot, 'node_modules', '.bin', 'jest');
     if (fs.existsSync(localBin) || fs.existsSync(localBin + '.cmd')) {
-      return platformCmd(localBin);
+      const resolved = platformCmd(localBin);
+      logger.debug(FILE, 'resolve', `Resolved via local .bin: "${resolved}"`);
+      return resolved;
     }
 
     // 2. Walk up to monorepo / workspace root
     const workspaceBin = this.findInParent(projectRoot);
-    if (workspaceBin) return platformCmd(workspaceBin);
+    if (workspaceBin) {
+      const resolved = platformCmd(workspaceBin);
+      logger.debug(FILE, 'resolve', `Resolved via workspace parent: "${resolved}"`);
+      return resolved;
+    }
 
     // 3. Legacy jest.js path (older installs without .bin symlink)
     const legacyJs = path.join(projectRoot, 'node_modules', 'jest', 'bin', 'jest.js');
     if (fs.existsSync(legacyJs)) {
+      logger.debug(FILE, 'resolve', `Resolved via legacy jest.js path: "${legacyJs}"`);
       // Return the .js path directly; the caller will invoke it with `node`
       return legacyJs;
     }
 
     // 4. npx jest — last resort
+    logger.warn(FILE, 'resolve', `No local Jest binary found for "${projectRoot}" — falling back to npx`);
     return platformCmd('npx');
   }
 

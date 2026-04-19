@@ -27,6 +27,10 @@ import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
 import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
+import { DiscoveryCache, rotateAndCheckCapacity } from './cache/DiscoveryCache';
+import { logger } from './utils/logger';
+
+const FILE = 'extension.ts';
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -39,18 +43,23 @@ function isProcessAlive(pid: number): boolean {
 
 export function activate(context: vscode.ExtensionContext) {
   // Ensure the shared base temp directory exists.
-  fs.mkdirSync(LTR_BASE_TMP_DIR, { recursive: true });
+  try {
+    fs.mkdirSync(LTR_BASE_TMP_DIR, { recursive: true });
+  } catch (err) {
+    logger.error(FILE, 'activate', `Failed to create base temp directory: ${LTR_BASE_TMP_DIR}`, err);
+  }
 
   // Clean up stale session directories from previous or crashed windows.
   try {
     for (const entry of fs.readdirSync(LTR_BASE_TMP_DIR)) {
       const fullPath = path.join(LTR_BASE_TMP_DIR, entry);
-      
+
       // Handle new-style session directories: session-<pid>-<timestamp>
       const sessionMatch = entry.match(/^session-(\d+)-/);
       if (sessionMatch) {
         const pid = parseInt(sessionMatch[1], 10);
         if (!isProcessAlive(pid)) {
+          logger.debug(FILE, 'activate', `Cleaning stale session dir: ${fullPath} (PID ${pid} not alive)`);
           fs.rmSync(fullPath, { recursive: true, force: true });
         }
         continue;
@@ -58,19 +67,29 @@ export function activate(context: vscode.ExtensionContext) {
 
       // Handle legacy trace directories (blindly clean up to migrate)
       if (entry.startsWith('traces-')) {
+        logger.debug(FILE, 'activate', `Removing legacy trace dir: ${fullPath}`);
         fs.rmSync(fullPath, { recursive: true, force: true });
       }
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    logger.warn(FILE, 'activate', 'Error during stale session cleanup — continuing', err);
+  }
 
   // Create a unique isolated directory for THIS session.
   const sessionDirName = `session-${process.pid}-${Date.now()}`;
   const LTR_SESSION_TMP_DIR = path.join(LTR_BASE_TMP_DIR, sessionDirName);
-  fs.mkdirSync(LTR_SESSION_TMP_DIR, { recursive: true });
+  try {
+    fs.mkdirSync(LTR_SESSION_TMP_DIR, { recursive: true });
+    logger.info(FILE, 'activate', `Session temp dir: ${LTR_SESSION_TMP_DIR}`);
+  } catch (err) {
+    logger.error(FILE, 'activate', `Failed to create session temp directory: ${LTR_SESSION_TMP_DIR}`, err);
+  }
 
 
   // ── Infrastructure ─────────────────────────────────────────────────────────
   const outputChannel  = vscode.window.createOutputChannel('Live Test Runner', 'ansi');
+  logger.init(outputChannel);
+  logger.info(FILE, 'activate', `Extension activating — PID ${process.pid}`);
   const statusBar      = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.command    = 'liveTestRunner.showPanels';
   statusBar.text       = 'Live Tests: Off';
@@ -139,9 +158,13 @@ export function activate(context: vscode.ExtensionContext) {
         line,
         lastTimelineStore as Parameters<typeof timelineDecorations.applyStep>[2],
         stepId,
-      ).catch(() => {});
+      ).catch((err) => {
+        logger.error(FILE, 'onStepChanged', `applyStep failed for ${filePath}:${line} stepId=${stepId}`, err);
+      });
     } else {
-      timelineDecorations.highlight(filePath, line).catch(() => {});
+      timelineDecorations.highlight(filePath, line).catch((err) => {
+        logger.error(FILE, 'onStepChanged', `highlight failed for ${filePath}:${line}`, err);
+      });
     }
   };
 
@@ -201,24 +224,35 @@ export function activate(context: vscode.ExtensionContext) {
     traceStore.clearAll();
   }
 
+  // ── Discovery cache ────────────────────────────────────────────────────────
+  const activationRoot = _resolveProjectRoot();
+  let discoveryCache: DiscoveryCache | undefined;
+  if (activationRoot) {
+    discoveryCache = new DiscoveryCache(context.globalStorageUri.fsPath, activationRoot);
+    discoveryCache.writeLock();
+  }
+
   // ── Session manager ────────────────────────────────────────────────────────
   const discovery = new TestDiscoveryService();
 
   // Kick off static discovery immediately on activate so tests appear in the
   // sidebar before the user clicks Start Testing.
-  const activationRoot = _resolveProjectRoot();
   if (activationRoot) {
+    logger.info(FILE, 'activate', `Starting test discovery in: ${activationRoot}`);
     discovery.start(activationRoot, store, (msg) => outputChannel.appendLine(msg), {
       onFilesFound: (total) => {
         observers.forEach((o) => o.onDiscoveryStarted?.(total));
       },
-      onFileDiscovered: (file, discovered, total) => {
-        observers.forEach((o) => o.onDiscoveryProgress?.(file, discovered, total));
+      onBatchDiscovered: (files, discovered, total) => {
+        observers.forEach((o) => o.onDiscoveryProgress?.(files, discovered, total));
       },
       onComplete: () => {
         observers.forEach((o) => o.onDiscoveryComplete?.());
       },
-    });
+      onFileRemoved: (fileId) => {
+        observers.forEach((o) => o.onDiscoveryFileRemoved?.(fileId));
+      },
+    }, discoveryCache);
   }
 
   const session = new SessionManager(
@@ -236,14 +270,62 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Expose cleanup so deactivate() can delete trace files on extension shutdown
   _cleanTraceDir = cleanTraceDir;
+  _releaseDiscoveryLock = () => discoveryCache?.releaseLock();
 
   // ── Commands ───────────────────────────────────────────────────────────────
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ExplorerView.viewId, explorerView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerWebviewViewProvider(ResultsView.viewId, resultsView, { webviewOptions: { retainContextWhenHidden: true } }),
 
-    vscode.commands.registerCommand('liveTestRunner.startTesting',       () => { cleanTraceDir(); return session.start(); }),
+    vscode.commands.registerCommand('liveTestRunner.startTesting', async () => {
+      // Check cache capacity before starting — evict stale projects or warn.
+      if (activationRoot) {
+        const cap = rotateAndCheckCapacity(context.globalStorageUri.fsPath);
+        if (!cap.ok) {
+          const choice = await vscode.window.showWarningMessage(
+            `Live Test Runner cache is using ${cap.totalMb} MB across ${cap.activeCount} active sessions (limit: 500 MB). ` +
+            `No inactive projects can be evicted right now. Close unused VS Code windows to free space, or continue without caching this session.`,
+            'Continue Without Cache',
+            'Cancel',
+          );
+          if (choice !== 'Continue Without Cache') { return; }
+          // Run without cache this session
+          discoveryCache?.releaseLock();
+          discoveryCache = undefined;
+        }
+      }
+      cleanTraceDir();
+      return session.start();
+    }),
     vscode.commands.registerCommand('liveTestRunner.stopTesting',        () => session.stop(decorationManager)),
+    vscode.commands.registerCommand('liveTestRunner.stopAndClearCache',  async () => {
+      session.stop(decorationManager);
+      if (discoveryCache) {
+        discoveryCache.releaseLock();
+        discoveryCache.clear();
+        // Re-create lock so rotation knows this project is still open
+        discoveryCache.writeLock();
+        logger.info(FILE, 'stopAndClearCache', 'Cache cleared for current project');
+      }
+    }),
+    vscode.commands.registerCommand('liveTestRunner.clearCacheAndRestart', async () => {
+      session.stop(decorationManager);
+      if (discoveryCache && activationRoot) {
+        discoveryCache.releaseLock();
+        discoveryCache.clear();
+        discoveryCache.writeLock();
+        store.clearAll();
+        cleanTraceDir();
+        logger.info(FILE, 'clearCacheAndRestart', 'Cache cleared — restarting discovery');
+        discovery.start(activationRoot, store, (msg) => outputChannel.appendLine(msg), {
+          onFilesFound: (total) => { observers.forEach((o) => o.onDiscoveryStarted?.(total)); },
+          onBatchDiscovered: (files, discovered, total) => { observers.forEach((o) => o.onDiscoveryProgress?.(files, discovered, total)); },
+          onComplete: () => { observers.forEach((o) => o.onDiscoveryComplete?.());  },
+          onFileRemoved: (fileId) => { observers.forEach((o) => o.onDiscoveryFileRemoved?.(fileId)); },
+        }, discoveryCache);
+        vscode.window.showInformationMessage('Live Test Runner: Cache cleared. Click Start Testing to run.');
+      }
+    }),
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot',  () => session.selectProjectRoot()),
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.showPanels',         () => {
@@ -292,8 +374,11 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 let _cleanTraceDir: (() => void) | undefined;
+let _releaseDiscoveryLock: (() => void) | undefined;
+
 export function deactivate() {
   _cleanTraceDir?.();
+  _releaseDiscoveryLock?.();
 }
 
 // ── Editor commands ───────────────────────────────────────────────────────────
@@ -306,23 +391,31 @@ async function rerunFromEditor(
   store: ResultStore,
   session: SessionManager,
 ): Promise<void> {
-  const entry = store.getLineMap(filePath).get(line);
-  if (entry) {
-    const node = store.getNode(entry.nodeId);
-    if (node) {
-      session.rerunScope({ scope: node.type, fileId: entry.fileId, nodeId: entry.nodeId, fullName: node.fullName });
+  logger.debug(FILE, 'rerunFromEditor', `Rerun requested — file="${filePath}" line=${line}`);
+  try {
+    const entry = store.getLineMap(filePath).get(line);
+    if (entry) {
+      const node = store.getNode(entry.nodeId);
+      if (node) {
+        logger.debug(FILE, 'rerunFromEditor', `Rerunning node type="${node.type}" fullName="${node.fullName}"`);
+        session.rerunScope({ scope: node.type, fileId: entry.fileId, nodeId: entry.nodeId, fullName: node.fullName });
+        return;
+      }
+    }
+    // describe blocks might not be in the LineMap at this exact line.
+    // Try to extract the suite title from the source line and find the matching node.
+    const nodeId = await _resolveNodeAtLine(filePath, line, store);
+    if (nodeId) {
+      const node = store.getNode(nodeId);
+      logger.debug(FILE, 'rerunFromEditor', `Rerunning resolved suite nodeId="${nodeId}" fullName="${node?.fullName}"`);
+      session.rerunScope({ scope: 'suite', fileId: filePath, nodeId, fullName: node?.fullName });
       return;
     }
+    logger.debug(FILE, 'rerunFromEditor', `No node found at line ${line} — rerunning full file`);
+    session.rerunScope({ scope: 'file', fileId: filePath });
+  } catch (err) {
+    logger.error(FILE, 'rerunFromEditor', `Unhandled error for "${filePath}:${line}"`, err);
   }
-  // describe blocks might not be in the LineMap at this exact line.
-  // Try to extract the suite title from the source line and find the matching node.
-  const nodeId = await _resolveNodeAtLine(filePath, line, store);
-  if (nodeId) {
-    const node = store.getNode(nodeId);
-    session.rerunScope({ scope: 'suite', fileId: filePath, nodeId, fullName: node?.fullName });
-    return;
-  }
-  session.rerunScope({ scope: 'file', fileId: filePath });
 }
 
 async function debugFromEditor(
@@ -331,16 +424,23 @@ async function debugFromEditor(
   store: ResultStore,
   session: SessionManager,
 ): Promise<void> {
-  const entry = store.getLineMap(filePath).get(line);
-  if (entry) {
-    const node = store.getNode(entry.nodeId);
-    await session.debugFromEditor(filePath, node?.fullName);
-    return;
+  logger.debug(FILE, 'debugFromEditor', `Debug requested — file="${filePath}" line=${line}`);
+  try {
+    const entry = store.getLineMap(filePath).get(line);
+    if (entry) {
+      const node = store.getNode(entry.nodeId);
+      logger.debug(FILE, 'debugFromEditor', `Debugging node fullName="${node?.fullName}"`);
+      await session.debugFromEditor(filePath, node?.fullName);
+      return;
+    }
+    // describe block — use node fullName as testNamePattern so Jest runs all tests within it
+    const nodeId = await _resolveNodeAtLine(filePath, line, store);
+    const fullName = nodeId ? store.getNode(nodeId)?.fullName : undefined;
+    logger.debug(FILE, 'debugFromEditor', `Debugging resolved suite fullName="${fullName ?? '(whole file)'}"`);
+    await session.debugFromEditor(filePath, fullName);
+  } catch (err) {
+    logger.error(FILE, 'debugFromEditor', `Unhandled error for "${filePath}:${line}"`, err);
   }
-  // describe block — use node fullName as testNamePattern so Jest runs all tests within it
-  const nodeId = await _resolveNodeAtLine(filePath, line, store);
-  const fullName = nodeId ? store.getNode(nodeId)?.fullName : undefined;
-  await session.debugFromEditor(filePath, fullName);
 }
 
 /** Extracts the describe title from a source line and looks it up in the store's node pool. */
@@ -358,7 +458,8 @@ async function _resolveNodeAtLine(
     const allNodes = store.getFileNodes(filePath);
     const match = allNodes.find(n => n.type === 'suite' && n.name === m[1]);
     return match?.id;
-  } catch {
+  } catch (err) {
+    logger.warn(FILE, '_resolveNodeAtLine', `Could not resolve node at ${filePath}:${line}`, err);
     return undefined;
   }
 }
@@ -387,6 +488,7 @@ async function openTimelineDebugger(
   resultsView.postMessage({ type: 'timeline-loading' });
 
   outputChannel.appendLine(`[Timeline] Running instrumented trace: ${testFullName}`);
+  logger.info(FILE, 'openTimelineDebugger', `Starting timeline trace — testFullName="${testFullName}" file="${filePath}"`);
 
   try {
     const store = await runner.run({ filePath, testFullName, projectRoot });
@@ -400,12 +502,14 @@ async function openTimelineDebugger(
     };
 
     outputChannel.appendLine(`[Timeline] Trace complete — ${store.steps.length} steps captured.`);
+    logger.info(FILE, 'openTimelineDebugger', `Timeline trace complete — ${store.steps.length} steps captured`);
     onStoreReady?.(serialisableStore as { steps: unknown[]; variables: Record<number, unknown[]> });
     resultsView.postMessage({ type: 'timeline-ready', store: serialisableStore });
     explorerView.postMessage({ type: 'timeline-ready', store: serialisableStore });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     outputChannel.appendLine(`[Timeline] Error: ${message}`);
+    logger.error(FILE, 'openTimelineDebugger', `Timeline trace failed — testFullName="${testFullName}"`, err);
     vscode.window.showErrorMessage(`Timeline Debugger error: ${message}`);
     resultsView.postMessage({ type: 'timeline-error', message });
   }

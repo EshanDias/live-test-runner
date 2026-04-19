@@ -36,9 +36,9 @@ export class ResultsView extends BaseWebviewProvider {
 
   // ── IResultObserver overrides ──────────────────────────────────────────────
 
-  /** After broadcasting the file result, also refresh scoped logs if this file is selected. */
+  /** Queue the file result for batched delivery; immediately refresh scoped logs if selected. */
   onFileResult(filePath: string): void {
-    super.onFileResult(filePath);
+    super.onFileResult(filePath); // buffers into 50 ms batch
     const sel = this.selection.get();
     if (sel?.fileId === filePath) {
       this.sendScopedData(sel.fileId, sel.nodeId);
@@ -86,10 +86,12 @@ export class ResultsView extends BaseWebviewProvider {
   }
 
   protected _sendInit(): void {
+    const sel = this.selection.get();
     this.postMessage({
       type:       'init',
       files:      (this.store.toJSON() as { files: unknown[] }).files,
       thresholds: this._getThresholds(),
+      selection:  sel ? { fileId: sel.fileId, nodeId: sel.nodeId } : null,
     });
   }
 

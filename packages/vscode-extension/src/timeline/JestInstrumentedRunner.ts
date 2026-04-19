@@ -18,6 +18,9 @@ import {
   ErrorEntry,
 } from './TimelineStore';
 import { TimelineEvent } from './TimelineEvent';
+import { logger } from '../utils/logger';
+
+const FILE = 'JestInstrumentedRunner.ts';
 
 const TRACE_TRANSFORM_PATH = path.resolve(
   __dirname,
@@ -41,6 +44,7 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
     projectRoot: string;
   }): Promise<TimelineStore> {
     const { filePath, testFullName, projectRoot } = options;
+    logger.info(FILE, 'run', `Starting instrumented run — testFullName="${testFullName}" file="${filePath}"`);
 
     // 1. Temp file for JSONL trace output
     const traceFile = path.join(
@@ -144,7 +148,16 @@ module.exports = {
   },
 };
 `;
-    fs.writeFileSync(tempConfigPath, configContent, 'utf8');
+    try {
+      fs.writeFileSync(tempConfigPath, configContent, 'utf8');
+    } catch (err) {
+      logger.error(FILE, 'run', `Failed to write temp Jest config: ${tempConfigPath}`, err);
+      throw err;
+    }
+
+    logger.debug(FILE, 'run', `Temp config written: ${tempConfigPath}`);
+    logger.debug(FILE, 'run', `Trace output file: ${traceFile}`);
+    logger.debug(FILE, 'run', `Transform path: ${TRACE_TRANSFORM_PATH} (exists=${fs.existsSync(TRACE_TRANSFORM_PATH)})`);
 
     // DEBUG — dump everything to a known file for easy inspection
     const debugLog =
@@ -159,7 +172,14 @@ module.exports = {
     process.env.TRACE_OUTPUT_FILE = traceFile;
 
     try {
-      const binary = this.binaryResolver.resolve(projectRoot);
+      let binary: string;
+      try {
+        binary = this.binaryResolver.resolve(projectRoot);
+        logger.debug(FILE, 'run', `Resolved Jest binary: ${binary}`);
+      } catch (err) {
+        logger.error(FILE, 'run', `Failed to resolve Jest binary for "${projectRoot}"`, err);
+        throw err;
+      }
       const escapedName = escapeRegex(testFullName);
 
       const result = await this.executor.run({
@@ -178,6 +198,11 @@ module.exports = {
         cwd: projectRoot,
       });
 
+      logger.debug(FILE, 'run', `Jest instrumented run complete — passed=${result.passed}`);
+      if (!result.passed) {
+        logger.warn(FILE, 'run', `Jest exited with failure — stderr snippet: ${result.stderr.slice(0, 500)}`);
+      }
+
       // DEBUG — append Jest output to the debug log
       fs.appendFileSync(
         '/tmp/ltr-debug.log',
@@ -194,9 +219,20 @@ module.exports = {
     }
 
     // 4. Parse the trace file into a TimelineStore
+    if (!fs.existsSync(traceFile)) {
+      logger.error(FILE, 'run', `Trace file was not produced — no output to parse: ${traceFile}`);
+    } else {
+      const traceSize = fs.statSync(traceFile).size;
+      logger.debug(FILE, 'run', `Trace file produced: ${traceFile} (${traceSize} bytes)`);
+    }
+
     let store: TimelineStore;
     try {
       store = this.parseEvents(traceFile);
+      logger.info(FILE, 'run', `Parsed trace — ${store.steps.length} steps, ${store.errors.length} errors`);
+    } catch (err) {
+      logger.error(FILE, 'run', `parseEvents threw for trace file: ${traceFile}`, err);
+      throw err;
     } finally {
       try {
         fs.unlinkSync(traceFile);
@@ -236,15 +272,24 @@ module.exports = {
       errors: [],
     };
 
-    const raw = fs.readFileSync(filePath, 'utf8');
-    const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+    let raw: string;
+    try {
+      raw = fs.readFileSync(filePath, 'utf8');
+    } catch (err) {
+      logger.error(FILE, 'parseEvents', `Could not read trace file: "${filePath}"`, err);
+      return store;
+    }
 
+    const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+    logger.debug(FILE, 'parseEvents', `Parsing ${lines.length} event lines from "${filePath}"`);
+
+    let malformedCount = 0;
     for (const line of lines) {
       let event: TimelineEvent;
       try {
         event = JSON.parse(line) as TimelineEvent;
       } catch {
-        // skip malformed lines
+        malformedCount++;
         continue;
       }
 
@@ -307,6 +352,10 @@ module.exports = {
           // failures are reported via ERROR events from the instrumentation layer.
           break;
       }
+    }
+
+    if (malformedCount > 0) {
+      logger.warn(FILE, 'parseEvents', `Skipped ${malformedCount} malformed JSON lines in "${filePath}"`);
     }
 
     return store;

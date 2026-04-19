@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
+import { FileRunResult } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 
 export interface RerunOptions {
@@ -35,7 +36,7 @@ export interface IFrameworkAdapter {
 
   /**
    * Run a full test file. Writes results into the store and returns pass/fail.
-   * Called by the concurrency pool in runFiles().
+   * Used for scoped single-file reruns; the batch path uses SessionTraceRunner.
    */
   runFile(
     store: ResultStore,
@@ -43,6 +44,17 @@ export interface IFrameworkAdapter {
     projectRoot: string,
     log: (msg: string) => void,
   ): Promise<'passed' | 'failed'>;
+
+  /**
+   * Apply a parsed FileRunResult (from liveReporter) into the store.
+   * Called by SessionTraceRunner after the combined test+trace batch run.
+   */
+  applyFileResult(
+    store: ResultStore,
+    filePath: string,
+    fileResult: FileRunResult,
+    opts?: RerunOptions,
+  ): void;
 
   /**
    * Run a single named test case (partial rerun from webview or CodeLens).
@@ -62,6 +74,18 @@ export interface IFrameworkAdapter {
    * file paths affected by a change to the given source file.
    */
   getAffectedTests(session: TestSession, changedFile: string): string[];
+
+  /**
+   * Use the framework's own static-analysis fallback (e.g. jest --findRelatedTests)
+   * to find and run tests related to the changed source file.
+   * Called when no trace data exists for the changed file.
+   */
+  runRelatedTests(
+    store: ResultStore,
+    sourceFilePath: string,
+    projectRoot: string,
+    log: (msg: string) => void,
+  ): Promise<string[]>;
 
   /** VS Code debug launch configuration for running a test under the debugger. */
   getDebugConfig(

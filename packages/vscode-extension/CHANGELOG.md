@@ -2,6 +2,25 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [1.4.0] — 2026-04-19
+
+### Faster Startup, Faster Runs & Smoother UI
+
+#### What's new
+
+- **Much faster restarts on large projects** — test discovery results are now cached to disk. After the first scan, restarting VS Code loads your test tree in seconds instead of 30–60 seconds on projects with hundreds of files.
+- **Results stream in as each file finishes** — previously you'd wait for a whole batch before seeing anything update. Now spinner icons flip to pass/fail the moment each file completes.
+- **Significantly faster test runs** — multiple test files are now grouped into fewer Jest processes, cutting process-launch overhead on large projects. Combined with the removed separate trace phase, overall run time is noticeably shorter.
+- **Shift+Stop clears the cache** — if discovery ever gets stale, Shift-click the Stop button to wipe the cache and start fresh. The command palette also has "Clear Cache and Restart Testing" and "Stop Testing and Clear Cache".
+
+#### Fixes
+
+- Fixed UI freezing or slowing down when 200–800 test files were discovered at once.
+- Fixed collapsing a row immediately re-expanding it.
+- Fixed the selected row not being restored when switching between panels.
+
+---
+
 ## [1.3.0] — 2026-04-14
 
 ### Dynamic Test Groups & Multi-Session Isolation
