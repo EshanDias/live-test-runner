@@ -213,6 +213,9 @@
           LiveTestUtils.setThresholds(msg.thresholds);
           _list.setData(msg.files ?? []);
           updateListCount();
+          if (msg.selection) {
+            _list.setSelected(msg.selection.fileId, msg.selection.nodeId);
+          }
           break;
 
         case 'run-started':
@@ -222,14 +225,12 @@
           break;
 
         case 'files-rerunning':
-          for (const fileId of (msg.fileIds ?? [])) {
-            _list.markFileRunning(fileId, msg.nodeId);
-          }
+          _list.markFilesRunning(msg.fileIds, msg.nodeId);
           break;
 
         case 'discovery-progress':
           if (msg.files && msg.files.length > 0) {
-            for (const f of msg.files) { _list.updateFile(f); }
+            _list.appendFiles(msg.files);
             updateListCount();
           }
           break;
@@ -243,6 +244,11 @@
 
         case 'full-file-result':
           _list.updateFile(msg.file);
+          updateListCount();
+          break;
+
+        case 'batch-file-results':
+          for (const file of (msg.files ?? [])) { _list.updateFile(file); }
           updateListCount();
           break;
 

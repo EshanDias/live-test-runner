@@ -27,6 +27,7 @@ import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
 import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
+import { DiscoveryCache, rotateAndCheckCapacity } from './cache/DiscoveryCache';
 import { logger } from './utils/logger';
 
 const FILE = 'extension.ts';
@@ -223,12 +224,19 @@ export function activate(context: vscode.ExtensionContext) {
     traceStore.clearAll();
   }
 
+  // ── Discovery cache ────────────────────────────────────────────────────────
+  const activationRoot = _resolveProjectRoot();
+  let discoveryCache: DiscoveryCache | undefined;
+  if (activationRoot) {
+    discoveryCache = new DiscoveryCache(context.globalStorageUri.fsPath, activationRoot);
+    discoveryCache.writeLock();
+  }
+
   // ── Session manager ────────────────────────────────────────────────────────
   const discovery = new TestDiscoveryService();
 
   // Kick off static discovery immediately on activate so tests appear in the
   // sidebar before the user clicks Start Testing.
-  const activationRoot = _resolveProjectRoot();
   if (activationRoot) {
     logger.info(FILE, 'activate', `Starting test discovery in: ${activationRoot}`);
     discovery.start(activationRoot, store, (msg) => outputChannel.appendLine(msg), {
@@ -244,7 +252,7 @@ export function activate(context: vscode.ExtensionContext) {
       onFileRemoved: (fileId) => {
         observers.forEach((o) => o.onDiscoveryFileRemoved?.(fileId));
       },
-    });
+    }, discoveryCache);
   }
 
   const session = new SessionManager(
@@ -262,14 +270,62 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Expose cleanup so deactivate() can delete trace files on extension shutdown
   _cleanTraceDir = cleanTraceDir;
+  _releaseDiscoveryLock = () => discoveryCache?.releaseLock();
 
   // ── Commands ───────────────────────────────────────────────────────────────
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ExplorerView.viewId, explorerView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerWebviewViewProvider(ResultsView.viewId, resultsView, { webviewOptions: { retainContextWhenHidden: true } }),
 
-    vscode.commands.registerCommand('liveTestRunner.startTesting',       () => { cleanTraceDir(); return session.start(); }),
+    vscode.commands.registerCommand('liveTestRunner.startTesting', async () => {
+      // Check cache capacity before starting — evict stale projects or warn.
+      if (activationRoot) {
+        const cap = rotateAndCheckCapacity(context.globalStorageUri.fsPath);
+        if (!cap.ok) {
+          const choice = await vscode.window.showWarningMessage(
+            `Live Test Runner cache is using ${cap.totalMb} MB across ${cap.activeCount} active sessions (limit: 500 MB). ` +
+            `No inactive projects can be evicted right now. Close unused VS Code windows to free space, or continue without caching this session.`,
+            'Continue Without Cache',
+            'Cancel',
+          );
+          if (choice !== 'Continue Without Cache') { return; }
+          // Run without cache this session
+          discoveryCache?.releaseLock();
+          discoveryCache = undefined;
+        }
+      }
+      cleanTraceDir();
+      return session.start();
+    }),
     vscode.commands.registerCommand('liveTestRunner.stopTesting',        () => session.stop(decorationManager)),
+    vscode.commands.registerCommand('liveTestRunner.stopAndClearCache',  async () => {
+      session.stop(decorationManager);
+      if (discoveryCache) {
+        discoveryCache.releaseLock();
+        discoveryCache.clear();
+        // Re-create lock so rotation knows this project is still open
+        discoveryCache.writeLock();
+        logger.info(FILE, 'stopAndClearCache', 'Cache cleared for current project');
+      }
+    }),
+    vscode.commands.registerCommand('liveTestRunner.clearCacheAndRestart', async () => {
+      session.stop(decorationManager);
+      if (discoveryCache && activationRoot) {
+        discoveryCache.releaseLock();
+        discoveryCache.clear();
+        discoveryCache.writeLock();
+        store.clearAll();
+        cleanTraceDir();
+        logger.info(FILE, 'clearCacheAndRestart', 'Cache cleared — restarting discovery');
+        discovery.start(activationRoot, store, (msg) => outputChannel.appendLine(msg), {
+          onFilesFound: (total) => { observers.forEach((o) => o.onDiscoveryStarted?.(total)); },
+          onBatchDiscovered: (files, discovered, total) => { observers.forEach((o) => o.onDiscoveryProgress?.(files, discovered, total)); },
+          onComplete: () => { observers.forEach((o) => o.onDiscoveryComplete?.());  },
+          onFileRemoved: (fileId) => { observers.forEach((o) => o.onDiscoveryFileRemoved?.(fileId)); },
+        }, discoveryCache);
+        vscode.window.showInformationMessage('Live Test Runner: Cache cleared. Click Start Testing to run.');
+      }
+    }),
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot',  () => session.selectProjectRoot()),
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.showPanels',         () => {
@@ -318,8 +374,11 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 let _cleanTraceDir: (() => void) | undefined;
+let _releaseDiscoveryLock: (() => void) | undefined;
+
 export function deactivate() {
   _cleanTraceDir?.();
+  _releaseDiscoveryLock?.();
 }
 
 // ── Editor commands ───────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ResultStore, makeNodeId } from '../store/ResultStore';
+import { DiscoveryCache } from '../cache/DiscoveryCache';
 import { logger } from '../utils/logger';
 
 const FILE = 'TestDiscoveryService.ts';
@@ -36,9 +37,11 @@ export interface DiscoveryCallbacks {
   onFileRemoved?(fileId: string): void;
 }
 
-// Number of files to parse per event-loop batch. Small enough to give
-// progressive UI feedback; large enough to avoid excessive postMessages.
-const BATCH_SIZE = 5;
+// Batch sizes for discovery passes.
+// Cold (no cache): small batches keep UI responsive during slow Babel parse.
+// Warm (cache hits): larger batches since stat+store is ~10x faster than parse.
+const BATCH_SIZE_COLD = 5;
+const BATCH_SIZE_WARM = 25;
 
 /** Yields to the event loop so VS Code can process messages between batches. */
 function yieldToEventLoop(): Promise<void> {
@@ -68,6 +71,7 @@ export class TestDiscoveryService {
   private _store: ResultStore | undefined;
   private _log: ((msg: string) => void) | undefined;
   private _callbacks: DiscoveryCallbacks | undefined;
+  private _cache: DiscoveryCache | undefined;
 
   get isDiscovering(): boolean {
     return this._isDiscovering;
@@ -84,20 +88,23 @@ export class TestDiscoveryService {
     store: ResultStore,
     log: (msg: string) => void,
     callbacks: DiscoveryCallbacks,
+    cache?: DiscoveryCache,
   ): void {
     this._watcher?.dispose();
     this._isDiscovering = true;
     this._store = store;
     this._log = log;
     this._callbacks = callbacks;
+    this._cache = cache;
 
-    this._discoveryPromise = this._run(projectRoot, store, log, callbacks)
+    this._discoveryPromise = this._run(projectRoot, store, log, callbacks, cache)
       .catch((err) => {
         log(`[TestDiscovery] Error during discovery: ${err}`);
         logger.error(FILE, 'start', `Discovery run failed for root="${projectRoot}"`, err);
       })
       .finally(() => {
         this._isDiscovering = false;
+        cache?.flush();
         callbacks.onComplete();
         this._setupWatcher(projectRoot, store, log, callbacks);
       });
@@ -145,6 +152,7 @@ export class TestDiscoveryService {
     store: ResultStore,
     log: (msg: string) => void,
     callbacks: DiscoveryCallbacks,
+    cache?: DiscoveryCache,
   ): Promise<void> {
     // ── Step 1: find all test files (fast — native VS Code glob) ─────────────
     const pattern = new vscode.RelativePattern(
@@ -160,17 +168,21 @@ export class TestDiscoveryService {
     if (paths.length === 0) { return; }
 
     // ── Step 2: parse ASTs in batches, yielding between each batch ───────────
+    // Use larger batches when a cache is present — stat+store is ~10x faster
+    // than a cold Babel parse, so we can process more files per tick without
+    // blocking the UI noticeably.
+    const batchSize = cache ? BATCH_SIZE_WARM : BATCH_SIZE_COLD;
     let discovered = 0;
 
-    for (let i = 0; i < paths.length; i += BATCH_SIZE) {
+    for (let i = 0; i < paths.length; i += batchSize) {
       // Yield before each batch so the extension host can process messages and
       // keep the UI responsive even on large projects.
       await yieldToEventLoop();
 
-      const batch = paths.slice(i, i + BATCH_SIZE);
+      const batch = paths.slice(i, i + batchSize);
       const batchFiles: unknown[] = [];
       for (const filePath of batch) {
-        const fileData = this._populateFile(filePath, projectRoot, store, log);
+        const fileData = this._populateFile(filePath, projectRoot, store, log, cache);
         discovered++;
         if (fileData) {
           batchFiles.push(fileData);
@@ -218,9 +230,10 @@ export class TestDiscoveryService {
       store.clearLineMap(uri.fsPath);
 
       log(`[TestDiscovery] Re-discovering: ${uri.fsPath}`);
-      const fileData = this._populateFile(uri.fsPath, projectRoot, store, log);
+      const fileData = this._populateFile(uri.fsPath, projectRoot, store, log, this._cache);
       if (fileData) {
         callbacks.onBatchDiscovered([fileData], 1, 1);
+        this._cache?.flush();
       }
     };
 
@@ -243,28 +256,48 @@ export class TestDiscoveryService {
     projectRoot: string,
     store: ResultStore,
     log: (msg: string) => void,
+    cache?: DiscoveryCache,
   ): unknown | null {
-    let source: string;
-    try {
-      source = fs.readFileSync(filePath, 'utf8');
-    } catch (err) {
-      logger.error(FILE, '_populateFile', `Could not read test file: "${filePath}"`, err);
-      return null;
-    }
+    // ── Try cache first (skip readFile + Babel if mtime unchanged) ────────────
+    let result: ReturnType<typeof discoverTests> | null = null;
 
-    let result: ReturnType<typeof discoverTests>;
-    try {
-      result = discoverTests(source, filePath, projectRoot);
-    } catch (err) {
-      logger.error(FILE, '_populateFile', `discoverTests threw for "${filePath}"`, err);
-      log(`[TestDiscovery] AST parse error: ${filePath}`);
-      return null;
+    if (cache) {
+      result = cache.get(filePath) ?? null;
+      if (result) {
+        log(`[TestDiscovery] Cache hit: ${filePath}`);
+      }
     }
 
     if (!result) {
-      logger.warn(FILE, '_populateFile', `AST parse returned null for "${filePath}"`);
-      log(`[TestDiscovery] AST parse failed: ${filePath}`);
-      return null;
+      let source: string;
+      try {
+        source = fs.readFileSync(filePath, 'utf8');
+      } catch (err) {
+        logger.error(FILE, '_populateFile', `Could not read test file: "${filePath}"`, err);
+        return null;
+      }
+
+      try {
+        result = discoverTests(source, filePath, projectRoot);
+      } catch (err) {
+        logger.error(FILE, '_populateFile', `discoverTests threw for "${filePath}"`, err);
+        log(`[TestDiscovery] AST parse error: ${filePath}`);
+        return null;
+      }
+
+      if (!result) {
+        logger.warn(FILE, '_populateFile', `AST parse returned null for "${filePath}"`);
+        log(`[TestDiscovery] AST parse failed: ${filePath}`);
+        return null;
+      }
+
+      // Write to cache only for files that have actual Jest tests
+      if (cache && (result.suites.length > 0 || result.rootTests.length > 0)) {
+        try {
+          const { mtimeMs } = fs.statSync(filePath);
+          cache.set(filePath, mtimeMs, result);
+        } catch { /* stat failed — skip caching this file */ }
+      }
     }
 
     // If no tests were found (e.g. all describe/test calls are imported from a

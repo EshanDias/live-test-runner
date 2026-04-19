@@ -67,6 +67,16 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.stopAndClearCache",
+        "title": "Stop Testing and Clear Cache",
+        "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.clearCacheAndRestart",
+        "title": "Clear Cache and Restart Testing",
+        "category": "Live Test Runner"
+      },
+      {
         "command": "liveTestRunner.selectProjectRoot",
         "title": "Select Project Root",
         "category": "Live Test Runner"

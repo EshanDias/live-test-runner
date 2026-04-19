@@ -24,6 +24,9 @@ export abstract class BaseWebviewProvider
   protected _discoveryTotal = 0;
   protected _discoveryDone  = 0;
 
+  private _pendingFileResults: string[] = [];
+  private _resultFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(
     protected readonly extensionUri: vscode.Uri,
     protected readonly store: ResultStore,
@@ -95,6 +98,8 @@ export abstract class BaseWebviewProvider
             vscode.commands.executeCommand('liveTestRunner.startTesting');
           } else if (msg.command === 'stop') {
             vscode.commands.executeCommand('liveTestRunner.stopTesting');
+          } else if (msg.command === 'stopAndClearCache') {
+            vscode.commands.executeCommand('liveTestRunner.stopAndClearCache');
           }
           break;
         default:
@@ -125,19 +130,21 @@ export abstract class BaseWebviewProvider
   }
 
   onFileResult(filePath: string): void {
-    const fileData = this.store.getFile(filePath);
-    if (!fileData) { return; }
+    if (!this.store.getFile(filePath)) { return; }
+    this._pendingFileResults.push(filePath);
+    if (this._resultFlushTimer === null) {
+      this._resultFlushTimer = setTimeout(() => this._flushFileResults(), 50);
+    }
+  }
+
+  protected _flushFileResults(): void {
+    this._resultFlushTimer = null;
+    const paths = this._pendingFileResults.splice(0);
+    if (paths.length === 0) { return; }
     const summary = this.store.getSummary();
-    const serialised = this.store.serialiseFile(filePath);
-    if (!serialised) { return; }
-    this.postMessage({
-      type: 'full-file-result',
-      file: serialised,
-      total:         summary.total,
-      passed:        summary.passed,
-      failed:        summary.failed,
-      totalDuration: summary.totalDuration,
-    });
+    const files = paths.map((fp) => this.store.serialiseFile(fp)).filter(Boolean);
+    if (files.length === 0) { return; }
+    this.postMessage({ type: 'batch-file-results', files, total: summary.total, passed: summary.passed, failed: summary.failed });
   }
 
   onRunFinished(payload: RunFinishedPayload): void {
