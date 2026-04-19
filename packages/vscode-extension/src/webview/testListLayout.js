@@ -65,6 +65,22 @@ class TestListLayout {
     this._render();
   }
 
+  /** Remove a file by ID and re-render. */
+  removeFile(fileId) {
+    const idx = this.data.findIndex((f) => f.fileId === fileId);
+    if (idx < 0) { return; }
+    this.data.splice(idx, 1);
+    this.expanded.delete(fileId);
+    const wrapper = this.container.querySelector(
+      `[data-file-wrapper="${CSS.escape(fileId)}"]`,
+    );
+    if (wrapper) {
+      wrapper.remove();
+    } else {
+      this._render();
+    }
+  }
+
   /** Update a single file's data in-place and re-render. */
   updateFile(fileData) {
     const idx = this.data.findIndex((f) => f.fileId === fileData.fileId);
@@ -95,6 +111,58 @@ class TestListLayout {
       }
     }
     this._render();
+  }
+
+  /**
+   * Append a batch of files to the list without triggering a full re-render.
+   * Used by discovery-progress where every file is new — avoids the O(n²)
+   * cost of calling updateFile() (which falls back to _render()) per file.
+   */
+  appendFiles(filesData) {
+    if (!filesData || filesData.length === 0) { return; }
+
+    // Folder-view / search / failures-only modes need structural re-render
+    if (this.folderView || this.query || this.failuresOnly) {
+      for (const fileData of filesData) {
+        const idx = this.data.findIndex((f) => f.fileId === fileData.fileId);
+        if (idx >= 0) { this.data[idx] = fileData; } else { this.data.push(fileData); }
+        this.expanded.add(fileData.fileId);
+        const nodeMap = this._buildNodeMap(fileData);
+        this._expandAllNodeIds(fileData, nodeMap);
+        this._expandFolderPaths(fileData.name);
+      }
+      this._render();
+      return;
+    }
+
+    const savedScroll = this.container.scrollTop;
+    const fragment    = document.createDocumentFragment();
+
+    for (const fileData of filesData) {
+      const idx = this.data.findIndex((f) => f.fileId === fileData.fileId);
+      if (idx >= 0) { this.data[idx] = fileData; } else { this.data.push(fileData); }
+      this.expanded.add(fileData.fileId);
+      const nodeMap = this._buildNodeMap(fileData);
+      this._expandAllNodeIds(fileData, nodeMap);
+      this._expandFolderPaths(fileData.name);
+
+      const existing = this.container.querySelector(
+        `[data-file-wrapper="${CSS.escape(fileData.fileId)}"]`,
+      );
+      if (existing) {
+        existing.innerHTML = this._renderFile(fileData);
+        this._attachListenersIn(existing);
+      } else {
+        const wrapper = document.createElement('div');
+        wrapper.setAttribute('data-file-wrapper', fileData.fileId);
+        wrapper.innerHTML = this._renderFile(fileData);
+        this._attachListenersIn(wrapper);
+        fragment.appendChild(wrapper);
+      }
+    }
+
+    this.container.appendChild(fragment);
+    this.container.scrollTop = savedScroll;
   }
 
   setQuery(q) {
@@ -172,6 +240,29 @@ class TestListLayout {
     this._render();
   }
 
+  /** Mark multiple files as running in one pass, then render once. */
+  markFilesRunning(fileIds, nodeId = null) {
+    for (const fileId of (fileIds ?? [])) {
+      const file = this.data.find((f) => f.fileId === fileId);
+      if (!file) { continue; }
+      file.status = 'running';
+      const nodeMap = this._buildNodeMap(file);
+      if (nodeId) {
+        this._markNodeRunning(nodeMap, nodeId);
+        let curr = nodeMap[nodeId];
+        while (curr && curr.parentId) {
+          curr = nodeMap[curr.parentId];
+          if (curr) { curr.status = 'running'; }
+        }
+      } else {
+        for (const rootId of (file.rootNodeIds ?? [])) {
+          this._markNodeRunning(nodeMap, rootId);
+        }
+      }
+    }
+    this._render();
+  }
+
   _markNodeRunning(nodeMap, nodeId) {
     const node = nodeMap[nodeId];
     if (!node) return;
@@ -182,12 +273,32 @@ class TestListLayout {
   }
 
   setSelected(fileId, nodeId) {
-    this.selectedId = nodeId ?? fileId ?? null;
+    const prevId      = this.selectedId;
+    this.selectedId   = nodeId ?? fileId ?? null;
     this.selectedFileId = fileId ?? null;
+
     if (fileId) {
+      const sizeBefore = this.expanded.size;
       this._expandAncestors(fileId, nodeId);
+
+      if (this.expanded.size !== sizeBefore) {
+        // New ancestors became visible — structural change needs a full render
+        this._render();
+      } else {
+        // Nothing to expand; just swap the selected CSS class in-place
+        if (prevId) {
+          this.container
+            .querySelector(`[data-id="${CSS.escape(prevId)}"]`)
+            ?.classList.remove('selected');
+        }
+        if (this.selectedId) {
+          this.container
+            .querySelector(`[data-id="${CSS.escape(this.selectedId)}"]`)
+            ?.classList.add('selected');
+        }
+      }
     }
-    this._render();
+
     this.scrollToSelected();
   }
 
@@ -575,12 +686,15 @@ class TestListLayout {
           return;
         }
 
-        // For file/suite rows, toggle expand/collapse ONLY when the arrow is clicked
+        // For file/suite rows, toggle expand/collapse ONLY when the arrow is clicked.
+        // Return immediately — toggling is not a selection; letting it fall through
+        // would post 'select' → scope-changed → _expandAncestors re-expands the node.
         if (rowScope !== 'test' && e.target.closest('.row-toggle')) {
           const isNowExpanded = !this.expanded.has(id);
           if (isNowExpanded) this.expanded.add(id);
           else this.expanded.delete(id);
           this._render();
+          return;
         }
 
         // Highlight selected row and notify extension

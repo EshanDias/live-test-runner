@@ -31,6 +31,7 @@ export class ExplorerView extends BaseWebviewProvider {
 
   protected _sendInit(): void {
     const summary = this.store.getSummary();
+    const sel     = this.selection.get();
     this.postMessage({
       type:            'init',
       files:           (this.store.toJSON() as { files: unknown[] }).files,
@@ -42,6 +43,7 @@ export class ExplorerView extends BaseWebviewProvider {
       isDiscovering:   this._isDiscovering,
       discoveryTotal:  this._discoveryTotal,
       discoveryDone:   this._discoveryDone,
+      selection:       sel ? { fileId: sel.fileId, nodeId: sel.nodeId } : null,
     });
   }
 }

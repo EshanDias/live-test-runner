@@ -30,6 +30,7 @@ function loadBabel(rootDir) {
     _rootDir = rootDir;
     return true;
   } catch (e) {
+    console.error(`[TestDiscovery] Failed to load Babel from "${rootDir}":`, e && (e.message || e));
     return false;
   }
 }
@@ -144,6 +145,77 @@ function _memberRoot(memberExpr) {
  */
 function _memberLeaf(memberExpr) {
   return memberExpr.property.type === 'Identifier' ? memberExpr.property.name : null;
+}
+
+// ---------------------------------------------------------------------------
+// Import-shadow detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Packages that explicitly re-export Jest's own globals.
+ * If `describe`/`test`/`it` are imported from these, they ARE Jest globals
+ * and should be treated normally.
+ */
+const JEST_GLOBAL_PACKAGES = new Set(['@jest/globals', 'jest']);
+
+/**
+ * Scan import declarations at the top of the file and return the set of
+ * identifier names that are locally bound from a non-Jest package.
+ *
+ * Rationale: Jest injects `describe`/`test`/`it` as implicit globals — they
+ * do NOT need to be imported. If a file contains:
+ *
+ *   import { describe, test } from 'tstyche';
+ *
+ * …those are NOT Jest's globals, even though they share the same name.
+ * Calling them does not register Jest test cases, so we must skip them.
+ *
+ * Exception: `@jest/globals` and `jest` re-export the real Jest globals, so
+ * those imports should be treated as normal Jest calls.
+ *
+ * @param {Array} programBody — ast.program.body
+ * @returns {Set<string>} names that shadow Jest globals (e.g. 'describe', 'test')
+ */
+function _collectShadowedTestGlobals(programBody) {
+  const shadowed = new Set();
+  for (const node of programBody) {
+    if (node.type !== 'ImportDeclaration') { continue; }
+    const source = typeof node.source?.value === 'string' ? node.source.value : '';
+    if (JEST_GLOBAL_PACKAGES.has(source)) { continue; } // real Jest globals — not shadowed
+    for (const specifier of (node.specifiers || [])) {
+      const localName = specifier.local?.name;
+      if (localName === 'describe' || localName === 'test' || localName === 'it') {
+        shadowed.add(localName);
+      }
+    }
+  }
+  return shadowed;
+}
+
+/**
+ * Return the root identifier name of a CallExpression's callee so we can
+ * check it against the shadowed-globals set.
+ *
+ * Examples:
+ *   describe(...)            → 'describe'
+ *   test.each(...)           → 'test'
+ *   it.concurrent.each(...)  → 'it'
+ *   test.each`table`(...)    → 'test'
+ */
+function _getCalleeRootName(node) {
+  if (node.type !== 'CallExpression') { return null; }
+  const callee = node.callee;
+  if (callee.type === 'Identifier') { return callee.name; }
+  if (callee.type === 'MemberExpression') { return _memberRoot(callee); }
+  // Curried .each: test.each([...])(name, fn)
+  if (callee.type === 'CallExpression' && callee.callee?.type === 'MemberExpression') {
+    return _memberRoot(callee.callee);
+  }
+  // Tagged template .each: test.each`table`(name, fn)
+  if (callee.type === 'TaggedTemplateExpression' && callee.tag?.type === 'MemberExpression') {
+    return _memberRoot(callee.tag);
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,10 +385,75 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
     ast = _parser.parse(sourceCode, {
       sourceType: 'module',
       allowReturnOutsideFunction: true,
-      plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport'],
+      errorRecovery: true,
+      plugins: [
+        // Core syntax
+        'jsx',
+        'typescript',          // NOTE: conflicts with 'flow' — we prefer typescript
+
+        // Class features
+        'classProperties',
+        'classPrivateProperties',
+        'classPrivateMethods',
+        'classStaticBlock',
+        'decoratorAutoAccessors',
+        ['decorators', { version: '2023-11' }],
+
+        // Import/export
+        'dynamicImport',
+        'importAssertions',    // import x assert { type: 'json' }
+        'importAttributes',    // import x with { type: 'json' } (newer spec)
+        'importMeta',          // import.meta
+        'exportDefaultFrom',   // export v from 'mod'
+        'exportNamespaceFrom', // export * as ns from 'mod'
+
+        // Operators & expressions
+        'optionalChaining',           // a?.b
+        'nullishCoalescingOperator',  // a ?? b
+        'logicalAssignment',          // a ||= b, a &&= b, a ??= b
+        'optionalCatchBinding',       // catch { }
+        'throwExpressions',           // () => throw new Error()
+        'doExpressions',              // do { }
+        'asyncDoExpressions',         // async do { }
+        'partialApplication',         // fn(?, 1)
+
+        // Literals & types
+        'numericSeparator',    // 1_000_000
+        'bigInt',              // 100n
+        'decimal',             // 1.5m
+        'recordAndTuple',      // #{ }, #[ ]
+        'moduleBlocks',        // module { }
+
+        // Async / generators
+        'asyncGenerators',     // async function*
+
+        // Misc
+        'topLevelAwait',
+        'privateIn',           // #x in obj
+        'moduleStringNames',   // import { "foo bar" as x }
+        'explicitResourceManagement', // using x = ...
+        'regexpUnicodeSets',   // /[...]/v
+        'functionBind',        // obj::fn
+        'functionSent',        // function.sent
+        ['pipelineOperator', { proposal: 'minimal' }], // x |> fn
+        'v8intrinsic',         // %DebugPrint()
+      ],
     });
   } catch (_e) {
-    return null;
+    // Full plugin list failed — could be an older @babel/parser that doesn't support
+    // a newer plugin. Retry with a minimal stable set so the file isn't lost entirely.
+    console.warn(`[TestDiscovery] Full-plugin parse failed for "${sourcePath}", retrying with minimal plugins. Error: ${_e && (_e.message || _e)}`);
+    try {
+      ast = _parser.parse(sourceCode, {
+        sourceType: 'module',
+        allowReturnOutsideFunction: true,
+        errorRecovery: true,
+        plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator'],
+      });
+    } catch (_e2) {
+      console.error(`[TestDiscovery] Minimal-plugin parse also failed for "${sourcePath}":`, _e2 && (_e2.message || _e2));
+      return null;
+    }
   }
 
   /**
@@ -329,6 +466,10 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
   const rootSuites = [];
 
   const rootTests = [];
+
+  // Collect identifiers (describe/test/it) that are explicitly imported from
+  // a non-Jest package (e.g. tstyche). Calls to these are NOT Jest tests.
+  const shadowedGlobals = _collectShadowedTestGlobals(ast.program.body);
 
   // Collect file-scope mutable variables (declared outside any describe/it).
   // These can create cross-test dependencies for every suite in the file.
@@ -346,6 +487,11 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
       enter(nodePath) {
         let callType = getCallType(nodePath.node);
         if (!callType) { return; }
+
+        // Skip calls to identifiers that are locally imported from a non-Jest
+        // package (e.g. `import { describe, test } from 'tstyche'`).
+        const rootName = _getCalleeRootName(nodePath.node);
+        if (rootName && shadowedGlobals.has(rootName)) { return; }
 
         const args = nodePath.node.arguments;
         if (args.length < 1) { return; }

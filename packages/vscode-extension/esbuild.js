@@ -24,7 +24,7 @@ function copyInstrumentationFiles() {
   }
 
   const sessionSrc = path.join(__dirname, 'src', 'session', 'instrumentation');
-  for (const file of ['sessionTraceTransform.js', 'sessionTraceRuntime.js']) {
+  for (const file of ['sessionTraceTransform.js', 'sessionTraceRuntime.js', 'liveReporter.js']) {
     fs.copyFileSync(path.join(sessionSrc, file), path.join(dest, file));
   }
 }

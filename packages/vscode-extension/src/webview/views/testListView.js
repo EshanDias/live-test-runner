@@ -31,8 +31,8 @@
   <div class="action-bar" id="actionBar">
     <button class="action-btn primary"              id="btnStart"    title="Discover and run all tests (Ctrl+Shift+T)">▶ Start Testing</button>
     <button class="action-btn secondary hidden"     id="btnRerun"    title="Stop current session and do a fresh run">↺ Rerun Tests</button>
-    <button class="action-btn ghost hidden"         id="btnStop"     title="Stop the test session">⏹ Stop</button>
-    <button class="action-btn ghost hidden"         id="btnStopRun"  title="Stop the current run">⏹ Stop Testing</button>
+    <button class="action-btn ghost hidden"         id="btnStop"     title="Stop the test session (Shift+Click to also clear cache)">⏹ Stop</button>
+    <button class="action-btn ghost hidden"         id="btnStopRun"  title="Stop the current run (Shift+Click to also clear cache)">⏹ Stop Testing</button>
     <span   class="watch-indicator hidden"          id="watchIndicator"
             title="Live Test Runner is active — tests will re-run automatically when you save a file">
       <span class="watch-dot"></span>live
@@ -248,8 +248,12 @@
         vscode.postMessage({ type: 'cmd', command: 'start' });
       });
       _q('btnRerun').addEventListener('click',   () => vscode.postMessage({ type: 'cmd', command: 'start' }));
-      _q('btnStop').addEventListener('click',    () => vscode.postMessage({ type: 'cmd', command: 'stop' }));
-      _q('btnStopRun').addEventListener('click', () => vscode.postMessage({ type: 'cmd', command: 'stop' }));
+      _q('btnStop').addEventListener('click', (e) => {
+        vscode.postMessage({ type: 'cmd', command: e.shiftKey ? 'stopAndClearCache' : 'stop' });
+      });
+      _q('btnStopRun').addEventListener('click', (e) => {
+        vscode.postMessage({ type: 'cmd', command: e.shiftKey ? 'stopAndClearCache' : 'stop' });
+      });
 
       // ── List toolbar ─────────────────────────────────────────────────────────
       _q('btnCollapseAll').addEventListener('click', () => _list.collapseAll());
@@ -296,6 +300,9 @@
           _list.setData(msg.files ?? []);
           updateSummary(msg.total, msg.passed, msg.failed, null);
           _updateListCount();
+          if (msg.selection) {
+            _list.setSelected(msg.selection.fileId, msg.selection.nodeId);
+          }
           if (msg.isDiscovering) {
             _discoveryTotal = msg.discoveryTotal ?? 0;
             applySessionState('discovering');
@@ -339,9 +346,7 @@
 
         case 'files-rerunning':
           _isPartialRerun = true;
-          for (const fileId of (msg.fileIds ?? [])) {
-            _list.markFileRunning(fileId, msg.nodeId);
-          }
+          _list.markFilesRunning(msg.fileIds, msg.nodeId);
           break;
 
         case 'file-started':
@@ -358,12 +363,28 @@
         case 'full-file-result': {
           _completedFiles++;
           if (msg.file.status === 'failed') { _failedDuringRun++; }
-          const el2 = ((Date.now() - _runStartTime)).toFixed(1);
+          const el2 = (Date.now() - _runStartTime).toFixed(1);
           const fl2 = _failedDuringRun > 0
             ? ` • <span class="progress-failed">${_failedDuringRun} failed</span>`
             : '';
           _q('runProgress').innerHTML = `Running — ${_completedFiles} / ${_totalFiles} files • ${durationLabel(el2)}${fl2}`;
           _list.updateFile(msg.file);
+          updateSummary(msg.total, msg.passed, msg.failed, null);
+          break;
+        }
+
+        case 'batch-file-results': {
+          const batchFiles = msg.files ?? [];
+          _completedFiles += batchFiles.length;
+          for (const file of batchFiles) {
+            if (file.status === 'failed') { _failedDuringRun++; }
+            _list.updateFile(file);
+          }
+          const elapsed = (Date.now() - _runStartTime).toFixed(1);
+          const failLabel = _failedDuringRun > 0
+            ? ` • <span class="progress-failed">${_failedDuringRun} failed</span>`
+            : '';
+          _q('runProgress').innerHTML = `Running — ${_completedFiles} / ${_totalFiles} files • ${durationLabel(elapsed)}${failLabel}`;
           updateSummary(msg.total, msg.passed, msg.failed, null);
           break;
         }
@@ -379,12 +400,22 @@
 
         case 'discovery-progress':
           _applyDiscoveryProgress(msg.discovered, msg.fileTotal);
-          if (msg.file) { _list.updateFile(msg.file); _updateListCount(); }
+          if (msg.files && msg.files.length > 0) {
+            _list.appendFiles(msg.files);
+            _updateListCount();
+          }
           updateSummary(msg.total, msg.passed, msg.failed, null);
           break;
 
         case 'discovery-complete':
           applySessionState('idle');
+          break;
+
+        case 'discovery-file-removed':
+          if (msg.fileId) {
+            _list.removeFile(msg.fileId);
+            _updateListCount();
+          }
           break;
 
         case 'coverage-update':

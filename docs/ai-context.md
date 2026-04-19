@@ -8,7 +8,7 @@ Paste this document into a conversation to give an AI assistant complete knowled
 
 **Live Test Runner** is a VS Code extension that runs Jest tests automatically on file save and shows results directly in the editor. It is a Wallaby-lite tool — session-based, explicit start/stop, focused on speed.
 
-**Current version:** 2.3.0  
+**Current version:** 1.5.0  
 **Language:** TypeScript  
 **Package manager:** pnpm (monorepo)
 
@@ -53,13 +53,24 @@ src/
     └── ResultParser.ts               Parses runner JSON output → RunResult
 ```
 
-**Every run uses this command:**
+**Batch run command (SessionTraceRunner — initial run and on-save file reruns):**
+```sh
+jest --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
+     --config <ltr-temp-config.js> --cacheDirectory <ltr-cache> \
+     --maxWorkers=1 --testLocationInResults
+```
+The temp config merges the project's `jest.config.*` with two additions:
+- `sessionTraceTransform.js` at the front of the transform chain (light trace: line hit maps only)
+- `liveReporter.js` as an extra reporter that appends one JSON record per completed file to a JSONL file
+
+The parent process polls that JSONL file at 200 ms intervals via `Executor.runWithReporterPolling`, firing a callback per record so the UI updates while Jest is still running.
+
+**Single-test / scoped-rerun command (JestRunner — CodeLens and individual reruns):**
 ```sh
 jest --config <resolved> --watchAll=false --forceExit --no-bail --json \
      --outputFile=<tmpfile> --testLocationInResults [--testNamePattern <name>]
 ```
-
-**`--outputFile` is mandatory.** Never parse Jest's stdout — on Windows, large JSON is silently truncated through pipes.
+`--outputFile` is mandatory here. Never parse Jest's stdout — on Windows, large JSON is silently truncated through pipes.
 
 **CRA:** `CRAAdapter.resolveConfig()` runs `react-scripts test --showConfig --passWithNoTests` once per session, extracts the hidden Jest config JSON, writes it to a temp file, then all runs invoke Jest directly. `react-scripts` is never used at run time. Config is cached in memory; invalidated if `package.json` changes.
 
@@ -95,10 +106,16 @@ src/
 │   ├── ResultStore.ts              In-memory File→Node tree (recursive) + LineMap + ScopedOutput
 │   ├── ExecutionTraceStore.ts      Trace indexes: traceIndex, coverageIndex, sourceToTests
 │   └── SelectionState.ts           Tracks selected row; broadcasts scope-changed
+├── cache/
+│   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
 ├── session/
-│   ├── SessionManager.ts           Session lifecycle, run pool (CONCURRENCY=3), on-save, rerun
-│   ├── SessionTraceRunner.ts       Runs instrumented trace for each file; populates ExecutionTraceStore
-│   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher
+│   ├── SessionManager.ts           Session lifecycle, batched run pool (CONCURRENCY=cpus/4), on-save, rerun
+│   ├── SessionTraceRunner.ts       Runs combined test+trace batches; populates ResultStore + ExecutionTraceStore
+│   │   instrumentation/
+│   │   ├── liveReporter.js         Custom Jest reporter: appends one JSON record per completed file to a JSONL file
+│   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step(line,file) calls (light trace only)
+│   │   └── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook, flushes compact T/H records
+│   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
 │   │                               getAffectedTests, getDebugConfig
@@ -148,19 +165,21 @@ src/
 ## Session lifecycle
 
 **On extension activate (before any user action):**
-1. `TestDiscoveryService.start()` → `vscode.workspace.findFiles` → list of test file paths
-2. `onDiscoveryStarted(total)` fired → sidebar shows `⟳ Discovering… 0 / N`, Start Testing disabled
-3. Files parsed in batches of 8 (event-loop yield between batches) — each file: read source → `@babel/parser` AST walk → extract suites + tests with 1-based line numbers → `store.nodeStarted` / `store.nodeResult` → `onDiscoveryProgress(file, n, total)` → sidebar list and gutter icons update incrementally
-4. `onDiscoveryComplete()` → Start Testing re-enabled
-5. `FileSystemWatcher` activated — new/changed test files are re-discovered immediately (guard: skip files with `running` status)
+1. `DiscoveryCache` loaded from `globalStorageUri/cache/<folderName>-<hash8>/discovery-cache.json` (if exists). A `session.lock` PID file is written.
+2. `TestDiscoveryService.start()` → `vscode.workspace.findFiles` → list of test file paths
+3. `onDiscoveryStarted(total)` fired → sidebar shows `⟳ Discovering… 0 / N`, Start Testing disabled
+4. Files parsed in batches — **cold** (no cache): 5 files per batch; **warm** (cache present): 25 files per batch. Each file: `DiscoveryCache.get(filePath)` checks mtime → cache hit skips readFile + Babel entirely; cache miss reads source → `@babel/parser` AST walk → result stored via `DiscoveryCache.set()`. Store populated via `store.nodeDiscovered` → `onBatchDiscovered` → sidebar rows appended incrementally via `DocumentFragment` (no full re-render per batch).
+5. `cache.flush()` writes dirty entries to disk after discovery completes.
+6. `onDiscoveryComplete()` → Start Testing re-enabled
+7. `FileSystemWatcher` activated — new/changed test files are re-discovered immediately (guard: skip files with `running` status); watcher also calls `cache.flush()` after re-discovery
 
 **User clicks Start Testing:**
 1. `SessionManager.start()` → `await discovery.awaitDiscovery()` (no-op if already done)
 2. File list read from `store.getAllFiles()` — no second file scan needed
 3. `onRunStarted` pushed to UI with the already-populated pending tree
-4. Warm-up run on all files (up to 3 in parallel)
-5. Each file: detect framework → resolve binary → resolve config → spawn Jest → parse JSON → `JestAdapter._applyFileResult()` writes `ResultStore` + `LineMap` → notify all observers
-6. `CoverageMap` built from coverage data
+4. `_runFiles` builds a batch queue: `BATCH_SIZE = clamp(ceil(N / CONCURRENCY), 5, 50)` files per batch; `CONCURRENCY = max(1, floor(cpuCount / 4))` parallel Jest processes
+5. Each batch: files marked `running` in store → single Jest process via `SessionTraceRunner.runFiles` with combined test+trace instrumentation; `liveReporter.js` streams per-file results as they complete; `onFileDone` notifies observers after each file
+6. After Jest exits: `SessionTraceRunner` parses the light-trace JSONL to update `ExecutionTraceStore` (coverage lines + source→test dependency map)
 7. On-save listener enabled
 
 **On save (debounced 300ms):**
@@ -293,8 +312,9 @@ Identity only — **never status or duration**. `DecorationManager` always queri
 
 | Type | Direction | Purpose |
 |------|-----------|---------|
-| `full-file-result` | Extension → both views | Complete file result tree; drives column 1 |
-| `scope-changed` | Extension → both views | Row selection; highlights row in column 1 |
+| `batch-file-results` | Extension → both views | Batched file results (up to 50 ms window); preferred over `full-file-result` for runs |
+| `full-file-result` | Extension → both views | Single file result (legacy; still handled); complete file result tree |
+| `scope-changed` | Extension → both views | Row selection; highlights row in column 1; also sent in `init` as `selection` field for restore on visibility |
 | `scope-logs` | Extension → results only | Log + error data for selected scope; drives columns 2 & 3 |
 | `run-started` | Extension → both | Resets UI for full run |
 | `files-rerunning` | Extension → both | Marks files as running (partial rerun) |

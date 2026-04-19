@@ -1,139 +1,75 @@
 'use strict';
 /**
- * sessionTraceRuntime.js — runtime injected into all instrumented files during
- * a session trace run (distinct from traceRuntime.js which serves the Timeline Debugger).
+ * sessionTraceRuntime.js — light-trace runtime.
  *
- * Maintains the current execution context (which test / hook is running) and
- * writes each step as a JSON line to SESSION_TRACE_FILE.
+ * Records only which (file, line) pairs were hit by which test. One compact
+ * JSONL record is flushed per test body and per hook block. No variable
+ * capture, no console patching, no per-step streaming.
  *
- * Context lifecycle (driven by sessionTraceTransform.js injections):
- *   __strace.enterTest(name)  — called at the start of an it/test callback
- *   __strace.exitTest()       — called at the end of an it/test callback
- *   __strace.enterHook(type)  — called at the start of beforeAll/beforeEach/afterEach/afterAll
- *   __strace.exitHook()       — called at the end of a hook callback
- *
- * The runtime is required once per Jest worker process. Because the global is
- * set on the Node.js `global` object, it survives across multiple require() calls
- * within the same worker.
+ * Record formats:
+ *   {"type":"T","tf":"/abs/test.ts","tn":"Suite > name","fh":{"/abs/src.ts":[12,13]}}
+ *   {"type":"H","tf":"/abs/test.ts","fh":{"/abs/src.ts":[1,2]}}
  */
 
 const fs = require('fs');
 
 const outputFile = process.env.SESSION_TRACE_FILE;
 
-// ---------------------------------------------------------------------------
-// Context state — mutated by enter/exit calls injected by sessionTraceTransform
-// ---------------------------------------------------------------------------
-let _currentTestName = null;   // set only when inside an it/test body
-let _currentContext  = null;   // 'beforeAll' | 'beforeEach' | 'test' | 'afterEach' | 'afterAll'
-let _lastTestName    = null;   // the most recently exited test — used to tag afterEach/afterAll steps
+let _currentTestName = null;
+let _currentTestFile = null;
+let _currentContext  = null;
+let _hits            = null;   // Map<srcFile, Set<line>>
 
-// ---------------------------------------------------------------------------
-// Write helpers
-// ---------------------------------------------------------------------------
-function writeStep(event) {
-  if (!outputFile) { return; }
+function flushRecord(type) {
+  if (!outputFile || !_hits || _hits.size === 0) { _hits = null; return; }
+  const fh = {};
+  for (const [file, lines] of _hits) {
+    fh[file] = Array.from(lines);
+  }
+  const rec = type === 'T'
+    ? { type: 'T', tf: _currentTestFile, tn: _currentTestName, fh }
+    : { type: 'H', tf: _currentTestFile, fh };
   try {
-    fs.appendFileSync(outputFile, JSON.stringify(event) + '\n', 'utf8');
-  } catch (_e) {
-    // tracing must never crash the test
-  }
+    fs.appendFileSync(outputFile, JSON.stringify(rec) + '\n', 'utf8');
+  } catch (_e) {}
+  _hits = null;
 }
 
-function safeValue(value) {
-  if (value === null || value === undefined) { return { type: 'primitive', value }; }
-  if (typeof value !== 'object') { return { type: 'primitive', value }; }
-  if (Array.isArray(value)) {
-    return { type: 'array', count: value.length };
-  }
-  let keys;
-  try { keys = Object.keys(value).slice(0, 50); } catch (_e) { keys = []; }
-  return { type: 'object', keys };
-}
-
-// ---------------------------------------------------------------------------
-// Global __strace — the API called by instrumented code
-// ---------------------------------------------------------------------------
 if (!global.__strace) {
-  // Patch console methods to emit LOG events attributed to the active test.
-  // Must happen before any test code runs, and only once per worker process.
-  const _origLog   = console.log.bind(console);
-  const _origInfo  = console.info.bind(console);
-  const _origWarn  = console.warn.bind(console);
-  const _origError = console.error.bind(console);
-
   global.__strace = {
-    // ── Context management ──────────────────────────────────────────────────
-
-    enterTest(name) {
+    enterTest(name, testFile) {
       _currentTestName = name;
+      _currentTestFile = testFile;
       _currentContext  = 'test';
+      _hits            = new Map();
     },
 
     exitTest() {
-      _lastTestName    = _currentTestName;
+      flushRecord('T');
       _currentTestName = null;
       _currentContext  = null;
     },
 
-    enterHook(type) {
-      // afterEach/afterAll run after a test — attribute them to the last test name
-      if (type === 'afterEach' || type === 'afterAll') {
-        _currentTestName = _lastTestName;
-      }
-      _currentContext = type;
+    enterHook(type, testFile) {
+      _currentTestFile = testFile;
+      _currentContext  = type;
+      _hits            = new Map();
     },
 
     exitHook() {
-      if (_currentContext === 'afterEach' || _currentContext === 'afterAll') {
-        _currentTestName = null;
-      }
+      flushRecord('H');
       _currentContext = null;
     },
 
-    // ── Instrumentation calls ───────────────────────────────────────────────
-
     step(line, file) {
-      writeStep({
-        type:     'STEP',
-        line,
-        file,
-        context:  _currentContext,
-        testName: _currentTestName,
-      });
+      if (!_hits) { return; }
+      let set = _hits.get(file);
+      if (!set) { set = new Set(); _hits.set(file, set); }
+      set.add(line);
     },
 
-    var(line, file, name, value) {
-      writeStep({
-        type:     'VAR',
-        line,
-        file,
-        name,
-        value:    safeValue(value),
-        context:  _currentContext,
-        testName: _currentTestName,
-      });
-    },
-
-    log(level, ...args) {
-      writeStep({
-        type:     'LOG',
-        level,
-        args:     args.map((a) => {
-          if (a === null || a === undefined) { return String(a); }
-          if (typeof a === 'object') {
-            try { return JSON.stringify(a); } catch (_e) { return String(a); }
-          }
-          return String(a);
-        }),
-        context:  _currentContext,
-        testName: _currentTestName,
-      });
-    },
+    // No-ops — kept so any code compiled against the old heavy-trace API still works
+    var() {},
+    log() {},
   };
-
-  console.log   = (...args) => { global.__strace.log('log',   ...args); _origLog(...args); };
-  console.info  = (...args) => { global.__strace.log('info',  ...args); _origInfo(...args); };
-  console.warn  = (...args) => { global.__strace.log('warn',  ...args); _origWarn(...args); };
-  console.error = (...args) => { global.__strace.log('error', ...args); _origError(...args); };
 }
