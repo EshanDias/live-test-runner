@@ -33,17 +33,18 @@ export class ExplorerView extends BaseWebviewProvider {
     const summary = this.store.getSummary();
     const sel     = this.selection.get();
     this.postMessage({
-      type:            'init',
-      files:           (this.store.toJSON() as { files: unknown[] }).files,
-      total:           summary.total,
-      passed:          summary.passed,
-      failed:          summary.failed,
-      thresholds:      this._getThresholds(),
-      sessionActive:   this._sessionActive,
-      isDiscovering:   this._isDiscovering,
-      discoveryTotal:  this._discoveryTotal,
-      discoveryDone:   this._discoveryDone,
-      selection:       sel ? { fileId: sel.fileId, nodeId: sel.nodeId } : null,
+      type:               'init',
+      files:              (this.store.toJSON() as { files: unknown[] }).files,
+      total:              summary.total,
+      passed:             summary.passed,
+      failed:             summary.failed,
+      thresholds:         this._getThresholds(),
+      coverageThresholds: this._getCoverageThresholds(),
+      sessionActive:      this._sessionActive,
+      isDiscovering:      this._isDiscovering,
+      discoveryTotal:     this._discoveryTotal,
+      discoveryDone:      this._discoveryDone,
+      selection:          sel ? { fileId: sel.fileId, nodeId: sel.nodeId } : null,
     });
   }
 }

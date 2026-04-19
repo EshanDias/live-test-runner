@@ -227,7 +227,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     coverageStore.onDidChange.event(() => {
       const totals = coverageStore.getTotals();
-      observers.forEach((o) => o.onCoverageUpdated?.(totals));
+      const files  = coverageStore.getFileRows();
+      observers.forEach((o) => o.onCoverageUpdated?.(totals, files));
     }),
   );
 

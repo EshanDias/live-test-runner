@@ -12,19 +12,25 @@ body {
   overflow-x: hidden;
 }
 
-/* ── Coverage gauge ────────────────────────────────────────────────────────── */
+/* ── Coverage summary ──────────────────────────────────────────────────────── */
 .coverage-section {
-  padding: 10px 12px 8px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border));
 }
 
-.coverage-label {
+.coverage-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.coverage-title {
   font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-  margin-bottom: 4px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .coverage-status {
@@ -33,24 +39,241 @@ body {
   opacity: 0.7;
 }
 
-.coverage-badge {
-  font-size: 11px;
-  color: var(--vscode-foreground);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-  margin-top: 2px;
+.coverage-table {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  text-align: center;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  overflow: hidden;
 }
 
-.cov-metric b {
-  color: var(--vscode-charts-green, #4caf50);
-  font-weight: 600;
+.cov-cell {
+  padding: 5px 2px;
+  background: var(--vscode-input-background);
 }
 
-.cov-sep {
+.cov-cell:not(:last-child) {
+  border-right: 1px solid var(--vscode-panel-border);
+}
+
+.cov-cell .label {
+  font-size: 9px;
   color: var(--vscode-descriptionForeground);
-  opacity: 0.4;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cov-cell .value {
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 2px;
+  color: var(--vscode-foreground);
+}
+
+.cov-cell .value.cov-green  { color: var(--vscode-charts-green,  #4caf50); }
+.cov-cell .value.cov-amber  { color: var(--vscode-charts-yellow, #ff9800); }
+.cov-cell .value.cov-red    { color: var(--vscode-charts-red,    #f44336); }
+.cov-cell .value.cov-stale  { opacity: 0.5; }
+
+/* ── Coverage Explorer nav tabs ────────────────────────────────────────────── */
+.explorer-nav {
+  display: flex;
+  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border));
+}
+
+.explorer-nav-tab {
+  flex: 1;
+  padding: 6px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--vscode-descriptionForeground);
+  border-bottom: 2px solid transparent;
+  transition: color 0.1s;
+}
+
+.explorer-nav-tab:hover { color: var(--vscode-foreground); }
+
+.explorer-nav-tab[data-active="true"] {
+  color: var(--vscode-foreground);
+  border-bottom-color: var(--vscode-focusBorder, #007acc);
+}
+
+/* ── Coverage Explorer page ────────────────────────────────────────────────── */
+.cov-explorer-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.cov-explorer-totals {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border));
+}
+
+.cov-explorer-totals .coverage-table { margin-top: 4px; }
+
+.cov-explorer-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cov-panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border));
+  flex-shrink: 0;
+}
+
+.cov-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cov-metric-toggle {
+  display: flex;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.cov-metric-toggle button {
+  border: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  font-family: var(--vscode-font-family);
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.cov-metric-toggle button[data-active="true"] {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.cov-file-table {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.cov-file-table-header,
+.cov-file-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 60px 60px 52px 52px;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 11px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cov-file-table-header {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  position: sticky;
+  top: 0;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  z-index: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cov-file-table-header > div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.cov-file-table-header > div:first-child { justify-content: flex-start; }
+
+.cov-sort-icon { font-size: 8px; opacity: 0.6; }
+
+.cov-file-row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--vscode-sideBar-border, rgba(128,128,128,0.1));
+  position: relative;
+}
+
+.cov-file-row:hover { background: var(--vscode-list-hoverBackground); }
+
+.cov-file-cell {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cov-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-foreground);
+  font-size: 11px;
+}
+
+.cov-file-dir {
+  font-size: 9px;
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cov-file-metric {
+  text-align: right;
+  font-weight: 600;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.cov-file-metric.cov-green  { color: var(--vscode-charts-green,  #4caf50); }
+.cov-file-metric.cov-amber  { color: var(--vscode-charts-yellow, #ff9800); }
+.cov-file-metric.cov-red    { color: var(--vscode-charts-red,    #f44336); }
+.cov-file-metric.cov-stale  { opacity: 0.5; }
+.cov-file-metric.cov-dash   { color: var(--vscode-descriptionForeground); opacity: 0.5; }
+
+.cov-row-action {
+  display: none;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--vscode-list-hoverBackground);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  line-height: 1.6;
+}
+
+.cov-file-row:hover .cov-row-action { display: block; }
+
+.cov-explorer-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
 }
 
 /* ── Action bar ────────────────────────────────────────────────────────────── */
@@ -100,6 +323,8 @@ body {
   background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15));
   color: var(--vscode-foreground);
 }
+
+.hidden { display: none !important; }
 
 .action-btn.hidden,
 .watch-indicator.hidden,
@@ -730,6 +955,20 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
+}
+
+#panelTests {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+#panelCoverage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   overflow: hidden;
 }
 

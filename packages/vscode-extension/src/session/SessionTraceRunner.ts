@@ -359,6 +359,8 @@ module.exports = {
         continue;
       }
 
+      if (_isExcludedFromCoverage(manifest.filePath)) { continue; }
+
       const existing = this._coverageStore.getEntry(manifest.filePath);
       const merged: LiveCov =
         existing?.state === 'measured' || existing?.state === 'measured-stale'
@@ -526,4 +528,17 @@ function _mergeCounters(a: LiveCov, b: FileCov): LiveCov {
 function _extractSuiteName(fullTestName: string): string {
   const lastSep = fullTestName.lastIndexOf(' > ');
   return lastSep !== -1 ? fullTestName.slice(0, lastSep) : fullTestName;
+}
+
+const _COVERAGE_EXCLUDE_RE = [
+  /[/\\]node_modules[/\\]/,
+  /\.(test|spec)\.(js|ts|jsx|tsx)$/,
+  /[/\\](__tests__|__mocks__|tests?|specs?)[/\\]/,
+  /\.config\.(js|ts|mjs|cjs)$/,
+  /\.d\.ts$/,
+  /[/\\](dist|build|out|\.next|coverage)[/\\]/,
+];
+
+function _isExcludedFromCoverage(filePath: string): boolean {
+  return _COVERAGE_EXCLUDE_RE.some((re) => re.test(filePath));
 }

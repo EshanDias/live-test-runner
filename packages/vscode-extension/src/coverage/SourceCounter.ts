@@ -28,7 +28,7 @@ export class SourceCounter extends EventEmitter {
   async run(): Promise<void> {
     const include = new vscode.RelativePattern(this._projectRoot, '**/*.{js,ts,jsx,tsx}');
     const defaultExclude =
-      '{**/node_modules/**,**/*.{test,spec}.{js,ts,jsx,tsx},**/*.config.{js,ts,mjs,cjs},**/*.d.ts,dist/**,build/**,out/**,.next/**,coverage/**}';
+      '{**/node_modules/**,**/*.{test,spec}.{js,ts,jsx,tsx},**/__tests__/**,**/__mocks__/**,**/tests/**,**/test/**,**/specs/**,**/spec/**,**/*.config.{js,ts,mjs,cjs},**/*.d.ts,dist/**,build/**,out/**,.next/**,coverage/**}';
     const userExclude = vscode.workspace
       .getConfiguration('liveTestRunner')
       .get<string[]>('coverageExclude', []);
