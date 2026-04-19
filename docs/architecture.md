@@ -277,12 +277,11 @@ ExecutionTraceStore
   ├── traceIndex: Map<testId, string>
   │     testId = full test name ("Suite > test") → absolute .jsonl path
   │     Written to a window-unique trace directory within the user's temp storage.
-  │     Used by: Timeline Debugger, future coverage overlay
+  │     Used by: Timeline Debugger
   │
   ├── coverageIndex: Map<filePath, Set<lineNumber>>
   │     Every source line executed by any test in the session.
   │     Accumulates across runs — never resets mid-session.
-  │     Used by: session-wide gutter coverage decorations (planned)
   │
   └── sourceToTests: Map<sourceFilePath, SourceTestMapping>
         {
@@ -298,10 +297,39 @@ ExecutionTraceStore
         Used by SessionManager._runAffectedBySourceFile() for smart on-save reruns.
 ```
 
+**`CoverageStore`** — in-memory store for statement/branch/function/line coverage metrics. Lives in `src/coverage/`. Separate from `ExecutionTraceStore` because it has its own lifecycle (populated by `SourceCounter` + `SessionTraceRunner._parseCoverage()`).
+
+```
+CoverageStore
+  entries: Map<filePath, CoverageEntry>
+    CoverageEntry is one of:
+      { state: 'counted',        statements, branches, functions, lines }
+      { state: 'measured',       manifestPath, counters: LiveCov, pct: CoveragePct }
+      { state: 'measured-stale', manifestPath, counters: LiveCov, pct: CoveragePct }
+
+  onDidChange: EventEmitter<void>   — fired on any mutation; observers redraw badge + gutter
+```
+
+Entry lifecycle:
+1. `'counted'` — set by `SourceCounter` at session start (0 hits, denominator only)
+2. `'measured'` — promoted by `SessionTraceRunner._parseCoverage()` after a run touches the file
+3. `'measured-stale'` — set by `SessionManager` when the file is saved and a rerun is pending
+4. Back to `'measured'` — when the rerun completes and `_parseCoverage()` fires again
+
+**Coverage manifest** (`src/session/instrumentation/sessionTraceTransform.js` writes these):
+```
+<LTR_SESSION_TMP_DIR>/coverage/manifests/<sha256(filePath)[0:16]>.json
+```
+Written once per source file per transformed run. Contains every statement/branch/function with IDs and line locations. The manifest + counters together drive the four metrics. `CoverageStore` holds only the path string — the file is read on demand (gutter decorations, `_parseCoverage` merging) to keep heap flat on large projects.
+
+**`SourceCounter`** (`src/coverage/SourceCounter.ts`):
+Runs at session start in parallel with the first test run. AST-parses every source file (via `vscode.workspace.findFiles` + `@babel/parser`), counts statements/branches/functions/lines, and populates `CoverageStore` with `'counted'` entries. This ensures untouched files (never imported by any test) still contribute to the denominator — giving correct aggregate percentages rather than inflated ones.
+
 **Relationship between the stores:**
 - `ResultStore` answers "what happened" — pass/fail, output, failures
-- `ExecutionTraceStore` answers "what ran and where" — which lines executed, which tests cover which source files
-- The trace files are the ground truth; `ExecutionTraceStore` is derived. Clear both together on session reset.
+- `ExecutionTraceStore` answers "what ran and where" — which lines executed, which tests cover which files
+- `CoverageStore` answers "how much is covered" — statement/branch/function/line percentages per file and in aggregate
+- The trace files and coverage manifests are the ground truth on disk; the stores are derived caches.
 
 **`LineMap`** — inside `ResultStore`:
 
@@ -354,11 +382,11 @@ Runs on extension activate — before the user clicks Start Testing.
 
 ### Session management (`SessionManager`)
 
-1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, runs them all (up to 3 in parallel), enables on-save listener
-2. **On save** — debounced (default 300ms); classifies file as test or source; for source files uses `_runAffectedBySourceFile` (trace-store driven with CoverageMap fallback)
-3. **Stop Testing** — kills child processes, clears decorations, disables on-save
+1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, clears `CoverageStore`, fires `SourceCounter` (background, parallel), runs all test files, enables on-save listener
+2. **On save** — debounced (default 300ms); classifies file as test or source; for source files calls `CoverageStore.markFileStale()` then `_runAffectedBySourceFile()` (trace-store driven with CoverageMap fallback)
+3. **Stop Testing** — kills child processes, clears decorations, calls `CoverageStore.clear()`, disables on-save
 
-After each file run, `SessionTraceRunner` fires in the background (fire-and-forget): it re-runs the same file with the session trace transform, partitions the raw JSONL into per-test trace files, and updates all three `ExecutionTraceStore` indexes (`traceIndex`, `coverageIndex`, `sourceToTests`). Per-test console output from the trace run is applied back to `ResultStore` so the Results panel can show test-scoped logs.
+After each file batch, `SessionTraceRunner` parses the light-trace JSONL (updates `ExecutionTraceStore`) and then parses the coverage counters JSONL (promotes `CoverageStore` entries from `'counted'` to `'measured'`). Both happen in the same post-Jest-exit phase — no extra process or phase needed.
 
 Concurrency is controlled by a `CONCURRENCY = 3` constant in `SessionManager`.
 

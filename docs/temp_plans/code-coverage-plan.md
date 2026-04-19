@@ -2,7 +2,7 @@
 
 > **Source of truth for all code coverage decisions.**
 > Every design change must be recorded here before or immediately after it is made.
-> Last updated: 2026-04-12
+> Last updated: 2026-04-19
 
 ---
 
@@ -66,31 +66,43 @@ User clicks Start Testing
         ├──────────────────────────────────────────────────────────┐
         │                                                          │
         ▼                                                          ▼
-SourceCounter.ts starts                                   Test run starts
-(background, like discovery)                              (existing behaviour)
+SourceCounter.ts starts                        SessionTraceRunner.runFiles() — single-pass
+(background, like discovery)                   combined test + trace + coverage batch run
         │                                                          │
-  AST-parse every source file                  sessionTraceTransform.js runs
-  count stmt/branch/fn per file                per file Jest loads:
-  populate CoverageStore                         → injects __cov counters
-  all entries = 'counted', 0 hits                → writes manifest to coverageDir/manifests/
-  no disk writes                                 → injects __strace.step()
+  AST-parse every source file          ┌────────────────────────────────────┐
+  count stmt/branch/fn per file        │  Jest process (one per batch)      │
+  populate CoverageStore               │  ├─ liveReporter.js                │
+  all entries = 'counted', 0 hits      │  │   streams FileRunResult per file│
+  no disk writes                       │  └─ sessionTraceTransform.js       │
+        │                              │      per file Jest loads:           │
+        │                              │      → injects __cov counters       │
+        │                              │      → writes manifest to           │
+        │                              │        coverageDir/manifests/       │
+        │                              │      → injects __strace.step()      │
+        │                              │                                     │
+        │                              │  On process exit:                   │
+        │                              │  sessionTraceRuntime JSONL-appends  │
+        │                              │  __cov to COVERAGE_OUTPUT_FILE      │
+        │                              └────────────────────────────────────┘
         │                                                          │
-        │                                              Jest child process exits
-        │                                                → sessionTraceRuntime JSONL-appends
-        │                                                  __cov to COVERAGE_OUTPUT_FILE
+        │                                         After Jest process exits:
+        │                                         SessionTraceRunner._parseTrace()
+        │                                           → updates ExecutionTraceStore
+        │                                             (coverageIndex, sourceToTests)
+        │                                         SessionTraceRunner._parseCoverage()
+        │                                           → reads manifest + JSONL counters
+        │                                           → promotes CoverageStore entries
+        │                                             'counted' → 'measured'
+        │                                         Untouched files stay 'counted', 0 hits
         │                                                          │
         └──────────────────┬───────────────────────────────────────┘
                            ▼
-              SessionTraceRunner reads manifest + __liveCov
-              For each touched file:
-                → read manifest from temp dir
-                → read counters from __liveCov
-                → update CoverageStore entry: 'counted' → 'measured'
-              Untouched files stay 'counted', 0 hits
-                           │
               CoverageReport recalculates totals
               Coverage badge + gutter decorations update
 ```
+
+**Existing data reuse — Lines metric:**
+`ExecutionTraceStore._coverageIndex` already accumulates every hit line per source file via `addCoveredLines()`. The "Lines" coverage percentage is derivable directly from this store for any touched file. However, `CoverageReport.calculate()` still uses the manifest-based line calculation (lines with ≥1 executed statement) for consistency and precision — the manifest approach correctly excludes non-executable lines (blank lines, braces), while the raw trace includes all hit lines. Both coexist; the manifest path is authoritative for the badge.
 
 **If test run finishes before SourceCounter:**
 Badge continues to show `"Scanning source files… N / M"`. Coverage totals are NOT displayed until SourceCounter finishes — because the denominator is incomplete (untouched files not yet counted). This avoids showing an inflated percentage. Once SourceCounter emits `'done'`, totals are calculated across all entries and the badge renders.
@@ -98,7 +110,7 @@ Badge continues to show `"Scanning source files… N / M"`. Coverage totals are 
 **If SourceCounter finishes before test run:**
 `CoverageStore` is ready with all 0-hit entries. No visible UI change yet. Spinner stays until test run completes.
 
-**Test results and coverage are always independent.** Test results update per-file as each finishes (unchanged). Coverage badge updates once after the full run.
+**Test results and coverage are always independent.** Test results update per-file as each finishes (via liveReporter streaming). Coverage badge updates once after the full batch completes.
 
 ---
 
@@ -110,8 +122,14 @@ New in-memory store. The UI always reads from here.
 // Entry shapes
 type CoverageEntry =
   | { state: 'counted';        statements: number; branches: number; functions: number; lines: number }
-  | { state: 'measured';       manifest: Manifest; counters: LiveCov; pct: CoveragePct }
-  | { state: 'measured-stale'; manifest: Manifest; counters: LiveCov; pct: CoveragePct }
+  | { state: 'measured';       manifestPath: string; counters: LiveCov; pct: CoveragePct }
+  | { state: 'measured-stale'; manifestPath: string; counters: LiveCov; pct: CoveragePct }
+
+// manifestPath instead of manifest object — the parsed Manifest is NOT kept in memory.
+// Rationale: for large projects (500+ source files) storing every parsed manifest object
+// would consume tens of MB of heap. manifestPath is a 100-byte string; the full JSON is
+// read from disk only when actually needed (gutter decorations for visible editors, counter
+// merging in _parseCoverage). Both call sites are infrequent and the files are small local JSON.
 
 // The store
 CoverageStore
@@ -320,7 +338,7 @@ Coverage counts **executable constructs** (statements, branch arms, functions, e
 3. **Extend `sessionTraceTransform.js`** — inject `__cov` counters + write manifest in the same AST walk.
 4. **Extend `sessionTraceRuntime.js`** — JSONL-append coverage counters on `process.on('exit')`.
 5. **`CoverageReport.ts`** — stateless metric calculation.
-6. **Extend `SessionTraceRunner`** — set env vars, read + merge JSONL counters, promote `CoverageStore` entries.
+6. **Extend `SessionTraceRunner.runFiles()`** — add `COVERAGE_OUTPUT_FILE` + `LTR_MANIFEST_DIR` to `extraEnv`; add `_parseCoverage()` called after `_parseTrace()` to read + merge JSONL counters and promote `CoverageStore` entries. Pass `coverageStore` via constructor.
 7. **Wire into `SessionManager`** — SourceCounter on start, whole-file `markFileStale` on save, `CoverageStore.clear()` on stop.
 8. **`IResultObserver.ts`** — add `onSourceScanProgress`, `onSourceScanDone`, `onCoverageUpdated`.
 9. **`CoverageDecorationManager.ts`** — gutter decorations (green heatmap, grey stale, sole-coverage stub).
@@ -331,18 +349,19 @@ Coverage counts **executable constructs** (statements, branch arms, functions, e
 
 ---
 
-## 12. Naming warning — two transforms, two runtimes
+## 12. Naming warning — two transforms, two runtimes, one reporter
 
-The codebase has **two separate pairs** of transform + runtime files. They must never be confused:
+The codebase has **two separate pairs** of transform + runtime files, plus a reporter. They must never be confused:
 
 | File | Belongs to | Coverage work? |
 |---|---|---|
 | `src/session/instrumentation/sessionTraceTransform.js` | Session trace runner | ✅ Extend this |
 | `src/session/instrumentation/sessionTraceRuntime.js` | Session trace runner | ✅ Extend this |
+| `src/session/instrumentation/liveReporter.js` | Session trace runner (result streaming) | ❌ Do not touch — already does its job |
 | `src/timeline/instrumentation/traceTransform.js` | Timeline Debugger | ❌ Do not touch |
 | `src/timeline/instrumentation/traceRuntime.js` | Timeline Debugger | ❌ Do not touch |
 
-All coverage work (`__cov` injection, manifest write, JSONL flush) goes into the **session** variants only.
+All coverage work (`__cov` injection, manifest write, JSONL flush) goes into the **session** variants only. `liveReporter.js` streams `FileRunResult` per completed file to the parent via JSONL — unrelated to coverage and must not be modified.
 
 ---
 
@@ -355,14 +374,15 @@ packages/vscode-extension/src/
 │   ├── CoverageStore.ts                   ← new — in-memory store (§4)
 │   ├── SourceCounter.ts                   ← new — background scan at session start (§3 architecture)
 │   ├── CoverageReport.ts                  ← new — metric calculation from CoverageStore
-│   └── DiffChecker.ts                     ← new — function-level AST diff on save
+│   └── DiffChecker.ts                     ← deferred to v2 — design in §20
 │
 ├── session/
-│   ├── SessionManager.ts                  ← modified — wire SourceCounter on start, DiffChecker on save
-│   ├── SessionTraceRunner.ts              ← modified — set COVERAGE_OUTPUT_FILE, read + promote CoverageStore
+│   ├── SessionManager.ts                  ← modified — wire SourceCounter on start, stale on save
+│   ├── SessionTraceRunner.ts              ← modified — add _parseCoverage(), pass coverageDir env vars
 │   └── instrumentation/
 │       ├── sessionTraceTransform.js       ← modified — inject __cov counters + write manifest
-│       └── sessionTraceRuntime.js         ← modified — flush __liveCov to COVERAGE_OUTPUT_FILE on exit
+│       ├── sessionTraceRuntime.js         ← modified — flush __cov to COVERAGE_OUTPUT_FILE on exit
+│       └── liveReporter.js               ← EXISTING — do not modify (streams FileRunResult per file)
 │
 ├── editor/
 │   └── CoverageDecorationManager.ts      ← new — gutter green/grey/sole-coverage decorations
@@ -426,6 +446,8 @@ _parser.parse(source, {
 Uses `@babel/parser` + `@babel/traverse` (already in node_modules — no new deps).
 
 ```typescript
+const YIELD_EVERY = 10;  // yield to event loop every N files to avoid starving extension host
+
 class SourceCounter extends EventEmitter {
   async run(): Promise<void> {
     // Uses vscode.workspace.findFiles — no glob library needed (see §14 source file discovery)
@@ -437,6 +459,13 @@ class SourceCounter extends EventEmitter {
       const counts = this._countFile(uri.fsPath);
       this._store.setCountedEntry(uri.fsPath, counts);
       this.emit('progress', ++scanned, total);
+
+      // Yield every YIELD_EVERY files so the extension host event loop stays
+      // responsive. Without this, a 1000-file project can lock up the UI for
+      // several seconds while SourceCounter churns through its tight loop.
+      if (scanned % YIELD_EVERY === 0) {
+        await new Promise<void>(resolve => setImmediate(resolve));
+      }
     }
 
     this.emit('done');
@@ -556,110 +585,188 @@ File paths can contain special characters and are long. The hash is the same one
 
 ## 17. `SessionTraceRunner` extensions
 
-### Env vars and paths
+### Current API (as of perf refactor)
 
-Coverage gets its own session-scoped directory, separate from `traceDir` (which holds JSONL step traces). Created in `extension.ts` at the same time as `traceDir`, using the same timestamp so they pair clearly.
+`SessionTraceRunner` now has a single public method:
 
-**`extension.ts` additions:**
 ```typescript
-const sessionId  = Date.now();
-const traceDir   = path.join(LTR_TMP_DIR, `traces-${sessionId}`);    // existing
-const coverageDir = path.join(LTR_TMP_DIR, `coverage-${sessionId}`); // new
-
-// Cleanup stale coverage dirs from previous sessions (same place as traces cleanup)
-for (const entry of fs.readdirSync(LTR_TMP_DIR)) {
-  if (entry.startsWith('coverage-')) {
-    fs.rmSync(path.join(LTR_TMP_DIR, entry), { recursive: true, force: true });
-  }
-}
-
-fs.mkdirSync(coverageDir, { recursive: true });
+async runFiles(options: {
+  filePaths: string[];
+  projectRoot: string;
+  traceStore: ExecutionTraceStore;
+  store: ResultStore;
+  applyFileResult: (filePath: string, fileResult: FileRunResult) => void;
+  onFileDone: (filePath: string, status: 'passed' | 'failed') => void;
+  log?: (msg: string) => void;
+}): Promise<{ missing: string[] }>
 ```
 
-`coverageDir` is passed to `SessionManager` alongside `traceDir`, which passes it to `SessionTraceRunner`.
+It runs all files in a single Jest process per batch. `liveReporter.js` streams file results; `sessionTraceTransform.js` + `sessionTraceRuntime.js` record line hits. After Jest exits, `_parseTrace()` updates `ExecutionTraceStore`. Coverage slots into the same lifecycle.
 
-**Directory layout:**
+### Constructor change
+
+```typescript
+// Before
+constructor(private readonly _tmpDir: string) {}
+
+// After
+constructor(
+  private readonly _tmpDir: string,
+  private readonly _coverageStore: CoverageStore,
+) {}
+
+// Internal derived paths — no new constructor params
+private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
+private get _manifestDir()  { return path.join(this._tmpDir, 'coverage', 'manifests'); }
 ```
-LTR_TMP_DIR/
-  traces-1744123456/           ← JSONL step traces per test (existing)
-  coverage-1744123456/         ← all coverage data (new)
-    manifests/                 ← per-source-file JSON manifests (written by transform)
+
+### Directory layout
+
+Coverage data lives inside the existing `LTR_SESSION_TMP_DIR` (already `session-<pid>-<ts>`). No new session-scoped directory. PID-based cleanup at activation already handles the whole session dir.
+
+```
+LTR_SESSION_TMP_DIR/                          ← session-<pid>-<ts>, existing
+  coverage/                                   ← new, created by SessionTraceRunner lazily
+    manifests/                                ← per-source-file JSON manifests (written by transform)
       a1b2c3.json
-    ltr-cov-<ts>-<rand>.jsonl  ← per-run counter JSONL (cleaned up after read)
+    ltr-cov-<ts>-<rand>.jsonl                 ← per-batch counter JSONL (deleted after read)
+  ltr-reporter-<ts>-<rand>.jsonl              ← liveReporter output, existing
+  ltr-trace-<ts>-<rand>.jsonl                 ← trace hits, existing
 ```
 
+### `extension.ts` additions — minimal
+
+No new session directory to create. Just pass `coverageStore` to `SessionManager`, which passes it to `SessionTraceRunner`:
+
 ```typescript
-const manifestDir     = path.join(this._coverageDir, 'manifests');     // shared across all trace runs in session
-const covCountersFile = path.join(this._coverageDir, `ltr-cov-${ts}-${rand}.jsonl`);  // unique per runFile()
+// extension.ts additions (alongside existing traceStore creation)
+const coverageStore = new CoverageStore();
+const covDecoMgr    = new CoverageDecorationManager(coverageStore, context);
+observers.push(covDecoMgr);
 
-fs.mkdirSync(manifestDir, { recursive: true });  // idempotent — safe with parallel runFile() calls
+const session = new SessionManager(
+  new JestAdapter(LTR_SESSION_TMP_DIR),
+  store,
+  traceStore,
+  coverageStore,           // new
+  selection,
+  resultsView,
+  observers,
+  outputChannel,
+  statusBar,
+  discovery,
+  LTR_SESSION_TMP_DIR,
+);
+```
 
-// Passed to this._executor.run({ extraEnv: { ... } })
+### `runFiles()` — env var additions
+
+Inside `runFiles()`, alongside the existing `SESSION_TRACE_FILE`, add coverage env vars:
+
+```typescript
+// Existing in runFiles():
+const traceFile     = path.join(this._tmpDir, `ltr-trace-${ts}-${rand}.jsonl`);
+
+// New:
+const covCountersFile = path.join(this._coverageDir, `ltr-cov-${ts}-${rand}.jsonl`);
+fs.mkdirSync(this._manifestDir, { recursive: true });  // idempotent — safe across parallel batches
+
+// In extraEnv passed to this._executor.runWithReporterPolling():
 extraEnv: {
-  SESSION_TRACE_FILE:   rawTraceFile,
-  COVERAGE_OUTPUT_FILE: covCountersFile,   // JSONL, unique per run, deleted after read
-  LTR_MANIFEST_DIR:     manifestDir,       // shared — transform writes manifests here
+  SESSION_TRACE_FILE:   traceFile,          // existing
+  COVERAGE_OUTPUT_FILE: covCountersFile,    // new — unique per runFiles() call, deleted after read
+  LTR_MANIFEST_DIR:     this._manifestDir,  // new — shared across all batches in the session
 }
 ```
 
-### After the Jest run — read JSONL, merge, promote CoverageStore
+### After Jest exits — `_parseCoverage()` (new private method)
+
+Called right after `_parseTrace()`, before cleanup of temp files:
 
 ```typescript
-// Read JSONL counter file — one line per Jest worker
-const rawLines = fs.existsSync(covCountersFile)
-  ? fs.readFileSync(covCountersFile, 'utf8').split('\n').filter(l => l.trim())
-  : [];
+private _parseCoverage(
+  covCountersFile: string,
+  emit: (msg: string) => void,
+): void {
+  if (!fs.existsSync(covCountersFile)) { return; }
 
-// Merge all workers' counters — sum within a single run, max() across runs (§25.1)
-const mergedCov: Record<string, FileCov> = {};
-for (const line of rawLines) {
-  const { cov } = JSON.parse(line) as { workerPid: number; cov: Record<string, FileCov> };
-  for (const [hash, fileCov] of Object.entries(cov)) {
-    if (!mergedCov[hash]) {
-      mergedCov[hash] = fileCov;
-    } else {
-      // Sum counters within a single run (workers ran different tests in the same file)
-      for (const [id, val] of Object.entries(fileCov.s)) {
-        mergedCov[hash].s[id] = (mergedCov[hash].s[id] ?? 0) + val;
-      }
-      for (const [id, arms] of Object.entries(fileCov.b)) {
-        mergedCov[hash].b[id] = arms.map((v, i) => (mergedCov[hash].b[id]?.[i] ?? 0) + v);
-      }
-      for (const [id, val] of Object.entries(fileCov.f)) {
-        mergedCov[hash].f[id] = (mergedCov[hash].f[id] ?? 0) + val;
+  // Read JSONL — one line per Jest worker (--maxWorkers=1 currently → typically one line)
+  const rawLines = fs.readFileSync(covCountersFile, 'utf8')
+    .split('\n').filter(l => l.trim());
+
+  // Merge all workers' counters: sum within this run (additive), max() across runs (§25.1)
+  const mergedCov: Record<string, FileCov> = {};
+  for (const line of rawLines) {
+    const { cov } = JSON.parse(line) as { workerPid: number; cov: Record<string, FileCov> };
+    for (const [hash, fileCov] of Object.entries(cov)) {
+      if (!mergedCov[hash]) {
+        mergedCov[hash] = fileCov;
+      } else {
+        for (const [id, val] of Object.entries(fileCov.s)) {
+          mergedCov[hash].s[id] = (mergedCov[hash].s[id] ?? 0) + val;
+        }
+        for (const [id, arms] of Object.entries(fileCov.b)) {
+          mergedCov[hash].b[id] = (arms as number[]).map(
+            (v, i) => (mergedCov[hash].b[id]?.[i] ?? 0) + v,
+          );
+        }
+        for (const [id, val] of Object.entries(fileCov.f)) {
+          mergedCov[hash].f[id] = (mergedCov[hash].f[id] ?? 0) + val;
+        }
       }
     }
   }
+
+  // Promote CoverageStore entries — max() merge with existing for cross-run accumulation
+  for (const [fileHash, counters] of Object.entries(mergedCov)) {
+    const manifestPath = path.join(this._manifestDir, `${fileHash}.json`);
+    if (!fs.existsSync(manifestPath)) {
+      emit(`[Coverage] Manifest missing for hash ${fileHash}, skipping`);
+      continue;
+    }
+
+    // Read manifest from disk to get filePath + run calculate().
+    // We do NOT store the parsed Manifest object in CoverageStore — only manifestPath.
+    // This keeps heap usage flat regardless of how many source files are touched (§4, §25.8).
+    const manifest: Manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+    const existing = this._coverageStore.getEntry(manifest.filePath);
+    const merged = (existing?.state === 'measured' || existing?.state === 'measured-stale')
+      ? _mergeCounters(existing.counters, counters)
+      : counters;
+    const pct = CoverageReport.calculate(manifest, merged);
+    // Store manifestPath (string), not the manifest object — see §4 for rationale
+    this._coverageStore.setMeasuredEntry(manifest.filePath, { manifestPath, counters: merged, pct });
+  }
+
+  try { fs.unlinkSync(covCountersFile); } catch { /* ignore */ }
 }
-
-// Promote CoverageStore entries — merge with existing using max() for cross-run accumulation
-for (const [fileHash, counters] of Object.entries(mergedCov)) {
-  const manifestPath = path.join(manifestDir, `${fileHash}.json`);
-  if (!fs.existsSync(manifestPath)) { continue; }  // manifest lost (tmpdir clean) — skip safely
-  const manifest: Manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-
-  // Merge with existing entry (max per counter — preserves coverage from other tests, §25.1)
-  const existing = this._coverageStore.getEntry(manifest.filePath);
-  const merged = existing?.state === 'measured' || existing?.state === 'measured-stale'
-    ? _mergeCounters(existing.counters, counters)
-    : counters;
-
-  const pct = CoverageReport.calculate(manifest, merged);
-  this._coverageStore.setMeasuredEntry(manifest.filePath, { manifest, counters: merged, pct });
-}
-
-// Cleanup
-try { fs.unlinkSync(covCountersFile); } catch { /* ignore */ }
 ```
 
 ```typescript
-// Helper — merge two FileCov objects by taking max per counter (cross-run accumulation)
+// Helper — max per counter for cross-run accumulation
 function _mergeCounters(a: FileCov, b: FileCov): FileCov {
   return {
     s: Object.fromEntries(Object.keys({ ...a.s, ...b.s }).map(id => [id, Math.max(a.s[id] ?? 0, b.s[id] ?? 0)])),
     b: Object.fromEntries(Object.keys({ ...a.b, ...b.b }).map(id => [id, (a.b[id] ?? []).map((v, i) => Math.max(v, b.b[id]?.[i] ?? 0))])),
     f: Object.fromEntries(Object.keys({ ...a.f, ...b.f }).map(id => [id, Math.max(a.f[id] ?? 0, b.f[id] ?? 0)])),
   };
+}
+```
+
+### Call site in `runFiles()` (after existing `_parseTrace`)
+
+```typescript
+// After Jest exits — existing:
+try {
+  this._parseTrace(traceFile, traceStore, emit);
+} catch (err) { ... }
+
+// New — immediately after _parseTrace:
+try {
+  this._parseCoverage(covCountersFile, emit);
+} catch (err) {
+  logger.error(FILE, 'runFiles', '_parseCoverage failed', err);
 }
 ```
 
@@ -677,7 +784,7 @@ export class CoverageStore {
   setCountedEntry(filePath: string, counts: { statements: number; branches: number; functions: number; lines: number }): void
 
   /** Called by SessionTraceRunner after each trace run */
-  setMeasuredEntry(filePath: string, data: { manifest: Manifest; counters: LiveCov; pct: CoveragePct }): void
+  setMeasuredEntry(filePath: string, data: { manifestPath: string; counters: LiveCov; pct: CoveragePct }): void
 
   /** v1: called by SessionManager.onSave — marks the entire file stale */
   markFileStale(filePath: string): void
@@ -929,11 +1036,14 @@ A fourth `uncoveredLine` type exists but is only activated when the user toggles
 2. If no entry → clear all decorations, return
 3. If entry.state === 'counted' → clear all decorations, return (0% but no line data)
 4. If entry.state === 'measured' or 'measured-stale':
-   a. Build coveredRanges: lines where s[id] > 0
-   b. Build staleRanges: if 'measured-stale', the markStale() range from CoverageStore
-   c. Build soleCoverageRanges: lines where only one test covers the branch/fn
-   d. Apply each decoration type — VSCode merges gutter icons; stale takes priority visually
+   a. Read manifest from entry.manifestPath (disk read — file is small local JSON, ~5-50 KB)
+   b. Build coveredRanges: lines where s[id] > 0 (manifest statements + counters)
+   c. Build staleRanges: if 'measured-stale', the markStale() range from CoverageStore
+   d. Build soleCoverageRanges: lines where only one test covers the branch/fn (v2)
+   e. Apply each decoration type — VSCode merges gutter icons; stale takes priority visually
 ```
+
+**Why disk read here is acceptable:** `applyToEditor` is called only for *visible* editors — at most 3–5 at a time. Manifest files are local, small, and already cached by the OS filesystem buffer. In practice this reads instantly. An in-memory LRU cache (last 5 manifests) can be added later if profiling shows it as a hotspot, but it is not needed upfront.
 
 ### Stale range priority
 If a line is both covered and stale, stale wins — the grey dot communicates "don't trust this until the rerun completes."
@@ -953,20 +1063,62 @@ No full refresh of all editors — only visible ones. Non-visible editors get de
 
 ## 24. `SessionManager` constructor additions
 
-`CoverageStore` and `SourceCounter` are created and owned by `SessionManager`. They are passed to `SessionTraceRunner` and `CoverageDecorationManager` via constructor injection (same pattern as `ExecutionTraceStore`).
+`CoverageStore` is created in `extension.ts` and injected into `SessionManager` (same pattern as `store` and `traceStore`). `SessionManager` owns `SourceCounter` (creates it on `start()`). `SessionManager` passes `coverageStore` to `SessionTraceRunner` via constructor.
 
 > **`DiffChecker` is deferred to v2.** It is NOT wired in v1. `SessionManager.onSave()` calls `coverageStore.markFileStale()` directly — no `DiffChecker` constructor param, no import.
 
-`extension.ts` changes:
+**Current `SessionManager` constructor signature:**
+```typescript
+constructor(
+  private readonly _adapter: IFrameworkAdapter,
+  private readonly _store: ResultStore,
+  private readonly _traceStore: ExecutionTraceStore,
+  private readonly _selection: SelectionState,
+  private readonly _resultsView: ResultsView,
+  private readonly _observers: IResultObserver[],
+  private readonly _outputChannel: vscode.OutputChannel,
+  private readonly _statusBar: vscode.StatusBarItem,
+  private readonly _discovery: TestDiscoveryService,
+  private readonly _sessionDir: string,
+)
+```
+
+**Updated signature (add `_coverageStore` after `_traceStore`):**
+```typescript
+constructor(
+  private readonly _adapter: IFrameworkAdapter,
+  private readonly _store: ResultStore,
+  private readonly _traceStore: ExecutionTraceStore,
+  private readonly _coverageStore: CoverageStore,    // new
+  private readonly _selection: SelectionState,
+  ...
+)
+```
+
+**`SessionTraceRunner` is created inside `SessionManager`** — updated to pass `coverageStore`:
+```typescript
+// Inside SessionManager constructor:
+this._traceRunner = new SessionTraceRunner(this._sessionDir, this._coverageStore);
+```
+
+**`extension.ts` changes** (see §17 for full snippet):
 ```typescript
 const coverageStore = new CoverageStore();
 const covDecoMgr    = new CoverageDecorationManager(coverageStore, context);
 observers.push(covDecoMgr);
 
-const sessionManager = new SessionManager(
-  adapter, store, traceStore, coverageStore,
-  selection, resultsView, observers, outputChannel, statusBar,
-  discovery, traceDir,
+const session = new SessionManager(
+  new JestAdapter(LTR_SESSION_TMP_DIR),
+  store,
+  traceStore,
+  coverageStore,           // new
+  selection,
+  resultsView,
+  observers,
+  outputChannel,
+  statusBar,
+  discovery,
+  LTR_SESSION_TMP_DIR,
 );
 ```
 
@@ -1094,6 +1246,70 @@ for (const line of covLines) {
 `globalThis.__cov` is keyed by file hash. Multiple test files in the same worker will each add their file's key. No collision — accumuluation across files is intentional (we want the union of all lines hit).
 
 No issue here — confirming for completeness.
+
+---
+
+### 25.8 Large-project scalability — decisions and mitigations
+
+This section consolidates all known scalability concerns and their resolutions. Each item was considered before writing the implementation, not after hitting a bug.
+
+---
+
+**A. SourceCounter event-loop starvation — RESOLVED**
+
+*Problem:* SourceCounter's AST parse loop is synchronous per file. On a 1000-file project it can run for several seconds, blocking the VS Code extension host event loop — making the UI feel frozen.
+
+*Resolution:* Yield to the event loop every `YIELD_EVERY = 10` files via `await new Promise<void>(resolve => setImmediate(resolve))`. This slices the work into 10-file chunks, keeping the UI responsive. See §14 for the implementation.
+
+*Why 10?* A balance: too low (1) causes excessive task-queue overhead; too high (50+) brings back the stutter. 10 files ≈ 5–50 ms of sync work per slice — imperceptible.
+
+---
+
+**B. CoverageStore manifest heap bloat — RESOLVED**
+
+*Problem:* Storing every parsed `Manifest` object in memory for all touched source files. A project with 500 touched source files × ~20 KB per manifest ≈ 10 MB of extra heap — plus GC pressure from large nested objects.
+
+*Resolution:* `CoverageStore` entries store only `manifestPath: string` (a ~100-byte string), not the parsed `Manifest` object. The manifest JSON is read from disk only at the two call sites that actually need it:
+1. `_parseCoverage()` — one read per file per batch to compute `pct` and merge counters
+2. `CoverageDecorationManager.applyToEditor()` — one read per visible editor on update
+
+Both are infrequent. OS filesystem buffering makes local small-file reads essentially free after the first access. See §4 and §23 for details.
+
+*Future optimisation (if profiling shows it):* A 5-slot LRU manifest cache in `CoverageDecorationManager` for the case where the user rapidly switches between the same few files. Not needed upfront.
+
+---
+
+**C. `__cov` counter object size per Jest worker — ACCEPTABLE**
+
+*Problem:* `globalThis.__cov` grows as Jest loads more source files in a batch. For a large batch with 100 source files each having 200 statements, the in-memory counter object is ~2–5 MB per worker. Written as a single JSON line to `COVERAGE_OUTPUT_FILE` on exit.
+
+*Resolution:* Currently `--maxWorkers=1` (one worker per batch), so one JSONL line. The line is written synchronously in `process.on('exit')` — acceptable because `appendFileSync` in an exit handler is the standard pattern (same as `SESSION_TRACE_FILE`).
+
+*Mitigation already in place:* `ltr-cov-*.jsonl` is deleted immediately after `_parseCoverage()` — no accumulation across runs.
+
+*If batch sizes grow:* The JSON line size scales linearly with (files × statements). At 500 source files it could be 10–20 MB written synchronously on exit. If this becomes a problem, the fix is to flush `__cov` incrementally (e.g., after each test via `exitTest()`) rather than only on process exit — but this is a v2 concern.
+
+---
+
+**D. Batch file count cap — RECOMMENDATION**
+
+*Problem:* `runFiles()` runs all files passed to it in one Jest process. If `SessionManager` passes 200 test files to a single batch, the Jest process loads an enormous number of source files, making the `__cov` object (C above) and Jest startup overhead both large.
+
+*Resolution:* `SessionManager._runFiles()` should cap batch size at `MAX_BATCH_SIZE = 20` files per `runFiles()` call. The concurrency pool already exists — this just sets an upper bound per slot in addition to the parallelism limit.
+
+> **Note:** This cap applies to coverage runs via `SessionTraceRunner`. Scoped reruns (single file, single test) are unaffected — they already pass 1 file.
+
+*Where to enforce:* In `SessionManager._runFiles()`, chunk `filePaths` into groups of `MAX_BATCH_SIZE` before dispatching to `SessionTraceRunner.runFiles()`. Each chunk runs sequentially within a concurrency slot.
+
+---
+
+**E. `_parseCoverage()` synchronous disk reads — ACCEPTABLE**
+
+*Problem:* `_parseCoverage()` reads one manifest JSON file per touched source file, synchronously. For a batch that touched 50 source files, that's 50 `fs.readFileSync` calls.
+
+*Why acceptable:* These reads happen **after** the Jest process has already exited — the UI is already showing results from liveReporter. The user sees test pass/fail immediately; coverage badge is the secondary update. The reads are local small files (5–50 KB each), completing in microseconds. Total cost for 50 files: < 5 ms.
+
+*Not a candidate for async:* Making `_parseCoverage()` async would require `await` chains through `runFiles()` with no user-visible benefit, since there's nothing else to do at that point anyway.
 
 ---
 
@@ -1392,11 +1608,12 @@ Commit 4  — feat: extend sessionTraceRuntime with JSONL coverage flush on exit
 Commit 5  — feat: add CoverageReport metric calculation
   Files: src/coverage/CoverageReport.ts (new)
 
-Commit 6  — feat: extend SessionTraceRunner to set coverage env vars and promote CoverageStore
-  Files: src/session/SessionTraceRunner.ts (modified)
+Commit 6  — feat: extend SessionTraceRunner.runFiles() with coverage env vars and _parseCoverage()
+  Files: src/session/SessionTraceRunner.ts (modified — add _coverageStore param, COVERAGE_OUTPUT_FILE+LTR_MANIFEST_DIR to extraEnv, _parseCoverage() private method)
 
 Commit 7  — feat: wire coverage into SessionManager (SourceCounter on start, whole-file stale on save)
-  Files: src/session/SessionManager.ts (modified)
+  Files: src/session/SessionManager.ts (modified — add _coverageStore param, SourceCounter on start, markFileStale on save, clear on stop)
+         src/extension.ts (modified — create CoverageStore, CoverageDecorationManager, update SessionManager constructor call)
          IResultObserver.ts (add onCoverageUpdated)
   Note: DiffChecker is DEFERRED to v2 — SessionManager calls coverageStore.markFileStale() directly, no DiffChecker import or constructor param
   Note: Commit 8 is intentionally absent — it was reserved for DiffChecker wiring which is deferred
@@ -1480,7 +1697,12 @@ src/webview/views/
 - Counter write race (multi-worker): JSONL appendFileSync per worker pid, merged in SessionTraceRunner (§25.5)
 - Cross-run merge: max() per counter ID (§25.1)
 - SourceCounter uses vscode.workspace.findFiles — no new glob dep (§14)
-- coverageDir = separate session-scoped dir (`coverage-${sessionId}`), created in extension.ts alongside traceDir. manifestDir = path.join(coverageDir, 'manifests') (§17)
+- coverageDir = path.join(LTR_SESSION_TMP_DIR, 'coverage') — inside the existing session dir, NOT a new separate dir. PID-based cleanup handles it. manifestDir = path.join(coverageDir, 'manifests') (§17)
+- SessionTraceRunner.runFiles() is batch-based (NOT per-file). COVERAGE_OUTPUT_FILE is unique per runFiles() call. LTR_MANIFEST_DIR is shared across all batches. (§17)
+- SessionTraceRunner constructor gains _coverageStore param. coverageDir is derived as path.join(_tmpDir, 'coverage') internally (§17, §24)
+- SessionManager constructor gains _coverageStore param (inserted after _traceStore). SessionTraceRunner is created inside SessionManager passing coverageStore (§24)
+- liveReporter.js is EXISTING — do not modify. It streams FileRunResult per completed file. Coverage is separate. (§12)
+- ExecutionTraceStore._coverageIndex already accumulates hit lines via addCoveredLines() — available for the Lines metric but CoverageReport uses manifest-based line calculation for precision (§3)
 - DiffChecker deferred to v2: NOT wired in v1. SessionManager.onSave() calls coverageStore.markFileStale() directly — no DiffChecker param (§20, §24)
 - Sole-coverage deferred to v2 (§25.7)
 - 'counted' files show 0% not — (§29)
@@ -1488,6 +1710,10 @@ src/webview/views/
 - Timeline Debugger: NOT to be touched — only modify sessionTraceTransform.js and sessionTraceRuntime.js (§27)
 - Babel parser: errorRecovery:true in SourceCounter to survive mid-edit syntax errors (§14)
 - CoverageStore.clear() called on both stop() and start() (§24)
+- SourceCounter yields to event loop every 10 files via setImmediate to keep UI responsive on large projects (§14, §25.8-A)
+- CoverageStore stores manifestPath (string), NOT the parsed Manifest object — disk read only at decoration and merge time. Keeps heap flat for large projects (§4, §25.8-B)
+- Batch size cap: SessionManager._runFiles() should chunk filePaths at MAX_BATCH_SIZE=20 per runFiles() call (§25.8-D)
+- _parseCoverage() sync disk reads are intentional and acceptable — happens after Jest exits, UI already updated (§25.8-E)
 
 ## What is done
 [FILL IN COMPLETED COMMITS from §32 before pasting this handoff]

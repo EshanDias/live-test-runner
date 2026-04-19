@@ -253,6 +253,10 @@ cd packages/runner && pnpm test
 
 When making changes, update the relevant documentation files:
 
+**Changelogs:**
+- `CHANGELOG.md` (root) — complete record of all changes across the repo; include every meaningful change here
+- `packages/vscode-extension/CHANGELOG.md` — user-facing only; short, plain-language summary of what's new or different in the extension (what users care about)
+
 | Change Type | Update These Files |
 |---|---|
 | **Architecture or system design changes** | `docs/architecture.md`, `docs/ai-context.md` |
@@ -260,9 +264,9 @@ When making changes, update the relevant documentation files:
 | **Runner package API, layer changes, or framework adapter updates** | `packages/runner/README.md`, `docs/developer-guide.md`, `docs/ai-context.md` |
 | **Extension features, UI changes, new commands, or configuration options** | `packages/vscode-extension/README.md` (marketplace-facing), `CHANGELOG.md`, `docs/ai-context.md` |
 | **Dev setup, build process, or development patterns** | `docs/developer-guide.md`, `CLAUDE.md` |
-| **User-facing fixes or feature releases** | `packages/vscode-extension/CHANGELOG.md`, `packages/vscode-extension/README.md` |
+| **Any user-visible change (features, fixes, behaviour)** | `CHANGELOG.md` (full detail) + `packages/vscode-extension/CHANGELOG.md` (brief user summary) |
 
-**For README.md (marketplace-facing):** If you need user input to complete the documentation (e.g., user feedback, testing results, specific requirements), add a `[TODO: USER_INPUT_NEEDED]` placeholder with a brief description of what's needed. Keep the existing content and structure.
+**For README.md (marketplace-facing):** If you need user input to complete the documentation (e.g., user feedback, testing results, specific requirements, gifs, pictures of features), add a `[TODO: USER_INPUT_NEEDED]` placeholder with a brief description of what's needed. Keep the existing content and structure.
 
 ---
 

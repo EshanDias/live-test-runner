@@ -2,6 +2,17 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [1.5.0] — 2026-04-19
+
+### Code Coverage
+
+- **Coverage badge in the sidebar** — after your tests run, the Explorer panel shows `Stmts X% | Branch X% | Fns X% | Lines X%`. It updates live as files complete and disappears when you stop the session.
+- **Green gutter markers** — executed lines get a green dot in the editor gutter. The shade scales with hit count, so hot paths are visually distinct from lines that only ran once.
+- **Stale indicator** — save a source file mid-session and the gutter turns grey for that file until the rerun finishes, so you always know when coverage data is out of date.
+- **Accurate totals** — files that no test ever imports are counted as 0% covered, not ignored. The percentages reflect your whole project, not just the files that happened to load.
+
+---
+
 ## [1.4.0] — 2026-04-19
 
 ### Faster Startup, Faster Runs & Smoother UI

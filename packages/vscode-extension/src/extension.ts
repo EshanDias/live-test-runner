@@ -28,6 +28,8 @@ import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
 import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
 import { DiscoveryCache, rotateAndCheckCapacity } from './cache/DiscoveryCache';
+import { CoverageStore } from './coverage/CoverageStore';
+import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
 import { logger } from './utils/logger';
 
 const FILE = 'extension.ts';
@@ -215,6 +217,20 @@ export function activate(context: vscode.ExtensionContext) {
     );
   };
 
+  // ── Coverage store + decoration manager ───────────────────────────────────
+  const coverageStore = new CoverageStore();
+  const coverageDecoMgr = new CoverageDecorationManager(coverageStore, context);
+  observers.push(coverageDecoMgr);
+  context.subscriptions.push(coverageStore, coverageDecoMgr);
+
+  // Propagate coverage updates to all observers (badge in Explorer view)
+  context.subscriptions.push(
+    coverageStore.onDidChange.event(() => {
+      const totals = coverageStore.getTotals();
+      observers.forEach((o) => o.onCoverageUpdated?.(totals));
+    }),
+  );
+
   // ── Execution trace store + trace directory ────────────────────────────────
   const traceStore = new ExecutionTraceStore();
   const traceDir   = path.join(LTR_SESSION_TMP_DIR, 'traces');
@@ -259,6 +275,7 @@ export function activate(context: vscode.ExtensionContext) {
     new JestAdapter(LTR_SESSION_TMP_DIR),
     store,
     traceStore,
+    coverageStore,
     selection,
     resultsView,
     observers,

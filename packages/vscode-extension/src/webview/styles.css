@@ -27,35 +27,30 @@ body {
   margin-bottom: 4px;
 }
 
-.coverage-label .coming-soon {
+.coverage-status {
   font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-}
-
-.coverage-bar-track {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--vscode-progressBar-background, #3c3c3c);
-  overflow: hidden;
-}
-
-.coverage-bar-fill {
-  height: 100%;
-  width: 0%;
-  border-radius: 3px;
-  background: var(--vscode-charts-green, #4caf50);
-  transition: width 0.4s ease;
-}
-
-.coverage-explore-btn {
-  margin-top: 6px;
-  font-size: 11px;
   color: var(--vscode-descriptionForeground);
-  opacity: 0.5;
-  cursor: default;
+  opacity: 0.7;
+}
+
+.coverage-badge {
+  font-size: 11px;
+  color: var(--vscode-foreground);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.cov-metric b {
+  color: var(--vscode-charts-green, #4caf50);
+  font-weight: 600;
+}
+
+.cov-sep {
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.4;
 }
 
 /* ── Action bar ────────────────────────────────────────────────────────────── */

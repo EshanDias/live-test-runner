@@ -11,6 +11,8 @@ import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import { SessionTraceRunner } from './SessionTraceRunner';
+import { CoverageStore } from '../coverage/CoverageStore';
+import { SourceCounter } from '../coverage/SourceCounter';
 import { logger } from '../utils/logger';
 
 const FILE = 'SessionManager.ts';
@@ -51,6 +53,7 @@ export class SessionManager {
     private readonly _adapter: IFrameworkAdapter,
     private readonly _store: ResultStore,
     private readonly _traceStore: ExecutionTraceStore,
+    private readonly _coverageStore: CoverageStore,
     private readonly _selection: SelectionState,
     private readonly _resultsView: ResultsView,
     private readonly _observers: IResultObserver[],
@@ -59,7 +62,7 @@ export class SessionManager {
     private readonly _discovery: TestDiscoveryService,
     private readonly _sessionDir: string,
   ) {
-    this._traceRunner = new SessionTraceRunner(this._sessionDir);
+    this._traceRunner = new SessionTraceRunner(this._sessionDir, this._coverageStore);
   }
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
@@ -134,6 +137,17 @@ export class SessionManager {
       this._session.activate();
       this._notify('onSessionStarted');
 
+      // Background source scan — runs in parallel with test execution.
+      this._coverageStore.clear();
+      const sourceCounter = new SourceCounter(projectRoot, this._coverageStore);
+      sourceCounter.on('progress', (scanned: number, total: number) => {
+        this._observers.forEach((o) => o.onSourceScanProgress?.(scanned, total));
+      });
+      sourceCounter.on('done', () => {
+        this._observers.forEach((o) => o.onSourceScanDone?.());
+      });
+      void sourceCounter.run();
+
       // Push the discovered (pending) tree to the UI so the run-started state
       // shows all tests before the first result arrives.
       this._notify('onRunStarted', {
@@ -160,6 +174,7 @@ export class SessionManager {
       this._session = undefined;
     }
     this._store.clearAllLineMaps();
+    this._coverageStore.clear();
     this._notify('onSessionStopped');
     void decorationManager; // already in observers, notified above
     this._updateStatusBar('Off');
@@ -306,6 +321,7 @@ export class SessionManager {
         if (this._adapter.isTestFile(document.uri.fsPath)) {
           await this._runFiles([document.uri.fsPath], projectRoot);
         } else {
+          this._coverageStore.markFileStale(document.uri.fsPath);
           await this._runAffectedBySourceFile(document.uri.fsPath, projectRoot);
         }
       } catch (error) {

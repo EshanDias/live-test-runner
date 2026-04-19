@@ -177,6 +177,18 @@ export abstract class BaseWebviewProvider
     this.postMessage({ type: 'discovery-file-removed', fileId });
   }
 
+  onSourceScanProgress(scanned: number, total: number): void {
+    this.postMessage({ type: 'source-scan-progress', scanned, total });
+  }
+
+  onSourceScanDone(): void {
+    this.postMessage({ type: 'source-scan-done' });
+  }
+
+  onCoverageUpdated(totals: unknown): void {
+    this.postMessage({ type: 'coverage-updated', totals });
+  }
+
   dispose(): void {}
 
   // ── Public helpers ─────────────────────────────────────────────────────────

@@ -2,6 +2,27 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [1.5.0] — 2026-04-19
+
+### Code Coverage
+
+#### What's new
+
+- **Live coverage badge** — the Explorer sidebar now shows a four-metric coverage badge (`Stmts X% | Branch X% | Fns X% | Lines X%`) that updates automatically after each test run. Hidden when no session is active; shows a scanning progress indicator while the initial source scan runs.
+- **Green heatmap gutter** — executed lines get a green gutter marker in the editor. Darker = higher hit count (three intensity tiers). Driven by statement-level counters, not raw line hits, so blank lines and non-executable constructs are never decorated.
+- **Stale coverage overlay** — when you save a source file and a rerun is pending, the entire file's gutter turns grey until the rerun completes and fresh coverage data arrives.
+- **Correct coverage denominators** — source files that no test ever imports are scanned in the background at session start (`SourceCounter`) and included as 0% in the aggregate totals. This matches Istanbul's `all: true` behaviour — no more inflated percentages.
+- **No performance impact** — coverage instrumentation shares the existing Jest transform pass (no second AST walk, no extra process). The background source scan yields to the event loop every 10 files to keep the UI responsive.
+
+#### Technical details
+
+- `sessionTraceTransform.js` now injects `__cov` statement/branch/function counters alongside the existing `__strace.step()` calls, and writes a per-file coverage manifest (JSON) to `<tmp>/coverage/manifests/`.
+- `sessionTraceRuntime.js` flushes `globalThis.__cov` as a JSONL line to `COVERAGE_OUTPUT_FILE` on `process.exit`.
+- `SessionTraceRunner._parseCoverage()` reads the JSONL, merges multi-worker counters, reads manifests, and promotes `CoverageStore` entries.
+- Cross-run counter merging uses `max()` — re-running a subset of tests never reduces previously measured coverage.
+
+---
+
 ## [1.4.0] — 2026-04-19
 
 ### Persistent Discovery Cache, Batch Execution & UI Performance

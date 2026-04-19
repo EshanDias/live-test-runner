@@ -13,18 +13,13 @@
   const TEMPLATE = `
 <div class="explorer-layout">
 
-  <!-- Coverage gauge -->
-  <div class="coverage-section">
+  <!-- Coverage badge -->
+  <div class="coverage-section hidden" id="coverageSection">
     <div class="coverage-label">
       <span>Code Coverage</span>
-      <span class="coming-soon" title="Coming in a future release">coming soon</span>
+      <span class="coverage-status" id="coverageStatus"></span>
     </div>
-    <div class="coverage-bar-track">
-      <div class="coverage-bar-fill" id="coverageFill"></div>
-    </div>
-    <div class="coverage-explore-btn" title="Code coverage explorer — coming soon">
-      Explore Coverage ›
-    </div>
+    <div class="coverage-badge" id="coverageBadge"></div>
   </div>
 
   <!-- Action bar -->
@@ -318,6 +313,8 @@
 
         case 'session-stopped':
           applySessionState('idle');
+          { const cs = _q('coverageSection'); if (cs) { cs.classList.add('hidden'); } }
+          { const cb = _q('coverageBadge');   if (cb) { cb.innerHTML = ''; } }
           break;
 
         case 'run-started':
@@ -418,10 +415,40 @@
           }
           break;
 
-        case 'coverage-update':
-          const fill = _q('coverageFill');
-          if (fill) { fill.style.width = `${msg.percent}%`; }
+        case 'source-scan-progress': {
+          const sec = _q('coverageSection');
+          const st  = _q('coverageStatus');
+          if (sec) { sec.classList.remove('hidden'); }
+          if (st)  { st.textContent = `Scanning… ${msg.scanned} / ${msg.total}`; }
           break;
+        }
+
+        case 'source-scan-done': {
+          const st2 = _q('coverageStatus');
+          if (st2) { st2.textContent = ''; }
+          break;
+        }
+
+        case 'coverage-updated': {
+          const sec3 = _q('coverageSection');
+          const badge = _q('coverageBadge');
+          if (!sec3 || !badge) { break; }
+          sec3.classList.remove('hidden');
+          const t = msg.totals;
+          if (!t || !t.scanComplete) {
+            badge.textContent = 'Updating…';
+          } else {
+            badge.innerHTML =
+              `<span class="cov-metric">Stmts <b>${t.statements.pct}%</b></span>` +
+              `<span class="cov-sep">|</span>` +
+              `<span class="cov-metric">Branch <b>${t.branches.pct}%</b></span>` +
+              `<span class="cov-sep">|</span>` +
+              `<span class="cov-metric">Fns <b>${t.functions.pct}%</b></span>` +
+              `<span class="cov-sep">|</span>` +
+              `<span class="cov-metric">Lines <b>${t.lines.pct}%</b></span>`;
+          }
+          break;
+        }
 
         case 'tracing-progress': {
           const watchEl   = _q('watchIndicator');

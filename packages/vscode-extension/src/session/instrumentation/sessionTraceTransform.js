@@ -6,13 +6,21 @@
  *  1. __strace.step(line, file) before each statement — records which lines were hit.
  *  2. __strace.enterTest(name, file) / exitTest() wrapping test callbacks.
  *  3. __strace.enterHook(type, file) / exitHook() wrapping hook callbacks.
+ *  4. __cov[fileHash].s/b/f counters for statement/branch/function coverage.
+ *     Also writes a coverage manifest JSON to LTR_MANIFEST_DIR.
  *
  * No variable capture, no parameter capture, no console patching.
  * Uses sessionTraceRuntime.js (light trace).
  */
 
-const path = require('path');
+const path   = require('path');
+const fs     = require('fs');
+const crypto = require('crypto');
 const RUNTIME_PATH = path.resolve(__dirname, 'sessionTraceRuntime.js');
+
+function _fileHash(filePath) {
+  return crypto.createHash('sha256').update(filePath).digest('hex').slice(0, 16);
+}
 
 // ── Lazy Babel loader ────────────────────────────────────────────────────────
 
@@ -219,6 +227,147 @@ function findCallbackArg(args) {
   return null;
 }
 
+// ── Coverage AST node builders ───────────────────────────────────────────────
+
+/** __covF.s["sN"]++ */
+function makeCovStmt(stmtId) {
+  const t = _t;
+  return t.expressionStatement(
+    t.assignmentExpression(
+      '+=',
+      t.memberExpression(
+        t.memberExpression(t.identifier('__covF'), t.identifier('s')),
+        t.stringLiteral(stmtId),
+        true,
+      ),
+      t.numericLiteral(1),
+    ),
+  );
+}
+
+/** __covF.f["fN"]++ */
+function makeCovFn(fnId) {
+  const t = _t;
+  return t.expressionStatement(
+    t.assignmentExpression(
+      '+=',
+      t.memberExpression(
+        t.memberExpression(t.identifier('__covF'), t.identifier('f')),
+        t.stringLiteral(fnId),
+        true,
+      ),
+      t.numericLiteral(1),
+    ),
+  );
+}
+
+/** __covF.b["bN"][armIdx]++ */
+function makeCovBranch(branchId, armIdx) {
+  const t = _t;
+  return t.expressionStatement(
+    t.assignmentExpression(
+      '+=',
+      t.memberExpression(
+        t.memberExpression(
+          t.memberExpression(t.identifier('__covF'), t.identifier('b')),
+          t.stringLiteral(branchId),
+          true,
+        ),
+        t.numericLiteral(armIdx),
+        true,
+      ),
+      t.numericLiteral(1),
+    ),
+  );
+}
+
+/**
+ * Build the coverage preamble block injected at the top of the file:
+ *   if (!globalThis.__cov) { globalThis.__cov = {}; }
+ *   if (!globalThis.__cov[FILE_HASH]) {
+ *     globalThis.__cov[FILE_HASH] = { s: { s0: 0, ... }, b: { b0: [0,0], ... }, f: { f0: 0, ... } };
+ *   }
+ *   const __covF = globalThis.__cov[FILE_HASH];
+ */
+function buildCovPreamble(fileHash, manifest) {
+  const t = _t;
+
+  // s object: { s0: 0, s1: 0, ... }
+  const sProps = Object.keys(manifest.statements).map((id) =>
+    t.objectProperty(t.stringLiteral(id), t.numericLiteral(0)),
+  );
+  // b object: { b0: [0, 0], ... }
+  const bProps = Object.entries(manifest.branches).map(([id, b]) =>
+    t.objectProperty(
+      t.stringLiteral(id),
+      t.arrayExpression(Array.from({ length: b.arms }, () => t.numericLiteral(0))),
+    ),
+  );
+  // f object: { f0: 0, ... }
+  const fProps = Object.keys(manifest.functions).map((id) =>
+    t.objectProperty(t.stringLiteral(id), t.numericLiteral(0)),
+  );
+
+  const covInitObj = t.objectExpression([
+    t.objectProperty(t.identifier('s'), t.objectExpression(sProps)),
+    t.objectProperty(t.identifier('b'), t.objectExpression(bProps)),
+    t.objectProperty(t.identifier('f'), t.objectExpression(fProps)),
+  ]);
+
+  // if (!globalThis.__cov) { globalThis.__cov = {}; }
+  const ensureGlobal = t.ifStatement(
+    t.unaryExpression('!', t.memberExpression(t.identifier('globalThis'), t.identifier('__cov'))),
+    t.blockStatement([
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          t.memberExpression(t.identifier('globalThis'), t.identifier('__cov')),
+          t.objectExpression([]),
+        ),
+      ),
+    ]),
+  );
+
+  // if (!globalThis.__cov[HASH]) { globalThis.__cov[HASH] = { ... }; }
+  const ensureFile = t.ifStatement(
+    t.unaryExpression(
+      '!',
+      t.memberExpression(
+        t.memberExpression(t.identifier('globalThis'), t.identifier('__cov')),
+        t.stringLiteral(fileHash),
+        true,
+      ),
+    ),
+    t.blockStatement([
+      t.expressionStatement(
+        t.assignmentExpression(
+          '=',
+          t.memberExpression(
+            t.memberExpression(t.identifier('globalThis'), t.identifier('__cov')),
+            t.stringLiteral(fileHash),
+            true,
+          ),
+          covInitObj,
+        ),
+      ),
+    ]),
+  );
+
+  // const __covF = globalThis.__cov[HASH];
+  const covFDecl = t.variableDeclaration('const', [
+    t.variableDeclarator(
+      t.identifier('__covF'),
+      t.memberExpression(
+        t.memberExpression(t.identifier('globalThis'), t.identifier('__cov')),
+        t.stringLiteral(fileHash),
+        true,
+      ),
+    ),
+  ]);
+
+  return [ensureGlobal, ensureFile, covFDecl];
+}
+
 // ── Main AST instrumentation ─────────────────────────────────────────────────
 
 function instrumentAST(code, sourcePath) {
@@ -234,6 +383,16 @@ function instrumentAST(code, sourcePath) {
     process.stderr.write(`[LTR-SESSION-TRANSFORM] AST parse failed for ${sourcePath}: ${e.message}\n`);
     return null;
   }
+
+  // Coverage manifest — built during the walk below
+  const fileHash = _fileHash(sourcePath);
+  const manifest = {
+    filePath: sourcePath,
+    statements: /** @type {Record<string, {start:{line:number,col:number},end:{line:number,col:number}}>} */ ({}),
+    branches:   /** @type {Record<string, {type:string,line:number,arms:number}>} */ ({}),
+    functions:  /** @type {Record<string, {name:string,start:{line:number},end:{line:number}}>} */ ({}),
+  };
+  let sIdx = 0, bIdx = 0, fIdx = 0;
 
   // Pass 1: wrap test/hook callbacks with enter/exit context calls
   const describeStack = [];
@@ -265,9 +424,45 @@ function instrumentAST(code, sourcePath) {
     },
   });
 
-  // Pass 2: inject __strace.step() before each statement (line hit recording only)
+  // Pass 2: inject __strace.step() + coverage counters before each statement
   const insertions = [];
   _traverse(ast, {
+    // Function coverage — inject at start of function body
+    'FunctionDeclaration|FunctionExpression|ArrowFunctionExpression|ClassMethod|ObjectMethod'(nodePath) {
+      const node = nodePath.node;
+      const body = node.body;
+      if (!t.isBlockStatement(body)) { return; }
+      const fnId = `f${fIdx++}`;
+      const loc = node.loc;
+      manifest.functions[fnId] = {
+        name: node.id?.name ?? node.key?.name ?? '<anonymous>',
+        start: { line: loc?.start?.line ?? 0 },
+        end:   { line: loc?.end?.line ?? 0 },
+      };
+      body.body.unshift(makeCovFn(fnId));
+    },
+
+    // Branch coverage — if/else
+    IfStatement(nodePath) {
+      const node = nodePath.node;
+      const bId  = `b${bIdx++}`;
+      manifest.branches[bId] = { type: 'if', line: node.loc?.start?.line ?? 0, arms: 2 };
+
+      // Ensure branches are block statements before inserting
+      if (!t.isBlockStatement(node.consequent)) {
+        node.consequent = t.blockStatement([node.consequent]);
+      }
+      node.consequent.body.unshift(makeCovBranch(bId, 0));
+
+      const elseBody = node.alternate ?? t.blockStatement([]);
+      if (!t.isBlockStatement(elseBody)) {
+        node.alternate = t.blockStatement([elseBody, makeCovBranch(bId, 1)]);
+      } else {
+        elseBody.body.unshift(makeCovBranch(bId, 1));
+        if (!node.alternate) { node.alternate = elseBody; }
+      }
+    },
+
     Statement: {
       exit(nodePath) {
         const node = nodePath.node;
@@ -298,14 +493,48 @@ function instrumentAST(code, sourcePath) {
         const lineNo = (node.loc && node.loc.start && node.loc.start.line) || 0;
         if (lineNo === 0) { return; }
 
-        insertions.push({ nodePath, stepNode: makeStepCall(lineNo, sourcePath) });
+        const sId = `s${sIdx++}`;
+        manifest.statements[sId] = {
+          start: { line: node.loc.start.line, col: node.loc.start.column },
+          end:   { line: node.loc.end.line,   col: node.loc.end.column },
+        };
+
+        insertions.push({
+          nodePath,
+          stepNode: makeStepCall(lineNo, sourcePath),
+          covNode:  makeCovStmt(sId),
+        });
       },
     },
   });
 
   for (let i = insertions.length - 1; i >= 0; i--) {
-    const { nodePath, stepNode } = insertions[i];
-    try { nodePath.insertBefore(stepNode); } catch (_e) {}
+    const { nodePath, stepNode, covNode } = insertions[i];
+    try {
+      nodePath.insertBefore(covNode);
+      nodePath.insertBefore(stepNode);
+    } catch (_e) {}
+  }
+
+  // Inject coverage preamble at the top of the program body
+  const preamble = buildCovPreamble(fileHash, manifest);
+  if (ast.program && ast.program.body) {
+    ast.program.body.unshift(...preamble);
+  }
+
+  // Write manifest to disk (transform runs in Jest child process — disk is the bridge)
+  const manifestDir = process.env.LTR_MANIFEST_DIR;
+  if (manifestDir) {
+    try {
+      fs.mkdirSync(manifestDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(manifestDir, `${fileHash}.json`),
+        JSON.stringify(manifest),
+        'utf8',
+      );
+    } catch (_e) {
+      process.stderr.write(`[LTR-SESSION-TRANSFORM] manifest write failed: ${_e.message}\n`);
+    }
   }
 
   let output;

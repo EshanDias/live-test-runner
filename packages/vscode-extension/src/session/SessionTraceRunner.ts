@@ -18,6 +18,9 @@ import * as path from 'path';
 import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
+import { CoverageStore } from '../coverage/CoverageStore';
+import { calculate as calcCoverage } from '../coverage/CoverageReport';
+import { Manifest, FileCov, LiveCov } from '../coverage/types';
 import { logger } from '../utils/logger';
 
 const FILE = 'SessionTraceRunner.ts';
@@ -103,7 +106,13 @@ export class SessionTraceRunner {
   private readonly _executor = new Executor();
   private readonly _binaryResolver = new BinaryResolver();
 
-  constructor(private readonly _tmpDir: string) {}
+  private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
+  private get _manifestDir()  { return path.join(this._tmpDir, 'coverage', 'manifests'); }
+
+  constructor(
+    private readonly _tmpDir: string,
+    private readonly _coverageStore: CoverageStore,
+  ) {}
 
   /**
    * Run a batch of test files under combined test+trace instrumentation.
@@ -131,10 +140,13 @@ export class SessionTraceRunner {
     const rand = Math.random().toString(36).slice(2);
     const ts   = Date.now();
 
-    const reporterFile  = path.join(this._tmpDir, `ltr-reporter-${ts}-${rand}.jsonl`);
-    const traceFile     = path.join(this._tmpDir, `ltr-trace-${ts}-${rand}.jsonl`);
-    const tempConfigPath = path.join(this._tmpDir, `ltr-cfg-${ts}-${rand}.js`);
-    const cacheDir      = path.join(this._tmpDir, `ltr-cache-${ts}-${rand}`);
+    const reporterFile    = path.join(this._tmpDir, `ltr-reporter-${ts}-${rand}.jsonl`);
+    const traceFile       = path.join(this._tmpDir, `ltr-trace-${ts}-${rand}.jsonl`);
+    const covCountersFile = path.join(this._coverageDir, `ltr-cov-${ts}-${rand}.jsonl`);
+    const tempConfigPath  = path.join(this._tmpDir, `ltr-cfg-${ts}-${rand}.js`);
+    const cacheDir        = path.join(this._tmpDir, `ltr-cache-${ts}-${rand}`);
+
+    fs.mkdirSync(this._manifestDir, { recursive: true });
 
     const escapedRoot = escapeRegex(projectRoot).replace(/\//g, '\\/');
     const srcPattern  = `^${escapedRoot}\\/(?!node_modules\\/).+\\.[jt]sx?$`;
@@ -246,7 +258,11 @@ module.exports = {
             '--testLocationInResults',
           ],
           cwd: projectRoot,
-          extraEnv: { SESSION_TRACE_FILE: traceFile },
+          extraEnv: {
+            SESSION_TRACE_FILE:   traceFile,
+            COVERAGE_OUTPUT_FILE: covCountersFile,
+            LTR_MANIFEST_DIR:     this._manifestDir,
+          },
         },
         reporterFile,
         onRecord,
@@ -273,8 +289,90 @@ module.exports = {
       try { fs.unlinkSync(reporterFile); } catch {}
     }
 
+    // Parse coverage counters and promote CoverageStore entries.
+    try {
+      this._parseCoverage(covCountersFile, emit);
+    } catch (err) {
+      logger.error(FILE, 'runFiles', `_parseCoverage failed`, err);
+    }
+
     const missing = filePaths.filter((fp) => !received.has(fp));
     return { missing };
+  }
+
+  // ── Private: parse light-trace JSONL and update ExecutionTraceStore ──────────
+
+  private _parseCoverage(covCountersFile: string, emit: (msg: string) => void): void {
+    if (!fs.existsSync(covCountersFile)) { return; }
+
+    let raw: string;
+    try {
+      raw = fs.readFileSync(covCountersFile, 'utf8');
+    } catch (err) {
+      logger.error(FILE, '_parseCoverage', `Could not read coverage file: "${covCountersFile}"`, err);
+      return;
+    }
+
+    const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+
+    // Merge all workers: sum within this run
+    const mergedCov: Record<string, FileCov> = {};
+    for (const line of lines) {
+      let parsed: { workerPid: number; cov: Record<string, FileCov> };
+      try { parsed = JSON.parse(line); } catch { continue; }
+      for (const [hash, fileCov] of Object.entries(parsed.cov)) {
+        if (!mergedCov[hash]) {
+          mergedCov[hash] = { s: { ...fileCov.s }, b: {}, f: { ...fileCov.f } };
+          for (const [id, arms] of Object.entries(fileCov.b)) {
+            mergedCov[hash].b[id] = [...(arms as number[])];
+          }
+        } else {
+          for (const [id, val] of Object.entries(fileCov.s)) {
+            mergedCov[hash].s[id] = (mergedCov[hash].s[id] ?? 0) + val;
+          }
+          for (const [id, arms] of Object.entries(fileCov.b)) {
+            mergedCov[hash].b[id] = (arms as number[]).map(
+              (v, i) => (mergedCov[hash].b[id]?.[i] ?? 0) + v,
+            );
+          }
+          for (const [id, val] of Object.entries(fileCov.f)) {
+            mergedCov[hash].f[id] = (mergedCov[hash].f[id] ?? 0) + val;
+          }
+        }
+      }
+    }
+
+    // Promote CoverageStore entries — max() merge with existing for cross-run accumulation
+    let promoted = 0;
+    for (const [fileHash, counters] of Object.entries(mergedCov)) {
+      const manifestPath = path.join(this._manifestDir, `${fileHash}.json`);
+      if (!fs.existsSync(manifestPath)) {
+        emit(`[Coverage] Manifest missing for hash ${fileHash}, skipping`);
+        continue;
+      }
+
+      let manifest: Manifest;
+      try {
+        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Manifest;
+      } catch (err) {
+        logger.error(FILE, '_parseCoverage', `Could not read manifest "${manifestPath}"`, err);
+        continue;
+      }
+
+      const existing = this._coverageStore.getEntry(manifest.filePath);
+      const merged: LiveCov =
+        existing?.state === 'measured' || existing?.state === 'measured-stale'
+          ? _mergeCounters(existing.counters, counters)
+          : counters;
+
+      const pct = calcCoverage(manifest, merged);
+      this._coverageStore.setMeasuredEntry(manifest.filePath, { manifestPath, counters: merged, pct });
+      promoted++;
+    }
+
+    emit(`[Coverage] Promoted ${promoted} file(s) to measured`);
+
+    try { fs.unlinkSync(covCountersFile); } catch { /* ignore */ }
   }
 
   // ── Private: parse light-trace JSONL and update ExecutionTraceStore ──────────
@@ -406,6 +504,23 @@ module.exports = {
     const totalTests = Array.from(testsByFile.values()).reduce((n, recs) => n + recs.length, 0);
     emit(`[SessionTrace] Traced ${totalTests} test(s) across ${testsByFile.size} file(s)`);
   }
+}
+
+function _mergeCounters(a: LiveCov, b: FileCov): LiveCov {
+  return {
+    s: Object.fromEntries(
+      Object.keys({ ...a.s, ...b.s }).map((id) => [id, Math.max(a.s[id] ?? 0, b.s[id] ?? 0)]),
+    ),
+    b: Object.fromEntries(
+      Object.keys({ ...a.b, ...b.b }).map((id) => [
+        id,
+        (a.b[id] ?? []).map((v, i) => Math.max(v, (b.b[id] as number[] | undefined)?.[i] ?? 0)),
+      ]),
+    ),
+    f: Object.fromEntries(
+      Object.keys({ ...a.f, ...b.f }).map((id) => [id, Math.max(a.f[id] ?? 0, b.f[id] ?? 0)]),
+    ),
+  };
 }
 
 function _extractSuiteName(fullTestName: string): string {
