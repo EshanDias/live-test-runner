@@ -2,25 +2,22 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [1.4.0] — 2026-04-18
+## [1.4.0] — 2026-04-19
 
-### Batch Execution & Streaming Results
+### Faster Startup, Faster Runs & Smoother UI
 
-#### Added
-- **Batched Jest runs** — the initial run and on-save file reruns now group multiple test files into a single Jest process per batch (`BATCH_SIZE = clamp(ceil(N/CONCURRENCY), 5, 50)`), reducing process-spawn overhead significantly on large projects.
-- **Streaming per-file results** — a custom Jest reporter (`liveReporter.js`) appends one JSON record per completed file to a JSONL file as Jest runs. The extension polls this file every 200 ms, so results appear in the UI as each file finishes rather than after the whole batch.
-- **Combined test + trace pass** — test execution and source-dependency tracing now happen in the same Jest process. The old separate trace phase (which effectively doubled total run time) is eliminated.
-- **Light trace format** — `sessionTraceTransform.js` and `sessionTraceRuntime.js` now record only `(file, line)` hit maps per test/hook (compact `T`/`H` JSONL records), approximately 100× less data than the previous per-statement STEP/VAR/LOG format.
-- **Running state feedback** — files are marked `running` in the store as soon as their batch is dequeued, with a single bulk `onFilesRerunning` notification so the UI flips to spinner icons immediately.
+#### What's new
 
-#### Changed
-- **Discovery batch size** reduced from 50 → 5 files per event-loop batch. The sidebar now updates progressively every 5 files instead of every 50, making discovery visible on any project size.
-- **Notification efficiency** — the running-state update uses one `onFilesRerunning` batch notification per batch (not N individual `onFileResult` calls), preventing postMessage storms when a saved source file affects the entire test suite.
+- **Much faster restarts on large projects** — test discovery results are now cached to disk. After the first scan, restarting VS Code loads your test tree in seconds instead of 30–60 seconds on projects with hundreds of files.
+- **Results stream in as each file finishes** — previously you'd wait for a whole batch before seeing anything update. Now spinner icons flip to pass/fail the moment each file completes.
+- **Significantly faster test runs** — multiple test files are now grouped into fewer Jest processes, cutting process-launch overhead on large projects. Combined with the removed separate trace phase, overall run time is noticeably shorter.
+- **Shift+Stop clears the cache** — if discovery ever gets stale, Shift-click the Stop button to wipe the cache and start fresh. The command palette also has "Clear Cache and Restart Testing" and "Stop Testing and Clear Cache".
 
-#### Internal
-- `Executor.runWithReporterPolling` — new method that polls a reporter JSONL file while a Jest child process runs, calling a callback for each parsed record.
-- `IFrameworkAdapter.applyFileResult` — new interface method; `JestAdapter` exposes the existing `_applyFileResult` logic publicly so `SessionTraceRunner` can apply liveReporter records into the store without bypassing the adapter.
-- `SessionTraceRunner.runFiles` replaces the old `runFile` (per-file trace) method entirely.
+#### Fixes
+
+- Fixed UI freezing or slowing down when 200–800 test files were discovered at once.
+- Fixed collapsing a row immediately re-expanding it.
+- Fixed the selected row not being restored when switching between panels.
 
 ---
 

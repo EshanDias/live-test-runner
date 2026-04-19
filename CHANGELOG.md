@@ -2,6 +2,40 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [1.4.0] — 2026-04-19
+
+### Persistent Discovery Cache, Batch Execution & UI Performance
+
+#### Added
+- **Persistent discovery cache** — Babel AST parse results are now cached per file alongside mtime in `~/.../globalStorage/EshLabs.live-test-runner/cache/<project>/discovery-cache.json`. On restart, only files whose mtime has changed are re-parsed; everything else loads from cache. Large projects (800+ files) drop from ~30–60 s cold parse to a few seconds on warm restart.
+- **Project-keyed cache directories** — each project gets its own cache dir keyed by `<folderName>-<sha256(workspacePath)[0:8]>`. Different projects with the same folder name never collide.
+- **Session lock files** — a `session.lock` file containing the current VS Code PID is written on activation and deleted on deactivate. Cache rotation uses PID liveness checks to skip active sessions.
+- **LRU cache rotation** — at Start Testing time, inactive project caches are evicted oldest-first when total cache size exceeds 500 MB or more than 10 projects are cached. Single-project installs are never capped.
+- **Over-cap warning** — if all cached projects are active and the total still exceeds limits, a modal offers "Continue Without Cache" (runs exactly as before, no data lost) or "Cancel".
+- **Shift+Stop to clear cache** — Shift-clicking the Stop button in either the sidebar or panel sends `stopAndClearCache`: stops the session and wipes this project's disk cache. In-memory state (test tree, results) is unaffected.
+- **"Clear Cache and Restart Testing" command** — palette command that wipes the current project's cache and immediately restarts discovery + testing from scratch.
+- **"Stop Testing and Clear Cache" command** — palette equivalent of Shift+Stop.
+
+#### Changed
+- **Discovery batch size adapts to cache warmth** — cold pass (no cache): 5 files per batch (unchanged, keeps UI progressive). Warm pass (cache present): 25 files per batch, reducing event-loop round-trips ~5× for large projects.
+- **`onFileResult` messages batched** — file result postMessages are now collected in a 50 ms window and flushed as a single `batch-file-results` message instead of one message per file. Eliminates the webview freeze that occurred when dozens of files completed simultaneously.
+- **`files-rerunning` renders once** — marking N files as running now updates all in memory and renders the test list once, rather than once per file (was O(N) full re-renders).
+- **Discovery appends to DOM incrementally** — during discovery, new file rows are appended to the list using a `DocumentFragment` per batch instead of triggering a full list re-render per file. Fixes the slowdown / freeze that appeared as the list approached 200–800 files.
+- **Row selection uses targeted DOM update** — clicking a test row now swaps the `selected` CSS class in-place instead of re-rendering the entire list. Full re-render only happens when ancestor nodes need to be structurally expanded.
+- **Collapse toggle no longer triggers selection** — clicking the ▶ arrow to collapse/expand a row no longer fires a `select` message, which previously caused `scope-changed` → `_expandAncestors` to immediately re-expand the collapsed item.
+- **Cross-panel selection restored on visibility** — `_sendInit` now includes the current selection. When either panel becomes visible after being hidden, it scrolls to the previously selected row.
+
+#### Internal
+- `src/cache/DiscoveryCache.ts` — new file: `DiscoveryCache` class + `rotateAndCheckCapacity` function
+- `TestDiscoveryService` — accepts optional `DiscoveryCache`; cache-first in `_populateFile`; `BATCH_SIZE_COLD = 5`, `BATCH_SIZE_WARM = 25`
+- `BaseWebviewProvider` — `onFileResult` now buffers into `_pendingFileResults`; flushes via `_flushFileResults()` after 50 ms
+- `testListLayout.js` — `appendFiles()` for O(1) per-batch DOM appends during discovery; `markFilesRunning()` for single-render batch running state; `setSelected()` targeted class swap
+- `Executor.runWithReporterPolling` — new method that polls a reporter JSONL file while a Jest child process runs, calling a callback for each parsed record.
+- `IFrameworkAdapter.applyFileResult` — new interface method; `JestAdapter` exposes the existing `_applyFileResult` logic publicly so `SessionTraceRunner` can apply liveReporter records into the store without bypassing the adapter.
+- `SessionTraceRunner.runFiles` replaces the old `runFile` (per-file trace) method entirely.
+
+---
+
 ## [1.3.0] — 2026-04-14
 
 ### Dynamic Test Groups & Multi-Session Isolation

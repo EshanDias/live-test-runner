@@ -8,7 +8,7 @@ Paste this document into a conversation to give an AI assistant complete knowled
 
 **Live Test Runner** is a VS Code extension that runs Jest tests automatically on file save and shows results directly in the editor. It is a Wallaby-lite tool — session-based, explicit start/stop, focused on speed.
 
-**Current version:** 2.3.0  
+**Current version:** 1.5.0  
 **Language:** TypeScript  
 **Package manager:** pnpm (monorepo)
 
@@ -106,6 +106,8 @@ src/
 │   ├── ResultStore.ts              In-memory File→Node tree (recursive) + LineMap + ScopedOutput
 │   ├── ExecutionTraceStore.ts      Trace indexes: traceIndex, coverageIndex, sourceToTests
 │   └── SelectionState.ts           Tracks selected row; broadcasts scope-changed
+├── cache/
+│   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
 ├── session/
 │   ├── SessionManager.ts           Session lifecycle, batched run pool (CONCURRENCY=cpus/4), on-save, rerun
 │   ├── SessionTraceRunner.ts       Runs combined test+trace batches; populates ResultStore + ExecutionTraceStore
@@ -113,7 +115,7 @@ src/
 │   │   ├── liveReporter.js         Custom Jest reporter: appends one JSON record per completed file to a JSONL file
 │   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step(line,file) calls (light trace only)
 │   │   └── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook, flushes compact T/H records
-│   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (batches of 5)
+│   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
 │   │                               getAffectedTests, getDebugConfig
@@ -163,11 +165,13 @@ src/
 ## Session lifecycle
 
 **On extension activate (before any user action):**
-1. `TestDiscoveryService.start()` → `vscode.workspace.findFiles` → list of test file paths
-2. `onDiscoveryStarted(total)` fired → sidebar shows `⟳ Discovering… 0 / N`, Start Testing disabled
-3. Files parsed in batches of 5 (event-loop yield between batches) — each file: read source → `@babel/parser` AST walk → extract suites + tests with 1-based line numbers → `store.nodeDiscovered` → `onBatchDiscovered` → sidebar list and gutter icons update incrementally
-4. `onDiscoveryComplete()` → Start Testing re-enabled
-5. `FileSystemWatcher` activated — new/changed test files are re-discovered immediately (guard: skip files with `running` status)
+1. `DiscoveryCache` loaded from `globalStorageUri/cache/<folderName>-<hash8>/discovery-cache.json` (if exists). A `session.lock` PID file is written.
+2. `TestDiscoveryService.start()` → `vscode.workspace.findFiles` → list of test file paths
+3. `onDiscoveryStarted(total)` fired → sidebar shows `⟳ Discovering… 0 / N`, Start Testing disabled
+4. Files parsed in batches — **cold** (no cache): 5 files per batch; **warm** (cache present): 25 files per batch. Each file: `DiscoveryCache.get(filePath)` checks mtime → cache hit skips readFile + Babel entirely; cache miss reads source → `@babel/parser` AST walk → result stored via `DiscoveryCache.set()`. Store populated via `store.nodeDiscovered` → `onBatchDiscovered` → sidebar rows appended incrementally via `DocumentFragment` (no full re-render per batch).
+5. `cache.flush()` writes dirty entries to disk after discovery completes.
+6. `onDiscoveryComplete()` → Start Testing re-enabled
+7. `FileSystemWatcher` activated — new/changed test files are re-discovered immediately (guard: skip files with `running` status); watcher also calls `cache.flush()` after re-discovery
 
 **User clicks Start Testing:**
 1. `SessionManager.start()` → `await discovery.awaitDiscovery()` (no-op if already done)
@@ -308,8 +312,9 @@ Identity only — **never status or duration**. `DecorationManager` always queri
 
 | Type | Direction | Purpose |
 |------|-----------|---------|
-| `full-file-result` | Extension → both views | Complete file result tree; drives column 1 |
-| `scope-changed` | Extension → both views | Row selection; highlights row in column 1 |
+| `batch-file-results` | Extension → both views | Batched file results (up to 50 ms window); preferred over `full-file-result` for runs |
+| `full-file-result` | Extension → both views | Single file result (legacy; still handled); complete file result tree |
+| `scope-changed` | Extension → both views | Row selection; highlights row in column 1; also sent in `init` as `selection` field for restore on visibility |
 | `scope-logs` | Extension → results only | Log + error data for selected scope; drives columns 2 & 3 |
 | `run-started` | Extension → both | Resets UI for full run |
 | `files-rerunning` | Extension → both | Marks files as running (partial rerun) |

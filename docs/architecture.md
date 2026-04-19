@@ -263,6 +263,13 @@ Node IDs follow a stable path convention: `{filePath}::{suite1}::…::{name}`. S
 
 **Nested Branch Compatibility:** The recursive node tree supports arbitrary depth (10+ levels) of `describe` blocks. When a test result arrives deep within a nested branch, the `ResultStore` automatically bubbles the status up the chain. For partial runs (where only a specific nested test is executed), the extension correctly resets the status of every ancestor in the branch to `running` before applying the new result, ensuring that high-level "failed" or "passed" icons don't stick when their children are still in flight.
 
+**`DiscoveryCache`** — persistent on-disk cache for Babel AST parse output. Lives at `globalStorageUri/cache/<folderName>-<sha256(workspacePath)[0:8]>/discovery-cache.json`. Each entry stores `{ mtime, result }` keyed by absolute file path. On load, stale entries (mtime changed or file deleted) are dropped; only changed files are re-parsed. A `session.lock` PID file marks active sessions so LRU rotation skips them.
+
+- Batch size adapts: `BATCH_SIZE_COLD = 5` (no cache, Babel parse per file) vs `BATCH_SIZE_WARM = 25` (cache hits, stat-only check)
+- `flush()` is called once after discovery completes and after each watcher re-discovery
+- `rotateAndCheckCapacity()` evicts inactive LRU projects when >500 MB or >10 projects
+- Single-project installs are never capped; over-cap with all sessions active shows a warning modal
+
 **`ExecutionTraceStore`** — derived indexes built from per-test JSONL trace files. The trace files on disk are the source of truth; these are fast-lookup caches rebuilt after each instrumented run.
 
 ```

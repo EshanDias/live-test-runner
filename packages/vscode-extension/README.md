@@ -37,6 +37,8 @@ The full test tree — every file, suite (at any nesting depth), and test case �
 
 The extension parses your test files in the background using Babel's AST (your project's own Babel — nothing extra to install). Large projects (500+ files, 3000+ tests) stay responsive because discovery runs in batches with event-loop yields between them.
 
+Parse results are **cached on disk** alongside each file's modification time. On subsequent opens, only files that have changed since the last session are re-parsed — everything else loads from cache instantly. A project with 800 test files drops from a 30–60 s cold parse to a few seconds on warm restart.
+
 Test files are watched for changes. Add a test case, save the file, and it appears in the tree immediately.
 
 ---
@@ -134,8 +136,12 @@ Automatically detects:
 |---------|-------------|
 | `Live Test Runner: Start Testing` | Discover and run all tests, then start watching for saves |
 | `Live Test Runner: Stop Testing` | End the current session |
+| `Live Test Runner: Stop Testing and Clear Cache` | Stop the session and wipe this project's discovery cache |
+| `Live Test Runner: Clear Cache and Restart Testing` | Wipe the cache and immediately restart discovery + testing |
 | `Live Test Runner: Select Project Root` | Pick a root in a multi-folder workspace |
 | `Live Test Runner: Show Raw Output` | Open the raw Jest output channel for debugging |
+
+> **Tip:** Shift-clicking the **⏹ Stop** button in the sidebar or panel is a shortcut for "Stop and Clear Cache".  
 
 ---
 
