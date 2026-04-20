@@ -27,20 +27,30 @@ export class SourceCounter extends EventEmitter {
 
   async run(): Promise<void> {
     const include = new vscode.RelativePattern(this._projectRoot, '**/*.{js,ts,jsx,tsx}');
-    const defaultExclude =
-      '{**/node_modules/**,**/*.{test,spec}.{js,ts,jsx,tsx},**/__tests__/**,**/__mocks__/**,**/tests/**,**/test/**,**/specs/**,**/spec/**,**/*.config.{js,ts,mjs,cjs},**/*.d.ts,dist/**,build/**,out/**,.next/**,coverage/**}';
+    // Flattened — no nested braces, VS Code glob doesn't support them reliably
+    const defaultExcludeParts = [
+      '**/node_modules/**',
+      '**/*.test.js', '**/*.test.ts', '**/*.test.jsx', '**/*.test.tsx',
+      '**/*.spec.js', '**/*.spec.ts', '**/*.spec.jsx', '**/*.spec.tsx',
+      '**/__tests__/**', '**/__mocks__/**',
+      '**/tests/**', '**/test/**', '**/specs/**', '**/spec/**',
+      '**/*.config.js', '**/*.config.ts', '**/*.config.mjs', '**/*.config.cjs',
+      '**/*.d.ts',
+      'dist/**', 'build/**', 'out/**', '.next/**', 'coverage/**',
+    ];
     const userExclude = vscode.workspace
       .getConfiguration('liveTestRunner')
       .get<string[]>('coverageExclude', []);
-    const excludeGlob =
-      userExclude.length > 0
-        ? `{${defaultExclude.slice(1, -1)},${userExclude.join(',')}}`
-        : defaultExclude;
+    const allExcludeParts = userExclude.length > 0
+      ? [...defaultExcludeParts, ...userExclude]
+      : defaultExcludeParts;
+    const excludeGlob = `{${allExcludeParts.join(',')}}`;
 
     let uris: vscode.Uri[];
     try {
       uris = await vscode.workspace.findFiles(include, excludeGlob);
     } catch {
+      this._store.markScanComplete();
       this.emit('done');
       return;
     }

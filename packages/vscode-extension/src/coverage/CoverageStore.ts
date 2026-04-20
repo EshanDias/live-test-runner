@@ -112,6 +112,19 @@ export class CoverageStore {
     for (const [filePath, entry] of this._entries) {
       if (entry.state === 'measured' || entry.state === 'measured-stale') {
         rows.push({ filePath, state: entry.state, pct: entry.pct });
+      } else if (entry.state === 'counted') {
+        // File scanned but not yet executed by any test — show as 0%
+        const zero = (total: number) => ({ covered: 0, total, pct: total === 0 ? 100 : 0 });
+        rows.push({
+          filePath,
+          state: 'counted',
+          pct: {
+            statements: zero(entry.statements),
+            branches:   zero(entry.branches),
+            functions:  zero(entry.functions),
+            lines:      zero(entry.lines),
+          },
+        });
       }
     }
     return rows;

@@ -132,7 +132,7 @@
         <div data-col="statements"><span>Stmts</span><span class="cov-sort-icon" id="sortIconStatements"></span></div>
         <div data-col="branches"><span>Branch</span><span class="cov-sort-icon" id="sortIconBranches"></span></div>
         <div data-col="functions"><span>Fns</span><span class="cov-sort-icon" id="sortIconFunctions"></span></div>
-        <div data-col="lines"><span>Lines</span><span class="cov-sort-icon" id="sortIconLines"></span></div>
+        <div data-col="lines" title="Executable lines (excludes comments, blanks, type declarations)"><span>Lines</span><span class="cov-sort-icon" id="sortIconLines"></span></div>
       </div>
       <div id="covFileRows"></div>
       <div class="cov-explorer-empty hidden" id="covEmpty">
@@ -288,15 +288,14 @@
     const sec = _q('coverageSection');
     if (sec) { sec.classList.remove('hidden'); }
 
-    if (!totals || !totals.scanComplete) {
-      const st = _q('coverageStatus');
-      if (st) { st.textContent = totals ? 'Updating…' : ''; }
+    const st = _q('coverageStatus');
+    if (!totals) {
+      if (st) { st.textContent = ''; }
       ['covStmts','covBranch','covFns','covLines'].forEach((id) => {
-        const el = _q(id); if (el) { el.textContent = totals ? '…' : '—'; el.className = 'value'; }
+        const el = _q(id); if (el) { el.textContent = '—'; el.className = 'value'; }
       });
     } else {
-      const st = _q('coverageStatus');
-      if (st) { st.textContent = ''; }
+      if (st) { st.textContent = totals.scanComplete ? '' : 'Updating…'; }
       _setCovCell('covStmts',  totals.statements, false);
       _setCovCell('covBranch', totals.branches,   false);
       _setCovCell('covFns',    totals.functions,  false);
@@ -304,9 +303,9 @@
     }
 
     // ── project totals row in Coverage panel ────────────────────────────────
-    if (!totals || !totals.scanComplete) {
+    if (!totals) {
       ['covTotalStmts','covTotalBranch','covTotalFns','covTotalLines'].forEach((id) => {
-        const el = _q(id); if (el) { el.textContent = totals ? '…' : '—'; el.className = 'value'; }
+        const el = _q(id); if (el) { el.textContent = '—'; el.className = 'value'; }
       });
     } else {
       _setCovCell('covTotalStmts',  totals.statements, false);
@@ -349,7 +348,7 @@
       const p  = f.pct;
       const name = _basename(f.filePath);
       const dir  = _dirname(f.filePath);
-      return `<div class="cov-file-row" data-path="${_esc(f.filePath)}">
+      return `<div class="cov-file-row" data-path="${_esc(f.filePath)}" data-state="${_esc(f.state)}">
         <div class="cov-file-cell">
           <div class="cov-file-name" title="${_esc(f.filePath)}">${_esc(name)}</div>
           <div class="cov-file-dir"  title="${_esc(f.filePath)}">${_esc(dir)}</div>

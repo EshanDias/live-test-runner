@@ -251,6 +251,8 @@ body {
 .cov-file-metric.cov-stale  { opacity: 0.5; }
 .cov-file-metric.cov-dash   { color: var(--vscode-descriptionForeground); opacity: 0.5; }
 
+.cov-file-row[data-state="counted"] { opacity: 0.7; }
+
 .cov-row-action {
   display: none;
   position: absolute;
