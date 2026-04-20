@@ -353,8 +353,8 @@ function buildCovPreamble(fileHash, manifest) {
     ]),
   );
 
-  // const __covF = globalThis.__cov[HASH];
-  const covFDecl = t.variableDeclaration('const', [
+  // var __covF = globalThis.__cov[HASH];  (var avoids TDZ when babel re-orders code)
+  const covFDecl = t.variableDeclaration('var', [
     t.variableDeclarator(
       t.identifier('__covF'),
       t.memberExpression(
@@ -466,6 +466,28 @@ function instrumentAST(code, sourcePath) {
     Statement: {
       exit(nodePath) {
         const node = nodePath.node;
+
+        // Skip statements inside jest.mock() factories AND the jest.mock() call itself.
+        // babel-plugin-jest-hoist moves jest.mock() to the top of the file; if we prepend
+        // a counter to it, the counter can end up before the __covF preamble.
+        const isJestMockCall = (
+          t.isExpressionStatement(node) &&
+          t.isCallExpression(node.expression) &&
+          (() => {
+            const callee = node.expression.callee;
+            if (t.isMemberExpression(callee)) {
+              return (
+                t.isIdentifier(callee.object, { name: 'jest' }) &&
+                (t.isIdentifier(callee.property, { name: 'mock' }) ||
+                 t.isIdentifier(callee.property, { name: 'doMock' }) ||
+                 t.isIdentifier(callee.property, { name: 'unmock' }) ||
+                 t.isIdentifier(callee.property, { name: 'resetModules' }))
+              );
+            }
+            return false;
+          })()
+        );
+        if (isJestMockCall) { return; }
 
         const insideJestMock = nodePath.findParent((p) => {
           if (!p.isCallExpression()) { return false; }

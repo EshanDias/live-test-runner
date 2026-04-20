@@ -153,20 +153,58 @@ export class SessionTraceRunner {
 
     const configContent = `
 'use strict';
+const _path = require('path');
+const _fs   = require('fs');
 // Temporary Jest config — Live Test Runner combined test+trace run
 let baseConfig = {};
+let _baseConfigLoaded = false;
 try {
   const e = require(${JSON.stringify(path.join(projectRoot, 'jest.config.js'))});
   baseConfig = (e && e.default) ? e.default : e;
+  _baseConfigLoaded = true;
 } catch (_) {
   try {
     const e = require(${JSON.stringify(path.join(projectRoot, 'jest.config.cjs'))});
     baseConfig = (e && e.default) ? e.default : e;
+    _baseConfigLoaded = true;
   } catch (_) {
     try {
       const pkg = require(${JSON.stringify(path.join(projectRoot, 'package.json'))});
       if (pkg.jest) { baseConfig = pkg.jest; }
     } catch (_) {}
+  }
+}
+
+// CRA fallback: extract the full Jest config from react-scripts if no jest.config was found
+// or if testEnvironment is missing (CRA uses jsdom which must be in the extracted config).
+if (!_baseConfigLoaded || !baseConfig.testEnvironment) {
+  const reactScriptsBin = _path.join(${JSON.stringify(projectRoot)}, 'node_modules', 'react-scripts', 'bin', 'react-scripts.js');
+  if (_fs.existsSync(reactScriptsBin)) {
+    try {
+      const { execFileSync } = require('child_process');
+      const stdout = execFileSync(process.execPath, [reactScriptsBin, 'test', '--showConfig', '--passWithNoTests'], {
+        cwd: ${JSON.stringify(projectRoot)},
+        env: { ...process.env, NODE_ENV: 'test', BABEL_ENV: 'test', CI: 'true' },
+        encoding: 'utf8',
+        timeout: 30000,
+      });
+      const jsonStart = stdout.indexOf('{');
+      if (jsonStart !== -1) {
+        const raw = JSON.parse(stdout.slice(jsonStart));
+        const extracted = Array.isArray(raw.configs) ? raw.configs[0] : raw;
+        if (extracted) {
+          // Strip internal-only keys and merge with any user overrides from package.json
+          const skip = new Set(['cwd', 'name', 'id', 'silent']);
+          const craConfig = {};
+          for (const [k, v] of Object.entries(extracted)) {
+            if (!skip.has(k)) { craConfig[k] = v; }
+          }
+          baseConfig = { ...craConfig, ...baseConfig };
+        }
+      }
+    } catch (_e) {
+      process.stderr.write('[LTR] CRA config extraction failed: ' + _e.message + '\\n');
+    }
   }
 }
 

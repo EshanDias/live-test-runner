@@ -31,5 +31,5 @@ export function calculate(manifest: Manifest, counters: FileCov): CoveragePct {
 }
 
 function _pct(covered: number, total: number): number {
-  return total === 0 ? 100 : Math.round((covered / total) * 1000) / 10;
+  return total === 0 ? 0 : Math.round((covered / total) * 1000) / 10;
 }

@@ -113,8 +113,10 @@ export class CoverageStore {
       if (entry.state === 'measured' || entry.state === 'measured-stale') {
         rows.push({ filePath, state: entry.state, pct: entry.pct });
       } else if (entry.state === 'counted') {
+        // Skip files where Babel failed to parse (all zeros — nothing to show)
+        if (entry.statements === 0 && entry.lines === 0 && entry.functions === 0) { continue; }
         // File scanned but not yet executed by any test — show as 0%
-        const zero = (total: number) => ({ covered: 0, total, pct: total === 0 ? 100 : 0 });
+        const zero = (total: number) => ({ covered: 0, total, pct: 0 });
         rows.push({
           filePath,
           state: 'counted',
@@ -136,5 +138,5 @@ export class CoverageStore {
 }
 
 function _pct(covered: number, total: number): number {
-  return total === 0 ? 100 : Math.round((covered / total) * 1000) / 10;
+  return total === 0 ? 0 : Math.round((covered / total) * 1000) / 10;
 }

@@ -76,6 +76,7 @@ body {
 .cov-cell .value.cov-amber  { color: var(--vscode-charts-yellow, #ff9800); }
 .cov-cell .value.cov-red    { color: var(--vscode-charts-red,    #f44336); }
 .cov-cell .value.cov-stale  { opacity: 0.5; }
+.cov-cell .value.cov-na     { color: var(--vscode-descriptionForeground); opacity: 0.5; }
 
 /* ── Coverage Explorer nav tabs ────────────────────────────────────────────── */
 .explorer-nav {
@@ -250,6 +251,7 @@ body {
 .cov-file-metric.cov-red    { color: var(--vscode-charts-red,    #f44336); }
 .cov-file-metric.cov-stale  { opacity: 0.5; }
 .cov-file-metric.cov-dash   { color: var(--vscode-descriptionForeground); opacity: 0.5; }
+.cov-file-metric.cov-na     { color: var(--vscode-descriptionForeground); opacity: 0.4; }
 
 .cov-file-row[data-state="counted"] { opacity: 0.7; }
 

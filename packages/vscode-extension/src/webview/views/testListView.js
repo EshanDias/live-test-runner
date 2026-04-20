@@ -258,6 +258,7 @@
 
   function _metricText(metric) {
     if (!metric) { return '—'; }
+    if (metric.total === 0) { return 'N/A'; }
     if (_metricMode === 'nm') { return `${metric.covered}/${metric.total}`; }
     return metric.pct != null ? metric.pct + '%' : '—';
   }
@@ -266,7 +267,7 @@
     const el = _q(id);
     if (!el) { return; }
     el.textContent = _metricText(metric);
-    el.className   = 'value ' + _covClass(metric?.pct, stale);
+    el.className   = 'value ' + (metric?.total === 0 ? 'cov-na' : _covClass(metric?.pct, stale));
   }
 
   function _updateSortIcons() {
@@ -353,10 +354,10 @@
           <div class="cov-file-name" title="${_esc(f.filePath)}">${_esc(name)}</div>
           <div class="cov-file-dir"  title="${_esc(f.filePath)}">${_esc(dir)}</div>
         </div>
-        <div class="cov-file-metric ${_covClass(p?.statements?.pct, st)}">${_metricText(p?.statements)}</div>
-        <div class="cov-file-metric ${_covClass(p?.branches?.pct,   st)}">${_metricText(p?.branches)}</div>
-        <div class="cov-file-metric ${_covClass(p?.functions?.pct,  st)}">${_metricText(p?.functions)}</div>
-        <div class="cov-file-metric ${_covClass(p?.lines?.pct,      st)}">${_metricText(p?.lines)}</div>
+        <div class="cov-file-metric ${p?.statements?.total===0?'cov-na':_covClass(p?.statements?.pct,st)}">${_metricText(p?.statements)}</div>
+        <div class="cov-file-metric ${p?.branches?.total===0?'cov-na':_covClass(p?.branches?.pct,st)}">${_metricText(p?.branches)}</div>
+        <div class="cov-file-metric ${p?.functions?.total===0?'cov-na':_covClass(p?.functions?.pct,st)}">${_metricText(p?.functions)}</div>
+        <div class="cov-file-metric ${p?.lines?.total===0?'cov-na':_covClass(p?.lines?.pct,st)}">${_metricText(p?.lines)}</div>
         <button class="cov-row-action" data-path="${_esc(f.filePath)}" title="Open file">↗</button>
       </div>`;
     }).join('');
