@@ -432,6 +432,21 @@ function instrumentAST(code, sourcePath) {
       const node = nodePath.node;
       const body = node.body;
       if (!t.isBlockStatement(body)) { return; }
+
+      // Skip functions inside jest.mock() factories — babel-plugin-jest-hoist moves
+      // those calls before our __covF preamble, so __covF would be undefined at runtime.
+      const insideJestMock = nodePath.findParent((p) => {
+        if (!p.isCallExpression()) { return false; }
+        const callee = p.node.callee;
+        return (
+          t.isMemberExpression(callee) &&
+          t.isIdentifier(callee.object, { name: 'jest' }) &&
+          (t.isIdentifier(callee.property, { name: 'mock' }) ||
+           t.isIdentifier(callee.property, { name: 'doMock' }))
+        );
+      });
+      if (insideJestMock) { return; }
+
       const fnId = `f${fIdx++}`;
       const loc = node.loc;
       manifest.functions[fnId] = {
