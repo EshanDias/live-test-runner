@@ -79,13 +79,48 @@ function isStrictTransformer(moduleName) {
 }
 
 function invokeTransformer(moduleName, sourceCode, sourcePath, options, transforms) {
-  const transformer = require(moduleName);
-  if (typeof transformer.process !== 'function') { return null; }
+  // Resolve from the project root first so ts-jest / @swc/jest / etc. are found
+  // in the project's node_modules even though they are not in the extension's.
+  const rootDir = options && options.config && options.config.rootDir;
+  let resolvedPath = moduleName;
+  try {
+    resolvedPath = require.resolve(moduleName, { paths: [rootDir, __dirname].filter(Boolean) });
+    process.stderr.write(`[LTR-SESSION-TRANSFORM] resolved ${moduleName} → ${resolvedPath}\n`);
+  } catch (resolveErr) {
+    process.stderr.write(`[LTR-SESSION-TRANSFORM] resolve failed for ${moduleName}: ${resolveErr.message}\n`);
+  }
+  // Extract per-transformer config (index 2 of the transform entry, e.g. { tsconfig: '...' }).
+  // Jest passes this as options.transformerConfig — ts-jest, @swc/jest etc. read it from there.
+  const entry = transforms.find(e => e[1] === moduleName);
+  const transformerConfig = (entry && entry[2]) || undefined;
+
+  let transformer;
+  try {
+    const mod = require(resolvedPath);
+    // Some transformers (ts-jest v28+) don't export process directly.
+    // They expose a createTransformer factory on the default export.
+    if (typeof mod.process === 'function') {
+      transformer = mod;
+    } else if (mod.default && typeof mod.default.createTransformer === 'function') {
+      transformer = mod.default.createTransformer(transformerConfig || {});
+    } else if (typeof mod.createTransformer === 'function') {
+      transformer = mod.createTransformer(transformerConfig || {});
+    }
+    process.stderr.write(`[LTR-SESSION-TRANSFORM] required ${moduleName} ok, hasProcess=${!!(transformer && typeof transformer.process === 'function')}\n`);
+  } catch (requireErr) {
+    process.stderr.write(`[LTR-SESSION-TRANSFORM] require failed for ${resolvedPath}: ${requireErr.message}\n`);
+    return null;
+  }
+  if (!transformer || typeof transformer.process !== 'function') { return null; }
+
   const downstreamOptions = {
     ...options,
+    ...(transformerConfig !== undefined ? { transformerConfig } : {}),
     config: { ...options.config, transform: transforms.filter(e => e[1] !== moduleName) },
   };
+  process.stderr.write(`[LTR-SESSION-TRANSFORM] invoking ${moduleName} for ${path.basename(sourcePath)}\n`);
   const result = transformer.process(sourceCode, sourcePath, downstreamOptions);
+  process.stderr.write(`[LTR-SESSION-TRANSFORM] ${moduleName} result type=${typeof result} hasCode=${!!(result && result.code)}\n`);
   if (result && typeof result.code === 'string') { return result.code; }
   if (typeof result === 'string') { return result; }
   return null;
@@ -870,6 +905,7 @@ module.exports = {
     }
     const matchingEntry = findMatchingTransform(transforms, sourcePath);
     const strict = matchingEntry ? isStrictTransformer(matchingEntry[1]) : false;
+    process.stderr.write(`[LTR-SESSION-TRANSFORM] ${path.basename(sourcePath)} → strict=${strict} transformer=${matchingEntry ? matchingEntry[1] : 'none'}\n`);
 
     if (rootDir && loadBabel(rootDir)) {
       if (strict) {
