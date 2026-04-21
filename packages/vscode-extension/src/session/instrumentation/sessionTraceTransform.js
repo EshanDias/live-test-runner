@@ -64,6 +64,33 @@ function loadBabel(rootDir) {
 
 // ── Chain through the project's existing transformer ─────────────────────────
 
+// Transformers that run the real TypeScript compiler (tsc / SWC) require clean
+// source as input — they reject the __covF/__strace globals we inject via Babel.
+// For these we must transpile first (TS→JS), then instrument the resulting JS.
+const STRICT_TRANSFORMER_PATTERNS = [
+  /\bts-jest\b/,
+  /@swc\/jest\b/,
+  /\bbabel-plugin-jest-hoist\b/,
+  /\besbuild-jest\b/,
+];
+
+function isStrictTransformer(moduleName) {
+  return STRICT_TRANSFORMER_PATTERNS.some((re) => re.test(moduleName));
+}
+
+function invokeTransformer(moduleName, sourceCode, sourcePath, options, transforms) {
+  const transformer = require(moduleName);
+  if (typeof transformer.process !== 'function') { return null; }
+  const downstreamOptions = {
+    ...options,
+    config: { ...options.config, transform: transforms.filter(e => e[1] !== moduleName) },
+  };
+  const result = transformer.process(sourceCode, sourcePath, downstreamOptions);
+  if (result && typeof result.code === 'string') { return result.code; }
+  if (typeof result === 'string') { return result; }
+  return null;
+}
+
 function chainTransform(sourceCode, sourcePath, options) {
   if (!options || !options.config) { return sourceCode; }
 
@@ -80,15 +107,8 @@ function chainTransform(sourceCode, sourcePath, options) {
     if (!new RegExp(pattern).test(sourcePath)) { continue; }
 
     try {
-      const transformer = require(moduleName);
-      if (typeof transformer.process !== 'function') { continue; }
-      const downstreamOptions = {
-        ...options,
-        config: { ...options.config, transform: transforms.filter(e => e !== entry) },
-      };
-      const result = transformer.process(sourceCode, sourcePath, downstreamOptions);
-      if (result && typeof result.code === 'string') { return result.code; }
-      if (typeof result === 'string') { return result; }
+      const result = invokeTransformer(moduleName, sourceCode, sourcePath, options, transforms);
+      if (result !== null) { return result; }
     } catch (_e) {
       process.stderr.write(`[LTR-SESSION-TRANSFORM] chain error: ${_e.message}\n`);
     }
@@ -132,6 +152,16 @@ function chainTransform(sourceCode, sourcePath, options) {
   }
 
   return sourceCode;
+}
+
+// Returns the first matching transform entry for a source file, or null.
+function findMatchingTransform(transforms, sourcePath) {
+  for (const entry of transforms) {
+    const [pattern, moduleName] = entry;
+    if (moduleName === __filename) { continue; }
+    if (new RegExp(pattern).test(sourcePath)) { return entry; }
+  }
+  return null;
 }
 
 // ── AST node builders ────────────────────────────────────────────────────────
@@ -829,7 +859,33 @@ module.exports = {
   process(sourceCode, sourcePath, options) {
     const rootDir = options && options.config && options.config.rootDir;
 
+    // Detect whether the project uses a strict transformer (ts-jest, @swc/jest, etc.)
+    // Strict transformers run the real TS compiler and reject our injected globals.
+    // For those we must: transpile first (TS→JS) → instrument the clean JS output.
+    // Lenient transformers (babel-jest) accept pre-instrumented source, so we keep
+    // the existing order: instrument first → transpile.
+    let transforms = (options && options.config && options.config.transform) || {};
+    if (!Array.isArray(transforms)) {
+      transforms = Object.entries(transforms).map(([p, v]) => Array.isArray(v) ? [p, ...v] : [p, v]);
+    }
+    const matchingEntry = findMatchingTransform(transforms, sourcePath);
+    const strict = matchingEntry ? isStrictTransformer(matchingEntry[1]) : false;
+
     if (rootDir && loadBabel(rootDir)) {
+      if (strict) {
+        // Transpile first with the project's own transformer, then instrument the JS output.
+        const transpiledCode = chainTransform(sourceCode, sourcePath, options);
+        const instrumented = instrumentAST(transpiledCode, sourcePath);
+        if (instrumented) {
+          const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${instrumented}`;
+          return { code: finalCode };
+        }
+        // Instrumentation failed — return at least transpiled code so tests can run
+        process.stderr.write(`[LTR-SESSION-TRANSFORM] instrumentation failed for ${sourcePath}, running uninstrumented\n`);
+        return { code: transpiledCode };
+      }
+
+      // Lenient path: instrument first, then transpile (original behaviour)
       const instrumented = instrumentAST(sourceCode, sourcePath);
       if (instrumented) {
         const transpiledCode = chainTransform(instrumented, sourcePath, options);

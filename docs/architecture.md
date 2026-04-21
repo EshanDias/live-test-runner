@@ -119,6 +119,53 @@ jest --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …]
 ```
 The temp config merges the project's `jest.config.*` with `sessionTraceTransform.js` (light trace transform) and `liveReporter.js` (streaming reporter). Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
 
+#### Transform pipeline — how `sessionTraceTransform.js` works
+
+Every source file passes through a two-stage pipeline before Jest executes it. The order of the two stages depends on what transformer the project uses:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    sessionTraceTransform.js  (Jest transform)           │
+│                                                                         │
+│  Detect project transformer from jest.config transform map              │
+│           │                                                             │
+│           ▼                                                             │
+│   ┌───────────────────┐         ┌──────────────────────────────┐        │
+│   │  Lenient?         │         │  Strict?                     │        │
+│   │  (babel-jest,     │         │  (ts-jest, @swc/jest,        │        │
+│   │   CRA, default)   │         │   esbuild-jest, …)           │        │
+│   └────────┬──────────┘         └──────────────┬───────────────┘        │
+│            │                                   │                        │
+│   Stage 1  ▼  our Babel AST instrumentation    │  Stage 1               │
+│   ┌──────────────────────────────┐             │  Project transformer   │
+│   │ Raw TS/JS source             │             │  (TS → clean JS)       │
+│   │   → inject __strace.step()  │             ▼                        │
+│   │   → inject __covF counters  │  ┌──────────────────────────────┐    │
+│   │   → write coverage manifest │  │ Raw TS source                │    │
+│   └──────────────┬───────────── ┘  │   → ts-jest / swc runs tsc   │    │
+│                  │                 │   → outputs clean CJS/JS      │    │
+│   Stage 2        ▼                 └──────────────┬───────────────┘    │
+│   Project transformer                             │  Stage 2            │
+│   (babel-jest strips TS types)                    ▼  our Babel AST     │
+│   ┌──────────────────────────────┐  ┌──────────────────────────────┐   │
+│   │ Pre-instrumented TS/JS       │  │ Clean JS output              │   │
+│   │   → babel strips types       │  │   → inject __strace.step()   │   │
+│   │   → outputs CJS              │  │   → inject __covF counters   │   │
+│   └──────────────┬───────────── ┘  │   → write coverage manifest   │   │
+│                  │                 └──────────────┬───────────────┘    │
+│                  └──────────────┬─────────────────┘                    │
+│                                 ▼                                       │
+│              prepend: require('sessionTraceRuntime.js')                 │
+│                                 │                                       │
+└─────────────────────────────────┼───────────────────────────────────────┘
+                                  ▼
+                      Jest executes instrumented CJS
+```
+
+**Why two orders?**
+- `babel-jest` (lenient) strips TypeScript types without type-checking, so it tolerates our injected `__strace`/`__covF` globals in the input.
+- `ts-jest` / `@swc/jest` (strict) run the real TypeScript compiler, which rejects unknown globals with type errors. They must receive clean source first; we then instrument the plain JS they produce.
+
 `--maxWorkers=1` keeps each Jest process single-threaded so batches can run in parallel without competing for CPU.
 
 **Single-test / scoped-rerun — `JestRunner` (CodeLens `▶ Run`, suite/test reruns):**
