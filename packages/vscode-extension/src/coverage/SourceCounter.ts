@@ -130,21 +130,50 @@ export class SourceCounter extends EventEmitter {
 
         // Control-flow (count as a statement each)
         IfStatement(p: any)            { _countStmt(p.node, executableLines); statements++; branches += 2; },
+        // Istanbul counts one branch slot per SwitchCase (not per SwitchStatement)
         SwitchCase(p: any)             { branches++; void p; },
+        // Each `?.` is a 2-arm branch (non-null path vs short-circuit)
+        OptionalMemberExpression(p: any) { if (p.node.optional) { branches += 2; } },
+        OptionalCallExpression(p: any)   { if (p.node.optional) { branches += 2; } },
         ConditionalExpression(p: any)  { branches += 2; void p; },
-        LogicalExpression(p: any)      { branches += 2; void p; },
+        // Chained logical expressions (a || b || c) are one branch group with N leaves,
+        // not N-1 groups of 2. Skip inner nodes of a same-operator chain.
+        LogicalExpression(p: any) {
+          if (p.parent?.type === 'LogicalExpression' &&
+              p.parent.operator === p.node.operator &&
+              p.parentKey === 'left') { return; }
+          branches += _countLogicalLeaves(p.node);
+        },
         ForStatement(p: any)           { _countStmt(p.node, executableLines); statements++; },
         ForInStatement(p: any)         { _countStmt(p.node, executableLines); statements++; },
         ForOfStatement(p: any)         { _countStmt(p.node, executableLines); statements++; },
         WhileStatement(p: any)         { _countStmt(p.node, executableLines); statements++; },
         DoWhileStatement(p: any)       { _countStmt(p.node, executableLines); statements++; },
+        // Istanbul counts the try block itself as a statement
+        TryStatement(p: any)           { _countStmt(p.node, executableLines); statements++; },
 
         // Functions
         FunctionDeclaration(p: any)    { functions++; void p; },
         FunctionExpression(p: any)     { functions++; void p; },
-        ArrowFunctionExpression(p: any){ functions++; void p; },
+        // Expression-body arrows: Istanbul counts the body as a statement
+        ArrowFunctionExpression(p: any) {
+          functions++;
+          if (p.node.body?.type !== 'BlockStatement') {
+            statements++;
+            const line = p.node.body?.loc?.start?.line;
+            if (line) { executableLines.add(line); }
+          }
+        },
         ClassMethod(p: any)            { functions++; void p; },
         ObjectMethod(p: any)           { functions++; void p; },
+        // Default parameter values are tracked as single branch slots by Istanbul
+        AssignmentPattern(p: any) {
+          const pt = p.parent?.type;
+          if (pt === 'FunctionDeclaration' || pt === 'FunctionExpression' ||
+              pt === 'ArrowFunctionExpression' || pt === 'ClassMethod' || pt === 'ObjectMethod') {
+            branches += 1;
+          }
+        },
       });
     } catch {
       // Partial parse — return what we have
@@ -157,4 +186,9 @@ export class SourceCounter extends EventEmitter {
 function _countStmt(node: any, lines: Set<number>): void {
   const line = node?.loc?.start?.line;
   if (line) { lines.add(line); }
+}
+
+function _countLogicalLeaves(node: any): number {
+  if (node?.type !== 'LogicalExpression') { return 1; }
+  return _countLogicalLeaves(node.left) + _countLogicalLeaves(node.right);
 }

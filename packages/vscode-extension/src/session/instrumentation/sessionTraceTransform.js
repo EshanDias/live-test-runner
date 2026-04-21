@@ -31,11 +31,28 @@ function loadBabel(rootDir) {
   if (_rootDir === rootDir && _parser) { return true; }
   try {
     const resolve = (id) => require.resolve(id, { paths: [rootDir, __dirname] });
-    _parser   = require(resolve('@babel/parser'));
-    _traverse = require(resolve('@babel/traverse'));
-    _generate = require(resolve('@babel/generator'));
-    _t        = require(resolve('@babel/types'));
+
+    // Load traverse first — it's always available and we can use its pnpm virtual-store
+    // directory to resolve sibling packages (@babel/types, @babel/generator) that may
+    // not be directly linked in the extension's node_modules.
+    const traversePath = resolve('@babel/traverse');
+    _traverse = require(traversePath);
     if (_traverse && _traverse.default) { _traverse = _traverse.default; }
+
+    // Build a fallback resolver rooted at @babel/traverse's real disk location so that
+    // @babel/types and @babel/generator are found even when they're not directly hoisted
+    // into the extension's node_modules (pnpm workspace isolation).
+    let traverseReal;
+    try { traverseReal = fs.realpathSync(traversePath); } catch (_) { traverseReal = traversePath; }
+    const traverseDir = path.dirname(traverseReal);
+    const resolveWithFallback = (id) => {
+      try { return require.resolve(id, { paths: [rootDir, __dirname] }); }
+      catch (_) { return require.resolve(id, { paths: [traverseDir] }); }
+    };
+
+    _parser   = require(resolveWithFallback('@babel/parser'));
+    _generate = require(resolveWithFallback('@babel/generator'));
+    _t        = require(resolveWithFallback('@babel/types'));
     if (_generate && _generate.default) { _generate = _generate.default; }
     _rootDir = rootDir;
     return true;
@@ -229,56 +246,84 @@ function findCallbackArg(args) {
 
 // ── Coverage AST node builders ───────────────────────────────────────────────
 
-/** __covF.s["sN"]++ */
+/** __covF.s["sN"] += 1  as a Statement */
 function makeCovStmt(stmtId) {
+  return _t.expressionStatement(makeCovStmtExpr(stmtId));
+}
+
+/** __covF.s["sN"] += 1  as an Expression */
+function makeCovStmtExpr(stmtId) {
   const t = _t;
-  return t.expressionStatement(
-    t.assignmentExpression(
-      '+=',
-      t.memberExpression(
-        t.memberExpression(t.identifier('__covF'), t.identifier('s')),
-        t.stringLiteral(stmtId),
-        true,
-      ),
-      t.numericLiteral(1),
+  return t.assignmentExpression(
+    '+=',
+    t.memberExpression(
+      t.memberExpression(t.identifier('__covF'), t.identifier('s')),
+      t.stringLiteral(stmtId),
+      true,
     ),
+    t.numericLiteral(1),
   );
 }
 
-/** __covF.f["fN"]++ */
+/** __covF.f["fN"] += 1  as a Statement */
 function makeCovFn(fnId) {
+  return _t.expressionStatement(makeCovFnExpr(fnId));
+}
+
+/** __covF.f["fN"] += 1  as an Expression */
+function makeCovFnExpr(fnId) {
   const t = _t;
-  return t.expressionStatement(
-    t.assignmentExpression(
-      '+=',
-      t.memberExpression(
-        t.memberExpression(t.identifier('__covF'), t.identifier('f')),
-        t.stringLiteral(fnId),
-        true,
-      ),
-      t.numericLiteral(1),
+  return t.assignmentExpression(
+    '+=',
+    t.memberExpression(
+      t.memberExpression(t.identifier('__covF'), t.identifier('f')),
+      t.stringLiteral(fnId),
+      true,
     ),
+    t.numericLiteral(1),
   );
 }
 
-/** __covF.b["bN"][armIdx]++ */
+/** __strace.step(line, file)  as an Expression (no statement wrapper) */
+function makeStepCallExpr(lineNo, filePath) {
+  return _t.callExpression(
+    _t.memberExpression(_t.identifier('__strace'), _t.identifier('step')),
+    [_t.numericLiteral(lineNo), _t.stringLiteral(filePath)],
+  );
+}
+
+/** __covF.b["bN"][armIdx]++ as a Statement */
 function makeCovBranch(branchId, armIdx) {
   const t = _t;
-  return t.expressionStatement(
-    t.assignmentExpression(
-      '+=',
+  return t.expressionStatement(makeCovBranchExpr(branchId, armIdx));
+}
+
+/** __covF.b["bN"][armIdx] += 1  as an Expression (for use inside SequenceExpression) */
+function makeCovBranchExpr(branchId, armIdx) {
+  const t = _t;
+  return t.assignmentExpression(
+    '+=',
+    t.memberExpression(
       t.memberExpression(
-        t.memberExpression(
-          t.memberExpression(t.identifier('__covF'), t.identifier('b')),
-          t.stringLiteral(branchId),
-          true,
-        ),
-        t.numericLiteral(armIdx),
+        t.memberExpression(t.identifier('__covF'), t.identifier('b')),
+        t.stringLiteral(branchId),
         true,
       ),
-      t.numericLiteral(1),
+      t.numericLiteral(armIdx),
+      true,
     ),
+    t.numericLiteral(1),
   );
+}
+
+/**
+ * Collect all leaves of a same-operator logical chain.
+ * `a || b || c` (left-nested) and `a || (b || c)` (right-nested) both yield [a, b, c].
+ * Stops at nodes with a different operator (they are treated as atomic leaves).
+ */
+function collectLogicalLeaves(node, op) {
+  if (node.type !== 'LogicalExpression' || node.operator !== op) { return [node]; }
+  return [...collectLogicalLeaves(node.left, op), ...collectLogicalLeaves(node.right, op)];
 }
 
 /**
@@ -377,7 +422,7 @@ function instrumentAST(code, sourcePath) {
     ast = _parser.parse(code, {
       sourceType: 'module',
       allowReturnOutsideFunction: true,
-      plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport'],
+      plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator'],
     });
   } catch (e) {
     process.stderr.write(`[LTR-SESSION-TRANSFORM] AST parse failed for ${sourcePath}: ${e.message}\n`);
@@ -393,6 +438,13 @@ function instrumentAST(code, sourcePath) {
     functions:  /** @type {Record<string, {name:string,start:{line:number},end:{line:number}}>} */ ({}),
   };
   let sIdx = 0, bIdx = 0, fIdx = 0;
+  // Tracks ConditionalExpression nodes we generate for optional-chaining so the
+  // ConditionalExpression:exit visitor doesn't add a second (cond-expr) counter.
+  const generatedCondExprs = new WeakSet();
+  // Temp var names needed for optional-chain instrumentation of non-identifier objects.
+  const tempVarNames = [];
+  // Guards against double-registration when replaceWith() triggers re-traversal.
+  const registeredFunctions = new WeakSet();
 
   // Pass 1: wrap test/hook callbacks with enter/exit context calls
   const describeStack = [];
@@ -430,8 +482,10 @@ function instrumentAST(code, sourcePath) {
     // Function coverage — inject at start of function body
     'FunctionDeclaration|FunctionExpression|ArrowFunctionExpression|ClassMethod|ObjectMethod'(nodePath) {
       const node = nodePath.node;
+      // Guard: replaceWith() on an ancestor re-traverses descendants — skip if already registered.
+      if (registeredFunctions.has(node)) { return; }
+      registeredFunctions.add(node);
       const body = node.body;
-      if (!t.isBlockStatement(body)) { return; }
 
       // Skip functions inside jest.mock() factories — babel-plugin-jest-hoist moves
       // those calls before our __covF preamble, so __covF would be undefined at runtime.
@@ -448,13 +502,191 @@ function instrumentAST(code, sourcePath) {
       if (insideJestMock) { return; }
 
       const fnId = `f${fIdx++}`;
-      const loc = node.loc;
+      const loc  = node.loc;
       manifest.functions[fnId] = {
-        name: node.id?.name ?? node.key?.name ?? '<anonymous>',
+        name:  node.id?.name ?? node.key?.name ?? '<anonymous>',
         start: { line: loc?.start?.line ?? 0 },
-        end:   { line: loc?.end?.line ?? 0 },
+        end:   { line: loc?.end?.line   ?? 0 },
       };
-      body.body.unshift(makeCovFn(fnId));
+
+      if (t.isBlockStatement(body)) {
+        // Block-body function — prepend counter to the body
+        body.body.unshift(makeCovFn(fnId));
+      } else {
+        // Expression-body arrow: (x) => expr
+        // Istanbul counts this as a function call AND as a statement for the body expression.
+        const bodyLine = body.loc?.start?.line ?? 0;
+        const sId = bodyLine !== 0 ? `s${sIdx++}` : null;
+        if (sId) {
+          manifest.statements[sId] = {
+            start: { line: body.loc.start.line, col: body.loc.start.column },
+            end:   { line: body.loc.end.line,   col: body.loc.end.column },
+          };
+        }
+        // Wrap body: (x) => (step(line), fnCounter++, stmtCounter++, expr)
+        const parts = [makeCovFnExpr(fnId)];
+        if (sId) {
+          parts.push(makeStepCallExpr(bodyLine, sourcePath));
+          parts.push(makeCovStmtExpr(sId));
+        }
+        parts.push(body);
+        node.body = t.sequenceExpression(parts);
+      }
+    },
+
+    // Default function parameter values — Istanbul tracks these as 1-arm branches.
+    AssignmentPattern(nodePath) {
+      const parentType = nodePath.parent?.type;
+      if (parentType !== 'FunctionDeclaration' && parentType !== 'FunctionExpression' &&
+          parentType !== 'ArrowFunctionExpression' && parentType !== 'ClassMethod' &&
+          parentType !== 'ObjectMethod') { return; }
+      const bId  = `b${bIdx++}`;
+      const line = nodePath.node.loc?.start?.line ?? 0;
+      manifest.branches[bId] = { type: 'default-arg', line, arms: 1 };
+      // Wrap the default value so the counter fires each time the default is used
+      nodePath.node.right = t.sequenceExpression([makeCovBranchExpr(bId, 0), nodePath.node.right]);
+    },
+
+    // Branch coverage — conditional (ternary) expressions
+    // Uses exit so inner ternaries are instrumented before the outer wrapper is added.
+    // Skips ConditionalExpression nodes we generated for optional-chaining (already counted).
+    ConditionalExpression: {
+      exit(nodePath) {
+        if (generatedCondExprs.has(nodePath.node)) { return; }
+        const node = nodePath.node;
+        const bId  = `b${bIdx++}`;
+        manifest.branches[bId] = { type: 'cond-expr', line: node.loc?.start?.line ?? 0, arms: 2 };
+        node.consequent = t.sequenceExpression([makeCovBranchExpr(bId, 0), node.consequent]);
+        node.alternate  = t.sequenceExpression([makeCovBranchExpr(bId, 1), node.alternate]);
+      },
+    },
+
+    // Branch coverage — optional chaining (?.)
+    // Each `?.` is a 2-arm branch: arm 0 = non-null path, arm 1 = short-circuit (null/undefined).
+    // For identifier objects we can use them directly. For complex expressions we inject a
+    // temp var via a sequence assignment so the object is only evaluated once.
+    //
+    // IMPORTANT: `obj?.method(args)` in Babel is:
+    //   OptionalCallExpression { callee: OptionalMemberExpression(obj, method, optional:true), optional: false }
+    // We must include the call args in the non-null branch, otherwise when obj is null our
+    // ternary returns `undefined` and the outer call becomes `undefined(args)` → TypeError.
+    OptionalMemberExpression: {
+      exit(nodePath) {
+        const node = nodePath.node;
+        if (!node.optional) { return; } // chained `.` after a `?.` — not a new branch point
+        const bId = `b${bIdx++}`;
+        manifest.branches[bId] = { type: 'optional-chaining', line: node.loc?.start?.line ?? 0, arms: 2 };
+
+        const obj = node.object;
+        let objForCheck, objForUse;
+        if (t.isIdentifier(obj)) {
+          objForCheck = obj;
+          objForUse   = t.identifier(obj.name);
+        } else {
+          const tmpName = `_ltrOc${bIdx}`;
+          tempVarNames.push(tmpName);
+          objForCheck = t.assignmentExpression('=', t.identifier(tmpName), obj);
+          objForUse   = t.identifier(tmpName);
+        }
+
+        // If parent is `OptionalCallExpression { optional: false }` (i.e. `obj?.method(args)`),
+        // pull the call args into the non-null branch so we never call `undefined(args)`.
+        const parentPath = nodePath.parentPath;
+        const parentNode = parentPath?.node;
+        if (parentNode?.type === 'OptionalCallExpression' && !parentNode.optional &&
+            parentNode.callee === node) {
+          const replacement = t.conditionalExpression(
+            t.binaryExpression('==', objForCheck, t.nullLiteral()),
+            t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
+            t.sequenceExpression([
+              makeCovBranchExpr(bId, 0),
+              t.callExpression(t.memberExpression(objForUse, node.property, node.computed), parentNode.arguments),
+            ]),
+          );
+          generatedCondExprs.add(replacement);
+          parentPath.replaceWith(replacement); // replace the whole call, not just the member
+        } else {
+          const replacement = t.conditionalExpression(
+            t.binaryExpression('==', objForCheck, t.nullLiteral()),
+            t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
+            t.sequenceExpression([makeCovBranchExpr(bId, 0), t.memberExpression(objForUse, node.property, node.computed)]),
+          );
+          generatedCondExprs.add(replacement);
+          nodePath.replaceWith(replacement);
+        }
+      },
+    },
+
+    // Branch coverage — optional call expressions (fn?.())
+    OptionalCallExpression: {
+      exit(nodePath) {
+        const node = nodePath.node;
+        if (!node.optional) { return; }
+        const bId = `b${bIdx++}`;
+        manifest.branches[bId] = { type: 'optional-chaining', line: node.loc?.start?.line ?? 0, arms: 2 };
+
+        const callee = node.callee;
+        let calleeForCheck, calleeForUse;
+        if (t.isIdentifier(callee)) {
+          calleeForCheck = callee;
+          calleeForUse   = t.identifier(callee.name);
+        } else {
+          const tmpName = `_ltrOc${bIdx}`;
+          tempVarNames.push(tmpName);
+          calleeForCheck = t.assignmentExpression('=', t.identifier(tmpName), callee);
+          calleeForUse   = t.identifier(tmpName);
+        }
+        const replacement = t.conditionalExpression(
+          t.binaryExpression('==', calleeForCheck, t.nullLiteral()),
+          t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
+          t.sequenceExpression([makeCovBranchExpr(bId, 0), t.callExpression(calleeForUse, node.arguments)]),
+        );
+        generatedCondExprs.add(replacement);
+        nodePath.replaceWith(replacement);
+      },
+    },
+
+    // Branch coverage — logical expressions (||, &&, ??)
+    // A chain like `a || b || c` is one branch group with N arms (one per operand),
+    // matching Istanbul's binary-expr semantics exactly.
+    // Uses exit so inner chains (different operator) are instrumented first.
+    LogicalExpression: {
+      exit(nodePath) {
+        const node = nodePath.node;
+        // Skip inner nodes of a same-operator chain — the root handles the whole chain
+        if (nodePath.parent?.type === 'LogicalExpression' &&
+            nodePath.parent.operator === node.operator) { return; }
+
+        const leaves = collectLogicalLeaves(node, node.operator);
+        const bId    = `b${bIdx++}`;
+        manifest.branches[bId] = { type: 'binary-expr', line: node.loc?.start?.line ?? 0, arms: leaves.length };
+
+        let armIdx = 0;
+        const wrapInPlace = (n) => {
+          if (n.type !== 'LogicalExpression' || n.operator !== node.operator) {
+            // Leaf — return a new SequenceExpression wrapping the original node
+            return t.sequenceExpression([makeCovBranchExpr(bId, armIdx++), n]);
+          }
+          // Chain node — mutate children in place and return the same object
+          n.left  = wrapInPlace(n.left);
+          n.right = wrapInPlace(n.right);
+          return n;
+        };
+        wrapInPlace(node); // mutates the chain in place; no replaceWith → no re-traversal
+      },
+    },
+
+    // Branch coverage — switch/case
+    // Istanbul creates one branch group per SwitchStatement with one arm per SwitchCase.
+    SwitchStatement(nodePath) {
+      const node = nodePath.node;
+      const cases = node.cases;
+      if (!cases.length) { return; }
+      const bId = `b${bIdx++}`;
+      manifest.branches[bId] = { type: 'switch', line: node.loc?.start?.line ?? 0, arms: cases.length };
+      cases.forEach((switchCase, armIdx) => {
+        switchCase.consequent.unshift(makeCovBranch(bId, armIdx));
+      });
     },
 
     // Branch coverage — if/else
@@ -516,16 +748,15 @@ function instrumentAST(code, sourcePath) {
         });
         if (insideJestMock) { return; }
 
-        if (
-          t.isIfStatement(node) || t.isForStatement(node) ||
-          t.isForInStatement(node) || t.isForOfStatement(node) ||
-          t.isWhileStatement(node) || t.isDoWhileStatement(node) ||
-          t.isTryStatement(node) || t.isSwitchStatement(node) ||
-          t.isLabeledStatement(node)
-        ) { return; }
+        // SwitchStatement and LabeledStatement are not counted by Istanbul as plain statements.
+        // IfStatement, ForStatement, WhileStatement, TryStatement etc. ARE counted by Istanbul.
+        if (t.isSwitchStatement(node) || t.isLabeledStatement(node)) { return; }
 
         if (t.isImportDeclaration(node)) { return; }
         if (t.isExportDeclaration(node)) { return; }
+        // Istanbul does not count function/class declarations or bare blocks as statements
+        if (t.isFunctionDeclaration(node) || t.isClassDeclaration(node)) { return; }
+        if (t.isBlockStatement(node)) { return; }
 
         const lineNo = (node.loc && node.loc.start && node.loc.start.line) || 0;
         if (lineNo === 0) { return; }
@@ -551,6 +782,14 @@ function instrumentAST(code, sourcePath) {
       nodePath.insertBefore(covNode);
       nodePath.insertBefore(stepNode);
     } catch (_e) {}
+  }
+
+  // Inject temp vars needed for optional-chaining instrumentation of non-identifier objects
+  if (tempVarNames.length > 0) {
+    const varDecl = t.variableDeclaration('var',
+      tempVarNames.map((name) => t.variableDeclarator(t.identifier(name))),
+    );
+    ast.program.body.unshift(varDecl);
   }
 
   // Inject coverage preamble at the top of the program body

@@ -37,6 +37,12 @@ const LIVE_REPORTER_PATH = path.resolve(
   'liveReporter.js',
 );
 
+const COVERAGE_SETUP_PATH = path.resolve(
+  __dirname,
+  'instrumentation',
+  'ltrCoverageSetup.js',
+);
+
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -242,6 +248,10 @@ module.exports = {
     ...baseTransformObj,
     ...fallbackTransform,
   },
+  setupFilesAfterEnv: [
+    ...((baseConfig.setupFilesAfterEnv || [])),
+    ${JSON.stringify(COVERAGE_SETUP_PATH)},
+  ],
   reporters: [
     'default',
     [${JSON.stringify(LIVE_REPORTER_PATH)}, { outputFile: ${JSON.stringify(reporterFile)} }],
@@ -329,7 +339,7 @@ module.exports = {
 
     // Parse coverage counters and promote CoverageStore entries.
     try {
-      this._parseCoverage(covCountersFile, emit);
+      this._parseCoverage(covCountersFile, projectRoot, emit);
     } catch (err) {
       logger.error(FILE, 'runFiles', `_parseCoverage failed`, err);
     }
@@ -340,7 +350,7 @@ module.exports = {
 
   // ── Private: parse light-trace JSONL and update ExecutionTraceStore ──────────
 
-  private _parseCoverage(covCountersFile: string, emit: (msg: string) => void): void {
+  private _parseCoverage(covCountersFile: string, projectRoot: string, emit: (msg: string) => void): void {
     if (!fs.existsSync(covCountersFile)) { return; }
 
     let raw: string;
@@ -397,7 +407,10 @@ module.exports = {
         continue;
       }
 
-      if (_isExcludedFromCoverage(manifest.filePath)) { continue; }
+      const relPath = path.relative(projectRoot, manifest.filePath);
+      if (_isExcludedFromCoverage(relPath)) {
+        continue;
+      }
 
       const existing = this._coverageStore.getEntry(manifest.filePath);
       const merged: LiveCov =

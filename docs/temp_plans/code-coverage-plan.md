@@ -1970,4 +1970,148 @@ diagCollection.set(diags);
 ### Decision
 **Defer to v2.** The Coverage Explorer's colour coding and the file detail page (§35) give the user the same information with better context. Add the Problems panel integration only if users ask for it — it's a preference question (some developers live in the Problems panel, others don't use it).
 
+---
+
+## 38. Partial-branch gutter indicator (v2)
+
+> **Status: design complete, deferred to v2.**
+
+### Problem
+
+The extension tracks optional-chaining (`?.`) branches as 2-arm branches (more accurate than Istanbul, which ignores them in older versions). A line like `incident.tags?.map(...)` that has only ever taken the non-null arm shows as a covered line (green gutter dot) even though one branch arm — the null/undefined short-circuit — was never executed.
+
+The user sees green and assumes the line is fully covered. There is no signal that a branch arm was missed.
+
+### Solution — amber/yellow gutter dot for partial branch coverage
+
+Lines where the line executed **but at least one branch arm on that line was never hit** get a distinct amber gutter decoration instead of green. This is the same visual language as Istanbul's HTML report (green = fully covered, yellow = partially covered, red = uncovered).
+
+**No new data fetching needed.** The branch manifest already stores the line number for every branch, and `CoverageStore` has the counters. The decoration manager just needs to cross-reference them.
+
+### Decoration states (updated)
+
+| State | Gutter icon | Meaning |
+|---|---|---|
+| Fully covered | Green dot | Line executed, all branch arms on this line hit |
+| Partial branch | Amber dot | Line executed, ≥1 branch arm on this line never hit |
+| Uncovered | Red dot | Line never executed |
+| Stale | Grey dot | Line was covered in last run but file has since been saved (re-run pending) |
+
+### Hover tooltip for partial lines
+
+When the user hovers the amber gutter dot, a `vscode.Hover` shows which branch arm(s) were missed:
+
+```
+Partial coverage — 1 branch arm not taken:
+  • optional chain (ln 34): null path never taken
+  • if (ln 34): false branch never taken
+```
+
+Branch type display names:
+
+| `manifest.branches[id].type` | Display label |
+|---|---|
+| `'if'` | `if` |
+| `'cond-expr'` | `ternary` |
+| `'binary-expr'` | `logical (&&/\|\|)` |
+| `'switch'` | `switch` |
+| `'default-arg'` | `default parameter` |
+| `'optional-chaining'` | `optional chain` |
+
+Arm labels (arm index → human label):
+
+| Type | Arm 0 | Arm 1 |
+|---|---|---|
+| `'if'` | `true branch` | `false branch` |
+| `'cond-expr'` | `true branch` | `false branch` |
+| `'binary-expr'` | `right-hand side taken` | `short-circuit` |
+| `'switch'` | `case N` | — (N arms, label = `case ${armIdx}`) |
+| `'default-arg'` | `value provided` | — (single slot) |
+| `'optional-chaining'` | `non-null path` | `null path (short-circuit)` |
+
+### Implementation plan
+
+**Step 1 — compute partial-branch lines in `CoverageStore` or `DecorationManager`**
+
+After a `'measured'` entry is written to `CoverageStore`, build a `Set<number>` of line numbers where at least one branch arm has 0 hits. This can be a derived getter on `CoverageStore`:
+
+```typescript
+// Returns line numbers with partial branch coverage
+getPartialBranchLines(filePath: string): Set<number> {
+  const entry = this._entries.get(filePath);
+  if (!entry || entry.state !== 'measured') { return new Set(); }
+  const { manifest, counters } = entry;
+  const lines = new Set<number>();
+  for (const [id, branch] of Object.entries(manifest.branches)) {
+    const arms: number[] = counters.b[id] ?? [];
+    const hasHit   = arms.some((n) => n > 0);
+    const hasMiss  = arms.some((n) => n === 0) || arms.length < branch.arms;
+    if (hasHit && hasMiss) {
+      lines.add(branch.line);
+    }
+  }
+  return lines;
+}
+
+// Returns branch misses for a specific line (for hover tooltip)
+getBranchMissesForLine(filePath: string, line: number): Array<{ type: string; armIdx: number }> {
+  const entry = this._entries.get(filePath);
+  if (!entry || entry.state !== 'measured') { return []; }
+  const { manifest, counters } = entry;
+  const misses: Array<{ type: string; armIdx: number }> = [];
+  for (const [id, branch] of Object.entries(manifest.branches)) {
+    if (branch.line !== line) { continue; }
+    const arms: number[] = counters.b[id] ?? [];
+    for (let i = 0; i < branch.arms; i++) {
+      if ((arms[i] ?? 0) === 0) {
+        misses.push({ type: branch.type, armIdx: i });
+      }
+    }
+  }
+  return misses;
+}
+```
+
+**Step 2 — update `DecorationManager` to apply amber decoration**
+
+`DecorationManager` already iterates over covered/uncovered lines per file. Add a third pass: for lines in `getPartialBranchLines()`, apply amber decoration instead of green.
+
+Priority: `uncovered` > `partial` > `covered` (a line that is both uncovered AND has a branch miss is shown as red).
+
+**Step 3 — register a `HoverProvider` for the amber lines**
+
+```typescript
+// src/editor/CoverageHoverProvider.ts (can extend existing hover provider from §36)
+provideHover(document, position): vscode.Hover | undefined {
+  const line = position.line + 1;
+  const misses = this._coverageStore.getBranchMissesForLine(document.uri.fsPath, line);
+  if (misses.length === 0) { return undefined; }
+
+  const md = new vscode.MarkdownString();
+  md.appendMarkdown(`**Partial coverage** — ${misses.length} branch arm${misses.length > 1 ? 's' : ''} not taken:\n\n`);
+  for (const miss of misses) {
+    const typeLabel = _branchTypeLabel(miss.type);
+    const armLabel  = _armLabel(miss.type, miss.armIdx);
+    md.appendMarkdown(`• ${typeLabel}: *${armLabel}*\n\n`);
+  }
+  return new vscode.Hover(md);
+}
+```
+
+### What NOT to do
+
+- Do not add a new gutter icon per branch arm — one amber dot per line is enough; detail is in the hover.
+- Do not show partial indicators for `'counted'` entries (no manifest) — only `'measured'` entries have branch data.
+- Do not show partial indicators when a file is `'measured-stale'` — use the grey stale dot instead.
+
+### Git commit (when implementing)
+
+```
+Commit (v2) — feat: amber gutter dot and hover tooltip for partial branch coverage
+  Files: src/coverage/CoverageStore.ts (getPartialBranchLines, getBranchMissesForLine)
+         src/editor/DecorationManager.ts (amber decoration type, partial-branch pass)
+         src/editor/CoverageHoverProvider.ts (new, or extend existing hover provider)
+         src/extension.ts (register hover provider if not already registered in §36)
+```
+
 **If implemented:** add a setting `liveTestRunner.coverageProblemsPanel: boolean` (default `false`) so users opt in. Never on by default.
