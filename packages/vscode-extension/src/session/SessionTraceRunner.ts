@@ -484,6 +484,30 @@ module.exports = {
       }
     }
 
+    // Line → test reverse index — for each test, record which lines it hit in each source file.
+    for (const [testFilePath, testRecs] of testsByFile) {
+      // Accumulate: sourceFile → line → Set<fullName>
+      const fileLineMap = new Map<string, Map<number, string[]>>();
+      for (const rec of testRecs) {
+        for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
+          if (srcFile === testFilePath) { continue; }
+          let lineMap = fileLineMap.get(srcFile);
+          if (!lineMap) {
+            lineMap = new Map();
+            fileLineMap.set(srcFile, lineMap);
+          }
+          for (const line of linesArr) {
+            const names = lineMap.get(line) ?? [];
+            if (!names.includes(rec.tn)) { names.push(rec.tn); }
+            lineMap.set(line, names);
+          }
+        }
+      }
+      for (const [srcFile, lineMap] of fileLineMap) {
+        traceStore.mergeLineToTests(srcFile, testFilePath, lineMap);
+      }
+    }
+
     // sourceToTests index — for each test file, map source files to the tests that hit them.
     for (const [testFilePath, testRecs] of testsByFile) {
       const testNames = testRecs.map((r) => r.tn);

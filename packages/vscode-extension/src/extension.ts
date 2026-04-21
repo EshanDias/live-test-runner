@@ -30,6 +30,7 @@ import { TimelineDecorationManager } from './timeline/TimelineDecorationManager'
 import { DiscoveryCache, rotateAndCheckCapacity } from './cache/DiscoveryCache';
 import { CoverageStore } from './coverage/CoverageStore';
 import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
+import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { logger } from './utils/logger';
 
 const FILE = 'extension.ts';
@@ -290,6 +291,15 @@ export function activate(context: vscode.ExtensionContext) {
   _cleanTraceDir = cleanTraceDir;
   _releaseDiscoveryLock = () => discoveryCache?.releaseLock();
 
+  // ── Coverage hover provider ────────────────────────────────────────────────
+  const coverageHoverProvider = new CoverageHoverProvider(traceStore, store, coverageStore);
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider(
+      { scheme: 'file', pattern: '**/*.{ts,js,tsx,jsx}' },
+      coverageHoverProvider,
+    ),
+  );
+
   // ── Commands ───────────────────────────────────────────────────────────────
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ExplorerView.viewId, explorerView, { webviewOptions: { retainContextWhenHidden: true } }),
@@ -354,6 +364,20 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath, line) => rerunFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath, line) => debugFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, nodeId) => focusResult(fileId, nodeId, store, selection, resultsView)),
+    vscode.commands.registerCommand('liveTestRunner.revealTestInPanel',  (args: { testFileId: string; fullName: string }) => {
+      const node = store.findNodeByFullName(args.testFileId, args.fullName);
+      if (node) { focusResult(node.fileId, node.id, store, selection, resultsView); }
+    }),
+    vscode.commands.registerCommand('liveTestRunner.openTestFile',       async (args: { testFileId: string; fullName: string }) => {
+      const node = store.findNodeByFullName(args.testFileId, args.fullName);
+      const targetLine = node?.line != null ? node.line - 1 : 0; // VS Code range is 0-based
+      const uri = vscode.Uri.file(args.testFileId);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc, {
+        selection: new vscode.Range(targetLine, 0, targetLine, 0),
+        preserveFocus: false,
+      });
+    }),
     vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) => {
       lastTimelineOptions = { filePath, testFullName };
       return openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, outputChannel, lastTimelineOptions,

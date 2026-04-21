@@ -710,6 +710,19 @@ export class ResultStore {
   }
 
   /** Get all nodes belonging to a file. */
+  /**
+   * Find a test node by its file and full name. Linear scan — only call from hover providers,
+   * never from hot paths.
+   */
+  findNodeByFullName(fileId: string, fullName: string): TestNode | undefined {
+    for (const node of this.nodes.values()) {
+      if (node.fileId === fileId && node.fullName === fullName) {
+        return node;
+      }
+    }
+    return undefined;
+  }
+
   getFileNodes(fileId: string): TestNode[] {
     const result: TestNode[] = [];
     for (const node of this.nodes.values()) {

@@ -33,6 +33,13 @@ export interface SourceTestMapping {
   };
 }
 
+export interface LineTestEntry {
+  /** Absolute path to the test file containing this test */
+  testFileId: string;
+  /** Full test name — "suite > nested > test" — matches ResultStore node.fullName */
+  fullName: string;
+}
+
 export class ExecutionTraceStore {
   /** testId → absolute path to the test's JSONL trace file */
   private readonly _traceIndex = new Map<string, string>();
@@ -42,6 +49,13 @@ export class ExecutionTraceStore {
 
   /** sourceFilePath → test file → suite → trace metadata */
   private readonly _sourceToTests = new Map<string, SourceTestMapping>();
+
+  /**
+   * Line → test reverse index.
+   * sourceFilePath → lineNumber (1-based) → array of { testFileId, fullName }
+   * Used by CoverageHoverProvider to show "covered by N tests" on gutter hover.
+   */
+  private readonly _lineToTests = new Map<string, Map<number, LineTestEntry[]>>();
 
   // ── Trace index ────────────────────────────────────────────────────────────
 
@@ -112,6 +126,44 @@ export class ExecutionTraceStore {
     return this._sourceToTests.get(sourceFilePath)?.[testFilePath] ?? {};
   }
 
+  // ── Line → test reverse index ──────────────────────────────────────────────
+
+  /**
+   * Merge a per-file line→test mapping into the index.
+   * Called by SessionTraceRunner after each trace parse.
+   * Accumulates across reruns — entries are added, never removed mid-session.
+   */
+  mergeLineToTests(
+    sourceFilePath: string,
+    testFileId: string,
+    lineMap: Map<number, string[]>,  // line → array of fullName strings
+  ): void {
+    let fileMap = this._lineToTests.get(sourceFilePath);
+    if (!fileMap) {
+      fileMap = new Map();
+      this._lineToTests.set(sourceFilePath, fileMap);
+    }
+    for (const [line, names] of lineMap) {
+      const existing = fileMap.get(line) ?? [];
+      const existingNames = new Set(existing.map((e) => e.fullName));
+      for (const fullName of names) {
+        if (!existingNames.has(fullName)) {
+          existing.push({ testFileId, fullName });
+          existingNames.add(fullName);
+        }
+      }
+      fileMap.set(line, existing);
+    }
+  }
+
+  /**
+   * Returns the tests that executed a given line in a source file.
+   * Returns an empty array if no data exists (line not covered or not yet traced).
+   */
+  getTestsForLine(sourceFilePath: string, line: number): LineTestEntry[] {
+    return this._lineToTests.get(sourceFilePath)?.get(line) ?? [];
+  }
+
   // ── Debug ──────────────────────────────────────────────────────────────────
 
   dump(): string {
@@ -157,5 +209,6 @@ export class ExecutionTraceStore {
     this._traceIndex.clear();
     this._coverageIndex.clear();
     this._sourceToTests.clear();
+    this._lineToTests.clear();
   }
 }
