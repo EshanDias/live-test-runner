@@ -510,10 +510,17 @@ Lifecycle:
 
 **`CoverageDecorationManager`** (`src/editor/CoverageDecorationManager.ts`) — dedicated manager for coverage gutter decorations. Completely separate from `DecorationManager`; uses its own `TextEditorDecorationType` instances.
 
+Three thin vertical bar states per executable line (3px wide rect, distinct from debug breakpoints which are filled circles):
+
 | Decoration | Trigger | Visual |
 |---|---|---|
-| Green heatmap | `'measured'` entry, line executed ≥1 time | Green gutter bar |
-| Grey stale overlay | `'measured-stale'` entry (file saved, rerun pending) | Grey tint over entire file |
+| Covered | Line executed, all branches taken | Solid green bar |
+| Partial | Line executed, ≥1 branch arm never taken | Amber bar |
+| Uncovered | Line never executed | Dim red bar |
+| Stale tint | `'measured-stale'` entry (file saved, rerun pending) | Subtle grey `backgroundColor` tint over entire file — bars remain visible underneath |
+| Not yet run | `'counted'` entry | Nothing shown |
+
+Line classification reads the coverage manifest (statement IDs + locations, branch IDs + arm counts) and counters (`s`, `b`, `f`) from `CoverageEntry`. A line is **partial** when it has ≥1 branch whose arm count array contains a zero; otherwise if hit count > 0 it is **covered**; if hit count = 0 it is **uncovered**. Functions without dedicated decoration — an uncovered function's declaration line shows as uncovered (red bar).
 
 Subscribes to `CoverageStore.onDidChange` and redraws all visible editors on each change. Reads the coverage manifest from disk on demand (path stored in the `CoverageEntry`) to get per-line hit data. Clears on session stop.
 
