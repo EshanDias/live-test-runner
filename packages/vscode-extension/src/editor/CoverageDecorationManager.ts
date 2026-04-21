@@ -4,26 +4,11 @@ import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResu
 import { CoverageStore } from '../coverage/CoverageStore';
 import { Manifest, LiveCov } from '../coverage/types';
 
-/**
- * CoverageDecorationManager — gutter decorations for code coverage.
- *
- * Three thin vertical bar states per executable line:
- *   covered   — line executed, all branches taken        (green bar)
- *   partial   — line executed, ≥1 branch arm never taken (amber bar)
- *   uncovered — line never executed                      (red bar)
- *
- * Icons are static SVGs bundled in resources/icons/ and loaded via extensionUri,
- * matching the same pattern as DecorationManager (test pass/fail icons).
- *
- * Stale overlay: subtle grey background tint over the whole file when entry is
- * 'measured-stale'. Coverage bars remain visible underneath.
- *
- * Sole-coverage warnings are stubbed for T3 — type created but never applied.
- */
 export class CoverageDecorationManager implements IResultObserver {
   private readonly _covered:   vscode.TextEditorDecorationType;
   private readonly _partial:   vscode.TextEditorDecorationType;
   private readonly _uncovered: vscode.TextEditorDecorationType;
+  private readonly _neutral:   vscode.TextEditorDecorationType;
   private readonly _stale:     vscode.TextEditorDecorationType;
   // Sole-coverage stub — T3 (created but never applied)
   private readonly _soleCov:   vscode.TextEditorDecorationType;
@@ -32,28 +17,28 @@ export class CoverageDecorationManager implements IResultObserver {
 
   constructor(
     private readonly _store: CoverageStore,
-    context: vscode.ExtensionContext,
   ) {
-    const icon = (name: string) =>
-      vscode.Uri.joinPath(context.extensionUri, 'resources', 'icons', `${name}.svg`);
-
+    // ▌ before pseudo-element — thin coloured bar at start of text content.
+    // Applied to all executable lines so the shift is uniform (no misalignment).
+    // Never touches the gutter, so breakpoints work on every line.
+    // overviewRulerColor mirrors state in the scrollbar minimap.
     this._covered   = vscode.window.createTextEditorDecorationType({
-      overviewRulerColor: 'rgba(34,197,94,0.6)',
-      overviewRulerLane: vscode.OverviewRulerLane.Left,
-      gutterIconPath: icon('cov-covered'),
-      gutterIconSize: 'contain',
+      before:             { contentText: '▌', color: '#22c55e', margin: '0 3px 0 0' },
+      overviewRulerColor: 'rgba(34,197,94,0.7)',
+      overviewRulerLane:  vscode.OverviewRulerLane.Left,
     });
     this._partial   = vscode.window.createTextEditorDecorationType({
-      overviewRulerColor: 'rgba(245,158,11,0.6)',
-      overviewRulerLane: vscode.OverviewRulerLane.Left,
-      gutterIconPath: icon('cov-partial'),
-      gutterIconSize: 'contain',
+      before:             { contentText: '▌', color: '#f59e0b', margin: '0 3px 0 0' },
+      overviewRulerColor: 'rgba(245,158,11,0.7)',
+      overviewRulerLane:  vscode.OverviewRulerLane.Left,
     });
     this._uncovered = vscode.window.createTextEditorDecorationType({
-      overviewRulerColor: 'rgba(239,68,68,0.5)',
-      overviewRulerLane: vscode.OverviewRulerLane.Left,
-      gutterIconPath: icon('cov-uncovered'),
-      gutterIconSize: 'contain',
+      before:             { contentText: '▌', color: '#ef4444', margin: '0 3px 0 0' },
+      overviewRulerColor: 'rgba(239,68,68,0.6)',
+      overviewRulerLane:  vscode.OverviewRulerLane.Left,
+    });
+    this._neutral   = vscode.window.createTextEditorDecorationType({
+      before:             { contentText: '▌', color: 'rgba(128,128,128,0.25)', margin: '0 3px 0 0' },
     });
     this._stale = vscode.window.createTextEditorDecorationType({
       backgroundColor: 'rgba(128,128,128,0.07)',
@@ -85,6 +70,7 @@ export class CoverageDecorationManager implements IResultObserver {
     this._covered.dispose();
     this._partial.dispose();
     this._uncovered.dispose();
+    this._neutral.dispose();
     this._stale.dispose();
     this._soleCov.dispose();
     for (const d of this._disposables) { d.dispose(); }
@@ -108,6 +94,7 @@ export class CoverageDecorationManager implements IResultObserver {
     editor.setDecorations(this._covered,   []);
     editor.setDecorations(this._partial,   []);
     editor.setDecorations(this._uncovered, []);
+    editor.setDecorations(this._neutral,   []);
     editor.setDecorations(this._stale,     []);
   }
 
@@ -128,10 +115,11 @@ export class CoverageDecorationManager implements IResultObserver {
       return;
     }
 
-    const { covered, partial, uncovered } = this._classifyLines(manifest, entry.counters);
+    const { covered, partial, uncovered, neutral } = this._classifyLines(manifest, entry.counters, editor.document.lineCount);
     editor.setDecorations(this._covered,   covered);
     editor.setDecorations(this._partial,   partial);
     editor.setDecorations(this._uncovered, uncovered);
+    editor.setDecorations(this._neutral,   neutral);
 
     // Stale tint — grey background over full file; bars remain visible underneath
     if (entry.state === 'measured-stale') {
@@ -142,10 +130,11 @@ export class CoverageDecorationManager implements IResultObserver {
     }
   }
 
-  private _classifyLines(manifest: Manifest, counters: LiveCov): {
+  private _classifyLines(manifest: Manifest, counters: LiveCov, lineCount: number): {
     covered:   vscode.Range[];
     partial:   vscode.Range[];
     uncovered: vscode.Range[];
+    neutral:   vscode.Range[];
   } {
     // Line → max statement hit count across all statements on that line
     const lineHits = new Map<number, number>();
@@ -171,9 +160,11 @@ export class CoverageDecorationManager implements IResultObserver {
     const covered:   vscode.Range[] = [];
     const partial:   vscode.Range[] = [];
     const uncovered: vscode.Range[] = [];
+    const executableLines = new Set<number>();
 
     for (const [line, hits] of lineHits) {
       const range = new vscode.Range(line, 0, line, 0);
+      executableLines.add(line);
       if (hits === 0) {
         uncovered.push(range);
       } else {
@@ -186,6 +177,13 @@ export class CoverageDecorationManager implements IResultObserver {
       }
     }
 
-    return { covered, partial, uncovered };
+    const neutral: vscode.Range[] = [];
+    for (let i = 0; i < lineCount; i++) {
+      if (!executableLines.has(i)) {
+        neutral.push(new vscode.Range(i, 0, i, 0));
+      }
+    }
+
+    return { covered, partial, uncovered, neutral };
   }
 }

@@ -15,7 +15,7 @@ const BRANCH_TYPE_LABEL: Record<string, string> = {
   NullishCoalescing:         '?? nullish',
 };
 
-const MAX_TESTS_SHOWN = 12;
+const MAX_TESTS_SHOWN = 5;
 
 export class CoverageHoverProvider implements vscode.HoverProvider {
   constructor(

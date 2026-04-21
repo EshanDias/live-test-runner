@@ -220,7 +220,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // ── Coverage store + decoration manager ───────────────────────────────────
   const coverageStore = new CoverageStore();
-  const coverageDecoMgr = new CoverageDecorationManager(coverageStore, context);
+  const coverageDecoMgr = new CoverageDecorationManager(coverageStore);
   observers.push(coverageDecoMgr);
   context.subscriptions.push(coverageStore, coverageDecoMgr);
 
