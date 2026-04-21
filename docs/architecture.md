@@ -355,6 +355,36 @@ CoverageStore
       { state: 'measured-stale', manifestPath, counters: LiveCov, pct: CoveragePct }
 
   onDidChange: EventEmitter<void>   — fired on any mutation; observers redraw badge + gutter
+  _scanComplete: boolean            — set to true when SourceCounter finishes
+
+Key reads:
+  getTotals(): CoverageTotals       — one-pass aggregate across all entries; 'counted' entries
+                                      contribute denominator only (covered = 0 until measured)
+  getFileRows()                     — returns all entries as { filePath, state, pct } rows
+                                      for the coverage table; 'counted' rows with all-zero
+                                      counts (Babel parse failed) are omitted
+  isScanComplete(): boolean         — true once SourceCounter has processed all source files
+  isAllMeasured(): boolean          — true once every entry has been promoted from 'counted'
+
+Key writes:
+  setCountedEntry(filePath, counts) — called by SourceCounter per source file
+  setMeasuredEntry(filePath, data)  — called by SessionTraceRunner._parseCoverage()
+  markFileStale(filePath)           — 'measured' → 'measured-stale' on save (rerun pending)
+  clearStale(filePath)              — 'measured-stale' → 'measured' if rerun is aborted without
+                                      completing (e.g. session stopped mid-rerun)
+  markScanComplete()                — called by SourceCounter when its scan loop finishes
+  clear()                           — full reset on session stop
+```
+
+**`CoverageTotals`** — aggregate type returned by `getTotals()`:
+```typescript
+interface CoverageTotals {
+  statements: { covered: number; total: number; pct: number }
+  branches:   { covered: number; total: number; pct: number }
+  functions:  { covered: number; total: number; pct: number }
+  lines:      { covered: number; total: number; pct: number }
+  scanComplete: boolean   // mirrors CoverageStore._scanComplete for consumer convenience
+}
 ```
 
 Entry lifecycle:
@@ -363,6 +393,8 @@ Entry lifecycle:
 3. `'measured-stale'` — set by `SessionManager` when the file is saved and a rerun is pending
 4. Back to `'measured'` — when the rerun completes and `_parseCoverage()` fires again
 
+**`CoverageReport`** (`src/coverage/CoverageReport.ts`): Stateless `calculate(manifest, counters): CoveragePct` function. Reads a coverage manifest (statement/branch/function IDs with location) and a live counter snapshot, and returns the four-metric `CoveragePct`. Called by `SessionTraceRunner._parseCoverage()` — not a class; no side effects.
+
 **Coverage manifest** (`src/session/instrumentation/sessionTraceTransform.js` writes these):
 ```
 <LTR_SESSION_TMP_DIR>/coverage/manifests/<sha256(filePath)[0:16]>.json
@@ -370,7 +402,7 @@ Entry lifecycle:
 Written once per source file per transformed run. Contains every statement/branch/function with IDs and line locations. The manifest + counters together drive the four metrics. `CoverageStore` holds only the path string — the file is read on demand (gutter decorations, `_parseCoverage` merging) to keep heap flat on large projects.
 
 **`SourceCounter`** (`src/coverage/SourceCounter.ts`):
-Runs at session start in parallel with the first test run. AST-parses every source file (via `vscode.workspace.findFiles` + `@babel/parser`), counts statements/branches/functions/lines, and populates `CoverageStore` with `'counted'` entries. This ensures untouched files (never imported by any test) still contribute to the denominator — giving correct aggregate percentages rather than inflated ones.
+Runs at session start in parallel with the first test run. AST-parses every source file (via `vscode.workspace.findFiles` + `@babel/parser`), counts statements/branches/functions/lines, and populates `CoverageStore` with `'counted'` entries. This ensures untouched files (never imported by any test) still contribute to the denominator — giving correct aggregate percentages rather than inflated ones. Yields to the event loop every 10 files (`YIELD_EVERY = 10`) to keep the UI responsive. Emits `progress` and `done` events for the badge scanning indicator. Respects the `liveTestRunner.coverageExclude` setting (array of glob patterns, merged with the built-in exclusion list that covers `node_modules`, test files, config files, `dist/`, etc.).
 
 **Relationship between the stores:**
 - `ResultStore` answers "what happened" — pass/fail, output, failures
@@ -475,6 +507,15 @@ Lifecycle:
 - File result arrives → `LineMap` rebuilt with Jest's authoritative `location.line`, decorations refreshed for that file
 - Editor becomes active → decorations applied from existing `LineMap`
 - Session stops → `decorationManager.clearAll()` resets all icons (decoration *types* are kept alive so pending icons from discovery survive)
+
+**`CoverageDecorationManager`** (`src/editor/CoverageDecorationManager.ts`) — dedicated manager for coverage gutter decorations. Completely separate from `DecorationManager`; uses its own `TextEditorDecorationType` instances.
+
+| Decoration | Trigger | Visual |
+|---|---|---|
+| Green heatmap | `'measured'` entry, line executed ≥1 time | Green gutter bar |
+| Grey stale overlay | `'measured-stale'` entry (file saved, rerun pending) | Grey tint over entire file |
+
+Subscribes to `CoverageStore.onDidChange` and redraws all visible editors on each change. Reads the coverage manifest from disk on demand (path stored in the `CoverageEntry`) to get per-line hit data. Clears on session stop.
 
 **`CodeLensProvider`** scans files with a regex (no AST) to find `describe`, `it`, and `test` blocks:
 
