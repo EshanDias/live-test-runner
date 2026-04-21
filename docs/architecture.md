@@ -166,6 +166,8 @@ Every source file passes through a two-stage pipeline before Jest executes it. T
 - `babel-jest` (lenient) strips TypeScript types without type-checking, so it tolerates our injected `__strace`/`__covF` globals in the input.
 - `ts-jest` / `@swc/jest` (strict) run the real TypeScript compiler, which rejects unknown globals with type errors. They must receive clean source first; we then instrument the plain JS they produce.
 
+**`jest.mock` hoisting guard:** Babel's `jest-hoist` plugin automatically moves every `jest.mock()` call to the top of the file — before the `__covF` preamble that initialises the coverage counter variable. If a `jest.mock()` factory arrow function contains a counter increment (`__covF.f["f0"]++`), it will throw `ReferenceError: __covF is not defined` at runtime. `sessionTraceTransform.js` detects this pattern and skips counter injection for any arrow function that is the direct factory argument of `jest.mock()`.
+
 `--maxWorkers=1` keeps each Jest process single-threaded so batches can run in parallel without competing for CPU.
 
 **Single-test / scoped-rerun — `JestRunner` (CodeLens `▶ Run`, suite/test reruns):**
@@ -281,7 +283,7 @@ interface IResultObserver {
 
 The discovery methods are optional so existing observers don't need to implement them. `TestDiscoveryService` checks for their presence before calling.
 
-Registered observers: `ExplorerView`, `ResultsView`, `DecorationManager`, `CodeLensProvider`.
+Registered observers: `ExplorerView`, `ResultsView`, `DecorationManager`, `CodeLensProvider`, `CoverageDecorationManager`.
 
 ### Data store
 
@@ -394,6 +396,29 @@ Entry lifecycle:
 4. Back to `'measured'` — when the rerun completes and `_parseCoverage()` fires again
 
 **`CoverageReport`** (`src/coverage/CoverageReport.ts`): Stateless `calculate(manifest, counters): CoveragePct` function. Reads a coverage manifest (statement/branch/function IDs with location) and a live counter snapshot, and returns the four-metric `CoveragePct`. Called by `SessionTraceRunner._parseCoverage()` — not a class; no side effects.
+
+**`CoverageDecorationManager`** (`src/editor/CoverageDecorationManager.ts`): Implements `IResultObserver`. Subscribes to `CoverageStore.onDidChange` and refreshes all visible editors on every change. For each editor it reads the `CoverageStore` entry and — for `measured` or `measured-stale` entries — loads the manifest from disk to classify every line into one of four states:
+
+| State | Decoration | Condition |
+|-------|-----------|-----------|
+| covered | green `▌` bar (before pseudo-element) | statement hit count > 0 and all branch arms hit |
+| partial | amber `▌` bar | statement hit > 0 but at least one branch arm missed |
+| uncovered | red `▌` bar | statement hit count = 0 |
+| neutral | faint grey `▌` bar | line not in any statement (comments, blank lines) |
+
+When the entry is `measured-stale` an additional full-file grey background tint is applied via a `isWholeLine` decoration type. The overview ruler mirrors the green/amber/red states so uncovered regions are visible in the scrollbar minimap. Breakpoint gutters are never blocked because the `▌` character is injected via the `before` pseudo-element, not drawn in the gutter column.
+
+**`CoverageHoverProvider`** (`src/editor/CoverageHoverProvider.ts`): Registered as a `vscode.HoverProvider` for all JS/TS source files. On hover it:
+
+1. Looks up the `CoverageStore` entry for the file; returns nothing if the file has no coverage data.
+2. Returns a stale warning if the entry is `measured-stale`.
+3. For `measured` entries, reads the manifest to check whether the hovered line is covered and whether any branches on that line have missed arms.
+4. Builds a `MarkdownString` with:
+   - Branch arm hit/miss table for partial lines (e.g. `if/else: ✓ then / ✗ else`)
+   - A list of up to 5 tests that cover the line, each showing pass/fail icon, duration, a clickable link to reveal the test in the Results panel (`liveTestRunner.revealTestInPanel`), and a file-open link (`liveTestRunner.openTestFile`).
+5. Test status is read from `ResultStore.findNodeByFullName()` at hover time — never cached — so it always reflects the latest run.
+
+**Coverage Explorer tab** (`src/webview/views/coverageExplorerView.js`): A router view mounted in `explorer.html` when the user clicks the "Coverage" tab. Shows a four-column project totals row (Stmts / Branch / Fns / Lines) and a scrollable per-file breakdown table. Clicking a file row sends an `openFile` message to the extension host, which opens the file in the editor. The tab is only shown when a session is active and coverage data is available.
 
 **Coverage manifest** (`src/session/instrumentation/sessionTraceTransform.js` writes these):
 ```

@@ -128,7 +128,8 @@ src/
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
 │   ├── DecorationManager.ts        Gutter icons + inline duration text
-│   └── CoverageDecorationManager.ts  Green heatmap gutter (hit lines) + grey stale overlay (file saved, rerun pending)
+│   ├── CoverageDecorationManager.ts  Coloured ▌ bar (before pseudo-element) per line: green=covered, amber=partial, red=uncovered, grey=neutral; stale overlay (grey background tint) when rerun is pending
+│   └── CoverageHoverProvider.ts    HoverProvider for JS/TS files: shows which tests cover the hovered line (with status + duration + clickable links), and branch arm hit/miss detail for partially-covered lines
 ├── utils/
 │   └── duration.ts                 durationLabel, durationColorVar, getThresholds
 ├── views/
@@ -163,6 +164,7 @@ src/
         ├── resultsView.js          Normal results view (uses logPanel + errorPanel)
         ├── timelineView.js         Timeline bar + controls + console/errors right panel
         ├── testListView.js         Sidebar test list view
+        ├── coverageExplorerView.js Coverage tab in Explorer sidebar: project totals + per-file breakdown; clicking a row opens the file in the editor
         └── timelineSidebar.js      Sidebar State / Watch / Call Stack panels for timeline mode
 ```
 
