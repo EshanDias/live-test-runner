@@ -99,11 +99,12 @@ export function activate(context: vscode.ExtensionContext) {
   statusBar.show();
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const store     = new ResultStore();
-  const selection = new SelectionState();
+  const store         = new ResultStore();
+  const selection     = new SelectionState();
+  const coverageStore = new CoverageStore();
 
   // ── Views and editor providers ─────────────────────────────────────────────
-  const explorerView      = new ExplorerView(context.extensionUri, store, selection);
+  const explorerView      = new ExplorerView(context.extensionUri, store, selection, coverageStore);
   const resultsView       = new ResultsView(context.extensionUri, store, selection);
   const decorationManager = new DecorationManager(store, context);
   const codeLensProvider  = new CodeLensProvider(store);
@@ -218,8 +219,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
   };
 
-  // ── Coverage store + decoration manager ───────────────────────────────────
-  const coverageStore = new CoverageStore();
+  // ── Coverage decoration manager ───────────────────────────────────────────
   const coverageDecoMgr = new CoverageDecorationManager(coverageStore);
   observers.push(coverageDecoMgr);
   context.subscriptions.push(coverageStore, coverageDecoMgr);

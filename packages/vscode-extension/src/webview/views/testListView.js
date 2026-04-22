@@ -652,6 +652,7 @@
           updateSummary(msg.total, msg.passed, msg.failed, null);
           _updateListCount();
           if (msg.selection) { _list.setSelected(msg.selection.fileId, msg.selection.nodeId); }
+          if (msg.coverageTotals) { updateCoverage(msg.coverageTotals, msg.coverageFiles ?? []); }
           if (msg.isDiscovering) {
             _discoveryTotal = msg.discoveryTotal ?? 0;
             applySessionState('discovering');

@@ -185,6 +185,10 @@
       switch (msg.type) {
         case 'init':
           if (msg.coverageThresholds) { _thresholds = msg.coverageThresholds; }
+          if (msg.coverageTotals !== undefined) { _lastTotals = msg.coverageTotals; }
+          if (msg.coverageFiles  !== undefined) { _lastFiles  = msg.coverageFiles ?? []; }
+          _renderTotals(_lastTotals);
+          _renderFiles(_lastFiles);
           break;
 
         case 'coverage-updated':
