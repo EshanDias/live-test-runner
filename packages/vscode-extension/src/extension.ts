@@ -328,10 +328,15 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.stopTesting',        () => session.stop(decorationManager)),
     vscode.commands.registerCommand('liveTestRunner.stopAndClearCache',  async () => {
       session.stop(decorationManager);
+      store.clearAll();
+      cleanTraceDir();
+      // Yield so session-stopped is processed by the webview before we send init
+      await new Promise<void>((r) => setTimeout(r, 0));
+      resultsView.syncNow();
+      explorerView.syncNow();
       if (discoveryCache) {
         discoveryCache.releaseLock();
         discoveryCache.clear();
-        // Re-create lock so rotation knows this project is still open
         discoveryCache.writeLock();
         logger.info(FILE, 'stopAndClearCache', 'Cache cleared for current project');
       }

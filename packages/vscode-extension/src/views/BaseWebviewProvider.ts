@@ -201,6 +201,8 @@ export abstract class BaseWebviewProvider
 
   // ── Subclass hooks ─────────────────────────────────────────────────────────
 
+  public syncNow(): void { this._sendInit(); }
+
   protected abstract _sendInit(): void;
   protected abstract get _htmlFile(): string;
 

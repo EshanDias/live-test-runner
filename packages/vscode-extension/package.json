@@ -115,6 +115,14 @@
         "enablement": "config.liveTestRunner.devMode"
       }
     ],
+    "keybindings": [
+      {
+        "command": "liveTestRunner.stopAndClearCache",
+        "key": "shift+delete",
+        "mac": "shift+delete",
+        "when": "focusedView == liveTestRunner.results || focusedView == liveTestRunner.explorer"
+      }
+    ],
     "configuration": {
       "title": "Live Test Runner",
       "properties": {

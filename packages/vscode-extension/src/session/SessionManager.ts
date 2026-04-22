@@ -114,9 +114,13 @@ export class SessionManager {
     this._session = new TestSession(bootstrapRunner);
 
     try {
-      // ── Wait for background discovery to finish ────────────────────────────
-      // Discovery runs on activate. If the user clicks Start Testing while it
-      // is still in progress, we wait here rather than running with a partial store.
+      // ── Ensure discovery has run ───────────────────────────────────────────
+      // If the store is empty (e.g. after a cache clear) and discovery is not
+      // in progress, restart it so the user gets a fresh file list.
+      if (!this._discovery.isDiscovering && this._store.getAllFiles().length === 0 && this._discovery.hasCompleted) {
+        this._discovery.restart();
+      }
+
       if (this._discovery.isDiscovering) {
         this._updateStatusBar('Waiting for discovery…');
         await this._discovery.awaitDiscovery();
@@ -135,6 +139,7 @@ export class SessionManager {
       }
 
       this._session.activate();
+      this._traceRunner.reset();
       this._notify('onSessionStarted');
 
       // Background source scan — runs in parallel with test execution.
@@ -169,6 +174,7 @@ export class SessionManager {
 
   stop(decorationManager: DecorationManager): void {
     logger.info(FILE, 'stop', 'Session stop requested');
+    this._traceRunner.kill();
     if (this._session) {
       this._session.stop();
       this._session = undefined;

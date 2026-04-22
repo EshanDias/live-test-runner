@@ -172,6 +172,13 @@ export class ResultStore {
     this._lineMap.clear();
   }
 
+  clearAll(): void {
+    this.files.clear();
+    this.nodes.clear();
+    this._lineMap.clear();
+    this._summary = { total: 0, passed: 0, failed: 0, running: 0, totalDuration: 0 };
+  }
+
   // ── Mark running ──────────────────────────────────────────────────────────
 
   /** Mark a single node and all its descendants as 'running'. */

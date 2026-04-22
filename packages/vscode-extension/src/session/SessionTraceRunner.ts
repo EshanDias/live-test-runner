@@ -111,6 +111,16 @@ function toFileRunResult(rec: ReporterRecord): FileRunResult {
 export class SessionTraceRunner {
   private readonly _executor = new Executor();
   private readonly _binaryResolver = new BinaryResolver();
+  private _killed = false;
+
+  kill(): void {
+    this._killed = true;
+    this._executor.kill();
+  }
+
+  reset(): void {
+    this._killed = false;
+  }
 
   private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
   private get _manifestDir()  { return path.join(this._tmpDir, 'coverage', 'manifests'); }
@@ -276,6 +286,8 @@ module.exports = {
         logger.error(FILE, 'runFiles', `Failed to apply result for "${rec.testFilePath}"`, err);
       }
     };
+
+    if (this._killed) { return { missing: filePaths }; }
 
     try {
       let binary: string;

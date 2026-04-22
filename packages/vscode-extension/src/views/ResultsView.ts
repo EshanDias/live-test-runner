@@ -86,12 +86,17 @@ export class ResultsView extends BaseWebviewProvider {
   }
 
   protected _sendInit(): void {
-    const sel = this.selection.get();
+    const sel     = this.selection.get();
+    const summary = this.store.getSummary();
+    const hasData = summary.total > 0;
     this.postMessage({
       type:       'init',
       files:      (this.store.toJSON() as { files: unknown[] }).files,
       thresholds: this._getThresholds(),
       selection:  sel ? { fileId: sel.fileId, nodeId: sel.nodeId } : null,
+      total:      hasData ? summary.total  : null,
+      passed:     hasData ? summary.passed : null,
+      failed:     hasData ? summary.failed : null,
     });
   }
 

@@ -317,8 +317,11 @@
     const sec = _q('coverageSection');
     if (sec) { sec.classList.remove('hidden'); }
 
+    // No real data yet — treat as blank
+    const noData = !totals || (!totals.scanComplete && totals.statements.total === 0 && totals.branches.total === 0 && totals.functions.total === 0);
+
     const st = _q('coverageStatus');
-    if (!totals) {
+    if (!totals || noData) {
       if (st) { st.textContent = ''; }
       ['covStmts','covBranch','covFns','covLines'].forEach((id) => {
         const el = _q(id); if (el) { el.textContent = '—'; el.className = 'value'; }
@@ -332,7 +335,7 @@
     }
 
     // ── project totals row in Coverage panel ────────────────────────────────
-    if (!totals) {
+    if (!totals || noData) {
       ['covTotalStmts','covTotalBranch','covTotalFns','covTotalLines'].forEach((id) => {
         const el = _q(id); if (el) { el.textContent = '—'; el.className = 'value'; }
       });
@@ -600,8 +603,19 @@
         vscode.postMessage({ type: 'cmd', command: 'start' });
       });
       _q('btnRerun').addEventListener('click',   () => vscode.postMessage({ type: 'cmd', command: 'start' }));
-      _q('btnStop').addEventListener('click',    (e) => vscode.postMessage({ type: 'cmd', command: e.shiftKey ? 'stopAndClearCache' : 'stop' }));
-      _q('btnStopRun').addEventListener('click', (e) => vscode.postMessage({ type: 'cmd', command: e.shiftKey ? 'stopAndClearCache' : 'stop' }));
+      function _wireStopBtn(id, defaultLabel) {
+        const btn = _q(id);
+        function _update(shift) {
+          btn.textContent = shift ? '🗑 Clear Cache & Stop' : defaultLabel;
+          btn.classList.toggle('danger', !!shift);
+        }
+        function _onMove(e) { _update(e.shiftKey); }
+        btn.addEventListener('mouseenter', (e) => { _update(e.shiftKey); btn.addEventListener('mousemove', _onMove); });
+        btn.addEventListener('mouseleave', ()  => { _update(false);      btn.removeEventListener('mousemove', _onMove); });
+        btn.addEventListener('click',      (e) => vscode.postMessage({ type: 'cmd', command: e.shiftKey ? 'stopAndClearCache' : 'stop' }));
+      }
+      _wireStopBtn('btnStop',    '⏹ Stop');
+      _wireStopBtn('btnStopRun', '⏹ Stop Testing');
 
       // ── List toolbar ─────────────────────────────────────────────────────────
       _q('btnCollapseAll').addEventListener('click', () => _list.collapseAll());
@@ -650,6 +664,7 @@
           if (msg.coverageThresholds) { _coverageThresholds = msg.coverageThresholds; }
           _list.setData(msg.files ?? []);
           updateSummary(msg.total, msg.passed, msg.failed, null);
+          if (msg.total == null) { const d = _q('summaryDuration'); if (d) { d.style.display = 'none'; d.textContent = ''; } }
           _updateListCount();
           if (msg.selection) { _list.setSelected(msg.selection.fileId, msg.selection.nodeId); }
           if (msg.coverageTotals) { updateCoverage(msg.coverageTotals, msg.coverageFiles ?? []); }
@@ -676,6 +691,13 @@
           });
           _lastCovFiles = [];
           _renderCovFiles([]);
+          break;
+
+        case 'store-cleared':
+          _list.setData([]);
+          _updateListCount();
+          updateSummary(null, null, null, null);
+          { const d = _q('summaryDuration'); if (d) { d.style.display = 'none'; d.textContent = ''; } }
           break;
 
         case 'run-started':

@@ -334,6 +334,15 @@ body {
   color: var(--vscode-foreground);
 }
 
+.action-btn.ghost.danger {
+  color: var(--vscode-errorForeground, #f48771);
+  border-color: var(--vscode-errorForeground, #f48771);
+}
+.action-btn.ghost.danger:hover {
+  background: var(--vscode-inputValidation-errorBackground, rgba(244,135,113,0.1));
+  color: var(--vscode-errorForeground, #f48771);
+}
+
 .hidden { display: none !important; }
 
 .action-btn.hidden,
