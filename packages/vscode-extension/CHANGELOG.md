@@ -2,7 +2,7 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [1.5.0] — 2026-04-21
+## [2.0.0] — 2026-04-21
 
 ### Code Coverage
 
