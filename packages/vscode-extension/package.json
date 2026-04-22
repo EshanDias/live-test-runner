@@ -2,7 +2,7 @@
   "name": "live-test-runner",
   "displayName": "Live Test Runner",
   "description": "Live testing on save for Jest and other frameworks",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "icon": "resources/images/live-test-runner.png",
   "publisher": "EshLabs",
   "engines": {
@@ -104,10 +104,23 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.showCoveringTests",
+        "title": "Show All Covering Tests",
+        "category": "Live Test Runner"
+      },
+      {
         "command": "liveTestRunner.dumpTraceStore",
         "title": "Dump Trace Store (Debug)",
         "category": "Live Test Runner",
         "enablement": "config.liveTestRunner.devMode"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "liveTestRunner.stopAndClearCache",
+        "key": "shift+delete",
+        "mac": "shift+delete",
+        "when": "focusedView == liveTestRunner.results || focusedView == liveTestRunner.explorer"
       }
     ],
     "configuration": {
@@ -161,6 +174,23 @@
             "**/*.spec.*"
           ],
           "description": "Glob patterns for test files"
+        },
+        "liveTestRunner.coverageThresholds": {
+          "type": "object",
+          "description": "Coverage percentage thresholds for colour-coding. Below 'red' = red, below 'amber' = amber, at or above 'amber' = green. Defaults: red=50, amber=80.",
+          "default": {},
+          "properties": {
+            "red": {
+              "type": "number",
+              "default": 50,
+              "description": "Coverage % below which a metric is shown in red (default 50)"
+            },
+            "amber": {
+              "type": "number",
+              "default": 80,
+              "description": "Coverage % at or above which a metric is green; between red and amber = amber (default 80)"
+            }
+          }
         },
         "liveTestRunner.durationThresholds": {
           "type": "object",

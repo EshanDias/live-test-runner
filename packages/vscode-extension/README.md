@@ -1,6 +1,6 @@
 <!-- # Live Test Runner  -->
 
-<p align="left" style="font-size: 40px;">
+<p align="left">
   <b>
     Live Test Runner
     <img 
@@ -12,217 +12,159 @@
   </b>
 </p>
 
----
-</br>
+> Save a file. Tests run. Results appear inline. No terminal. No config.
 
-![v1 Demo](resources/gifs/live-test-runner-v1-demo.gif)
+> **Only supports `Jest` at the moment**
 
-> **Only Supports `Jest` at the moment**
-
----
-
-## Why Live Test Runner?
-
-Most test runners make you switch context — open a terminal, run a command, scroll through output. Live Test Runner brings tests into the editor. Save a file and your results update instantly. Click a line and jump straight to the failure. Everything is one panel away.
-
-No configuration required for standard Jest projects. No dependency on the VS Code Test Explorer API.
+<!-- [TODO: USER_INPUT_NEEDED] Replace with an updated hero gif showing the full experience (test run + coverage bars + hover) -->
+![Demo](resources/gifs/live%20test%20runner%20demo.gif)
 
 ---
 
-## Features
+## What you get
 
-### Static test discovery on project open
-
-The full test tree — every file, suite (at any nesting depth), and test case — appears in the sidebar the moment you open a project, before you click Start Testing. Line numbers, pending `○` icons, and `▶ Run` / `▷ Debug` CodeLens buttons are all live from the first file scan. No warm-up run required.
-
-The extension parses your test files in the background using Babel's AST (your project's own Babel — nothing extra to install). Large projects (500+ files, 3000+ tests) stay responsive because discovery runs in batches with event-loop yields between them.
-
-Parse results are **cached on disk** alongside each file's modification time. On subsequent opens, only files that have changed since the last session are re-parsed — everything else loads from cache instantly. A project with 800 test files drops from a 30–60 s cold parse to a few seconds on warm restart.
-
-Test files are watched for changes. Add a test case, save the file, and it appears in the tree immediately.
-
----
-
-### Always-on test watching
-
-Tests re-run automatically on every save. A status bar badge gives you a one-glance pass/fail count without opening the panel.
-
-![Status Bar](resources/images/status_bar.png)
-
----
-
-### Custom Test Explorer
-
-A sidebar panel shows your full test suite as a recursive **file → suite → … → test** tree with unlimited nesting depth. Every row has live status icons and color-coded duration badges. When one test fails, its parent suites light up in red all the way to the file level.
-
-![Explorer Test Cases View](resources/images/explorer-test-run.png)
----
-
-### Live Results panel
-
-A three-column split view for deep inspection:
-
-| Column | What it shows |
-|--------|--------------|
-| **Tests** | The same recursive test tree, with search and filters |
-| **Output** | Console logs for the selected test, tabbed by level (All / Logs / Info / Warn / Error) |
-| **Errors** | Failure messages and stack traces for the selection |
-
-![Explorer Test Cases View](resources/images/test-results-column-split.png)
-
----
-
-### Editor decorations & CodeLens
-
-Every `it()` and `test()` line gets:
-
-- **Gutter icon** — ✓ pass (green) · ✗ fail (red) · ⟳ running (amber) · ○ pending (grey) — present from project open, before any test is run
-- **Inline duration** — muted label after the closing paren, color-coded by threshold
-- **`▶ Run`** — rerun just this test (or suite, or file) without touching anything else
-- **`▷ Debug`** — launch Jest under the debugger, scoped to this test via `--testNamePattern`
-- **`◈ Results`** — jump straight to this test in the Results panel
-
-![Explorer Test Cases View](resources/images/editor-decorations.png)
-
----
-
-### Test Timeline Debugger - Coming Soon
-
-Step through a single test case like a time-travel debugger — no breakpoints, no `debugger` statements, no terminal.
-
-Click the **`⏱ Timeline`** CodeLens above any `it()` or `test()` line (or the `⏱` button on a test row in the sidebar) to start a trace. Live Test Runner re-runs that test with instrumentation injected at transform time and records every executed line, every variable value, and every log entry.
-
-When the trace completes:
-
-- The **timeline bar** shows one box per step. Click any box or use the controls (`⏮ ◀ ▶ ▶| ⏭ ⏸`) to replay the execution.
-- The **editor** highlights the active line and shows variable values as inline ghost text. Hover a variable for its full history across steps and an `[Add to Watch]` action.
-- The **sidebar State panel** shows all variables captured at the current step. Objects and arrays are lazily expandable.
-- The **Watch panel** lets you pin any variable and track its value as you step through.
-- The **Call Stack panel** shows the function chain at the current step — click any frame to jump to that line.
-- The **Console tab** shows cumulative logs up to the current step. The **Errors tab** shows all failure messages.
-
-Zoom the timeline bar with the mouse wheel to group steps by line / function / file. Drag to scrub through steps in real time. Click `↺ Re-run` in the sidebar to re-trace at any time.
-
-No test file is ever modified on disk — instrumentation is injected at Jest transform time only.
-
----
-
-### Smart Jest detection
-
-Automatically detects:
-
-- Standard `jest` in `node_modules/.bin`
-- Create React App / `react-scripts test`
-- Custom commands via the `liveTestRunner.jestCommand` setting
+| | Feature | |
+|---|---|---|
+| ⚡ | **Live reruns on save** — targeted, file or test level | |
+| 🌳 | **Test tree in the sidebar** — file → suite → test, instant on open | |
+| 🎨 | **Editor decorations** — gutter icons, inline duration, CodeLens buttons | |
+| 📊 | **Per-line code coverage** — coloured bars + hover shows which tests hit each line | |
+| 🔍 | **Results panel** — 3-column view: test list · console output · errors | |
+| ⏱ | **Timeline Debugger** *(coming soon)* — step through a test like a time-travel debugger | |
 
 ---
 
 ## Quick Start
 
 1. Open a Jest project in VS Code
-2. Click the **beaker icon** in the Activity Bar to open Live Test Runner — your test tree appears automatically as files are scanned
-3. Click **▶ Start Testing** to run the full suite for the first time and start the live watch session
-4. Edit any source or test file, save, and watch results update in real time
+2. Click the **beaker icon** in the Activity Bar
+3. Click **▶ Start Testing**
+4. Save any file — results update instantly
 
-> Always run **▶ Start Testing** at least once per session. Discovery shows you the test tree upfront, but results, gutter icons, and on-save reruns only activate after the first run.
+> No `jest.config` changes. No extra installs.
 
-> No `jest.config` changes needed. No extra dependencies to install.
+---
+
+## Features
+
+### Test tree & always-on watching
+
+Your full suite — every file, suite, and test — appears in the sidebar on project open before any run. Tests rerun on every save. The status bar shows a live pass/fail count.
+
+<!-- [TODO: USER_INPUT_NEEDED] Short gif: sidebar tree populating on open, then a test going red/green on save -->
+![Explorer Test Cases View](resources/images/explorer-test-run.png)
+
+---
+
+### Editor decorations & CodeLens
+
+Every `it()` / `test()` line gets a gutter icon, inline duration, and action buttons:
+
+- ✓ / ✗ / ⟳ / ○ gutter icons — live from project open
+- `▶ Run` · `▷ Debug` · `◈ Results` CodeLens above each block
+- Inline duration label, color-coded by threshold
+
+<!-- [TODO: USER_INPUT_NEEDED] Screenshot or short gif of gutter icons + CodeLens in action -->
+![Editor decorations](resources/images/editor-decorations.png)
+
+---
+
+### Live code coverage
+
+After the first run, every source file shows per-line coverage — no separate command needed.
+
+| Bar | Meaning |
+|-----|---------|
+| Green `▌` | Covered by all tests |
+| Amber `▌` | Covered by some tests |
+| Red `▌` | Never executed |
+| Grey `▌` | Not executable |
+
+Hover any line to see which tests cover it, their pass/fail status, and duration. When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
+
+<!-- [TODO: USER_INPUT_NEEDED] Screenshot or gif of coverage bars + hover tooltip in a source file -->
+![Code Coverage Example](resources/images/code_coverage.png)
+
+---
+
+### Results panel
+
+3-column view: test tree with search · console output tabbed by level · failure messages and stack traces.
+
+<!-- [TODO: USER_INPUT_NEEDED] Screenshot of the 3-column results panel -->
+![Results panel](resources/images/test-results-column-split.png)
+
+---
+
+### Timeline Debugger *(coming soon)*
+
+Step through any test case line by line — variable values as inline ghost text, watch panel, call stack, no breakpoints needed.
+
+<!-- [TODO: USER_INPUT_NEEDED] Preview gif or screenshot of timeline debugger once available -->
 
 ---
 
 ## Commands
 
-| Command | Description |
+| Command | What it does |
 |---------|-------------|
-| `Live Test Runner: Start Testing` | Discover and run all tests, then start watching for saves |
-| `Live Test Runner: Stop Testing` | End the current session |
-| `Live Test Runner: Stop Testing and Clear Cache` | Stop the session and wipe this project's discovery cache |
-| `Live Test Runner: Clear Cache and Restart Testing` | Wipe the cache and immediately restart discovery + testing |
-| `Live Test Runner: Select Project Root` | Pick a root in a multi-folder workspace |
-| `Live Test Runner: Show Raw Output` | Open the raw Jest output channel for debugging |
+| `Start Testing` | Run all tests and start watching |
+| `Stop Testing` | End the session |
+| `Stop Testing and Clear Cache` | Stop + wipe discovery cache |
+| `Clear Cache and Restart Testing` | Fresh restart |
+| `Select Project Root` | Pick root in multi-folder workspace |
+| `Show Raw Output` | Open raw Jest output channel |
 
-> **Tip:** Shift-clicking the **⏹ Stop** button in the sidebar or panel is a shortcut for "Stop and Clear Cache".  
+> **Tip:** Shift-click **⏹ Stop** to stop and clear cache in one click.
 
 ---
 
 ## Configuration
 
-All settings are under `liveTestRunner.*` in VS Code settings.
-
-### General
+All settings under `liveTestRunner.*`.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `liveTestRunner.projectRoot` | `""` | Project root (auto-detected for single-folder workspaces) |
-| `liveTestRunner.runMode` | `"auto"` | `"auto"`: extension calls Jest directly for full structured output. `"npm"`: delegates to your `npm test` script — useful when Jest is wrapped or non-standard, but per-test durations and gutter icons may be limited. |
-| `liveTestRunner.jestCommand` | `""` | Override the Jest command (e.g. `node_modules/.bin/jest`). Only used when `runMode` is `"auto"`. |
-| `liveTestRunner.onSaveDebounceMs` | `300` | Milliseconds to wait after a save before triggering a run |
-
-### Duration thresholds
-
-Control when duration badges switch from green → amber → red. Separate thresholds per level so suite and file budgets aren't judged by the same bar as individual tests.
-
-| Setting | Default | Level |
-|---------|---------|-------|
-| `liveTestRunner.durationThresholds.testAmberMs` | `100` | Test turns amber |
-| `liveTestRunner.durationThresholds.testRedMs` | `500` | Test turns red |
-| `liveTestRunner.durationThresholds.suiteAmberMs` | `500` | Suite turns amber |
-| `liveTestRunner.durationThresholds.suiteRedMs` | `2000` | Suite turns red |
-| `liveTestRunner.durationThresholds.fileAmberMs` | `1000` | File turns amber |
-| `liveTestRunner.durationThresholds.fileRedMs` | `5000` | File turns red |
+| `projectRoot` | `""` | Auto-detected for single-folder workspaces |
+| `runMode` | `"auto"` | `"auto"` calls Jest directly; `"npm"` delegates to `npm test` |
+| `jestCommand` | `""` | Override Jest binary path |
+| `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
+| `durationThresholds.testAmberMs` | `100` | Test turns amber |
+| `durationThresholds.testRedMs` | `500` | Test turns red |
+| `durationThresholds.suiteAmberMs` | `500` | Suite turns amber |
+| `durationThresholds.suiteRedMs` | `2000` | Suite turns red |
+| `durationThresholds.fileAmberMs` | `1000` | File turns amber |
+| `durationThresholds.fileRedMs` | `5000` | File turns red |
 
 ---
 
-## Status Bar
-
-| Badge | Meaning |
-|-------|---------|
-| `Live Tests: Off` | No session active |
-| `Live Tests: Discovering…` | Finding test files |
-| `Live Tests: Tracing... N/M` | Collecting all traces |
-| `Live Tests: Running… N/M` | Run in progress |
-| `Live Tests: ✅ N passed` | All tests passed |
-| `Live Tests: ❌ N failed, M passed` | Failures present |
-
----
-
-## Supported Frameworks
+## Supported frameworks
 
 | Framework | Status |
 |-----------|--------|
-| Jest | Fully supported |
-| Create React App (react-scripts) | Fully supported |
-| Vitest | Planned |
+| Jest | ✅ Fully supported |
+| Create React App (react-scripts) | ✅ Fully supported |
+| Vitest | 🗓 Planned |
 
 ---
 
-## Known Limitations
+## Known limitations
 
-- Rerunning an individual test uses `--testNamePattern`, which may match multiple tests if names overlap
-- Smart on-save reruns use test-level granularity only after the first full session run completes (the background trace pass needs to finish for at least one file). Before that, whole test files are rerun as a fallback.
-- Console logs are attributed to individual tests after the background trace pass completes for that file. Before the trace finishes, logs are only available at file level.
+- Individual test reruns use `--testNamePattern` — may match multiple tests if names overlap
+- Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
 
 ---
+
 ## About
 
 <p align="center">
   <img src="resources/images/bradlogo.png" alt="Brand Logo" width="150">
 </p>
 
-This software is built by `EshLabs` (Eshan Dias). I’m a software engineer who was tired of paying for third-party tools, so I decided to create my own tools to help streamline development.  
+Built by **EshLabs** (Eshan Dias) — a software engineer who wanted live test feedback without paying for third-party tools.
 
-I built this tool because during development, we often forget about test cases, and running them after completing a project to find errors can take a lot of time. With this tool, I can immediately see if any test cases fail as I code, making the debugging process faster and more efficient.  
-
-If this tool helps you as much as it helps me, please give it a ⭐ on [GitHub](https://github.com/eshandias/live-test-runner)!
+⭐ [Star on GitHub](https://github.com/eshandias/live-test-runner) · 🐛 [Report an issue](https://github.com/eshandias/live-test-runner/issues)
 
 ---
 
-## Contributing
-
-Bug reports, feature requests, and pull requests are welcome at [github.com/eshandias/live-test-runner](https://github.com/eshandias/live-test-runner).
-
----
-
-## License
-
-MIT
+MIT License

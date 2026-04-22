@@ -1,6 +1,8 @@
 # Instructions
 
-1. Read all bugs first, if there are any which relates we can combine and do them.
+> bugs/features/improvements all wil be referred as bugs in this document
+
+1. Read all bugs/features/improvements first, if there are any which relates we can combine and do them.
 2. When a bug is complete, tell how to verify it and ask user to verify and and update the bug list. remove fixed bugs. 
 3. Ask to continue with the next/current bug after a bug is completed or at the end of a discussion done towards a bug. 
 4. If the next bug is not relevant and don't need the context ask to use a new chat. 

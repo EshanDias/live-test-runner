@@ -2,6 +2,21 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [2.0.0] — 2026-04-21
+
+### Code Coverage
+
+- **Coverage badge in the sidebar** — after your tests run, the Explorer panel shows `Stmts X% | Branch X% | Fns X% | Lines X%`. It updates live as files complete and disappears when you stop the session.
+- **Line decorations** — covered lines get a green `▌` bar, partially-covered branches get amber, uncovered lines get red. Non-executable lines (comments, blank lines) get a faint grey bar so the alignment is always uniform.
+- **Coverage hover** — hover any decorated line to see which tests cover it, their pass/fail status, and duration. Partially-covered branches expand to show exactly which arm (`then`/`else`, `truthy`/`falsy`, etc.) was missed. Click a test name to jump straight to its result in the panel.
+- **Coverage Explorer tab** — the sidebar now has a "Coverage" tab alongside "Tests". It shows project-level totals and a scrollable file list; click any row to open that file.
+- **Stale indicator** — save a source file mid-session and the file gets a grey overlay until the rerun finishes, so you always know when coverage data is out of date.
+- **Accurate totals** — files that no test ever imports are counted as 0% covered, not ignored. The percentages reflect your whole project, not just the files that happened to load.
+- **"Show all covering tests"** — the coverage hover now shows a "Show all N" link when more than 5 tests cover a line. Click it to open a searchable Quick Pick listing every covering test; select one to reveal it in the Results panel.
+- **Fix: stale coverage after on-save rerun** — coverage decorations no longer stay grey after a targeted (individual test case) rerun completes.
+
+---
+
 ## [1.4.0] — 2026-04-19
 
 ### Faster Startup, Faster Runs & Smoother UI

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ResultStore } from '../store/ResultStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResultObserver';
-import { getThresholds } from '../utils/duration';
+import { getThresholds, getCoverageThresholds } from '../utils/duration';
 
 /**
  * Shared base for ExplorerView and ResultsView.
@@ -177,6 +177,18 @@ export abstract class BaseWebviewProvider
     this.postMessage({ type: 'discovery-file-removed', fileId });
   }
 
+  onSourceScanProgress(scanned: number, total: number): void {
+    this.postMessage({ type: 'source-scan-progress', scanned, total });
+  }
+
+  onSourceScanDone(): void {
+    this.postMessage({ type: 'source-scan-done' });
+  }
+
+  onCoverageUpdated(totals: unknown, files: unknown[]): void {
+    this.postMessage({ type: 'coverage-updated', totals, files });
+  }
+
   dispose(): void {}
 
   // ── Public helpers ─────────────────────────────────────────────────────────
@@ -189,6 +201,8 @@ export abstract class BaseWebviewProvider
 
   // ── Subclass hooks ─────────────────────────────────────────────────────────
 
+  public syncNow(): void { this._sendInit(); }
+
   protected abstract _sendInit(): void;
   protected abstract get _htmlFile(): string;
 
@@ -198,6 +212,11 @@ export abstract class BaseWebviewProvider
   /** Returns current duration thresholds from VS Code settings for inclusion in init messages. */
   protected _getThresholds() {
     return getThresholds();
+  }
+
+  /** Returns current coverage thresholds from VS Code settings. */
+  protected _getCoverageThresholds() {
+    return getCoverageThresholds();
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
@@ -216,8 +235,9 @@ export abstract class BaseWebviewProvider
     const errorPanelUri          = webview.asWebviewUri(vscode.Uri.joinPath(componentsDir, 'errorPanel.js'));
     const resultsViewUri         = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'resultsView.js'));
     const timelineViewUri        = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'timelineView.js'));
-    const testListViewUri        = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'testListView.js'));
-    const timelineSidebarUri     = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'timelineSidebar.js'));
+    const testListViewUri          = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'testListView.js'));
+    const coverageExplorerViewUri  = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'coverageExplorerView.js'));
+    const timelineSidebarUri       = webview.asWebviewUri(vscode.Uri.joinPath(viewsDir,      'timelineSidebar.js'));
     const playbackEngineUri      = webview.asWebviewUri(vscode.Uri.joinPath(timelineDir,   'PlaybackEngine.js'));
 
     const nonce     = getNonce();
@@ -239,8 +259,9 @@ export abstract class BaseWebviewProvider
       .replace(/\{\{routerUri\}\}/g,          routerUri.toString())
       .replace(/\{\{resultsViewUri\}\}/g,     resultsViewUri.toString())
       .replace(/\{\{timelineViewUri\}\}/g,    timelineViewUri.toString())
-      .replace(/\{\{testListViewUri\}\}/g,    testListViewUri.toString())
-      .replace(/\{\{timelineSidebarUri\}\}/g, timelineSidebarUri.toString())
+      .replace(/\{\{testListViewUri\}\}/g,         testListViewUri.toString())
+      .replace(/\{\{coverageExplorerViewUri\}\}/g, coverageExplorerViewUri.toString())
+      .replace(/\{\{timelineSidebarUri\}\}/g,      timelineSidebarUri.toString())
       .replace(/\{\{playbackEngineUri\}\}/g,  playbackEngineUri.toString());
   }
 }

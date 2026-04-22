@@ -106,15 +106,20 @@ src/
 │   ├── ResultStore.ts              In-memory File→Node tree (recursive) + LineMap + ScopedOutput
 │   ├── ExecutionTraceStore.ts      Trace indexes: traceIndex, coverageIndex, sourceToTests
 │   └── SelectionState.ts           Tracks selected row; broadcasts scope-changed
+├── coverage/
+│   ├── types.ts                    Manifest, FileCov, LiveCov, CoveragePct, CoverageTotals, CoverageEntry
+│   ├── CoverageStore.ts            In-memory store: 'counted' → 'measured' → 'measured-stale' lifecycle
+│   ├── SourceCounter.ts            Background scan at session start; populates CoverageStore with 'counted' entries
+│   └── CoverageReport.ts           Stateless metric calculation (statements/branches/functions/lines)
 ├── cache/
 │   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
 ├── session/
 │   ├── SessionManager.ts           Session lifecycle, batched run pool (CONCURRENCY=cpus/4), on-save, rerun
-│   ├── SessionTraceRunner.ts       Runs combined test+trace batches; populates ResultStore + ExecutionTraceStore
+│   ├── SessionTraceRunner.ts       Runs combined test+trace+coverage batches; populates ResultStore + ExecutionTraceStore + CoverageStore
 │   │   instrumentation/
 │   │   ├── liveReporter.js         Custom Jest reporter: appends one JSON record per completed file to a JSONL file
-│   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step(line,file) calls (light trace only)
-│   │   └── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook, flushes compact T/H records
+│   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
+│   │   └── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook; flushes T/H records + __cov to JSONL on exit
 │   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
@@ -122,7 +127,9 @@ src/
 │   └── JestAdapter.ts              All Jest-specific logic
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
-│   └── DecorationManager.ts        Gutter icons + inline duration text
+│   ├── DecorationManager.ts        Gutter icons + inline duration text
+│   ├── CoverageDecorationManager.ts  Coloured ▌ bar (before pseudo-element) per line: green=covered, amber=partial, red=uncovered, grey=neutral; stale overlay (grey background tint) when rerun is pending
+│   └── CoverageHoverProvider.ts    HoverProvider for JS/TS files: shows which tests cover the hovered line (with status + duration + clickable links), and branch arm hit/miss detail for partially-covered lines. First 5 shown inline; "Show all N" link fires liveTestRunner.showCoveringTests → Quick Pick with fuzzy search over all covering tests
 ├── utils/
 │   └── duration.ts                 durationLabel, durationColorVar, getThresholds
 ├── views/
@@ -157,6 +164,7 @@ src/
         ├── resultsView.js          Normal results view (uses logPanel + errorPanel)
         ├── timelineView.js         Timeline bar + controls + console/errors right panel
         ├── testListView.js         Sidebar test list view
+        ├── coverageExplorerView.js Coverage tab in Explorer sidebar: project totals + per-file breakdown; clicking a row opens the file in the editor
         └── timelineSidebar.js      Sidebar State / Watch / Call Stack panels for timeline mode
 ```
 
@@ -178,8 +186,9 @@ src/
 2. File list read from `store.getAllFiles()` — no second file scan needed
 3. `onRunStarted` pushed to UI with the already-populated pending tree
 4. `_runFiles` builds a batch queue: `BATCH_SIZE = clamp(ceil(N / CONCURRENCY), 5, 50)` files per batch; `CONCURRENCY = max(1, floor(cpuCount / 4))` parallel Jest processes
-5. Each batch: files marked `running` in store → single Jest process via `SessionTraceRunner.runFiles` with combined test+trace instrumentation; `liveReporter.js` streams per-file results as they complete; `onFileDone` notifies observers after each file
-6. After Jest exits: `SessionTraceRunner` parses the light-trace JSONL to update `ExecutionTraceStore` (coverage lines + source→test dependency map)
+5. Each batch: files marked `running` in store → single Jest process via `SessionTraceRunner.runFiles` with combined test+trace+coverage instrumentation; `liveReporter.js` streams per-file results as they complete; `onFileDone` notifies observers after each file
+6. After Jest exits: `SessionTraceRunner` parses (a) the light-trace JSONL → updates `ExecutionTraceStore`; (b) the coverage counters JSONL → promotes `CoverageStore` entries from `'counted'` to `'measured'` using manifests on disk
+7. In parallel with step 5: `SourceCounter` AST-scans every source file and populates `CoverageStore` with `'counted'` (0-hit) entries so untouched files are included in coverage denominators
 7. On-save listener enabled
 
 **On save (debounced 300ms):**
@@ -269,7 +278,8 @@ ExecutionTraceStore
 **Relationship between the stores:**
 - `ResultStore` answers "what happened" — pass/fail, output, failure messages
 - `ExecutionTraceStore` answers "what ran and where" — which source lines executed, which tests cover which files
-- Neither store writes to the other; `SessionManager` coordinates both
+- `CoverageStore` answers "how much is covered" — statement/branch/function/line percentages; includes untouched files via `SourceCounter`
+- No store writes to another; `SessionManager` and `SessionTraceRunner` coordinate all three
 
 ### `ScopedOutput`
 

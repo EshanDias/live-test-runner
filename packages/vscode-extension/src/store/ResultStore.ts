@@ -172,6 +172,13 @@ export class ResultStore {
     this._lineMap.clear();
   }
 
+  clearAll(): void {
+    this.files.clear();
+    this.nodes.clear();
+    this._lineMap.clear();
+    this._summary = { total: 0, passed: 0, failed: 0, running: 0, totalDuration: 0 };
+  }
+
   // ── Mark running ──────────────────────────────────────────────────────────
 
   /** Mark a single node and all its descendants as 'running'. */
@@ -710,6 +717,19 @@ export class ResultStore {
   }
 
   /** Get all nodes belonging to a file. */
+  /**
+   * Find a test node by its file and full name. Linear scan — only call from hover providers,
+   * never from hot paths.
+   */
+  findNodeByFullName(fileId: string, fullName: string): TestNode | undefined {
+    for (const node of this.nodes.values()) {
+      if (node.fileId === fileId && node.fullName === fullName) {
+        return node;
+      }
+    }
+    return undefined;
+  }
+
   getFileNodes(fileId: string): TestNode[] {
     const result: TestNode[] = [];
     for (const node of this.nodes.values()) {

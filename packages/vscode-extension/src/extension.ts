@@ -28,6 +28,9 @@ import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
 import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
 import { DiscoveryCache, rotateAndCheckCapacity } from './cache/DiscoveryCache';
+import { CoverageStore } from './coverage/CoverageStore';
+import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
+import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { logger } from './utils/logger';
 
 const FILE = 'extension.ts';
@@ -96,11 +99,12 @@ export function activate(context: vscode.ExtensionContext) {
   statusBar.show();
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const store     = new ResultStore();
-  const selection = new SelectionState();
+  const store         = new ResultStore();
+  const selection     = new SelectionState();
+  const coverageStore = new CoverageStore();
 
   // ── Views and editor providers ─────────────────────────────────────────────
-  const explorerView      = new ExplorerView(context.extensionUri, store, selection);
+  const explorerView      = new ExplorerView(context.extensionUri, store, selection, coverageStore);
   const resultsView       = new ResultsView(context.extensionUri, store, selection);
   const decorationManager = new DecorationManager(store, context);
   const codeLensProvider  = new CodeLensProvider(store);
@@ -215,6 +219,20 @@ export function activate(context: vscode.ExtensionContext) {
     );
   };
 
+  // ── Coverage decoration manager ───────────────────────────────────────────
+  const coverageDecoMgr = new CoverageDecorationManager(coverageStore);
+  observers.push(coverageDecoMgr);
+  context.subscriptions.push(coverageStore, coverageDecoMgr);
+
+  // Propagate coverage updates to all observers (badge in Explorer view)
+  context.subscriptions.push(
+    coverageStore.onDidChange.event(() => {
+      const totals = coverageStore.getTotals();
+      const files  = coverageStore.getFileRows();
+      observers.forEach((o) => o.onCoverageUpdated?.(totals, files));
+    }),
+  );
+
   // ── Execution trace store + trace directory ────────────────────────────────
   const traceStore = new ExecutionTraceStore();
   const traceDir   = path.join(LTR_SESSION_TMP_DIR, 'traces');
@@ -259,6 +277,7 @@ export function activate(context: vscode.ExtensionContext) {
     new JestAdapter(LTR_SESSION_TMP_DIR),
     store,
     traceStore,
+    coverageStore,
     selection,
     resultsView,
     observers,
@@ -271,6 +290,15 @@ export function activate(context: vscode.ExtensionContext) {
   // Expose cleanup so deactivate() can delete trace files on extension shutdown
   _cleanTraceDir = cleanTraceDir;
   _releaseDiscoveryLock = () => discoveryCache?.releaseLock();
+
+  // ── Coverage hover provider ────────────────────────────────────────────────
+  const coverageHoverProvider = new CoverageHoverProvider(traceStore, store, coverageStore);
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider(
+      { scheme: 'file', pattern: '**/*.{ts,js,tsx,jsx}' },
+      coverageHoverProvider,
+    ),
+  );
 
   // ── Commands ───────────────────────────────────────────────────────────────
   context.subscriptions.push(
@@ -300,10 +328,15 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.stopTesting',        () => session.stop(decorationManager)),
     vscode.commands.registerCommand('liveTestRunner.stopAndClearCache',  async () => {
       session.stop(decorationManager);
+      store.clearAll();
+      cleanTraceDir();
+      // Yield so session-stopped is processed by the webview before we send init
+      await new Promise<void>((r) => setTimeout(r, 0));
+      resultsView.syncNow();
+      explorerView.syncNow();
       if (discoveryCache) {
         discoveryCache.releaseLock();
         discoveryCache.clear();
-        // Re-create lock so rotation knows this project is still open
         discoveryCache.writeLock();
         logger.info(FILE, 'stopAndClearCache', 'Cache cleared for current project');
       }
@@ -336,6 +369,68 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath, line) => rerunFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath, line) => debugFromEditor(filePath, line, store, session)),
     vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, nodeId) => focusResult(fileId, nodeId, store, selection, resultsView)),
+    vscode.commands.registerCommand('liveTestRunner.revealTestInPanel',  (args: { testFileId: string; fullName: string }) => {
+      const node = store.findNodeByFullName(args.testFileId, args.fullName);
+      if (node) { focusResult(node.fileId, node.id, store, selection, resultsView); }
+    }),
+    vscode.commands.registerCommand('liveTestRunner.openTestFile',       async (args: { testFileId: string; fullName: string }) => {
+      const node = store.findNodeByFullName(args.testFileId, args.fullName);
+      const targetLine = node?.line != null ? node.line - 1 : 0; // VS Code range is 0-based
+      const uri = vscode.Uri.file(args.testFileId);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc, {
+        selection: new vscode.Range(targetLine, 0, targetLine, 0),
+        preserveFocus: false,
+      });
+    }),
+    vscode.commands.registerCommand('liveTestRunner.showCoveringTests',   async (args: { filePath: string; line: number }) => {
+      const tests = traceStore.getTestsForLine(args.filePath, args.line);
+      if (tests.length === 0) { return; }
+
+      const goToFileBtn: vscode.QuickInputButton = {
+        iconPath: new vscode.ThemeIcon('go-to-file'),
+        tooltip: 'Open test file',
+      };
+
+      type Item = vscode.QuickPickItem & { testFileId: string; fullName: string };
+      const items: Item[] = tests.map(({ testFileId, fullName }) => {
+        const node   = store.findNodeByFullName(testFileId, fullName);
+        const status = node?.status ?? 'pending';
+        const icon   = status === 'passed' ? '$(testing-passed-icon)' : status === 'failed' ? '$(testing-failed-icon)' : '$(testing-queued-icon)';
+        const detail = testFileId.replace(/\\/g, '/').split('/').pop() ?? testFileId;
+        return { label: `${icon} ${fullName}`, detail, buttons: [goToFileBtn], testFileId, fullName };
+      });
+
+      const qp = vscode.window.createQuickPick<Item>();
+      qp.title        = `Tests covering line ${args.line} (${tests.length})`;
+      qp.placeholder  = 'Select a test to reveal in the panel';
+      qp.matchOnDetail = true;
+      qp.items        = items;
+
+      qp.onDidAccept(() => {
+        const picked = qp.selectedItems[0];
+        if (picked) {
+          const node = store.findNodeByFullName(picked.testFileId, picked.fullName);
+          if (node) { focusResult(node.fileId, node.id, store, selection, resultsView); }
+        }
+        qp.dispose();
+      });
+
+      qp.onDidTriggerItemButton(async ({ item }) => {
+        const node       = store.findNodeByFullName(item.testFileId, item.fullName);
+        const targetLine = node?.line != null ? node.line - 1 : 0;
+        const uri        = vscode.Uri.file(item.testFileId);
+        const doc        = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc, {
+          selection:     new vscode.Range(targetLine, 0, targetLine, 0),
+          preserveFocus: false,
+        });
+        qp.dispose();
+      });
+
+      qp.onDidHide(() => qp.dispose());
+      qp.show();
+    }),
     vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) => {
       lastTimelineOptions = { filePath, testFullName };
       return openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, outputChannel, lastTimelineOptions,

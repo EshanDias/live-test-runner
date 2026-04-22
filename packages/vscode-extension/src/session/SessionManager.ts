@@ -11,6 +11,8 @@ import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import { SessionTraceRunner } from './SessionTraceRunner';
+import { CoverageStore } from '../coverage/CoverageStore';
+import { SourceCounter } from '../coverage/SourceCounter';
 import { logger } from '../utils/logger';
 
 const FILE = 'SessionManager.ts';
@@ -51,6 +53,7 @@ export class SessionManager {
     private readonly _adapter: IFrameworkAdapter,
     private readonly _store: ResultStore,
     private readonly _traceStore: ExecutionTraceStore,
+    private readonly _coverageStore: CoverageStore,
     private readonly _selection: SelectionState,
     private readonly _resultsView: ResultsView,
     private readonly _observers: IResultObserver[],
@@ -59,7 +62,7 @@ export class SessionManager {
     private readonly _discovery: TestDiscoveryService,
     private readonly _sessionDir: string,
   ) {
-    this._traceRunner = new SessionTraceRunner(this._sessionDir);
+    this._traceRunner = new SessionTraceRunner(this._sessionDir, this._coverageStore);
   }
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
@@ -111,9 +114,13 @@ export class SessionManager {
     this._session = new TestSession(bootstrapRunner);
 
     try {
-      // ── Wait for background discovery to finish ────────────────────────────
-      // Discovery runs on activate. If the user clicks Start Testing while it
-      // is still in progress, we wait here rather than running with a partial store.
+      // ── Ensure discovery has run ───────────────────────────────────────────
+      // If the store is empty (e.g. after a cache clear) and discovery is not
+      // in progress, restart it so the user gets a fresh file list.
+      if (!this._discovery.isDiscovering && this._store.getAllFiles().length === 0 && this._discovery.hasCompleted) {
+        this._discovery.restart();
+      }
+
       if (this._discovery.isDiscovering) {
         this._updateStatusBar('Waiting for discovery…');
         await this._discovery.awaitDiscovery();
@@ -132,7 +139,19 @@ export class SessionManager {
       }
 
       this._session.activate();
+      this._traceRunner.reset();
       this._notify('onSessionStarted');
+
+      // Background source scan — runs in parallel with test execution.
+      this._coverageStore.clear();
+      const sourceCounter = new SourceCounter(projectRoot, this._coverageStore);
+      sourceCounter.on('progress', (scanned: number, total: number) => {
+        this._observers.forEach((o) => o.onSourceScanProgress?.(scanned, total));
+      });
+      sourceCounter.on('done', () => {
+        this._observers.forEach((o) => o.onSourceScanDone?.());
+      });
+      void sourceCounter.run();
 
       // Push the discovered (pending) tree to the UI so the run-started state
       // shows all tests before the first result arrives.
@@ -155,11 +174,13 @@ export class SessionManager {
 
   stop(decorationManager: DecorationManager): void {
     logger.info(FILE, 'stop', 'Session stop requested');
+    this._traceRunner.kill();
     if (this._session) {
       this._session.stop();
       this._session = undefined;
     }
     this._store.clearAllLineMaps();
+    this._coverageStore.clear();
     this._notify('onSessionStopped');
     void decorationManager; // already in observers, notified above
     this._updateStatusBar('Off');
@@ -306,6 +327,7 @@ export class SessionManager {
         if (this._adapter.isTestFile(document.uri.fsPath)) {
           await this._runFiles([document.uri.fsPath], projectRoot);
         } else {
+          this._coverageStore.markFileStale(document.uri.fsPath);
           await this._runAffectedBySourceFile(document.uri.fsPath, projectRoot);
         }
       } catch (error) {
@@ -437,6 +459,10 @@ export class SessionManager {
     if (individualCases.length > 0) {
       await this._runTestCases(individualCases, projectRoot);
     }
+
+    // Scoped reruns don't produce coverage data, so clear the stale flag now
+    // that the rerun is complete — the existing counters are still valid.
+    this._coverageStore.clearStale(sourceFilePath);
   }
 
   // ── Private: run test cases (parallel, one Jest invocation per file) ────────

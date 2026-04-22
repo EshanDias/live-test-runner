@@ -46,6 +46,25 @@ export function durationLabel(ms: number): string {
   return parts.join(' ');
 }
 
+export interface CoverageThresholds {
+  /** Percentage below which coverage is red (default 50) */
+  red: number;
+  /** Percentage at or above which coverage is green; between red and amber = amber (default 80) */
+  amber: number;
+}
+
+export const DEFAULT_COVERAGE_THRESHOLDS: CoverageThresholds = { red: 50, amber: 80 };
+
+export function getCoverageThresholds(): CoverageThresholds {
+  const cfg = vscode.workspace
+    .getConfiguration('liveTestRunner')
+    .get<Record<string, number>>('coverageThresholds') ?? {};
+  return {
+    red:   cfg.red   ?? DEFAULT_COVERAGE_THRESHOLDS.red,
+    amber: cfg.amber ?? DEFAULT_COVERAGE_THRESHOLDS.amber,
+  };
+}
+
 /** Returns a VS Code CSS variable string for the colour matching the duration and level. */
 export function durationColorVar(
   ms: number,
