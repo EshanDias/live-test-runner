@@ -8,6 +8,13 @@
  * views, and session — and belongs to none of them specifically.
  */
 import * as vscode from 'vscode';
+import { CoverageTotals, CoveragePct } from './coverage/types';
+
+export interface CoverageFileRow {
+  filePath: string;
+  state: string;
+  pct: CoveragePct;
+}
 
 export interface RunStartedPayload {
   fileCount: number;
@@ -34,6 +41,9 @@ export interface IResultObserver extends vscode.Disposable {
   onFileResult(filePath: string): void;
   onRunFinished(payload: RunFinishedPayload): void;
   onTracingProgress?(completed: number, total: number, done?: boolean): void;
+  onSourceScanProgress?(scanned: number, total: number): void;
+  onSourceScanDone?(): void;
+  onCoverageUpdated?(totals: CoverageTotals, files: CoverageFileRow[]): void;
 
   // ── Static discovery events (optional — no-op on implementors that don't need them) ──
 

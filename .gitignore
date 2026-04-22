@@ -14,6 +14,7 @@ yarn-error.log*
 
 # Coverage
 coverage/
+!/packages/vscode-extension/src/coverage/
 
 # OS
 .DS_Store

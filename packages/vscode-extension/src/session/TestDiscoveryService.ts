@@ -68,6 +68,8 @@ export class TestDiscoveryService {
   private _watcher: vscode.FileSystemWatcher | undefined;
   private _discoveryPromise: Promise<void> = Promise.resolve();
   private _isDiscovering = false;
+  private _hasCompleted = false;
+  private _projectRoot: string | undefined;
   private _store: ResultStore | undefined;
   private _log: ((msg: string) => void) | undefined;
   private _callbacks: DiscoveryCallbacks | undefined;
@@ -75,6 +77,15 @@ export class TestDiscoveryService {
 
   get isDiscovering(): boolean {
     return this._isDiscovering;
+  }
+
+  get hasCompleted(): boolean {
+    return this._hasCompleted;
+  }
+
+  restart(): void {
+    if (!this._projectRoot || !this._store || !this._log || !this._callbacks) { return; }
+    this.start(this._projectRoot, this._store, this._log, this._callbacks, this._cache);
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -92,6 +103,7 @@ export class TestDiscoveryService {
   ): void {
     this._watcher?.dispose();
     this._isDiscovering = true;
+    this._projectRoot = projectRoot;
     this._store = store;
     this._log = log;
     this._callbacks = callbacks;
@@ -104,6 +116,7 @@ export class TestDiscoveryService {
       })
       .finally(() => {
         this._isDiscovering = false;
+        this._hasCompleted = true;
         cache?.flush();
         callbacks.onComplete();
         this._setupWatcher(projectRoot, store, log, callbacks);

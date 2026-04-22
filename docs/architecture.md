@@ -119,6 +119,55 @@ jest --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …]
 ```
 The temp config merges the project's `jest.config.*` with `sessionTraceTransform.js` (light trace transform) and `liveReporter.js` (streaming reporter). Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
 
+#### Transform pipeline — how `sessionTraceTransform.js` works
+
+Every source file passes through a two-stage pipeline before Jest executes it. The order of the two stages depends on what transformer the project uses:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    sessionTraceTransform.js  (Jest transform)           │
+│                                                                         │
+│  Detect project transformer from jest.config transform map              │
+│           │                                                             │
+│           ▼                                                             │
+│   ┌───────────────────┐         ┌──────────────────────────────┐        │
+│   │  Lenient?         │         │  Strict?                     │        │
+│   │  (babel-jest,     │         │  (ts-jest, @swc/jest,        │        │
+│   │   CRA, default)   │         │   esbuild-jest, …)           │        │
+│   └────────┬──────────┘         └──────────────┬───────────────┘        │
+│            │                                   │                        │
+│   Stage 1  ▼  our Babel AST instrumentation    │  Stage 1               │
+│   ┌──────────────────────────────┐             │  Project transformer   │
+│   │ Raw TS/JS source             │             │  (TS → clean JS)       │
+│   │   → inject __strace.step()  │             ▼                        │
+│   │   → inject __covF counters  │  ┌──────────────────────────────┐    │
+│   │   → write coverage manifest │  │ Raw TS source                │    │
+│   └──────────────┬───────────── ┘  │   → ts-jest / swc runs tsc   │    │
+│                  │                 │   → outputs clean CJS/JS      │    │
+│   Stage 2        ▼                 └──────────────┬───────────────┘    │
+│   Project transformer                             │  Stage 2            │
+│   (babel-jest strips TS types)                    ▼  our Babel AST     │
+│   ┌──────────────────────────────┐  ┌──────────────────────────────┐   │
+│   │ Pre-instrumented TS/JS       │  │ Clean JS output              │   │
+│   │   → babel strips types       │  │   → inject __strace.step()   │   │
+│   │   → outputs CJS              │  │   → inject __covF counters   │   │
+│   └──────────────┬───────────── ┘  │   → write coverage manifest   │   │
+│                  │                 └──────────────┬───────────────┘    │
+│                  └──────────────┬─────────────────┘                    │
+│                                 ▼                                       │
+│              prepend: require('sessionTraceRuntime.js')                 │
+│                                 │                                       │
+└─────────────────────────────────┼───────────────────────────────────────┘
+                                  ▼
+                      Jest executes instrumented CJS
+```
+
+**Why two orders?**
+- `babel-jest` (lenient) strips TypeScript types without type-checking, so it tolerates our injected `__strace`/`__covF` globals in the input.
+- `ts-jest` / `@swc/jest` (strict) run the real TypeScript compiler, which rejects unknown globals with type errors. They must receive clean source first; we then instrument the plain JS they produce.
+
+**`jest.mock` hoisting guard:** Babel's `jest-hoist` plugin automatically moves every `jest.mock()` call to the top of the file — before the `__covF` preamble that initialises the coverage counter variable. If a `jest.mock()` factory arrow function contains a counter increment (`__covF.f["f0"]++`), it will throw `ReferenceError: __covF is not defined` at runtime. `sessionTraceTransform.js` detects this pattern and skips counter injection for any arrow function that is the direct factory argument of `jest.mock()`.
+
 `--maxWorkers=1` keeps each Jest process single-threaded so batches can run in parallel without competing for CPU.
 
 **Single-test / scoped-rerun — `JestRunner` (CodeLens `▶ Run`, suite/test reruns):**
@@ -234,7 +283,7 @@ interface IResultObserver {
 
 The discovery methods are optional so existing observers don't need to implement them. `TestDiscoveryService` checks for their presence before calling.
 
-Registered observers: `ExplorerView`, `ResultsView`, `DecorationManager`, `CodeLensProvider`.
+Registered observers: `ExplorerView`, `ResultsView`, `DecorationManager`, `CodeLensProvider`, `CoverageDecorationManager`.
 
 ### Data store
 
@@ -277,12 +326,11 @@ ExecutionTraceStore
   ├── traceIndex: Map<testId, string>
   │     testId = full test name ("Suite > test") → absolute .jsonl path
   │     Written to a window-unique trace directory within the user's temp storage.
-  │     Used by: Timeline Debugger, future coverage overlay
+  │     Used by: Timeline Debugger
   │
   ├── coverageIndex: Map<filePath, Set<lineNumber>>
   │     Every source line executed by any test in the session.
   │     Accumulates across runs — never resets mid-session.
-  │     Used by: session-wide gutter coverage decorations (planned)
   │
   └── sourceToTests: Map<sourceFilePath, SourceTestMapping>
         {
@@ -298,10 +346,94 @@ ExecutionTraceStore
         Used by SessionManager._runAffectedBySourceFile() for smart on-save reruns.
 ```
 
+**`CoverageStore`** — in-memory store for statement/branch/function/line coverage metrics. Lives in `src/coverage/`. Separate from `ExecutionTraceStore` because it has its own lifecycle (populated by `SourceCounter` + `SessionTraceRunner._parseCoverage()`).
+
+```
+CoverageStore
+  entries: Map<filePath, CoverageEntry>
+    CoverageEntry is one of:
+      { state: 'counted',        statements, branches, functions, lines }
+      { state: 'measured',       manifestPath, counters: LiveCov, pct: CoveragePct }
+      { state: 'measured-stale', manifestPath, counters: LiveCov, pct: CoveragePct }
+
+  onDidChange: EventEmitter<void>   — fired on any mutation; observers redraw badge + gutter
+  _scanComplete: boolean            — set to true when SourceCounter finishes
+
+Key reads:
+  getTotals(): CoverageTotals       — one-pass aggregate across all entries; 'counted' entries
+                                      contribute denominator only (covered = 0 until measured)
+  getFileRows()                     — returns all entries as { filePath, state, pct } rows
+                                      for the coverage table; 'counted' rows with all-zero
+                                      counts (Babel parse failed) are omitted
+  isScanComplete(): boolean         — true once SourceCounter has processed all source files
+  isAllMeasured(): boolean          — true once every entry has been promoted from 'counted'
+
+Key writes:
+  setCountedEntry(filePath, counts) — called by SourceCounter per source file
+  setMeasuredEntry(filePath, data)  — called by SessionTraceRunner._parseCoverage()
+  markFileStale(filePath)           — 'measured' → 'measured-stale' on save (rerun pending)
+  clearStale(filePath)              — 'measured-stale' → 'measured' if rerun is aborted without
+                                      completing (e.g. session stopped mid-rerun)
+  markScanComplete()                — called by SourceCounter when its scan loop finishes
+  clear()                           — full reset on session stop
+```
+
+**`CoverageTotals`** — aggregate type returned by `getTotals()`:
+```typescript
+interface CoverageTotals {
+  statements: { covered: number; total: number; pct: number }
+  branches:   { covered: number; total: number; pct: number }
+  functions:  { covered: number; total: number; pct: number }
+  lines:      { covered: number; total: number; pct: number }
+  scanComplete: boolean   // mirrors CoverageStore._scanComplete for consumer convenience
+}
+```
+
+Entry lifecycle:
+1. `'counted'` — set by `SourceCounter` at session start (0 hits, denominator only)
+2. `'measured'` — promoted by `SessionTraceRunner._parseCoverage()` after a run touches the file
+3. `'measured-stale'` — set by `SessionManager` when the file is saved and a rerun is pending
+4. Back to `'measured'` — when the rerun completes and `_parseCoverage()` fires again
+
+**`CoverageReport`** (`src/coverage/CoverageReport.ts`): Stateless `calculate(manifest, counters): CoveragePct` function. Reads a coverage manifest (statement/branch/function IDs with location) and a live counter snapshot, and returns the four-metric `CoveragePct`. Called by `SessionTraceRunner._parseCoverage()` — not a class; no side effects.
+
+**`CoverageDecorationManager`** (`src/editor/CoverageDecorationManager.ts`): Implements `IResultObserver`. Subscribes to `CoverageStore.onDidChange` and refreshes all visible editors on every change. For each editor it reads the `CoverageStore` entry and — for `measured` or `measured-stale` entries — loads the manifest from disk to classify every line into one of four states:
+
+| State | Decoration | Condition |
+|-------|-----------|-----------|
+| covered | green `▌` bar (before pseudo-element) | statement hit count > 0 and all branch arms hit |
+| partial | amber `▌` bar | statement hit > 0 but at least one branch arm missed |
+| uncovered | red `▌` bar | statement hit count = 0 |
+| neutral | faint grey `▌` bar | line not in any statement (comments, blank lines) |
+
+When the entry is `measured-stale` an additional full-file grey background tint is applied via a `isWholeLine` decoration type. The overview ruler mirrors the green/amber/red states so uncovered regions are visible in the scrollbar minimap. Breakpoint gutters are never blocked because the `▌` character is injected via the `before` pseudo-element, not drawn in the gutter column.
+
+**`CoverageHoverProvider`** (`src/editor/CoverageHoverProvider.ts`): Registered as a `vscode.HoverProvider` for all JS/TS source files. On hover it:
+
+1. Looks up the `CoverageStore` entry for the file; returns nothing if the file has no coverage data.
+2. Returns a stale warning if the entry is `measured-stale`.
+3. For `measured` entries, reads the manifest to check whether the hovered line is covered and whether any branches on that line have missed arms.
+4. Builds a `MarkdownString` with:
+   - Branch arm hit/miss table for partial lines (e.g. `if/else: ✓ then / ✗ else`)
+   - A list of up to 5 tests that cover the line, each showing pass/fail icon, duration, a clickable link to reveal the test in the Results panel (`liveTestRunner.revealTestInPanel`), and a file-open link (`liveTestRunner.openTestFile`).
+5. Test status is read from `ResultStore.findNodeByFullName()` at hover time — never cached — so it always reflects the latest run.
+
+**Coverage Explorer tab** (`src/webview/views/coverageExplorerView.js`): A router view mounted in `explorer.html` when the user clicks the "Coverage" tab. Shows a four-column project totals row (Stmts / Branch / Fns / Lines) and a scrollable per-file breakdown table. Clicking a file row sends an `openFile` message to the extension host, which opens the file in the editor. The tab is only shown when a session is active and coverage data is available.
+
+**Coverage manifest** (`src/session/instrumentation/sessionTraceTransform.js` writes these):
+```
+<LTR_SESSION_TMP_DIR>/coverage/manifests/<sha256(filePath)[0:16]>.json
+```
+Written once per source file per transformed run. Contains every statement/branch/function with IDs and line locations. The manifest + counters together drive the four metrics. `CoverageStore` holds only the path string — the file is read on demand (gutter decorations, `_parseCoverage` merging) to keep heap flat on large projects.
+
+**`SourceCounter`** (`src/coverage/SourceCounter.ts`):
+Runs at session start in parallel with the first test run. AST-parses every source file (via `vscode.workspace.findFiles` + `@babel/parser`), counts statements/branches/functions/lines, and populates `CoverageStore` with `'counted'` entries. This ensures untouched files (never imported by any test) still contribute to the denominator — giving correct aggregate percentages rather than inflated ones. Yields to the event loop every 10 files (`YIELD_EVERY = 10`) to keep the UI responsive. Emits `progress` and `done` events for the badge scanning indicator. Respects the `liveTestRunner.coverageExclude` setting (array of glob patterns, merged with the built-in exclusion list that covers `node_modules`, test files, config files, `dist/`, etc.).
+
 **Relationship between the stores:**
 - `ResultStore` answers "what happened" — pass/fail, output, failures
-- `ExecutionTraceStore` answers "what ran and where" — which lines executed, which tests cover which source files
-- The trace files are the ground truth; `ExecutionTraceStore` is derived. Clear both together on session reset.
+- `ExecutionTraceStore` answers "what ran and where" — which lines executed, which tests cover which files
+- `CoverageStore` answers "how much is covered" — statement/branch/function/line percentages per file and in aggregate
+- The trace files and coverage manifests are the ground truth on disk; the stores are derived caches.
 
 **`LineMap`** — inside `ResultStore`:
 
@@ -354,11 +486,11 @@ Runs on extension activate — before the user clicks Start Testing.
 
 ### Session management (`SessionManager`)
 
-1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, runs them all (up to 3 in parallel), enables on-save listener
-2. **On save** — debounced (default 300ms); classifies file as test or source; for source files uses `_runAffectedBySourceFile` (trace-store driven with CoverageMap fallback)
-3. **Stop Testing** — kills child processes, clears decorations, disables on-save
+1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, clears `CoverageStore`, fires `SourceCounter` (background, parallel), runs all test files, enables on-save listener
+2. **On save** — debounced (default 300ms); classifies file as test or source; for source files calls `CoverageStore.markFileStale()` then `_runAffectedBySourceFile()` (trace-store driven with CoverageMap fallback)
+3. **Stop Testing** — kills child processes, clears decorations, calls `CoverageStore.clear()`, disables on-save
 
-After each file run, `SessionTraceRunner` fires in the background (fire-and-forget): it re-runs the same file with the session trace transform, partitions the raw JSONL into per-test trace files, and updates all three `ExecutionTraceStore` indexes (`traceIndex`, `coverageIndex`, `sourceToTests`). Per-test console output from the trace run is applied back to `ResultStore` so the Results panel can show test-scoped logs.
+After each file batch, `SessionTraceRunner` parses the light-trace JSONL (updates `ExecutionTraceStore`) and then parses the coverage counters JSONL (promotes `CoverageStore` entries from `'counted'` to `'measured'`). Both happen in the same post-Jest-exit phase — no extra process or phase needed.
 
 Concurrency is controlled by a `CONCURRENCY = 3` constant in `SessionManager`.
 
@@ -400,6 +532,22 @@ Lifecycle:
 - File result arrives → `LineMap` rebuilt with Jest's authoritative `location.line`, decorations refreshed for that file
 - Editor becomes active → decorations applied from existing `LineMap`
 - Session stops → `decorationManager.clearAll()` resets all icons (decoration *types* are kept alive so pending icons from discovery survive)
+
+**`CoverageDecorationManager`** (`src/editor/CoverageDecorationManager.ts`) — dedicated manager for coverage gutter decorations. Completely separate from `DecorationManager`; uses its own `TextEditorDecorationType` instances.
+
+Three thin vertical bar states per executable line (3px wide rect, distinct from debug breakpoints which are filled circles):
+
+| Decoration | Trigger | Visual |
+|---|---|---|
+| Covered | Line executed, all branches taken | Solid green bar |
+| Partial | Line executed, ≥1 branch arm never taken | Amber bar |
+| Uncovered | Line never executed | Dim red bar |
+| Stale tint | `'measured-stale'` entry (file saved, rerun pending) | Subtle grey `backgroundColor` tint over entire file — bars remain visible underneath |
+| Not yet run | `'counted'` entry | Nothing shown |
+
+Line classification reads the coverage manifest (statement IDs + locations, branch IDs + arm counts) and counters (`s`, `b`, `f`) from `CoverageEntry`. A line is **partial** when it has ≥1 branch whose arm count array contains a zero; otherwise if hit count > 0 it is **covered**; if hit count = 0 it is **uncovered**. Functions without dedicated decoration — an uncovered function's declaration line shows as uncovered (red bar).
+
+Subscribes to `CoverageStore.onDidChange` and redraws all visible editors on each change. Reads the coverage manifest from disk on demand (path stored in the `CoverageEntry`) to get per-line hit data. Clears on session stop.
 
 **`CodeLensProvider`** scans files with a regex (no AST) to find `describe`, `it`, and `test` blocks:
 

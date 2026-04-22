@@ -44,6 +44,7 @@ class TestListLayout {
     this.expanded = new Set(); // expanded file/suite/folder IDs
     this.failuresOnly = false;
     this.folderView = false;
+    this.statusFilter = 'all';
     this._render();
   }
 
@@ -177,6 +178,11 @@ class TestListLayout {
 
   setFolderView(on) {
     this.folderView = on;
+    this._render();
+  }
+
+  setStatusFilter(filter) {
+    this.statusFilter = filter; // 'all' | 'passed' | 'failed' | 'pending'
     this._render();
   }
 
@@ -406,6 +412,12 @@ class TestListLayout {
       filtered = filtered.filter(
         (f) => f.status === 'failed' || f.status === 'running',
       );
+    if (this.statusFilter && this.statusFilter !== 'all') {
+      filtered = filtered.filter((f) => {
+        if (this.statusFilter === 'pending') return f.status === 'pending' || f.status == null;
+        return f.status === this.statusFilter;
+      });
+    }
 
     const savedScroll = this.container.scrollTop;
 

@@ -23,6 +23,7 @@
     _views: {},
     _current: null,
     _vscode: null,
+    _sharedPayload: {},   // cached data injected into every view on mount
 
     /**
      * @param {{ vscode: object, views: Record<string, object>, defaultView?: string }} opts
@@ -34,7 +35,27 @@
       window.addEventListener('message', ({ data }) => {
         if (data.type === 'route') {
           this.go(data.view, data.payload);
-        } else if (this._current && typeof this._current.onMessage === 'function') {
+          return;
+        }
+        // Cache shared state so new views get it on mount
+        if (data.type === 'init') {
+          this._sharedPayload = Object.assign(this._sharedPayload, data);
+        } else if (data.type === 'coverage-updated') {
+          this._sharedPayload.coverageTotals = data.totals;
+          this._sharedPayload.coverageFiles  = data.files ?? [];
+        } else if (data.type === 'run-finished') {
+          this._sharedPayload.total         = data.total;
+          this._sharedPayload.passed        = data.passed;
+          this._sharedPayload.failed        = data.failed;
+          this._sharedPayload.sessionActive = data.sessionActive !== false;
+        } else if (data.type === 'session-started') {
+          this._sharedPayload.sessionActive = true;
+        } else if (data.type === 'session-stopped') {
+          this._sharedPayload.sessionActive  = false;
+          this._sharedPayload.coverageTotals = null;
+          this._sharedPayload.coverageFiles  = [];
+        }
+        if (this._current && typeof this._current.onMessage === 'function') {
           this._current.onMessage(data);
         }
       });
@@ -67,7 +88,7 @@
       }
 
       this._current = view;
-      view.mount(app, this._vscode, payload ?? {});
+      view.mount(app, this._vscode, Object.assign({}, this._sharedPayload, payload ?? {}));
     },
   };
 

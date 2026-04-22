@@ -2,6 +2,35 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [2.0.0] — 2026-04-21
+
+### Code Coverage
+
+#### What's new
+
+- **Live coverage badge** — the Explorer sidebar now shows a four-metric coverage badge (`Stmts X% | Branch X% | Fns X% | Lines X%`) that updates automatically after each test run. Hidden when no session is active; shows a scanning progress indicator while the initial source scan runs.
+- **Coverage line decorations** — source lines are marked with a coloured `▌` bar: green (covered), amber (partial branch coverage), red (not covered), grey (non-executable). The overview ruler mirrors the same states so you can navigate uncovered regions from the scrollbar.
+- **Coverage hover** — hovering any decorated source line shows: which tests cover it (with pass/fail status and duration), and for partially-covered branches, which arms hit or missed (`then`/`else`, `truthy`/`falsy`, `&&`/`||` leaves, `?.` null vs non-null, etc.). Each test name is a clickable link that reveals the test in the results panel; a file icon opens the test file directly.
+- **Stale coverage overlay** — when you save a source file and a rerun is pending, the entire file gets a grey background tint until the rerun completes and fresh coverage data arrives.
+- **Coverage Explorer tab** — the Explorer sidebar gains a second tab ("Coverage") showing project-level totals (Stmts / Branch / Fns / Lines) and a scrollable per-file breakdown. Click any file row to open it in the editor.
+- **Correct coverage denominators** — source files that no test ever imports are scanned in the background at session start (`SourceCounter`) and included as 0% in the aggregate totals. This matches Istanbul's `all: true` behaviour — no more inflated percentages.
+- **No performance impact** — coverage instrumentation shares the existing Jest transform pass (no second AST walk, no extra process). The background source scan yields to the event loop every 10 files to keep the UI responsive.
+
+#### Technical details
+
+- `sessionTraceTransform.js` now injects `__cov` statement/branch/function counters alongside the existing `__strace.step()` calls, and writes a per-file coverage manifest (JSON) to `<tmp>/coverage/manifests/`.
+- `sessionTraceRuntime.js` flushes `globalThis.__cov` as a JSONL line to `COVERAGE_OUTPUT_FILE` on `process.exit`.
+- `SessionTraceRunner._parseCoverage()` reads the JSONL, merges multi-worker counters, reads manifests, and promotes `CoverageStore` entries.
+- Cross-run counter merging uses `max()` — re-running a subset of tests never reduces previously measured coverage.
+- `CoverageDecorationManager` applies the `▌` bar via VS Code's `before` pseudo-element decoration (`contentText: '▌'`) so breakpoint gutters are never blocked. Five decoration types: covered, partial, uncovered, neutral, stale.
+- `CoverageHoverProvider` is a `vscode.HoverProvider` registered for all JS/TS files. It reads the manifest and counters from the `CoverageStore` entry for the hovered file and line, then cross-references `ExecutionTraceStore.getTestsForLine()` + `ResultStore.findNodeByFullName()` for live status and duration.
+- Two new commands wired for hover links: `liveTestRunner.revealTestInPanel` (reveals the test row in the Results panel) and `liveTestRunner.openTestFile` (opens the test file at the relevant test).
+- **Bug fix (ts-jest):** `sessionTraceTransform.js` no longer injects `__covF.f["f0"]++` inside `jest.mock()` factory arrow functions. Babel's `jest-hoist` plugin hoists `jest.mock()` to the top of the file — before the `__covF` preamble — so any counter access inside the factory caused a `ReferenceError`. The fix detects this pattern and skips counter injection for mock factory functions.
+- **Bug fix (stale after on-save rerun):** scoped reruns (individual test cases via `--testNamePattern`) do not produce a new coverage counters file, so `_parseCoverage` was never called and the `measured-stale` state was never cleared. Fixed by calling `CoverageStore.clearStale(sourceFilePath)` after `_runTestCases` completes in `_runAffectedBySourceFile`.
+- **"Show all covering tests" Quick Pick** — when a line is covered by more than 5 tests, the hover now shows a "Show all N" link that opens a VS Code Quick Pick listing every covering test with pass/fail icon and file name. Selecting a test reveals it in the Results panel. New command: `liveTestRunner.showCoveringTests`.
+
+---
+
 ## [1.4.0] — 2026-04-19
 
 ### Persistent Discovery Cache, Batch Execution & UI Performance

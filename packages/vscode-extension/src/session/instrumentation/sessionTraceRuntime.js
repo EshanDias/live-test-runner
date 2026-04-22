@@ -13,7 +13,8 @@
 
 const fs = require('fs');
 
-const outputFile = process.env.SESSION_TRACE_FILE;
+const outputFile    = process.env.SESSION_TRACE_FILE;
+const covOutputFile = process.env.COVERAGE_OUTPUT_FILE;
 
 let _currentTestName = null;
 let _currentTestFile = null;
@@ -73,3 +74,16 @@ if (!global.__strace) {
     log() {},
   };
 }
+
+// Flush coverage counters to COVERAGE_OUTPUT_FILE on process exit.
+// appendFileSync is intentional — multiple Jest workers write to the same file.
+process.on('exit', () => {
+  if (!covOutputFile || !globalThis.__cov) { return; }
+  try {
+    fs.appendFileSync(
+      covOutputFile,
+      JSON.stringify({ workerPid: process.pid, cov: globalThis.__cov }) + '\n',
+      'utf8',
+    );
+  } catch (_e) {}
+});
