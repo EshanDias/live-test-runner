@@ -12,6 +12,8 @@ All notable changes to Live Test Runner are documented here.
 - **Coverage Explorer tab** — the sidebar now has a "Coverage" tab alongside "Tests". It shows project-level totals and a scrollable file list; click any row to open that file.
 - **Stale indicator** — save a source file mid-session and the file gets a grey overlay until the rerun finishes, so you always know when coverage data is out of date.
 - **Accurate totals** — files that no test ever imports are counted as 0% covered, not ignored. The percentages reflect your whole project, not just the files that happened to load.
+- **"Show all covering tests"** — the coverage hover now shows a "Show all N" link when more than 5 tests cover a line. Click it to open a searchable Quick Pick listing every covering test; select one to reveal it in the Results panel.
+- **Fix: stale coverage after on-save rerun** — coverage decorations no longer stay grey after a targeted (individual test case) rerun completes.
 
 ---
 

@@ -92,7 +92,8 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
     }
 
     if (tests.length > MAX_TESTS_SHOWN) {
-      md.appendMarkdown(`_…and ${tests.length - MAX_TESTS_SHOWN} more_`);
+      const args = encodeURIComponent(JSON.stringify({ filePath, line }));
+      md.appendMarkdown(`_…and ${tests.length - MAX_TESTS_SHOWN} more_ \u2002[Show all ${tests.length}](command:liveTestRunner.showCoveringTests?${args} "Open Quick Pick with all covering tests")`);
     }
 
     return new vscode.Hover(md);

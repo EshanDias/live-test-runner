@@ -26,6 +26,8 @@ All notable changes to Live Test Runner are documented here.
 - `CoverageHoverProvider` is a `vscode.HoverProvider` registered for all JS/TS files. It reads the manifest and counters from the `CoverageStore` entry for the hovered file and line, then cross-references `ExecutionTraceStore.getTestsForLine()` + `ResultStore.findNodeByFullName()` for live status and duration.
 - Two new commands wired for hover links: `liveTestRunner.revealTestInPanel` (reveals the test row in the Results panel) and `liveTestRunner.openTestFile` (opens the test file at the relevant test).
 - **Bug fix (ts-jest):** `sessionTraceTransform.js` no longer injects `__covF.f["f0"]++` inside `jest.mock()` factory arrow functions. Babel's `jest-hoist` plugin hoists `jest.mock()` to the top of the file — before the `__covF` preamble — so any counter access inside the factory caused a `ReferenceError`. The fix detects this pattern and skips counter injection for mock factory functions.
+- **Bug fix (stale after on-save rerun):** scoped reruns (individual test cases via `--testNamePattern`) do not produce a new coverage counters file, so `_parseCoverage` was never called and the `measured-stale` state was never cleared. Fixed by calling `CoverageStore.clearStale(sourceFilePath)` after `_runTestCases` completes in `_runAffectedBySourceFile`.
+- **"Show all covering tests" Quick Pick** — when a line is covered by more than 5 tests, the hover now shows a "Show all N" link that opens a VS Code Quick Pick listing every covering test with pass/fail icon and file name. Selecting a test reveals it in the Results panel. New command: `liveTestRunner.showCoveringTests`.
 
 ---
 

@@ -104,6 +104,11 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.showCoveringTests",
+        "title": "Show All Covering Tests",
+        "category": "Live Test Runner"
+      },
+      {
         "command": "liveTestRunner.dumpTraceStore",
         "title": "Dump Trace Store (Debug)",
         "category": "Live Test Runner",

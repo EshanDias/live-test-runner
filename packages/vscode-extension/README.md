@@ -80,7 +80,7 @@ After the first run, every source file shows per-line coverage — no separate c
 | Red `▌` | Never executed |
 | Grey `▌` | Not executable |
 
-Hover any line to see which tests cover it. Coverage updates on every save.
+Hover any line to see which tests cover it, their pass/fail status, and duration. When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
 
 <!-- [TODO: USER_INPUT_NEEDED] Screenshot or gif of coverage bars + hover tooltip in a source file -->
 

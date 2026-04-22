@@ -378,6 +378,54 @@ export function activate(context: vscode.ExtensionContext) {
         preserveFocus: false,
       });
     }),
+    vscode.commands.registerCommand('liveTestRunner.showCoveringTests',   async (args: { filePath: string; line: number }) => {
+      const tests = traceStore.getTestsForLine(args.filePath, args.line);
+      if (tests.length === 0) { return; }
+
+      const goToFileBtn: vscode.QuickInputButton = {
+        iconPath: new vscode.ThemeIcon('go-to-file'),
+        tooltip: 'Open test file',
+      };
+
+      type Item = vscode.QuickPickItem & { testFileId: string; fullName: string };
+      const items: Item[] = tests.map(({ testFileId, fullName }) => {
+        const node   = store.findNodeByFullName(testFileId, fullName);
+        const status = node?.status ?? 'pending';
+        const icon   = status === 'passed' ? '$(testing-passed-icon)' : status === 'failed' ? '$(testing-failed-icon)' : '$(testing-queued-icon)';
+        const detail = testFileId.replace(/\\/g, '/').split('/').pop() ?? testFileId;
+        return { label: `${icon} ${fullName}`, detail, buttons: [goToFileBtn], testFileId, fullName };
+      });
+
+      const qp = vscode.window.createQuickPick<Item>();
+      qp.title        = `Tests covering line ${args.line} (${tests.length})`;
+      qp.placeholder  = 'Select a test to reveal in the panel';
+      qp.matchOnDetail = true;
+      qp.items        = items;
+
+      qp.onDidAccept(() => {
+        const picked = qp.selectedItems[0];
+        if (picked) {
+          const node = store.findNodeByFullName(picked.testFileId, picked.fullName);
+          if (node) { focusResult(node.fileId, node.id, store, selection, resultsView); }
+        }
+        qp.dispose();
+      });
+
+      qp.onDidTriggerItemButton(async ({ item }) => {
+        const node       = store.findNodeByFullName(item.testFileId, item.fullName);
+        const targetLine = node?.line != null ? node.line - 1 : 0;
+        const uri        = vscode.Uri.file(item.testFileId);
+        const doc        = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc, {
+          selection:     new vscode.Range(targetLine, 0, targetLine, 0),
+          preserveFocus: false,
+        });
+        qp.dispose();
+      });
+
+      qp.onDidHide(() => qp.dispose());
+      qp.show();
+    }),
     vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) => {
       lastTimelineOptions = { filePath, testFullName };
       return openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, outputChannel, lastTimelineOptions,
