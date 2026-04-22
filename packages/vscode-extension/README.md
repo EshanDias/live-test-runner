@@ -17,7 +17,7 @@
 > **Only supports `Jest` at the moment**
 
 <!-- [TODO: USER_INPUT_NEEDED] Replace with an updated hero gif showing the full experience (test run + coverage bars + hover) -->
-![v1 Demo](resources/gifs/live-test-runner-v1-demo.gif)
+![Demo](resources/gifs/live%20test%20runner%20demo.gif)
 
 ---
 
@@ -83,6 +83,7 @@ After the first run, every source file shows per-line coverage — no separate c
 Hover any line to see which tests cover it, their pass/fail status, and duration. When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
 
 <!-- [TODO: USER_INPUT_NEEDED] Screenshot or gif of coverage bars + hover tooltip in a source file -->
+![Code Coverage Example](resources/images/code_coverage.png)
 
 ---
 
