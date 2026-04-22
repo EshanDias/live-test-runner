@@ -220,6 +220,12 @@ body {
   overflow: hidden;
 }
 
+.cov-folder-row .cov-file-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .cov-file-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -516,6 +522,70 @@ body {
 .search-clear.visible {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* ── Status filter dropdown ────────────────────────────────────────────────── */
+.status-filter-select {
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: var(--vscode-font-family);
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.status-filter-select:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+/* ── Clickable summary cells ───────────────────────────────────────────────── */
+.summary-cell[data-filter] {
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+
+.summary-cell[data-filter]:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.summary-cell[data-active="true"] {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* ── Coverage folder row ───────────────────────────────────────────────────── */
+.cov-folder-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 60px 60px 52px 52px;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 11px;
+  gap: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  background: var(--vscode-sideBar-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.cov-folder-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.cov-folder-toggle {
+  font-size: 9px;
+  opacity: 0.6;
+  display: inline-block;
+  transform: rotate(0deg);
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+
+.cov-folder-toggle.expanded {
+  transform: rotate(90deg);
 }
 
 /* ── Test list ─────────────────────────────────────────────────────────────── */

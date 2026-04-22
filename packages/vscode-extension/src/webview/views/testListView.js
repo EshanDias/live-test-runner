@@ -57,15 +57,15 @@
     <!-- Test summary table -->
     <div class="summary-section">
       <div class="summary-table">
-        <div class="summary-cell total">
+        <div class="summary-cell total" data-filter="all" title="Show all tests">
           <div class="label">Total</div>
           <div class="value" id="summaryTotal">—</div>
         </div>
-        <div class="summary-cell passed">
+        <div class="summary-cell passed" data-filter="passed" title="Show passed tests">
           <div class="label">Passed</div>
           <div class="value" id="summaryPassed">—</div>
         </div>
-        <div class="summary-cell failed">
+        <div class="summary-cell failed" data-filter="failed" title="Show failed tests">
           <div class="label">Failed</div>
           <div class="value" id="summaryFailed">—</div>
         </div>
@@ -77,6 +77,12 @@
     <div class="search-section">
       <input class="search-input" id="searchInput" type="text" placeholder="🔍 Search tests…" autocomplete="off">
       <button class="search-clear" id="searchClear" title="Clear search">✕</button>
+      <select class="status-filter-select" id="statusFilter" title="Filter by status">
+        <option value="all">All</option>
+        <option value="passed">Passed</option>
+        <option value="failed">Failed</option>
+        <option value="pending">Not Run</option>
+      </select>
     </div>
 
     <!-- List toolbar -->
@@ -112,6 +118,13 @@
         <button id="covTogglePct" data-active="true">%</button>
         <button id="covToggleNM"  data-active="false">N/M</button>
       </div>
+    </div>
+
+    <!-- Coverage search + folder toggle -->
+    <div class="search-section">
+      <input class="search-input" id="covSearchInput" type="text" placeholder="🔍 Filter files…" autocomplete="off">
+      <button class="search-clear" id="covSearchClear" title="Clear">✕</button>
+      <button class="toolbar-icon-btn" id="covBtnFolderView" title="Toggle folder view" data-active="false">⊿</button>
     </div>
 
     <!-- Project totals -->
@@ -160,10 +173,14 @@
   let _showFolderView   = false;
   let _coverageThresholds = { red: 50, amber: 80 };
   let _activeTab        = 'tests'; // 'tests' | 'coverage'
+  let _statusFilter     = 'all';  // 'all' | 'passed' | 'failed' | 'pending'
   let _metricMode       = 'pct';   // 'pct' | 'nm'
   let _sortCol          = 'lines'; // 'statements'|'branches'|'functions'|'lines'
   let _sortAsc          = true;
   let _lastCovFiles     = [];
+  let _covSearchQuery   = '';
+  let _covFolderView    = false;
+  let _covExpandedFolders = new Set();
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -243,7 +260,18 @@
   }
 
   function _saveUiState(searchInput) {
-    _vscode.setState({ query: searchInput.value, showFailuresOnly: _showFailuresOnly, showFolderView: _showFolderView });
+    _vscode.setState({ query: searchInput.value, showFailuresOnly: _showFailuresOnly, showFolderView: _showFolderView, statusFilter: _statusFilter });
+  }
+
+  function _applyStatusFilter(filter) {
+    _statusFilter = filter;
+    _list.setStatusFilter(filter);
+    const select = _q('statusFilter');
+    if (select) { select.value = filter; }
+    _container.querySelectorAll('.summary-cell[data-filter]').forEach((cell) => {
+      cell.dataset.active = String(cell.dataset.filter === filter);
+    });
+    _saveUiState(_q('searchInput'));
   }
 
   // ── Coverage helpers ─────────────────────────────────────────────────────────
@@ -326,41 +354,94 @@
   function _basename(fp) { return fp.replace(/\\/g, '/').split('/').pop() ?? fp; }
   function _dirname(fp)  { const p = fp.replace(/\\/g, '/').split('/'); p.pop(); return p.join('/'); }
 
+  function _covFileRow(f) {
+    const st = f.state === 'measured-stale';
+    const p  = f.pct;
+    const name = _basename(f.filePath);
+    const dir  = _dirname(f.filePath);
+    return `<div class="cov-file-row" data-path="${_esc(f.filePath)}" data-state="${_esc(f.state)}">
+      <div class="cov-file-cell">
+        <div class="cov-file-name" title="${_esc(f.filePath)}">${_esc(name)}</div>
+        <div class="cov-file-dir"  title="${_esc(f.filePath)}">${_esc(dir)}</div>
+      </div>
+      <div class="cov-file-metric ${p?.statements?.total===0?'cov-na':_covClass(p?.statements?.pct,st)}">${_metricText(p?.statements)}</div>
+      <div class="cov-file-metric ${p?.branches?.total===0?'cov-na':_covClass(p?.branches?.pct,st)}">${_metricText(p?.branches)}</div>
+      <div class="cov-file-metric ${p?.functions?.total===0?'cov-na':_covClass(p?.functions?.pct,st)}">${_metricText(p?.functions)}</div>
+      <div class="cov-file-metric ${p?.lines?.total===0?'cov-na':_covClass(p?.lines?.pct,st)}">${_metricText(p?.lines)}</div>
+      <button class="cov-row-action" data-path="${_esc(f.filePath)}" title="Open file">↗</button>
+    </div>`;
+  }
+
+  function _aggMetric(files, key) {
+    let covered = 0, total = 0;
+    for (const f of files) {
+      covered += f.pct?.[key]?.covered ?? 0;
+      total   += f.pct?.[key]?.total   ?? 0;
+    }
+    if (total === 0) { return null; }
+    return { covered, total, pct: Math.round((covered / total) * 1000) / 10 };
+  }
+
   function _renderCovFiles(files) {
     const rowsEl  = _q('covFileRows');
     const emptyEl = _q('covEmpty');
     if (!rowsEl) { return; }
 
-    if (!files || files.length === 0) {
+    // Apply search filter
+    let filtered = files ?? [];
+    if (_covSearchQuery) {
+      const q = _covSearchQuery.toLowerCase();
+      filtered = filtered.filter((f) => f.filePath.toLowerCase().includes(q) || _basename(f.filePath).toLowerCase().includes(q));
+    }
+
+    if (!filtered.length) {
       rowsEl.innerHTML = '';
       if (emptyEl) { emptyEl.classList.remove('hidden'); }
+      _updateSortIcons();
       return;
     }
     if (emptyEl) { emptyEl.classList.add('hidden'); }
 
-    const sorted = files.slice().sort((a, b) => {
+    const sorted = filtered.slice().sort((a, b) => {
       const pa = a.pct?.[_sortCol]?.pct ?? (_sortAsc ? 101 : -1);
       const pb = b.pct?.[_sortCol]?.pct ?? (_sortAsc ? 101 : -1);
       return _sortAsc ? pa - pb : pb - pa;
     });
 
-    rowsEl.innerHTML = sorted.map((f) => {
-      const st = f.state === 'measured-stale';
-      const p  = f.pct;
-      const name = _basename(f.filePath);
-      const dir  = _dirname(f.filePath);
-      return `<div class="cov-file-row" data-path="${_esc(f.filePath)}" data-state="${_esc(f.state)}">
-        <div class="cov-file-cell">
-          <div class="cov-file-name" title="${_esc(f.filePath)}">${_esc(name)}</div>
-          <div class="cov-file-dir"  title="${_esc(f.filePath)}">${_esc(dir)}</div>
-        </div>
-        <div class="cov-file-metric ${p?.statements?.total===0?'cov-na':_covClass(p?.statements?.pct,st)}">${_metricText(p?.statements)}</div>
-        <div class="cov-file-metric ${p?.branches?.total===0?'cov-na':_covClass(p?.branches?.pct,st)}">${_metricText(p?.branches)}</div>
-        <div class="cov-file-metric ${p?.functions?.total===0?'cov-na':_covClass(p?.functions?.pct,st)}">${_metricText(p?.functions)}</div>
-        <div class="cov-file-metric ${p?.lines?.total===0?'cov-na':_covClass(p?.lines?.pct,st)}">${_metricText(p?.lines)}</div>
-        <button class="cov-row-action" data-path="${_esc(f.filePath)}" title="Open file">↗</button>
-      </div>`;
-    }).join('');
+    if (_covFolderView && !_covSearchQuery) {
+      // Group by directory
+      const folderMap = new Map(); // dir → files[]
+      for (const f of sorted) {
+        const dir = _dirname(f.filePath) || '.';
+        if (!folderMap.has(dir)) { folderMap.set(dir, []); }
+        folderMap.get(dir).push(f);
+      }
+      const html = Array.from(folderMap.entries()).map(([dir, dirFiles]) => {
+        const isExpanded = _covExpandedFolders.has(dir);
+        const agg = { stmts: _aggMetric(dirFiles, 'statements'), branches: _aggMetric(dirFiles, 'branches'), fns: _aggMetric(dirFiles, 'functions'), lines: _aggMetric(dirFiles, 'lines') };
+        const folderRow = `<div class="cov-folder-row" data-folder="${_esc(dir)}">
+          <div class="cov-file-cell"><span class="cov-folder-toggle${isExpanded?' expanded':''}">▶</span><div class="cov-file-name">${_esc(dir)}/</div></div>
+          <div class="cov-file-metric ${_covClass(agg.stmts?.pct,false)}">${_metricText(agg.stmts)}</div>
+          <div class="cov-file-metric ${_covClass(agg.branches?.pct,false)}">${_metricText(agg.branches)}</div>
+          <div class="cov-file-metric ${_covClass(agg.fns?.pct,false)}">${_metricText(agg.fns)}</div>
+          <div class="cov-file-metric ${_covClass(agg.lines?.pct,false)}">${_metricText(agg.lines)}</div>
+        </div>`;
+        const fileRows = isExpanded ? dirFiles.map(_covFileRow).join('') : '';
+        return folderRow + fileRows;
+      }).join('');
+      rowsEl.innerHTML = html;
+
+      rowsEl.querySelectorAll('.cov-folder-row').forEach((row) => {
+        row.addEventListener('click', () => {
+          const dir = row.dataset.folder;
+          if (_covExpandedFolders.has(dir)) { _covExpandedFolders.delete(dir); }
+          else { _covExpandedFolders.add(dir); }
+          _renderCovFiles(_lastCovFiles);
+        });
+      });
+    } else {
+      rowsEl.innerHTML = sorted.map(_covFileRow).join('');
+    }
 
     rowsEl.querySelectorAll('.cov-file-row').forEach((row) => {
       row.addEventListener('click', (e) => {
@@ -398,6 +479,10 @@
       _sortCol          = 'lines';
       _sortAsc          = true;
       _lastCovFiles     = [];
+      _statusFilter     = 'all';
+      _covSearchQuery   = '';
+      _covFolderView    = false;
+      _covExpandedFolders = new Set();
 
       container.innerHTML = TEMPLATE;
 
@@ -428,6 +513,15 @@
           btnFolderView.title = 'Switch to flat list';
           _list.setFolderView(true);
         }
+        if (saved.statusFilter && saved.statusFilter !== 'all') {
+          _statusFilter = saved.statusFilter;
+          _list.setStatusFilter(saved.statusFilter);
+          const sel = _q('statusFilter');
+          if (sel) { sel.value = saved.statusFilter; }
+          _container.querySelectorAll('.summary-cell[data-filter]').forEach((cell) => {
+            cell.dataset.active = String(cell.dataset.filter === saved.statusFilter);
+          });
+        }
       }
 
       // ── Nav tabs ────────────────────────────────────────────────────────────
@@ -445,6 +539,29 @@
         _metricMode = 'nm';
         _q('covTogglePct').dataset.active = 'false';
         _q('covToggleNM').dataset.active  = 'true';
+        _renderCovFiles(_lastCovFiles);
+      });
+
+      // ── Coverage search + folder view ────────────────────────────────────────
+      _q('covSearchInput').addEventListener('input', () => {
+        const q = _q('covSearchInput').value;
+        _q('covSearchClear').classList.toggle('visible', q.length > 0);
+        _covSearchQuery = q;
+        _renderCovFiles(_lastCovFiles);
+      });
+      _q('covSearchClear').addEventListener('click', () => {
+        _q('covSearchInput').value = '';
+        _q('covSearchClear').classList.remove('visible');
+        _covSearchQuery = '';
+        _renderCovFiles(_lastCovFiles);
+      });
+      _q('covBtnFolderView').addEventListener('click', () => {
+        _covFolderView = !_covFolderView;
+        _q('covBtnFolderView').dataset.active = String(_covFolderView);
+        if (_covFolderView) {
+          // Pre-expand all folders
+          (_lastCovFiles ?? []).forEach((f) => { _covExpandedFolders.add(_dirname(f.filePath) || '.'); });
+        }
         _renderCovFiles(_lastCovFiles);
       });
 
@@ -468,6 +585,12 @@
         searchClear.classList.remove('visible');
         _list.setQuery('');
         _saveUiState(searchInput);
+      });
+
+      // ── Status filter (dropdown + clickable summary cells) ───────────────────
+      _q('statusFilter').addEventListener('change', (e) => _applyStatusFilter(e.target.value));
+      _container.querySelectorAll('.summary-cell[data-filter]').forEach((cell) => {
+        cell.addEventListener('click', () => _applyStatusFilter(cell.dataset.filter));
       });
 
       // ── Action buttons ───────────────────────────────────────────────────────

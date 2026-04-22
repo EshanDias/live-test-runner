@@ -453,6 +453,10 @@ export class SessionManager {
     if (individualCases.length > 0) {
       await this._runTestCases(individualCases, projectRoot);
     }
+
+    // Scoped reruns don't produce coverage data, so clear the stale flag now
+    // that the rerun is complete — the existing counters are still valid.
+    this._coverageStore.clearStale(sourceFilePath);
   }
 
   // ── Private: run test cases (parallel, one Jest invocation per file) ────────

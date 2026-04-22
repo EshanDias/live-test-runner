@@ -414,7 +414,7 @@ module.exports = {
 
       const existing = this._coverageStore.getEntry(manifest.filePath);
       const merged: LiveCov =
-        existing?.state === 'measured' || existing?.state === 'measured-stale'
+        existing?.state === 'measured'
           ? _mergeCounters(existing.counters, counters)
           : counters;
 
