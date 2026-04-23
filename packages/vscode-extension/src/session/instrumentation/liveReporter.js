@@ -16,10 +16,20 @@ class LiveReporter {
     this._outputFile =
       (reporterOptions && reporterOptions.outputFile) ||
       process.env.LTR_REPORTER_FILE;
+    // Track reported files to prevent double-reporting when both onTestResult
+    // and onTestFileResult fire (Jest 27 calls both; we define both for compat).
+    this._reported = new Set();
   }
 
-  onTestFileResult(test, testResult) {
+  // Jest 27+ calls onTestFileResult; Jest ≤26 calls onTestResult.
+  // Both are defined here so the reporter works with any Jest version.
+  onTestFileResult(test, testResult) { this._handleResult(testResult); }
+  onTestResult(test, testResult) { this._handleResult(testResult); }
+
+  _handleResult(testResult) {
     if (!this._outputFile) { return; }
+    if (this._reported.has(testResult.testFilePath)) { return; }
+    this._reported.add(testResult.testFilePath);
     const record = {
       testFilePath: testResult.testFilePath,
       status:

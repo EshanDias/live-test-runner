@@ -2,6 +2,15 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [2.0.1] — 2026-04-23
+
+### Bug Fixes
+
+- **CRA projects: tests stayed "pending", files showed as failed** — fixed for projects using react-scripts 4 / CRA 4 (Jest 26). The reporter used a Jest 27+ API that doesn't exist in Jest 26, so no results ever arrived.
+- **Noisy raw output channel** — debug lines that appeared for every transformed file have been removed.
+
+---
+
 ## [2.0.0] — 2026-04-21
 
 ### Code Coverage

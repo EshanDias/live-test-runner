@@ -2,6 +2,15 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [2.0.1] — 2026-04-23
+
+### Bug Fixes
+
+- **CRA: tests staying "pending" after run** — `liveReporter.js` only implemented `onTestFileResult` (Jest 27+). In Jest 26 (react-scripts 4 / CRA 4), the reporter method is `onTestResult`. When neither fired, every file landed in the "missing" bucket: files were marked failed at the file level but individual test nodes were never updated, leaving them all as pending. Fixed by implementing both methods with deduplication (Jest 27 calls both; the set guard prevents double-reporting).
+- **Noisy raw output** — `sessionTraceTransform.js` was writing a `process.stderr.write` debug line for every file it transformed, flooding the raw output channel. These lines are now removed (resolve/require errors are still logged).
+
+---
+
 ## [2.0.0] — 2026-04-21
 
 ### Code Coverage
