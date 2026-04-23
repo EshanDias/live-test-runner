@@ -215,7 +215,18 @@ if (!_baseConfigLoaded || !baseConfig.testEnvironment) {
           for (const [k, v] of Object.entries(extracted)) {
             if (!skip.has(k)) { craConfig[k] = v; }
           }
-          baseConfig = { ...craConfig, ...baseConfig };
+          // Normalize craConfig.moduleNameMapper from Jest's internal array-of-tuples
+          // format (from --showConfig) to a plain object so it can be merged.
+          let craMapper = craConfig.moduleNameMapper || {};
+          if (Array.isArray(craMapper)) {
+            craMapper = Object.fromEntries(craMapper.map(([p, v]) => [p, v]));
+          }
+          const baseMapper = baseConfig.moduleNameMapper || {};
+          baseConfig = {
+            ...craConfig,
+            ...baseConfig,
+            moduleNameMapper: { ...craMapper, ...baseMapper },
+          };
         }
       }
     } catch (_e) {

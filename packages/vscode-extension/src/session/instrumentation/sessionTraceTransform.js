@@ -901,7 +901,6 @@ module.exports = {
     }
     const matchingEntry = findMatchingTransform(transforms, sourcePath);
     const strict = matchingEntry ? isStrictTransformer(matchingEntry[1]) : false;
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] ${path.basename(sourcePath)} → strict=${strict} transformer=${matchingEntry ? matchingEntry[1] : 'none'}\n`);
 
     if (rootDir && loadBabel(rootDir)) {
       if (strict) {
