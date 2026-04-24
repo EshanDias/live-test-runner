@@ -164,8 +164,11 @@ export class SessionTraceRunner {
 
     fs.mkdirSync(this._manifestDir, { recursive: true });
 
-    const escapedRoot = escapeRegex(projectRoot).replace(/\//g, '\\/');
-    const srcPattern  = `^${escapedRoot}\\/(?!node_modules\\/).+\\.[jt]sx?$`;
+    // Normalize to forward slashes: jest normalises all file paths to forward
+    // slashes before checking transform patterns, so the regex must match the
+    // normalised form regardless of the OS separator.
+    const escapedRoot = escapeRegex(projectRoot.replace(/\\/g, '/'));
+    const srcPattern  = `^${escapedRoot}/(?!node_modules/).+\\.[jt]sx?$`;
 
     const configContent = `
 'use strict';
@@ -303,7 +306,7 @@ module.exports = {
     try {
       let binary: string;
       try {
-        binary = this._binaryResolver.resolve(projectRoot);
+        binary = this._resolveBinary(projectRoot);
       } catch (err) {
         logger.error(FILE, 'runFiles', `Failed to resolve Jest binary for "${projectRoot}"`, err);
         throw err;
@@ -369,6 +372,28 @@ module.exports = {
 
     const missing = filePaths.filter((fp) => !received.has(fp));
     return { missing };
+  }
+
+  // ── Private: binary resolution ────────────────────────────────────────────
+
+  /**
+   * Resolve the Jest binary for this project.
+   *
+   * For CRA projects, react-scripts bundles its own jest version internally.
+   * The config we generate for these projects (via react-scripts --showConfig)
+   * contains absolute paths to modules inside react-scripts' node_modules — all
+   * designed for that bundled jest version. Running those configs with the
+   * project-level jest (which may be a different major version) causes module
+   * API incompatibilities (e.g. jest-circus, babel-jest). We therefore prefer
+   * CRA's bundled binary when it exists, exactly like CRAAdapter.resolveBinary().
+   */
+  private _resolveBinary(projectRoot: string): string {
+    const craJest = path.join(
+      projectRoot, 'node_modules', 'react-scripts', 'node_modules', '.bin', 'jest',
+    );
+    if (fs.existsSync(craJest + '.cmd')) { return `${craJest}.cmd`; }
+    if (fs.existsSync(craJest))          { return craJest; }
+    return this._binaryResolver.resolve(projectRoot);
   }
 
   // ── Private: parse light-trace JSONL and update ExecutionTraceStore ──────────
