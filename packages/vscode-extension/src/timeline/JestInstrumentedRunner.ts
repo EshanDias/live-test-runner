@@ -64,8 +64,10 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
     // node_modules, which Jest already skips via transformIgnorePatterns).
     // This ensures imported source files (axiosConfig.js, incidentApi.js, etc.)
     // are also instrumented — not just the test file itself.
-    const escapedRoot = escapeRegex(projectRoot).replace(/\//g, '\\/');
-    const srcTransformPattern = `^${escapedRoot}\\/(?!node_modules\\/).+\\.[jt]sx?$`;
+    // Normalize to forward slashes: jest normalises all file paths to forward
+    // slashes before checking transform patterns.
+    const escapedRoot = escapeRegex(projectRoot.replace(/\\/g, '/'));
+    const srcTransformPattern = `^${escapedRoot}/(?!node_modules/).+\\.[jt]sx?$`;
 
     const configContent = `
 'use strict';

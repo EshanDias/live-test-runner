@@ -684,11 +684,47 @@ export class SessionManager {
       }
 
       if (missing.length === 0) { return; }
+
+      // When the whole batch produced no results the most likely cause is a
+      // jest config incompatibility rather than individual test crashes.
+      // Fall back to the adapter's per-file runner (the v1.3.0 path) with
+      // the same CONCURRENCY limit used by the main queue — do NOT run all
+      // files in parallel, which would flood the machine with jest processes.
+      if (missing.length === batch.length) {
+        logger.warn(FILE, '_runFiles', `SessionTraceRunner produced no results for entire batch of ${batch.length} — falling back to per-file adapter run`);
+        const fallbackQueue = [...missing];
+        await Promise.all(
+          Array.from({ length: Math.min(CONCURRENCY, fallbackQueue.length) }, async () => {
+            while (true) {
+              const fp = fallbackQueue.shift();
+              if (!fp) { break; }
+              try {
+                const status = await this._adapter.runFile(this._store, fp, projectRoot, log);
+                onFileDone(fp, status);
+              } catch (err) {
+                logger.error(FILE, '_runFiles', `Adapter fallback also failed for "${fp}"`, err);
+                this._store.fileResult(fp, 'failed');
+                onFileDone(fp, 'failed');
+              }
+            }
+          }),
+        );
+        return;
+      }
+
+      // Partial miss: some files produced results so remaining ones likely
+      // crashed mid-batch. Split and retry with smaller batches.
       if (missing.length === 1) {
         const fp = missing[0];
-        logger.warn(FILE, '_runFiles', `No result for "${fp}" — marking failed`);
-        this._store.fileResult(fp, 'failed');
-        onFileDone(fp, 'failed');
+        logger.warn(FILE, '_runFiles', `No result for "${fp}" — falling back to per-file adapter run`);
+        try {
+          const status = await this._adapter.runFile(this._store, fp, projectRoot, log);
+          onFileDone(fp, status);
+        } catch (err) {
+          logger.error(FILE, '_runFiles', `Adapter fallback also failed for "${fp}"`, err);
+          this._store.fileResult(fp, 'failed');
+          onFileDone(fp, 'failed');
+        }
         return;
       }
       const half = Math.ceil(missing.length / 2);
