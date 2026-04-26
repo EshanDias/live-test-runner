@@ -85,7 +85,6 @@ function invokeTransformer(moduleName, sourceCode, sourcePath, options, transfor
   let resolvedPath = moduleName;
   try {
     resolvedPath = require.resolve(moduleName, { paths: [rootDir, __dirname].filter(Boolean) });
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] resolved ${moduleName} → ${resolvedPath}\n`);
   } catch (resolveErr) {
     process.stderr.write(`[LTR-SESSION-TRANSFORM] resolve failed for ${moduleName}: ${resolveErr.message}\n`);
   }
@@ -106,7 +105,6 @@ function invokeTransformer(moduleName, sourceCode, sourcePath, options, transfor
     } else if (typeof mod.createTransformer === 'function') {
       transformer = mod.createTransformer(transformerConfig || {});
     }
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] required ${moduleName} ok, hasProcess=${!!(transformer && typeof transformer.process === 'function')}\n`);
   } catch (requireErr) {
     process.stderr.write(`[LTR-SESSION-TRANSFORM] require failed for ${resolvedPath}: ${requireErr.message}\n`);
     return null;
@@ -118,9 +116,7 @@ function invokeTransformer(moduleName, sourceCode, sourcePath, options, transfor
     ...(transformerConfig !== undefined ? { transformerConfig } : {}),
     config: { ...options.config, transform: transforms.filter(e => e[1] !== moduleName) },
   };
-  process.stderr.write(`[LTR-SESSION-TRANSFORM] invoking ${moduleName} for ${path.basename(sourcePath)}\n`);
   const result = transformer.process(sourceCode, sourcePath, downstreamOptions);
-  process.stderr.write(`[LTR-SESSION-TRANSFORM] ${moduleName} result type=${typeof result} hasCode=${!!(result && result.code)}\n`);
   if (result && typeof result.code === 'string') { return result.code; }
   if (typeof result === 'string') { return result; }
   return null;
@@ -905,7 +901,6 @@ module.exports = {
     }
     const matchingEntry = findMatchingTransform(transforms, sourcePath);
     const strict = matchingEntry ? isStrictTransformer(matchingEntry[1]) : false;
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] ${path.basename(sourcePath)} → strict=${strict} transformer=${matchingEntry ? matchingEntry[1] : 'none'}\n`);
 
     if (rootDir && loadBabel(rootDir)) {
       if (strict) {
