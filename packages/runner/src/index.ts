@@ -1,5 +1,7 @@
 // ── Public API ────────────────────────────────────────────────────────────────
 
+export { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
+
 // Core interface — the extension layer depends only on this
 export { TestRunner } from './TestRunner';
 

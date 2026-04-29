@@ -89,7 +89,7 @@ export type CapacityResult =
  * re-parsed by TestDiscoveryService.
  *
  * Cache dir layout:
- *   <globalStoragePath>/cache/<folderName>-<hash8>/
+ *   <cacheRootDir>/<folderName>-<hash8>/
  *     discovery-cache.json   — per-file mtime + parsed test tree
  *     session.lock           — current VS Code PID (live session indicator)
  */
@@ -100,12 +100,12 @@ export class DiscoveryCache {
   private _data: CacheFile;
   private _dirty = false;
 
-  constructor(globalStoragePath: string, workspacePath: string) {
+  constructor(cacheRootDir: string, workspacePath: string) {
     const folderName = path.basename(workspacePath);
     const hash       = crypto.createHash('sha256').update(workspacePath).digest('hex').slice(0, 8);
     const projectKey = `${folderName}-${hash}`;
 
-    this._cacheDir      = path.join(globalStoragePath, 'cache', projectKey);
+    this._cacheDir      = path.join(cacheRootDir, projectKey);
     this._cacheFilePath = path.join(this._cacheDir, 'discovery-cache.json');
     this._lockFilePath  = path.join(this._cacheDir, 'session.lock');
 
@@ -204,7 +204,7 @@ function _emptyCache(): CacheFile {
 // ── Cache rotation (called at Start Testing time) ─────────────────────────────
 
 /**
- * Scans all project cache dirs under globalStoragePath/cache.
+ * Scans all project cache dirs under cacheRootDir.
  * Evicts inactive (no live PID lock) LRU projects when:
  *   - total size > 500 MB and more than 1 project is cached
  *   - more than MAX_PROJECTS are cached
@@ -213,8 +213,8 @@ function _emptyCache(): CacheFile {
  * active and still over cap) so the caller can show a warning to the user.
  * Returns `{ ok: true }` when within limits or only one project exists.
  */
-export function rotateAndCheckCapacity(globalStoragePath: string): CapacityResult {
-  const cacheRoot = path.join(globalStoragePath, 'cache');
+export function rotateAndCheckCapacity(cacheRootDir: string): CapacityResult {
+  const cacheRoot = cacheRootDir;
   if (!fs.existsSync(cacheRoot)) { return { ok: true }; }
 
   // Build project list
