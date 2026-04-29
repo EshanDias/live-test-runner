@@ -57,7 +57,7 @@ function loadBabel(rootDir) {
     _rootDir = rootDir;
     return true;
   } catch (e) {
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] could not load Babel: ${e.message}\n`);
+    process.stderr.write(`[LTR][Coverage] loadBabel: FAILED to load Babel for rootDir="${rootDir}" — ${e.message}\n`);
     return false;
   }
 }
@@ -862,15 +862,12 @@ function instrumentAST(code, sourcePath) {
   // Write manifest to disk (transform runs in Jest child process — disk is the bridge)
   const manifestDir = process.env.LTR_MANIFEST_DIR;
   if (manifestDir) {
+    const manifestFile = path.join(manifestDir, `${fileHash}.json`);
     try {
       fs.mkdirSync(manifestDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(manifestDir, `${fileHash}.json`),
-        JSON.stringify(manifest),
-        'utf8',
-      );
+      fs.writeFileSync(manifestFile, JSON.stringify(manifest), 'utf8');
     } catch (_e) {
-      process.stderr.write(`[LTR-SESSION-TRANSFORM] manifest write failed: ${_e.message}\n`);
+      process.stderr.write(`[LTR][Coverage] manifest: FAILED to write "${manifestFile}" — ${_e.message}\n`);
     }
   }
 

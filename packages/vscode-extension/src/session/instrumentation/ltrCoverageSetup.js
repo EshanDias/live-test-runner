@@ -22,5 +22,7 @@ afterAll(() => {
       JSON.stringify({ workerPid: process.pid, cov: globalThis.__cov }) + '\n',
       'utf8',
     );
-  } catch (_e) {}
+  } catch (_e) {
+    process.stderr.write(`[LTR][Coverage] ltrCoverageSetup afterAll: FAILED to write "${covOutputFile}" — ${_e.message} (pid=${process.pid})\n`);
+  }
 });

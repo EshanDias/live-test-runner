@@ -14,6 +14,9 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { EventEmitter } from 'events';
 import { CoverageStore } from './CoverageStore';
+import { logger } from '../utils/logger';
+
+const FILE = 'SourceCounter.ts';
 
 const YIELD_EVERY = 10;
 
@@ -26,6 +29,7 @@ export class SourceCounter extends EventEmitter {
   }
 
   async run(): Promise<void> {
+    logger.info(FILE, 'run', `[Coverage] SourceCounter starting — projectRoot="${this._projectRoot}"`);
     const include = new vscode.RelativePattern(this._projectRoot, '**/*.{js,ts,jsx,tsx}');
     // Flattened — no nested braces, VS Code glob doesn't support them reliably
     const defaultExcludeParts = [
@@ -49,13 +53,15 @@ export class SourceCounter extends EventEmitter {
     let uris: vscode.Uri[];
     try {
       uris = await vscode.workspace.findFiles(include, excludeGlob);
-    } catch {
+    } catch (err) {
+      logger.error(FILE, 'run', `[Coverage] SourceCounter findFiles failed`, err);
       this._store.markScanComplete();
       this.emit('done');
       return;
     }
 
     const total = uris.length;
+    logger.info(FILE, 'run', `[Coverage] SourceCounter found ${total} source file(s) to scan`);
     let scanned = 0;
 
     for (const uri of uris) {
@@ -68,6 +74,7 @@ export class SourceCounter extends EventEmitter {
       }
     }
 
+    logger.info(FILE, 'run', `[Coverage] SourceCounter scan complete — ${scanned}/${total} file(s) counted`);
     this._store.markScanComplete();
     this.emit('done');
   }
@@ -95,7 +102,8 @@ export class SourceCounter extends EventEmitter {
       t        = require(resolve('@babel/types'));
       if (traverse?.default) { traverse = traverse.default; }
       if (t?.default) { t = t.default; }
-    } catch {
+    } catch (err) {
+      logger.warn(FILE, '_countFile', `[Coverage] Babel load failed for "${filePath}" — file will report 0 counts`, err);
       return { statements: 0, branches: 0, functions: 0, lines: 0 };
     }
 
