@@ -647,14 +647,14 @@ module.exports = {
     for (const recs of testsByFile.values()) {
       for (const rec of recs) {
         for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
-          traceStore.addCoveredLines(srcFile, linesArr);
+          traceStore.addCoveredLines(_normPath(srcFile), linesArr);
         }
       }
     }
     for (const recs of hooksByFile.values()) {
       for (const rec of recs) {
         for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
-          traceStore.addCoveredLines(srcFile, linesArr);
+          traceStore.addCoveredLines(_normPath(srcFile), linesArr);
         }
       }
     }
@@ -665,11 +665,12 @@ module.exports = {
       const fileLineMap = new Map<string, Map<number, string[]>>();
       for (const rec of testRecs) {
         for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
-          if (srcFile === testFilePath) { continue; }
-          let lineMap = fileLineMap.get(srcFile);
+          if (_normPath(srcFile) === testFilePath) { continue; }
+          const normSrc = _normPath(srcFile);
+          let lineMap = fileLineMap.get(normSrc);
           if (!lineMap) {
             lineMap = new Map();
-            fileLineMap.set(srcFile, lineMap);
+            fileLineMap.set(normSrc, lineMap);
           }
           for (const line of linesArr) {
             const names = lineMap.get(line) ?? [];
@@ -690,7 +691,7 @@ module.exports = {
       const hookFiles = new Set<string>();
       for (const hookRec of hooksByFile.get(testFilePath) ?? []) {
         for (const srcFile of Object.keys(hookRec.fh)) {
-          if (srcFile !== testFilePath) { hookFiles.add(srcFile); }
+          if (_normPath(srcFile) !== testFilePath) { hookFiles.add(_normPath(srcFile)); }
         }
       }
 
@@ -698,7 +699,7 @@ module.exports = {
       for (const rec of testRecs) {
         const files: string[] = [];
         for (const srcFile of Object.keys(rec.fh)) {
-          if (srcFile !== testFilePath) { files.push(srcFile); }
+          if (_normPath(srcFile) !== testFilePath) { files.push(_normPath(srcFile)); }
         }
         perTestFiles.set(rec.tn, files);
       }
@@ -791,4 +792,8 @@ const _COVERAGE_EXCLUDE_RE = [
 
 function _isExcludedFromCoverage(filePath: string): boolean {
   return _COVERAGE_EXCLUDE_RE.some((re) => re.test(filePath));
+}
+
+function _normPath(filePath: string): string {
+  return filePath.replace(/^[A-Z]:/, m => m.toLowerCase());
 }
