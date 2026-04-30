@@ -48,6 +48,7 @@ export function nameToPattern(name: string): string {
 export class SessionManager {
   private _session: TestSession | undefined;
   private readonly _traceRunner: SessionTraceRunner;
+  private readonly _saveTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly _adapter: IFrameworkAdapter,
@@ -314,7 +315,13 @@ export class SessionManager {
         .getConfiguration('liveTestRunner')
         .get<number>('onSaveDebounceMs') ?? 300;
 
-    setTimeout(async () => {
+    const filePath = document.uri.fsPath;
+    const existing = this._saveTimers.get(filePath);
+    if (existing !== undefined) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(async () => {
+      this._saveTimers.delete(filePath);
       if (!this._session) {
         return;
       }
@@ -324,20 +331,21 @@ export class SessionManager {
           return;
         }
 
-        if (this._adapter.isTestFile(document.uri.fsPath)) {
-          await this._runFiles([document.uri.fsPath], projectRoot);
+        if (this._adapter.isTestFile(filePath)) {
+          await this._runFiles([filePath], projectRoot);
         } else {
-          this._coverageStore.markFileStale(document.uri.fsPath);
-          await this._runAffectedBySourceFile(document.uri.fsPath, projectRoot);
+          this._coverageStore.markFileStale(filePath);
+          await this._runAffectedBySourceFile(filePath, projectRoot);
         }
       } catch (error) {
-        logger.error(FILE, 'onSave', `Error during on-save rerun for "${document.uri.fsPath}"`, error);
+        logger.error(FILE, 'onSave', `Error during on-save rerun for "${filePath}"`, error);
         this._updateStatusBar('✅ Ready');
         this._outputChannel.appendLine(
           `[Live Test Runner] Error: ${(error as Error).message}`,
         );
       }
     }, debounceMs);
+    this._saveTimers.set(filePath, timer);
   }
 
   // ── Workspace change handler ───────────────────────────────────────────────

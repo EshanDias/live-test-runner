@@ -109,13 +109,16 @@ function toFileRunResult(rec: ReporterRecord): FileRunResult {
 }
 
 export class SessionTraceRunner {
-  private readonly _executor = new Executor();
+  private readonly _executors = new Map<string, Executor>();
   private readonly _binaryResolver = new BinaryResolver();
   private _killed = false;
 
   kill(): void {
     this._killed = true;
-    this._executor.kill();
+    for (const executor of this._executors.values()) {
+      executor.kill();
+    }
+    this._executors.clear();
   }
 
   reset(): void {
@@ -124,6 +127,8 @@ export class SessionTraceRunner {
 
   private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
   private get _manifestDir()  { return path.join(this._tmpDir, 'coverage', 'manifests'); }
+  /** Stable per-session transform cache — shared across all batches so Jest doesn't re-compile every file each run. */
+  private get _transformCacheDir() { return path.join(this._tmpDir, 'ltr-transform-cache'); }
 
   constructor(
     private readonly _tmpDir: string,
@@ -160,7 +165,6 @@ export class SessionTraceRunner {
     const traceFile       = path.join(this._tmpDir, `ltr-trace-${ts}-${rand}.jsonl`);
     const covCountersFile = path.join(this._coverageDir, `ltr-cov-${ts}-${rand}.jsonl`);
     const tempConfigPath  = path.join(this._tmpDir, `ltr-cfg-${ts}-${rand}.js`);
-    const cacheDir        = path.join(this._tmpDir, `ltr-cache-${ts}-${rand}`);
 
     logger.info(FILE, 'runFiles', `[Coverage] Preparing coverage dirs — manifestDir="${this._manifestDir}" coverageDir="${this._coverageDir}"`);
     try {
@@ -175,8 +179,16 @@ export class SessionTraceRunner {
     // Normalize to forward slashes: jest normalises all file paths to forward
     // slashes before checking transform patterns, so the regex must match the
     // normalised form regardless of the OS separator.
-    const escapedRoot = escapeRegex(projectRoot.replace(/\\/g, '/'));
-    const srcPattern  = `^${escapedRoot}/(?!node_modules/).+\\.[jt]sx?$`;
+    // On Windows, the drive letter case is unpredictable — VS Code may give 'c:\'
+    // while Jest's path.resolve returns 'C:\'. Use a character class [cC] so the
+    // pattern matches regardless of which case Jest uses internally.
+    const rootFwd = projectRoot.replace(/\\/g, '/');
+    const driveMatch = rootFwd.match(/^([a-zA-Z]):(.*)/);
+    const escapedRoot = driveMatch
+      ? `[${driveMatch[1].toLowerCase()}${driveMatch[1].toUpperCase()}]:${escapeRegex(driveMatch[2])}`
+      : escapeRegex(rootFwd);
+    const escapedRootSlash = escapedRoot.replace(/\//g, '[/\\\\]');
+    const srcPattern = `^${escapedRootSlash}[/\\\\](?!node_modules[/\\\\]).+\\.[jt]sx?$`;
 
     const configContent = `
 'use strict';
@@ -246,6 +258,12 @@ if (!_baseConfigLoaded || !baseConfig.testEnvironment) {
   }
 }
 
+// We pass explicit file paths via --runTestsByPath so Jest doesn't need
+// to discover tests. Dropping roots avoids Haste scan failures on Windows.
+delete baseConfig.roots;
+delete baseConfig.testMatch;
+delete baseConfig.testRegex;
+
 const baseTransformObj = Array.isArray(baseConfig.transform)
   ? Object.fromEntries(baseConfig.transform.map(([p, t, o]) => o ? [p, [t, o]] : [p, t]))
   : (baseConfig.transform || {});
@@ -272,9 +290,11 @@ if (!hasGeneralJsTransform) {
   }
 }
 
+
 module.exports = {
   ...baseConfig,
   rootDir: ${JSON.stringify(projectRoot)},
+  roots: [${JSON.stringify(projectRoot)}],
   transform: {
     [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
     ...baseTransformObj,
@@ -299,6 +319,7 @@ module.exports = {
     const onRecord = (raw: unknown) => {
       const rec = raw as ReporterRecord;
       if (!rec || !rec.testFilePath) { return; }
+      rec.testFilePath = path.normalize(rec.testFilePath);
       received.add(rec.testFilePath);
       try {
         const fileResult = toFileRunResult(rec);
@@ -325,10 +346,18 @@ module.exports = {
         .join(', ');
       emit(`[SessionTrace] Running batch (${filePaths.length}): ${relNames}`);
 
-      this._executor.setLogger(emit);
+      // Cancel any in-flight executor already running these files, then create a
+      // fresh one registered under each file path so kill() can reach it.
+      const executor = new Executor();
+      for (const fp of filePaths) {
+        this._executors.get(fp)?.kill();
+        this._executors.set(fp, executor);
+      }
+
+      executor.setLogger(emit);
       logger.info(FILE, 'runFiles', `[Coverage] Launching Jest batch — binary="${binary}" files=${filePaths.length} covCountersFile="${covCountersFile}" traceFile="${traceFile}"`);
 
-      const result = await this._executor.runWithReporterPolling(
+      const result = await executor.runWithReporterPolling(
         {
           binary,
           args: [
@@ -338,7 +367,7 @@ module.exports = {
             '--runTestsByPath',
             ...filePaths.map((p) => p.replace(/\\/g, '/')),
             '--config', tempConfigPath,
-            '--cacheDirectory', cacheDir,
+            '--cacheDirectory', this._transformCacheDir,
             '--maxWorkers=1',
             '--testLocationInResults',
           ],
@@ -354,12 +383,47 @@ module.exports = {
       );
 
       logger.info(FILE, 'runFiles', `[Coverage] Jest batch finished — passed=${result.passed} stderrBytes=${result.stderr?.length ?? 0} receivedFiles=${received.size}/${filePaths.length}`);
+      if (received.size === 0 && result.stdout) {
+        logger.warn(FILE, 'runFiles', `[Coverage] Jest produced 0 results — stdout:\n${result.stdout}`);
+      }
+
+      // Diagnostic: check coverage file state immediately after Jest exits
+      const covExists = fs.existsSync(covCountersFile);
+      if (covExists) {
+        try {
+          const covSize = fs.statSync(covCountersFile).size;
+          logger.info(FILE, 'runFiles', `[Coverage] covCountersFile exists after Jest exit — size=${covSize} bytes path="${covCountersFile}"`);
+        } catch (statErr) {
+          logger.warn(FILE, 'runFiles', `[Coverage] covCountersFile exists but stat failed`, statErr);
+        }
+      } else {
+        logger.warn(FILE, 'runFiles', `[Coverage] covCountersFile NOT found after Jest exit — path="${covCountersFile}"`);
+        // Check if stderr has coverage hints
+        if (result.stderr) {
+          const covLines = result.stderr.split('\n').filter((l: string) => l.includes('[LTR][Coverage]'));
+          if (covLines.length > 0) {
+            logger.info(FILE, 'runFiles', `[Coverage] Coverage-related stderr lines:\n${covLines.join('\n')}`);
+          } else {
+            logger.warn(FILE, 'runFiles', `[Coverage] No [LTR][Coverage] lines in stderr — instrumentation may not have loaded`);
+          }
+        }
+      }
+
+      // Log coverage-related stderr lines regardless
+      if (result.stderr) {
+        const covLines = result.stderr.split('\n').filter((l: string) => l.includes('[LTR][Coverage]'));
+        if (covLines.length > 0) {
+          logger.info(FILE, 'runFiles', `[Coverage] Jest stderr coverage lines (${covLines.length}):\n${covLines.slice(0, 20).join('\n')}`);
+        }
+      }
     } catch (err) {
       logger.error(FILE, 'runFiles', `Jest batch run threw`, err);
       emit(`[SessionTrace] Jest run error: ${(err as Error).message}`);
     } finally {
+      for (const fp of filePaths) {
+        this._executors.delete(fp);
+      }
       try { fs.unlinkSync(tempConfigPath); } catch {}
-      try { fs.rmSync(cacheDir, { recursive: true, force: true }); } catch {}
     }
 
     // Parse trace hits and update ExecutionTraceStore.
