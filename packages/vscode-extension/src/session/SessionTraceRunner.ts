@@ -566,14 +566,15 @@ module.exports = {
         continue;
       }
 
-      const relPath = path.relative(projectRoot, manifest.filePath);
+      const normalizedFilePath = manifest.filePath.replace(/^[A-Z]:/, m => m.toLowerCase());
+      const relPath = path.relative(projectRoot, normalizedFilePath);
       if (_isExcludedFromCoverage(relPath)) {
         excluded++;
         logger.debug(FILE, '_parseCoverage', `[Coverage] Excluded from coverage: "${relPath}"`);
         continue;
       }
 
-      const existing = this._coverageStore.getEntry(manifest.filePath);
+      const existing = this._coverageStore.getEntry(normalizedFilePath);
       const merged: LiveCov =
         existing?.state === 'measured'
           ? _mergeCounters(existing.counters, counters)
@@ -585,7 +586,7 @@ module.exports = {
         `branches=${pct.branches.covered}/${pct.branches.total} fns=${pct.functions.covered}/${pct.functions.total} ` +
         `lines=${pct.lines.covered}/${pct.lines.total}`,
       );
-      this._coverageStore.setMeasuredEntry(manifest.filePath, { manifestPath, counters: merged, pct });
+      this._coverageStore.setMeasuredEntry(normalizedFilePath, { manifestPath, counters: merged, pct });
       promoted++;
     }
 

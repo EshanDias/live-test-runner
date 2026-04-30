@@ -100,6 +100,7 @@ export class CoverageDecorationManager implements IResultObserver {
 
   private _refreshEditor(editor: vscode.TextEditor): void {
     const filePath = editor.document.uri.fsPath;
+    console.log('[LTR][CovDeco] fsPath=', filePath, '| entry=', this._store.getEntry(filePath), '| upperEntry=', this._store.getEntry(filePath.replace(/^([a-z]):/, (_, d) => d.toUpperCase() + ':')));
     const entry = this._store.getEntry(filePath);
 
     if (!entry || entry.state === 'counted') {
