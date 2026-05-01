@@ -1,0 +1,6 @@
+src/
+tsconfig.json
+esbuild.js
+out/**/*.map
+**/.DS_Store
+DEVELOPER_GUIDE.md
