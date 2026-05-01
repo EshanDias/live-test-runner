@@ -168,7 +168,7 @@ module.exports = {
       `TRACE_TRANSFORM_PATH: ${TRACE_TRANSFORM_PATH}\n` +
       `TRACE_TRANSFORM_PATH exists: ${fs.existsSync(TRACE_TRANSFORM_PATH)}\n` +
       `\n--- tempConfig ---\n${configContent}\n`;
-    fs.writeFileSync('/tmp/ltr-debug.log', debugLog, 'utf8');
+    fs.writeFileSync(path.join(this._tmpDir, 'ltr-debug.log'), debugLog, 'utf8');
 
     // 3. Set the env var that traceRuntime.js reads to know where to write events
     process.env.TRACE_OUTPUT_FILE = traceFile;
@@ -207,7 +207,7 @@ module.exports = {
 
       // DEBUG — append Jest output to the debug log
       fs.appendFileSync(
-        '/tmp/ltr-debug.log',
+        path.join(this._tmpDir, 'ltr-debug.log'),
         `\n--- Jest stdout ---\n${result.stdout}\n--- Jest stderr ---\n${result.stderr}\n`,
       );
     } finally {

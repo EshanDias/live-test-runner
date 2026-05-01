@@ -62,7 +62,17 @@ export class BinaryResolver {
    * (Covers the legacy node_modules/jest/bin/jest.js path.)
    */
   static isNodeScript(binary: string): boolean {
-    return binary.endsWith('.js');
+    if (binary.endsWith('.js')) { return true; }
+    // On macOS/Linux, .bin/jest is a symlink to the actual .js entry point.
+    // Follow the symlink so we can invoke it via process.execPath instead of
+    // relying on the shebang (which fails when node isn't in PATH).
+    try {
+      const real = fs.realpathSync(binary);
+      if (real.endsWith('.js')) { return true; }
+    } catch (err) {
+      logger.warn(FILE, 'isNodeScript', `realpathSync failed for binary="${binary}" — ${(err as NodeJS.ErrnoException).message}`);
+    }
+    return false;
   }
 
   // ── Private ─────────────────────────────────────────────────────────────────

@@ -109,13 +109,16 @@ function toFileRunResult(rec: ReporterRecord): FileRunResult {
 }
 
 export class SessionTraceRunner {
-  private readonly _executor = new Executor();
+  private readonly _executors = new Map<string, Executor>();
   private readonly _binaryResolver = new BinaryResolver();
   private _killed = false;
 
   kill(): void {
     this._killed = true;
-    this._executor.kill();
+    for (const executor of this._executors.values()) {
+      executor.kill();
+    }
+    this._executors.clear();
   }
 
   reset(): void {
@@ -124,6 +127,8 @@ export class SessionTraceRunner {
 
   private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
   private get _manifestDir()  { return path.join(this._tmpDir, 'coverage', 'manifests'); }
+  /** Stable per-session transform cache — shared across all batches so Jest doesn't re-compile every file each run. */
+  private get _transformCacheDir() { return path.join(this._tmpDir, 'ltr-transform-cache'); }
 
   constructor(
     private readonly _tmpDir: string,
@@ -160,15 +165,30 @@ export class SessionTraceRunner {
     const traceFile       = path.join(this._tmpDir, `ltr-trace-${ts}-${rand}.jsonl`);
     const covCountersFile = path.join(this._coverageDir, `ltr-cov-${ts}-${rand}.jsonl`);
     const tempConfigPath  = path.join(this._tmpDir, `ltr-cfg-${ts}-${rand}.js`);
-    const cacheDir        = path.join(this._tmpDir, `ltr-cache-${ts}-${rand}`);
 
-    fs.mkdirSync(this._manifestDir, { recursive: true });
+    logger.info(FILE, 'runFiles', `[Coverage] Preparing coverage dirs — manifestDir="${this._manifestDir}" coverageDir="${this._coverageDir}"`);
+    try {
+      fs.mkdirSync(this._manifestDir, { recursive: true });
+      logger.info(FILE, 'runFiles', `[Coverage] manifestDir ready: "${this._manifestDir}"`);
+    } catch (err) {
+      logger.error(FILE, 'runFiles', `[Coverage] Failed to create manifestDir "${this._manifestDir}"`, err);
+    }
+    logger.info(FILE, 'runFiles', `[Coverage] Coverage counters file will be: "${covCountersFile}"`);
+    logger.info(FILE, 'runFiles', `[Coverage] Trace file will be: "${traceFile}"`);
 
     // Normalize to forward slashes: jest normalises all file paths to forward
     // slashes before checking transform patterns, so the regex must match the
     // normalised form regardless of the OS separator.
-    const escapedRoot = escapeRegex(projectRoot.replace(/\\/g, '/'));
-    const srcPattern  = `^${escapedRoot}/(?!node_modules/).+\\.[jt]sx?$`;
+    // On Windows, the drive letter case is unpredictable — VS Code may give 'c:\'
+    // while Jest's path.resolve returns 'C:\'. Use a character class [cC] so the
+    // pattern matches regardless of which case Jest uses internally.
+    const rootFwd = projectRoot.replace(/\\/g, '/');
+    const driveMatch = rootFwd.match(/^([a-zA-Z]):(.*)/);
+    const escapedRoot = driveMatch
+      ? `[${driveMatch[1].toLowerCase()}${driveMatch[1].toUpperCase()}]:${escapeRegex(driveMatch[2])}`
+      : escapeRegex(rootFwd);
+    const escapedRootSlash = escapedRoot.replace(/\//g, '[/\\\\]');
+    const srcPattern = `^${escapedRootSlash}[/\\\\](?!node_modules[/\\\\]).+\\.[jt]sx?$`;
 
     const configContent = `
 'use strict';
@@ -238,6 +258,12 @@ if (!_baseConfigLoaded || !baseConfig.testEnvironment) {
   }
 }
 
+// We pass explicit file paths via --runTestsByPath so Jest doesn't need
+// to discover tests. Dropping roots avoids Haste scan failures on Windows.
+delete baseConfig.roots;
+delete baseConfig.testMatch;
+delete baseConfig.testRegex;
+
 const baseTransformObj = Array.isArray(baseConfig.transform)
   ? Object.fromEntries(baseConfig.transform.map(([p, t, o]) => o ? [p, [t, o]] : [p, t]))
   : (baseConfig.transform || {});
@@ -264,9 +290,11 @@ if (!hasGeneralJsTransform) {
   }
 }
 
+
 module.exports = {
   ...baseConfig,
   rootDir: ${JSON.stringify(projectRoot)},
+  roots: [${JSON.stringify(projectRoot)}],
   transform: {
     [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
     ...baseTransformObj,
@@ -291,6 +319,7 @@ module.exports = {
     const onRecord = (raw: unknown) => {
       const rec = raw as ReporterRecord;
       if (!rec || !rec.testFilePath) { return; }
+      rec.testFilePath = path.normalize(rec.testFilePath);
       received.add(rec.testFilePath);
       try {
         const fileResult = toFileRunResult(rec);
@@ -317,7 +346,18 @@ module.exports = {
         .join(', ');
       emit(`[SessionTrace] Running batch (${filePaths.length}): ${relNames}`);
 
-      const result = await this._executor.runWithReporterPolling(
+      // Cancel any in-flight executor already running these files, then create a
+      // fresh one registered under each file path so kill() can reach it.
+      const executor = new Executor();
+      for (const fp of filePaths) {
+        this._executors.get(fp)?.kill();
+        this._executors.set(fp, executor);
+      }
+
+      executor.setLogger(emit);
+      logger.info(FILE, 'runFiles', `[Coverage] Launching Jest batch — binary="${binary}" files=${filePaths.length} covCountersFile="${covCountersFile}" traceFile="${traceFile}"`);
+
+      const result = await executor.runWithReporterPolling(
         {
           binary,
           args: [
@@ -327,7 +367,7 @@ module.exports = {
             '--runTestsByPath',
             ...filePaths.map((p) => p.replace(/\\/g, '/')),
             '--config', tempConfigPath,
-            '--cacheDirectory', cacheDir,
+            '--cacheDirectory', this._transformCacheDir,
             '--maxWorkers=1',
             '--testLocationInResults',
           ],
@@ -342,15 +382,48 @@ module.exports = {
         onRecord,
       );
 
+      logger.info(FILE, 'runFiles', `[Coverage] Jest batch finished — passed=${result.passed} stderrBytes=${result.stderr?.length ?? 0} receivedFiles=${received.size}/${filePaths.length}`);
+      if (received.size === 0 && result.stdout) {
+        logger.warn(FILE, 'runFiles', `[Coverage] Jest produced 0 results — stdout:\n${result.stdout}`);
+      }
+
+      // Diagnostic: check coverage file state immediately after Jest exits
+      const covExists = fs.existsSync(covCountersFile);
+      if (covExists) {
+        try {
+          const covSize = fs.statSync(covCountersFile).size;
+          logger.info(FILE, 'runFiles', `[Coverage] covCountersFile exists after Jest exit — size=${covSize} bytes path="${covCountersFile}"`);
+        } catch (statErr) {
+          logger.warn(FILE, 'runFiles', `[Coverage] covCountersFile exists but stat failed`, statErr);
+        }
+      } else {
+        logger.warn(FILE, 'runFiles', `[Coverage] covCountersFile NOT found after Jest exit — path="${covCountersFile}"`);
+        // Check if stderr has coverage hints
+        if (result.stderr) {
+          const covLines = result.stderr.split('\n').filter((l: string) => l.includes('[LTR][Coverage]'));
+          if (covLines.length > 0) {
+            logger.info(FILE, 'runFiles', `[Coverage] Coverage-related stderr lines:\n${covLines.join('\n')}`);
+          } else {
+            logger.warn(FILE, 'runFiles', `[Coverage] No [LTR][Coverage] lines in stderr — instrumentation may not have loaded`);
+          }
+        }
+      }
+
+      // Log coverage-related stderr lines regardless
       if (result.stderr) {
-        emit(`[SessionTrace] stderr:\n${result.stderr.trim()}`);
+        const covLines = result.stderr.split('\n').filter((l: string) => l.includes('[LTR][Coverage]'));
+        if (covLines.length > 0) {
+          logger.info(FILE, 'runFiles', `[Coverage] Jest stderr coverage lines (${covLines.length}):\n${covLines.slice(0, 20).join('\n')}`);
+        }
       }
     } catch (err) {
       logger.error(FILE, 'runFiles', `Jest batch run threw`, err);
       emit(`[SessionTrace] Jest run error: ${(err as Error).message}`);
     } finally {
+      for (const fp of filePaths) {
+        this._executors.delete(fp);
+      }
       try { fs.unlinkSync(tempConfigPath); } catch {}
-      try { fs.rmSync(cacheDir, { recursive: true, force: true }); } catch {}
     }
 
     // Parse trace hits and update ExecutionTraceStore.
@@ -399,23 +472,36 @@ module.exports = {
   // ── Private: parse light-trace JSONL and update ExecutionTraceStore ──────────
 
   private _parseCoverage(covCountersFile: string, projectRoot: string, emit: (msg: string) => void): void {
-    if (!fs.existsSync(covCountersFile)) { return; }
+    logger.info(FILE, '_parseCoverage', `[Coverage] Starting coverage parse — file="${covCountersFile}"`);
+
+    if (!fs.existsSync(covCountersFile)) {
+      logger.warn(FILE, '_parseCoverage', `[Coverage] Coverage counters file does not exist — no coverage data for this run. file="${covCountersFile}"`);
+      emit(`[Coverage] No coverage counters file produced (instrumentation may not have run)`);
+      return;
+    }
+
+    logger.info(FILE, '_parseCoverage', `[Coverage] Coverage counters file exists: "${covCountersFile}"`);
 
     let raw: string;
     try {
       raw = fs.readFileSync(covCountersFile, 'utf8');
+      logger.info(FILE, '_parseCoverage', `[Coverage] Read coverage counters file: ${raw.length} bytes`);
     } catch (err) {
-      logger.error(FILE, '_parseCoverage', `Could not read coverage file: "${covCountersFile}"`, err);
+      logger.error(FILE, '_parseCoverage', `[Coverage] Could not read coverage file: "${covCountersFile}"`, err);
       return;
     }
 
     const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+    logger.info(FILE, '_parseCoverage', `[Coverage] Coverage counters file has ${lines.length} worker record(s)`);
 
     // Merge all workers: sum within this run
     const mergedCov: Record<string, FileCov> = {};
+    let parseErrors = 0;
     for (const line of lines) {
       let parsed: { workerPid: number; cov: Record<string, FileCov> };
-      try { parsed = JSON.parse(line); } catch { continue; }
+      try { parsed = JSON.parse(line); } catch { parseErrors++; continue; }
+      const workerHashes = Object.keys(parsed.cov).length;
+      logger.debug(FILE, '_parseCoverage', `[Coverage] Merging worker pid=${parsed.workerPid} — ${workerHashes} file-hash(es)`);
       for (const [hash, fileCov] of Object.entries(parsed.cov)) {
         if (!mergedCov[hash]) {
           mergedCov[hash] = { s: { ...fileCov.s }, b: {}, f: { ...fileCov.f } };
@@ -438,11 +524,35 @@ module.exports = {
       }
     }
 
+    if (parseErrors > 0) {
+      logger.warn(FILE, '_parseCoverage', `[Coverage] ${parseErrors} worker record(s) failed to parse`);
+    }
+
+    const totalHashes = Object.keys(mergedCov).length;
+    logger.info(FILE, '_parseCoverage', `[Coverage] Merged ${totalHashes} unique file-hash(es) from ${lines.length} worker record(s)`);
+    emit(`[Coverage] Merged ${totalHashes} file-hash(es) from ${lines.length} worker record(s)`);
+
     // Promote CoverageStore entries — max() merge with existing for cross-run accumulation
     let promoted = 0;
+    let missingManifests = 0;
+    let excluded = 0;
+    let manifestReadErrors = 0;
+
+    logger.info(FILE, '_parseCoverage', `[Coverage] Checking manifests in "${this._manifestDir}"`);
+
+    // List manifest dir contents for diagnostics
+    try {
+      const manifestFiles = fs.readdirSync(this._manifestDir);
+      logger.info(FILE, '_parseCoverage', `[Coverage] manifestDir contains ${manifestFiles.length} file(s)`);
+    } catch (err) {
+      logger.warn(FILE, '_parseCoverage', `[Coverage] Could not read manifestDir "${this._manifestDir}"`, err);
+    }
+
     for (const [fileHash, counters] of Object.entries(mergedCov)) {
       const manifestPath = path.join(this._manifestDir, `${fileHash}.json`);
       if (!fs.existsSync(manifestPath)) {
+        missingManifests++;
+        logger.warn(FILE, '_parseCoverage', `[Coverage] Manifest missing for hash ${fileHash} — expected at "${manifestPath}"`);
         emit(`[Coverage] Manifest missing for hash ${fileHash}, skipping`);
         continue;
       }
@@ -451,29 +561,46 @@ module.exports = {
       try {
         manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Manifest;
       } catch (err) {
-        logger.error(FILE, '_parseCoverage', `Could not read manifest "${manifestPath}"`, err);
+        manifestReadErrors++;
+        logger.error(FILE, '_parseCoverage', `[Coverage] Could not read manifest "${manifestPath}"`, err);
         continue;
       }
 
-      const relPath = path.relative(projectRoot, manifest.filePath);
+      const normalizedFilePath = manifest.filePath.replace(/^[A-Z]:/, m => m.toLowerCase());
+      const relPath = path.relative(projectRoot, normalizedFilePath);
       if (_isExcludedFromCoverage(relPath)) {
+        excluded++;
+        logger.debug(FILE, '_parseCoverage', `[Coverage] Excluded from coverage: "${relPath}"`);
         continue;
       }
 
-      const existing = this._coverageStore.getEntry(manifest.filePath);
+      const existing = this._coverageStore.getEntry(normalizedFilePath);
       const merged: LiveCov =
         existing?.state === 'measured'
           ? _mergeCounters(existing.counters, counters)
           : counters;
 
       const pct = calcCoverage(manifest, merged);
-      this._coverageStore.setMeasuredEntry(manifest.filePath, { manifestPath, counters: merged, pct });
+      logger.debug(FILE, '_parseCoverage',
+        `[Coverage] Promoting "${relPath}" — stmts=${pct.statements.covered}/${pct.statements.total} ` +
+        `branches=${pct.branches.covered}/${pct.branches.total} fns=${pct.functions.covered}/${pct.functions.total} ` +
+        `lines=${pct.lines.covered}/${pct.lines.total}`,
+      );
+      this._coverageStore.setMeasuredEntry(normalizedFilePath, { manifestPath, counters: merged, pct });
       promoted++;
     }
 
-    emit(`[Coverage] Promoted ${promoted} file(s) to measured`);
+    logger.info(FILE, '_parseCoverage',
+      `[Coverage] Done — promoted=${promoted} excluded=${excluded} missingManifests=${missingManifests} manifestReadErrors=${manifestReadErrors}`,
+    );
+    emit(`[Coverage] Promoted ${promoted} file(s) to measured (excluded=${excluded}, missingManifests=${missingManifests})`);
 
-    try { fs.unlinkSync(covCountersFile); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(covCountersFile);
+      logger.debug(FILE, '_parseCoverage', `[Coverage] Deleted coverage counters file: "${covCountersFile}"`);
+    } catch (err) {
+      logger.warn(FILE, '_parseCoverage', `[Coverage] Could not delete coverage counters file "${covCountersFile}"`, err);
+    }
   }
 
   // ── Private: parse light-trace JSONL and update ExecutionTraceStore ──────────
@@ -520,14 +647,14 @@ module.exports = {
     for (const recs of testsByFile.values()) {
       for (const rec of recs) {
         for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
-          traceStore.addCoveredLines(srcFile, linesArr);
+          traceStore.addCoveredLines(_normPath(srcFile), linesArr);
         }
       }
     }
     for (const recs of hooksByFile.values()) {
       for (const rec of recs) {
         for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
-          traceStore.addCoveredLines(srcFile, linesArr);
+          traceStore.addCoveredLines(_normPath(srcFile), linesArr);
         }
       }
     }
@@ -538,11 +665,12 @@ module.exports = {
       const fileLineMap = new Map<string, Map<number, string[]>>();
       for (const rec of testRecs) {
         for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
-          if (srcFile === testFilePath) { continue; }
-          let lineMap = fileLineMap.get(srcFile);
+          if (_normPath(srcFile) === testFilePath) { continue; }
+          const normSrc = _normPath(srcFile);
+          let lineMap = fileLineMap.get(normSrc);
           if (!lineMap) {
             lineMap = new Map();
-            fileLineMap.set(srcFile, lineMap);
+            fileLineMap.set(normSrc, lineMap);
           }
           for (const line of linesArr) {
             const names = lineMap.get(line) ?? [];
@@ -563,7 +691,7 @@ module.exports = {
       const hookFiles = new Set<string>();
       for (const hookRec of hooksByFile.get(testFilePath) ?? []) {
         for (const srcFile of Object.keys(hookRec.fh)) {
-          if (srcFile !== testFilePath) { hookFiles.add(srcFile); }
+          if (_normPath(srcFile) !== testFilePath) { hookFiles.add(_normPath(srcFile)); }
         }
       }
 
@@ -571,7 +699,7 @@ module.exports = {
       for (const rec of testRecs) {
         const files: string[] = [];
         for (const srcFile of Object.keys(rec.fh)) {
-          if (srcFile !== testFilePath) { files.push(srcFile); }
+          if (_normPath(srcFile) !== testFilePath) { files.push(_normPath(srcFile)); }
         }
         perTestFiles.set(rec.tn, files);
       }
@@ -664,4 +792,8 @@ const _COVERAGE_EXCLUDE_RE = [
 
 function _isExcludedFromCoverage(filePath: string): boolean {
   return _COVERAGE_EXCLUDE_RE.some((re) => re.test(filePath));
+}
+
+function _normPath(filePath: string): string {
+  return filePath.replace(/^[A-Z]:/, m => m.toLowerCase());
 }

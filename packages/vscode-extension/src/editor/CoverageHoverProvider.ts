@@ -43,14 +43,25 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
     if (entry.state !== 'measured') { return undefined; }
 
     const manifest = _readManifest(entry.manifestPath);
-    const coveredLines = this._traceStore.getCoveredLines(filePath);
-    const isLineCovered = coveredLines.has(line);
+    const traceLines = this._traceStore.getCoveredLines(filePath);
+    const isLineCovered = traceLines.has(line);
+
+    // Fallback: trace store may be empty (e.g. Jest exited before flushing trace).
+    // Check Istanbul counters so a green bar never shows "not covered" in the hover.
+    const isCounterCovered = !isLineCovered && manifest
+      ? Object.entries(manifest.statements).some(([id, loc]) => loc.start.line === line && (entry.counters.s[id] ?? 0) > 0)
+      : false;
 
     // ── Partial branch analysis ────────────────────────────────────────────────
     const missedBranches = manifest ? _getMissedBranchesForLine(manifest, entry.counters, line) : [];
     const isPartial = isLineCovered && missedBranches.length > 0;
 
     if (!isLineCovered) {
+      if (isCounterCovered) {
+        const md = new vscode.MarkdownString('$(pass) **Covered** — trace data unavailable for this run', true);
+        md.supportThemeIcons = true;
+        return new vscode.Hover(md);
+      }
       const md = new vscode.MarkdownString('$(circle-slash) **Not covered** — no test executed this line', true);
       md.supportThemeIcons = true;
       return new vscode.Hover(md);

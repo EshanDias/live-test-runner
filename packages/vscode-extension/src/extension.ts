@@ -12,7 +12,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { LTR_BASE_TMP_DIR } from './constants';
+import { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
@@ -45,11 +45,13 @@ function isProcessAlive(pid: number): boolean {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  // Ensure the shared base temp directory exists.
-  try {
-    fs.mkdirSync(LTR_BASE_TMP_DIR, { recursive: true });
-  } catch (err) {
-    logger.error(FILE, 'activate', `Failed to create base temp directory: ${LTR_BASE_TMP_DIR}`, err);
+  // Ensure the shared base directories exist up front so no path checks fail later.
+  for (const dir of [LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR]) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      logger.error(FILE, 'activate', `Failed to create directory: ${dir}`, err);
+    }
   }
 
   // Clean up stale session directories from previous or crashed windows.
@@ -246,7 +248,7 @@ export function activate(context: vscode.ExtensionContext) {
   const activationRoot = _resolveProjectRoot();
   let discoveryCache: DiscoveryCache | undefined;
   if (activationRoot) {
-    discoveryCache = new DiscoveryCache(context.globalStorageUri.fsPath, activationRoot);
+    discoveryCache = new DiscoveryCache(LTR_BASE_CACHE_DIR, activationRoot);
     discoveryCache.writeLock();
   }
 
@@ -308,7 +310,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.startTesting', async () => {
       // Check cache capacity before starting — evict stale projects or warn.
       if (activationRoot) {
-        const cap = rotateAndCheckCapacity(context.globalStorageUri.fsPath);
+        const cap = rotateAndCheckCapacity(LTR_BASE_CACHE_DIR);
         if (!cap.ok) {
           const choice = await vscode.window.showWarningMessage(
             `Live Test Runner cache is using ${cap.totalMb} MB across ${cap.activeCount} active sessions (limit: 500 MB). ` +

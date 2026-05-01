@@ -32,7 +32,9 @@ function flushRecord(type) {
     : { type: 'H', tf: _currentTestFile, fh };
   try {
     fs.appendFileSync(outputFile, JSON.stringify(rec) + '\n', 'utf8');
-  } catch (_e) {}
+  } catch (_e) {
+    process.stderr.write(`[LTR][Coverage] sessionTraceRuntime flushRecord: FAILED to write "${outputFile}" — ${_e.message}\n`);
+  }
   _hits = null;
 }
 
@@ -85,5 +87,7 @@ process.on('exit', () => {
       JSON.stringify({ workerPid: process.pid, cov: globalThis.__cov }) + '\n',
       'utf8',
     );
-  } catch (_e) {}
+  } catch (_e) {
+    process.stderr.write(`[LTR][Coverage] sessionTraceRuntime exit: FAILED to write "${covOutputFile}" — ${_e.message}\n`);
+  }
 });
