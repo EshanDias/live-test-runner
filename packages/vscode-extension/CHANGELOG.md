@@ -2,6 +2,14 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [2.0.2] - 2026-05-01
+
+### Bug Fixes
+
+- **Code Coverage Works on Windows** - Fixed path issues with Forward Backward slashes and capital simple dive letters. Also, Fixed the node path finder to work on both windows and macOS
+
+---
+
 ## [2.0.1] — 2026-04-23
 
 ### Bug Fixes
