@@ -1,4 +1,5 @@
 'use strict';
+process.stderr.write('[LTR-SESSION-TRANSFORM] module loaded\n');
 /**
  * sessionTraceTransform.js — light-trace Jest transform.
  *
@@ -57,7 +58,7 @@ function loadBabel(rootDir) {
     _rootDir = rootDir;
     return true;
   } catch (e) {
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] could not load Babel: ${e.message}\n`);
+    process.stderr.write(`[LTR][Coverage] loadBabel: FAILED to load Babel for rootDir="${rootDir}" — ${e.message}\n`);
     return false;
   }
 }
@@ -861,16 +862,15 @@ function instrumentAST(code, sourcePath) {
 
   // Write manifest to disk (transform runs in Jest child process — disk is the bridge)
   const manifestDir = process.env.LTR_MANIFEST_DIR;
-  if (manifestDir) {
+  if (!manifestDir) {
+    process.stderr.write(`[LTR][Coverage] manifest: LTR_MANIFEST_DIR env not set — manifest will not be written for "${sourcePath}"\n`);
+  } else {
+    const manifestFile = path.join(manifestDir, `${fileHash}.json`);
     try {
       fs.mkdirSync(manifestDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(manifestDir, `${fileHash}.json`),
-        JSON.stringify(manifest),
-        'utf8',
-      );
+      fs.writeFileSync(manifestFile, JSON.stringify(manifest), 'utf8');
     } catch (_e) {
-      process.stderr.write(`[LTR-SESSION-TRANSFORM] manifest write failed: ${_e.message}\n`);
+      process.stderr.write(`[LTR][Coverage] manifest: FAILED to write "${manifestFile}" — ${_e.message}\n`);
     }
   }
 
@@ -888,6 +888,7 @@ function instrumentAST(code, sourcePath) {
 
 module.exports = {
   process(sourceCode, sourcePath, options) {
+    process.stderr.write(`[LTR-SESSION-TRANSFORM] process() called for: ${sourcePath}\n`);
     const rootDir = options && options.config && options.config.rootDir;
 
     // Detect whether the project uses a strict transformer (ts-jest, @swc/jest, etc.)

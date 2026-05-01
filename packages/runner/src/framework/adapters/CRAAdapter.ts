@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
 import { execFileSync } from "child_process";
+import { LTR_BASE_CACHE_DIR } from '../../constants';
 import { Framework } from "../../types";
 import { FrameworkAdapter } from "./FrameworkAdapter";
 import { readPackageJson } from "./JestAdapter";
@@ -206,8 +206,9 @@ export class CRAAdapter implements FrameworkAdapter {
    * across sessions until it's invalidated — avoiding accumulation in /tmp.
    */
   private writeTempConfig(projectRoot: string, configJson: string): string {
-    const hash = simpleHash(projectRoot);
-    const tmpFilePath = path.join(os.tmpdir(), `ltr-cra-config-${hash}.json`);
+    const hash        = simpleHash(projectRoot);
+    fs.mkdirSync(LTR_BASE_CACHE_DIR, { recursive: true });
+    const tmpFilePath = path.join(LTR_BASE_CACHE_DIR, `ltr-cra-config-${hash}.json`);
     fs.writeFileSync(tmpFilePath, configJson, "utf8");
     return tmpFilePath;
   }
