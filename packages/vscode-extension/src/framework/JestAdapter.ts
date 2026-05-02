@@ -342,6 +342,10 @@ export class JestAdapter implements IFrameworkAdapter {
         }
       }
 
+      // Dynamic test instances have no AST node — inherit the template's line so
+      // "go to file" navigates to the test.each(...) call rather than nowhere.
+      const dynamicLine = leafTemplate ? store.getNode(leafTemplate.id)?.line : undefined;
+
       store.nodeStarted(
         filePath,
         testNodeId,
@@ -349,7 +353,7 @@ export class JestAdapter implements IFrameworkAdapter {
         'test',
         tc.title,
         tc.fullName || tc.title,
-        tc.location?.line,
+        dynamicLine,
       );
 
       const status: TestStatus =

@@ -287,7 +287,7 @@ export class ResultStore {
     const existing = this.nodes.get(nodeId);
     if (existing) {
       // Update metadata but preserve status and results
-      existing.line = line;
+      if (line != null) { existing.line = line; }
       existing.isDynamicTemplate = isDynamicTemplate;
       if (existing.parentId !== parentId) {
         // Move to new parent
