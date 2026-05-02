@@ -99,12 +99,14 @@ export class DecorationManager implements IResultObserver {
     }
 
     for (const [line, entry] of lineMap) {
+      if (line < 1 || line - 1 >= editor.document.lineCount) { continue; }
       const node = this.store.getNode(entry.nodeId);
       if (!node) {
         continue;
       }
 
-      const range = new vscode.Range(line - 1, 0, line - 1, 0);
+      const lineLength = editor.document.lineAt(line - 1).text.length;
+      const range = new vscode.Range(line - 1, lineLength, line - 1, lineLength);
       const status = node.status;
       const statusKey = `status-${status}`;
 
