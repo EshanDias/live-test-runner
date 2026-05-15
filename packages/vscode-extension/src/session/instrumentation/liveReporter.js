@@ -30,6 +30,32 @@ class LiveReporter {
     if (!this._outputFile) { return; }
     if (this._reported.has(testResult.testFilePath)) { return; }
     this._reported.add(testResult.testFilePath);
+
+    // Log a summary to stderr so it appears in the extension Output channel
+    const filePath = testResult.testFilePath || '(unknown)';
+    const passed = testResult.numPassingTests || 0;
+    const failed = testResult.numFailingTests || 0;
+    const skipped = testResult.numPendingTests || 0;
+    const fileStatus = testResult.testExecError ? 'EXEC_ERROR' : (failed > 0 ? 'FAIL' : 'PASS');
+    process.stderr.write(`[LTR][Reporter] ${fileStatus} ${filePath} — ${passed} passed, ${failed} failed, ${skipped} skipped\n`);
+    if (testResult.testExecError) {
+      const execErr = testResult.testExecError;
+      process.stderr.write(`[LTR][Reporter] testExecError message: ${String(execErr.message || execErr)}\n`);
+      if (execErr.stack) {
+        String(execErr.stack).split('\n').slice(0, 15).forEach((l) =>
+          process.stderr.write(`[LTR][Reporter]   ${l}\n`));
+      }
+    }
+    (testResult.testResults || []).forEach((tc) => {
+      if (tc.status === 'failed') {
+        process.stderr.write(`[LTR][Reporter]   FAIL "${tc.fullName || tc.title}"\n`);
+        (tc.failureMessages || []).forEach((msg) => {
+          const lines = String(msg).split('\n').slice(0, 10);
+          lines.forEach((line) => process.stderr.write(`[LTR][Reporter]     ${line}\n`));
+        });
+      }
+    });
+
     const record = {
       testFilePath: testResult.testFilePath,
       status:

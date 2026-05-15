@@ -295,6 +295,10 @@ module.exports = {
   ...baseConfig,
   rootDir: ${JSON.stringify(projectRoot)},
   roots: [${JSON.stringify(projectRoot)}],
+  // Raise test timeout to account for the instrumentation overhead added by
+  // sessionTraceTransform (step() calls before every statement slow React renders).
+  // Tests that approach the default 5 s limit will timeout under instrumentation.
+  testTimeout: Math.max((baseConfig.testTimeout || 5000), 30000),
   transform: {
     [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
     ...baseTransformObj,
