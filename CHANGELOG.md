@@ -2,6 +2,14 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [2.0.3] - 2026-05-15
+
+### Bug Fixes
+
+- Fixed issues with running tests with optional chaining. Ex: ?.()
+
+---
+
 ## [2.0.2] - 2026-05-01
 
 ### Bug Fixes
