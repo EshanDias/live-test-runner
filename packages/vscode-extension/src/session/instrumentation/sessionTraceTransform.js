@@ -19,6 +19,27 @@ const fs     = require('fs');
 const crypto = require('crypto');
 const RUNTIME_PATH = path.resolve(__dirname, 'sessionTraceRuntime.js');
 
+// Read once and cache — used to invalidate the Jest transform cache when
+// this file or the runtime file changes between extension rebuilds.
+let _ownHash     = null;
+let _runtimeHash = null;
+
+function getOwnHash() {
+  if (!_ownHash) {
+    try { _ownHash = crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex'); }
+    catch (_) { _ownHash = 'unknown'; }
+  }
+  return _ownHash;
+}
+
+function getRuntimeHash() {
+  if (!_runtimeHash) {
+    try { _runtimeHash = crypto.createHash('sha256').update(fs.readFileSync(RUNTIME_PATH)).digest('hex'); }
+    catch (_) { _runtimeHash = 'unknown'; }
+  }
+  return _runtimeHash;
+}
+
 function _fileHash(filePath) {
   return crypto.createHash('sha256').update(filePath).digest('hex').slice(0, 16);
 }
@@ -984,5 +1005,30 @@ module.exports = {
     process.stderr.write(`[LTR-SESSION-TRANSFORM] instrumentation failed for ${sourcePath}, running uninstrumented\n`);
     const transpiledCode = chainTransform(sourceCode, sourcePath, options);
     return { code: transpiledCode };
+  },
+
+  // Jest calls this before process() — if the key matches a cached entry the
+  // cached output is used directly and process() is never called.
+  //
+  // Jest 27 signature: (sourceText, sourcePath, configString, options)
+  // Jest 28+ signature: (sourceText, sourcePath, options)   ← configString moved into options
+  getCacheKey(sourceText, sourcePath, configStringOrOptions, _maybeOptions) {
+    const configString = typeof configStringOrOptions === 'string'
+      ? configStringOrOptions
+      : (configStringOrOptions && configStringOrOptions.configString) || '';
+
+    return crypto.createHash('sha256')
+      .update(sourceText)
+      .update('\0')
+      .update(sourcePath)
+      .update('\0')
+      .update(IS_TEST_FILE_RE.test(sourcePath) ? 'test' : 'source')
+      .update('\0')
+      .update(configString)
+      .update('\0')
+      .update(getOwnHash())
+      .update('\0')
+      .update(getRuntimeHash())
+      .digest('hex');
   },
 };
