@@ -623,91 +623,6 @@ function instrumentAST(code, sourcePath) {
       },
     },
 
-    // Branch coverage — optional chaining (?.)
-    // Each `?.` is a 2-arm branch: arm 0 = non-null path, arm 1 = short-circuit (null/undefined).
-    // For identifier objects we can use them directly. For complex expressions we inject a
-    // temp var via a sequence assignment so the object is only evaluated once.
-    //
-    // IMPORTANT: `obj?.method(args)` in Babel is:
-    //   OptionalCallExpression { callee: OptionalMemberExpression(obj, method, optional:true), optional: false }
-    // We must include the call args in the non-null branch, otherwise when obj is null our
-    // ternary returns `undefined` and the outer call becomes `undefined(args)` → TypeError.
-    OptionalMemberExpression: {
-      exit(nodePath) {
-        const node = nodePath.node;
-        if (!node.optional) { return; } // chained `.` after a `?.` — not a new branch point
-        const bId = `b${bIdx++}`;
-        manifest.branches[bId] = { type: 'optional-chaining', line: node.loc?.start?.line ?? 0, arms: 2 };
-
-        const obj = node.object;
-        let objForCheck, objForUse;
-        if (t.isIdentifier(obj)) {
-          objForCheck = obj;
-          objForUse   = t.identifier(obj.name);
-        } else {
-          const tmpName = `_ltrOc${bIdx}`;
-          tempVarNames.push(tmpName);
-          objForCheck = t.assignmentExpression('=', t.identifier(tmpName), obj);
-          objForUse   = t.identifier(tmpName);
-        }
-
-        // If parent is `OptionalCallExpression { optional: false }` (i.e. `obj?.method(args)`),
-        // pull the call args into the non-null branch so we never call `undefined(args)`.
-        const parentPath = nodePath.parentPath;
-        const parentNode = parentPath?.node;
-        if (parentNode?.type === 'OptionalCallExpression' && !parentNode.optional &&
-            parentNode.callee === node) {
-          const replacement = t.conditionalExpression(
-            t.binaryExpression('==', objForCheck, t.nullLiteral()),
-            t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
-            t.sequenceExpression([
-              makeCovBranchExpr(bId, 0),
-              t.callExpression(t.memberExpression(objForUse, node.property, node.computed), parentNode.arguments),
-            ]),
-          );
-          generatedCondExprs.add(replacement);
-          parentPath.replaceWith(replacement); // replace the whole call, not just the member
-        } else {
-          const replacement = t.conditionalExpression(
-            t.binaryExpression('==', objForCheck, t.nullLiteral()),
-            t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
-            t.sequenceExpression([makeCovBranchExpr(bId, 0), t.memberExpression(objForUse, node.property, node.computed)]),
-          );
-          generatedCondExprs.add(replacement);
-          nodePath.replaceWith(replacement);
-        }
-      },
-    },
-
-    // Branch coverage — optional call expressions (fn?.())
-    OptionalCallExpression: {
-      exit(nodePath) {
-        const node = nodePath.node;
-        if (!node.optional) { return; }
-        const bId = `b${bIdx++}`;
-        manifest.branches[bId] = { type: 'optional-chaining', line: node.loc?.start?.line ?? 0, arms: 2 };
-
-        const callee = node.callee;
-        let calleeForCheck, calleeForUse;
-        if (t.isIdentifier(callee)) {
-          calleeForCheck = callee;
-          calleeForUse   = t.identifier(callee.name);
-        } else {
-          const tmpName = `_ltrOc${bIdx}`;
-          tempVarNames.push(tmpName);
-          calleeForCheck = t.assignmentExpression('=', t.identifier(tmpName), callee);
-          calleeForUse   = t.identifier(tmpName);
-        }
-        const replacement = t.conditionalExpression(
-          t.binaryExpression('==', calleeForCheck, t.nullLiteral()),
-          t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
-          t.sequenceExpression([makeCovBranchExpr(bId, 0), t.callExpression(calleeForUse, node.arguments)]),
-        );
-        generatedCondExprs.add(replacement);
-        nodePath.replaceWith(replacement);
-      },
-    },
-
     // Branch coverage — logical expressions (||, &&, ??)
     // A chain like `a || b || c` is one branch group with N arms (one per operand),
     // matching Istanbul's binary-expr semantics exactly.
@@ -886,10 +801,26 @@ function instrumentAST(code, sourcePath) {
 
 // ── Jest transform entry point ───────────────────────────────────────────────
 
+const IS_TEST_FILE_RE = /\.(test|spec)\.[jt]sx?$/;
+
 module.exports = {
   process(sourceCode, sourcePath, options) {
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] process() called for: ${sourcePath}\n`);
     const rootDir = options && options.config && options.config.rootDir;
+
+    // Test and spec files must NOT be instrumented with __covF or __strace.step().
+    // The coverage preamble (var __covF = ...) must run before any code that references it,
+    // but babel-plugin-jest-hoist moves jest.mock() factories to execute first —
+    // BEFORE the preamble — causing "Cannot read properties of undefined" for __covF.
+    // Skipping instrumentation for test files keeps them 100% identical to a normal
+    // npm-run-test execution. Smart on-save reruns fall back to --findRelatedTests
+    // (still correct, just slightly broader scope).
+    if (IS_TEST_FILE_RE.test(sourcePath)) {
+      process.stderr.write(`[LTR] Skipping instrumentation for test file: ${sourcePath}\n`);
+      const transpiledCode = chainTransform(sourceCode, sourcePath, options);
+      return { code: transpiledCode };
+    }
+
+    process.stderr.write(`[LTR-SESSION-TRANSFORM] Instrumenting: ${sourcePath}\n`);
 
     // Detect whether the project uses a strict transformer (ts-jest, @swc/jest, etc.)
     // Strict transformers run the real TS compiler and reject our injected globals.
@@ -922,6 +853,7 @@ module.exports = {
       if (instrumented) {
         const transpiledCode = chainTransform(instrumented, sourcePath, options);
         const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${transpiledCode}`;
+        process.stderr.write(`[LTR-SESSION-TRANSFORM] OK (lenient): ${sourcePath}\n`);
         return { code: finalCode };
       }
     }
