@@ -13,6 +13,18 @@
  * _parseCoverage merges records with Math.max so duplicate flushes are safe.
  */
 
+// Raise React Testing Library's waitFor timeout to match testTimeout.
+// The sessionTraceTransform instruments every statement, which slows React
+// renders significantly. The default 1000ms asyncUtilTimeout causes waitFor()
+// calls to fail in async tests that are borderline under normal conditions.
+try {
+  const configure = require('@testing-library/react').configure
+    || require('@testing-library/dom').configure;
+  if (typeof configure === 'function') {
+    configure({ asyncUtilTimeout: 10000 });
+  }
+} catch (_) { /* RTL not present in this project */ }
+
 afterAll(() => {
   const covOutputFile = process.env.COVERAGE_OUTPUT_FILE;
   const covEntries = globalThis.__cov ? Object.keys(globalThis.__cov).length : 0;

@@ -19,6 +19,27 @@ const fs     = require('fs');
 const crypto = require('crypto');
 const RUNTIME_PATH = path.resolve(__dirname, 'sessionTraceRuntime.js');
 
+// Read once and cache — used to invalidate the Jest transform cache when
+// this file or the runtime file changes between extension rebuilds.
+let _ownHash     = null;
+let _runtimeHash = null;
+
+function getOwnHash() {
+  if (!_ownHash) {
+    try { _ownHash = crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex'); }
+    catch (_) { _ownHash = 'unknown'; }
+  }
+  return _ownHash;
+}
+
+function getRuntimeHash() {
+  if (!_runtimeHash) {
+    try { _runtimeHash = crypto.createHash('sha256').update(fs.readFileSync(RUNTIME_PATH)).digest('hex'); }
+    catch (_) { _runtimeHash = 'unknown'; }
+  }
+  return _runtimeHash;
+}
+
 function _fileHash(filePath) {
   return crypto.createHash('sha256').update(filePath).digest('hex').slice(0, 16);
 }
@@ -379,6 +400,57 @@ function makeCovBranchExpr(branchId, armIdx) {
 }
 
 /**
+ * Walk up from nodePath while the parent is a non-optional continuation of the
+ * same optional chain (OptionalMemberExpression/OptionalCallExpression with
+ * optional:false).  Returns the outermost path in that segment.
+ *
+ * Example: `a?.b.c` — starting at `a?.b` (optional:true), the parent is
+ * `OptionalMemberExpression(.c, optional:false)` which is a continuation, so
+ * the segment top is that parent.
+ */
+function findChainSegmentTop(nodePath) {
+  let top = nodePath;
+  for (;;) {
+    const pp = top.parentPath;
+    const pn = pp && pp.node;
+    if (!pn) { break; }
+    if (
+      (pn.type === 'OptionalMemberExpression' && !pn.optional && pn.object === top.node) ||
+      (pn.type === 'OptionalCallExpression'   && !pn.optional && pn.callee === top.node)
+    ) { top = pp; } else { break; }
+  }
+  return top;
+}
+
+/**
+ * Build a non-optional MemberExpression/CallExpression chain for the segment
+ * from branchNodePath up to (and including) chainTopPath, using baseExpr as
+ * the receiver instead of the original object.
+ *
+ * Steps are collected in order from inner (branch point) to outer (chain top),
+ * so they are applied left-to-right: baseExpr → .b → .c → () etc.
+ */
+function buildChainExpr(branchNodePath, chainTopPath, baseExpr) {
+  const t = _t;
+  const steps = [];
+  let cur = branchNodePath;
+  for (;;) {
+    steps.push(cur.node);
+    if (cur === chainTopPath) { break; }
+    cur = cur.parentPath;
+  }
+  let expr = baseExpr;
+  for (const n of steps) {
+    if (n.type === 'OptionalMemberExpression') {
+      expr = t.memberExpression(expr, n.property, n.computed);
+    } else {
+      expr = t.callExpression(expr, n.arguments);
+    }
+  }
+  return expr;
+}
+
+/**
  * Collect all leaves of a same-operator logical chain.
  * `a || b || c` (left-nested) and `a || (b || c)` (right-nested) both yield [a, b, c].
  * Stops at nodes with a different operator (they are treated as atomic leaves).
@@ -623,88 +695,75 @@ function instrumentAST(code, sourcePath) {
       },
     },
 
-    // Branch coverage — optional chaining (?.)
-    // Each `?.` is a 2-arm branch: arm 0 = non-null path, arm 1 = short-circuit (null/undefined).
-    // For identifier objects we can use them directly. For complex expressions we inject a
-    // temp var via a sequence assignment so the object is only evaluated once.
+    // Branch coverage — optional chaining (?.) and optional calls (fn?.())
     //
-    // IMPORTANT: `obj?.method(args)` in Babel is:
-    //   OptionalCallExpression { callee: OptionalMemberExpression(obj, method, optional:true), optional: false }
-    // We must include the call args in the non-null branch, otherwise when obj is null our
-    // ternary returns `undefined` and the outer call becomes `undefined(args)` → TypeError.
+    // Key invariant: we replace the ENTIRE chain segment at the `?.` branch
+    // point (including any non-optional continuations like `.length` that follow
+    // it), so that the null guard wraps the full expression.
+    //
+    // Example: `a?.b.c`  → `(_t = a) == null ? undefined : _t.b.c`
+    //          (NOT `(a == null ? undefined : a.b).c` which would throw if a is null)
+    //
+    // We use `enter` (top-down) so we visit outer `?.` before inner ones; after
+    // replaceWith() Babel re-traverses the replacement and processes inner `?.`.
     OptionalMemberExpression: {
-      exit(nodePath) {
+      enter(nodePath) {
+        if (!nodePath.node.optional) { return; } // non-optional continuations are handled by their `?.` ancestor
         const node = nodePath.node;
-        if (!node.optional) { return; } // chained `.` after a `?.` — not a new branch point
+        const topPath = findChainSegmentTop(nodePath);
         const bId = `b${bIdx++}`;
         manifest.branches[bId] = { type: 'optional-chaining', line: node.loc?.start?.line ?? 0, arms: 2 };
-
         const obj = node.object;
-        let objForCheck, objForUse;
+        let checkExpr, useExpr;
         if (t.isIdentifier(obj)) {
-          objForCheck = obj;
-          objForUse   = t.identifier(obj.name);
+          checkExpr = obj;
+          useExpr   = t.identifier(obj.name);
         } else {
           const tmpName = `_ltrOc${bIdx}`;
           tempVarNames.push(tmpName);
-          objForCheck = t.assignmentExpression('=', t.identifier(tmpName), obj);
-          objForUse   = t.identifier(tmpName);
+          checkExpr = t.assignmentExpression('=', t.identifier(tmpName), obj);
+          useExpr   = t.identifier(tmpName);
         }
-
-        // If parent is `OptionalCallExpression { optional: false }` (i.e. `obj?.method(args)`),
-        // pull the call args into the non-null branch so we never call `undefined(args)`.
-        const parentPath = nodePath.parentPath;
-        const parentNode = parentPath?.node;
-        if (parentNode?.type === 'OptionalCallExpression' && !parentNode.optional &&
-            parentNode.callee === node) {
-          const replacement = t.conditionalExpression(
-            t.binaryExpression('==', objForCheck, t.nullLiteral()),
-            t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
-            t.sequenceExpression([
-              makeCovBranchExpr(bId, 0),
-              t.callExpression(t.memberExpression(objForUse, node.property, node.computed), parentNode.arguments),
-            ]),
-          );
-          generatedCondExprs.add(replacement);
-          parentPath.replaceWith(replacement); // replace the whole call, not just the member
-        } else {
-          const replacement = t.conditionalExpression(
-            t.binaryExpression('==', objForCheck, t.nullLiteral()),
-            t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
-            t.sequenceExpression([makeCovBranchExpr(bId, 0), t.memberExpression(objForUse, node.property, node.computed)]),
-          );
-          generatedCondExprs.add(replacement);
-          nodePath.replaceWith(replacement);
-        }
+        const truthy = buildChainExpr(nodePath, topPath, useExpr);
+        const replacement = t.conditionalExpression(
+          t.binaryExpression('==', checkExpr, t.nullLiteral()),
+          t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
+          t.sequenceExpression([makeCovBranchExpr(bId, 0), truthy]),
+        );
+        generatedCondExprs.add(replacement);
+        topPath.replaceWith(replacement);
       },
     },
 
-    // Branch coverage — optional call expressions (fn?.())
+    // Handles standalone optional calls: `fn?.()` where the callee is not an
+    // OptionalMemberExpression (those are covered by the visitor above).
     OptionalCallExpression: {
-      exit(nodePath) {
+      enter(nodePath) {
         const node = nodePath.node;
         if (!node.optional) { return; }
+        if (t.isOptionalMemberExpression(node.callee)) { return; } // handled by OptionalMemberExpression visitor
+        const topPath = findChainSegmentTop(nodePath);
         const bId = `b${bIdx++}`;
         manifest.branches[bId] = { type: 'optional-chaining', line: node.loc?.start?.line ?? 0, arms: 2 };
-
         const callee = node.callee;
-        let calleeForCheck, calleeForUse;
+        let checkExpr, useExpr;
         if (t.isIdentifier(callee)) {
-          calleeForCheck = callee;
-          calleeForUse   = t.identifier(callee.name);
+          checkExpr = callee;
+          useExpr   = t.identifier(callee.name);
         } else {
           const tmpName = `_ltrOc${bIdx}`;
           tempVarNames.push(tmpName);
-          calleeForCheck = t.assignmentExpression('=', t.identifier(tmpName), callee);
-          calleeForUse   = t.identifier(tmpName);
+          checkExpr = t.assignmentExpression('=', t.identifier(tmpName), callee);
+          useExpr   = t.identifier(tmpName);
         }
+        const truthy = buildChainExpr(nodePath, topPath, useExpr);
         const replacement = t.conditionalExpression(
-          t.binaryExpression('==', calleeForCheck, t.nullLiteral()),
+          t.binaryExpression('==', checkExpr, t.nullLiteral()),
           t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
-          t.sequenceExpression([makeCovBranchExpr(bId, 0), t.callExpression(calleeForUse, node.arguments)]),
+          t.sequenceExpression([makeCovBranchExpr(bId, 0), truthy]),
         );
         generatedCondExprs.add(replacement);
-        nodePath.replaceWith(replacement);
+        topPath.replaceWith(replacement);
       },
     },
 
@@ -886,10 +945,26 @@ function instrumentAST(code, sourcePath) {
 
 // ── Jest transform entry point ───────────────────────────────────────────────
 
+const IS_TEST_FILE_RE = /\.(test|spec)\.[jt]sx?$/;
+
 module.exports = {
   process(sourceCode, sourcePath, options) {
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] process() called for: ${sourcePath}\n`);
     const rootDir = options && options.config && options.config.rootDir;
+
+    // Test and spec files must NOT be instrumented with __covF or __strace.step().
+    // The coverage preamble (var __covF = ...) must run before any code that references it,
+    // but babel-plugin-jest-hoist moves jest.mock() factories to execute first —
+    // BEFORE the preamble — causing "Cannot read properties of undefined" for __covF.
+    // Skipping instrumentation for test files keeps them 100% identical to a normal
+    // npm-run-test execution. Smart on-save reruns fall back to --findRelatedTests
+    // (still correct, just slightly broader scope).
+    if (IS_TEST_FILE_RE.test(sourcePath)) {
+      process.stderr.write(`[LTR] Skipping instrumentation for test file: ${sourcePath}\n`);
+      const transpiledCode = chainTransform(sourceCode, sourcePath, options);
+      return { code: transpiledCode };
+    }
+
+    process.stderr.write(`[LTR-SESSION-TRANSFORM] Instrumenting: ${sourcePath}\n`);
 
     // Detect whether the project uses a strict transformer (ts-jest, @swc/jest, etc.)
     // Strict transformers run the real TS compiler and reject our injected globals.
@@ -922,6 +997,7 @@ module.exports = {
       if (instrumented) {
         const transpiledCode = chainTransform(instrumented, sourcePath, options);
         const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${transpiledCode}`;
+        process.stderr.write(`[LTR-SESSION-TRANSFORM] OK (lenient): ${sourcePath}\n`);
         return { code: finalCode };
       }
     }
@@ -929,5 +1005,30 @@ module.exports = {
     process.stderr.write(`[LTR-SESSION-TRANSFORM] instrumentation failed for ${sourcePath}, running uninstrumented\n`);
     const transpiledCode = chainTransform(sourceCode, sourcePath, options);
     return { code: transpiledCode };
+  },
+
+  // Jest calls this before process() — if the key matches a cached entry the
+  // cached output is used directly and process() is never called.
+  //
+  // Jest 27 signature: (sourceText, sourcePath, configString, options)
+  // Jest 28+ signature: (sourceText, sourcePath, options)   ← configString moved into options
+  getCacheKey(sourceText, sourcePath, configStringOrOptions, _maybeOptions) {
+    const configString = typeof configStringOrOptions === 'string'
+      ? configStringOrOptions
+      : (configStringOrOptions && configStringOrOptions.configString) || '';
+
+    return crypto.createHash('sha256')
+      .update(sourceText)
+      .update('\0')
+      .update(sourcePath)
+      .update('\0')
+      .update(IS_TEST_FILE_RE.test(sourcePath) ? 'test' : 'source')
+      .update('\0')
+      .update(configString)
+      .update('\0')
+      .update(getOwnHash())
+      .update('\0')
+      .update(getRuntimeHash())
+      .digest('hex');
   },
 };
