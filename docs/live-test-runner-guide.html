@@ -333,6 +333,8 @@
     <tr><td><code>&lt;file&gt; failed to run — …</code></td><td>The test file could not execute (syntax error, missing module, setup crash).</td></tr>
     <tr><td><code>could not instrument &lt;file&gt;</code></td><td>That source file runs without coverage. Set the level to Debug to see the parse error.</td></tr>
     <tr><td><code>falling back to "npx jest"</code></td><td>No local Jest found. Run <code>npm install</code> or set <code>jestCommand</code>.</td></tr>
+    <tr><td><code>no file has finished in 60s — … currently on X</code></td><td>A batch made no progress. If the next warning names a <i>different</i> file, tests are just slow. If it names the <i>same</i> file, a test there is probably hanging (<a href="bugs-and-issues.md#bug-23">BUG-23</a>).</td></tr>
+    <tr><td><code>… was still running in b3 — cancelling b3</code></td><td>A save reran a file that a bigger batch was running. That batch's unfinished files are retried, more slowly.</td></tr>
     <tr><td><code>Trace finished … captured 0 steps</code></td><td>The timeline matched no test, or the transform didn't apply (<a href="bugs-and-issues.md#bug-12">BUG-12</a>).</td></tr>
   </table></div>
 

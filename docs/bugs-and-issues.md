@@ -26,7 +26,9 @@
 | [BUG-12](#bug-12) | 🟠 | 🔲 | Timeline Debugger records 0 steps on Windows and for `.each` / template-named tests |
 | [BUG-13](#bug-13) | 🟠 | 🔍 | Windows drive-letter case mismatch can make a whole batch look "missing" |
 | [BUG-14](#bug-14) | 🟠 | 🔲 | `pnpm test` / `pnpm lint` always fail (no tests, no ESLint config) — PR checks can never pass |
-| [BUG-15](#bug-15) | 🟠 | 🔲 | Overlapping runs fight over the status bar and "run finished" state |
+| [BUG-15](#bug-15) | 🔴 | 🔲 | "Finished" shown while tests are still running |
+| [BUG-23](#bug-23) | 🔴 | 🔲 | Tests spin ("running") forever |
+| [BUG-24](#bug-24) | 🟠 | 🔲 | Some tests never start (stay ○ pending) |
 | [BUG-16](#bug-16) | 🟡 | 🔲 | Large projects: result application is O(tests × nodes); coverage scan floods the webview |
 | [BUG-17](#bug-17) | 🟡 | 🔲 | Saving an `.mjs` / `.cjs` test file is treated as a source file |
 | [BUG-18](#bug-18) | 🟡 | 🔲 | Dead / undocumented settings and doc mismatches |
@@ -259,11 +261,74 @@ The new log line `WARN [Timeline] Trace finished … captured 0 steps` makes thi
 ---
 
 <a id="bug-15"></a>
-### BUG-15 🟠 Overlapping runs fight over UI state
+### BUG-15 🔴 "Finished" shown while tests are still running
 
-**Root cause** — saves to different files each start `_runFiles` independently (debounce is per file). Each run sets the status bar to its own `Running… x/y` and ends with its own counts and `onRunFinished`. The UI can show "finished" while another run is still going, and the status bar shows whichever run finished last.
+**Symptom** — the progress bar disappears and the summary or status bar looks final, but some tests are still spinning or results keep arriving.
 
-**Fix** — track active runs in a set. Show `Running…` while any run is active, and fire `onRunFinished` / final status only when the set is empty. Run IDs (`Run #N`) are already in the log to help confirm this.
+**Root causes**
+1. **No notion of "a run in progress"**. Every entry point (`start`, `onSave`, `rerunScope`, `_runAffectedBySourceFile`, `_runTestCases`) runs on its own, and each `_runFiles` / `_runTestCases` call ends with its own `onRunFinished` + status bar update ([SessionManager.ts](../packages/vscode-extension/src/session/SessionManager.ts)). Saving any file during the full run starts a second run. When that one finishes, the webview receives `run-finished` ([testListView.js](../packages/vscode-extension/src/webview/views/testListView.js) `case 'run-finished'`): it hides the progress bar, switches to *watching*, and shows the summary. Meanwhile the full suite is still running.
+2. **One user action can finish twice.** A source-file save can call `_runFiles` *and then* `_runTestCases`, and each sends `run-finished`. The trace-less path (`runRelatedTests`) sends another.
+3. **Wrong progress counts.** `_runTestCases` sends `onFileResult` right after marking nodes *running* ("Mark affected nodes as running"), and the webview adds +1 to `_completedFiles` for every `batch-file-results`. `_totalFiles` is only set by the full run's `run-started`. So partial reruns show numbers like `Running — 61 / 58`.
+4. **Stop is not final.** After Stop, an in-flight batch returns every file as "missing", and `runBatch` then falls back to **plain Jest for each file**: tests run again *after* Stop ([BUG-08](#bug-08) is the Windows variant). `SessionManager` never checks `isActive()` before the fallback.
+
+**Fix**
+- Add a run registry in `SessionManager`: `Set<runId>`, plus a total and completed count per run. Send `run-started` when the set goes empty → non-empty, and send `run-finished` / set the final status bar only when it goes back to empty. Partial reruns add to the running totals.
+- Only send `onFileResult` when a result arrived. Use `onFilesRerunning` for "now running".
+- In `runBatch`, check `this.isActive()` before any fallback or retry, and skip it once stopped.
+
+**Verify** — start the full suite, save a source file mid-run: the progress bar stays until *everything* is done. Stop mid-run: Jest Output shows no new `jest#N` processes after Stop.
+
+---
+
+<a id="bug-23"></a>
+### BUG-23 🔴 Tests spin ("running") forever
+
+**Symptom** — ⟳ never turns into ✓/✗, both in the tree and in the gutter. It's unclear whether the test is slow or stuck.
+
+**Root causes** (several, all ending in nodes left `running` in `ResultStore`)
+1. **Queued files are shown as running.** `_runFiles` calls `store.fileStarted()`, which marks *every* file in the run as running before the first batch starts. Each batch is one Jest process with `--maxWorkers=1`, so its files run **one after another**. Concurrency is `cpus/4` batches and a batch holds up to 50 files. On an 8-core machine that's 2 files actually executing while up to 100 show ⟳, and the rest wait. They look stuck but haven't started.
+2. **Hard failures never clear the spinner.** Node cleanup (`cleanupStaleNodes`) only happens inside `_applyFileResult`. Each of these paths skips it, leaving the file's nodes `running` until the next Start:
+   - `JestAdapter.runFile`: no `fileResult` → `return 'failed'`
+   - the `SessionManager` catch path: `store.fileResult(fp, 'failed')` sets the *file* status only
+   - `JestAdapter.runTestCase`: no `fileResult` → just a warning (this is how a Windows-mangled pattern, [BUG-03](#bug-03), turns into a permanent spinner)
+3. **Stop leaves spinners.** `stop()` doesn't reset `running` nodes, so they spin until the next Start (and fallback runs may keep updating them, BUG-15 #4).
+4. **A save cancels a whole batch.** Saving `a.test.ts` while it runs in batch `b3` kills `b3` (all of it, up to 50 files). Its unfinished files come back as missing and are retried, by splitting the batch or falling back to plain Jest **one file at a time**. Those files can spin for minutes. *Now logged:* `b7: a.test.ts was still running in b3 — cancelling b3; its unfinished files will be retried`.
+5. **Genuinely hung tests have no time limit.** `Executor.spawn` has no overall timeout. Instrumented runs raise `testTimeout` to ≥30 s, so a never-resolving promise costs 30 s *per test*. An infinite loop never ends, and it holds a worker slot, which also blocks queued batches (see [BUG-24](#bug-24)).
+6. **Results can be dropped by key mismatch**: if Jest's reported path differs from the store key ([BUG-13](#bug-13)), `BaseWebviewProvider.onFileResult` drops the result (`store.getFile()` is undefined), so the webview spinner stays.
+
+**Diagnostics added (this branch)**
+- `liveReporter.js` now writes a `start` record when Jest *begins* a file.
+- `SessionTraceRunner` runs a watchdog. When no file has finished for 60 s it logs, e.g. `WARN [Runner] b3: no file has finished in 60s — 12/40 done, currently on checkout.test.ts (58s in that file)`. It repeats every 2 min while stuck. **Slow tests show progress between warnings; a hang repeats the same file.**
+- Batch cancellations are logged at INFO (cause 4).
+
+**Fix**
+- Mark a file `running` when its *start* record arrives (the reporter now sends it), and mark queued files `queued`. This needs a new UI state, or just leave them pending.
+- Add a `finally` in every adapter path: on no result, call `cleanupStaleNodes(file, false)` (reverts to `pending`) and log a WARN.
+- On `stop()`, revert all `running` nodes to `pending`.
+- Re-queue only the *saved* file instead of killing a shared batch (or batch on-save runs separately from the full run).
+- Optional per-batch hard timeout (e.g. `max(5 min, files × 60 s)`) that kills the batch and marks the current file failed with "timed out — possible hang".
+
+**Verify** — add a test with `await new Promise(() => {})` and one with `while (true) {}`. The first fails after 30 s; for the second the watchdog names the file, and after the fix the timeout marks it failed and the rest of the batch continues.
+
+---
+
+<a id="bug-24"></a>
+### BUG-24 🟠 Some tests never start (stay ○ pending)
+
+**Root causes**
+1. **Skipped tests look identical to not-run tests.** Jest reports `test.skip` / `xit` / tests skipped by `.only` as status **`pending`**, and `test.todo` as `todo`. `JestAdapter._applyFileResult` maps only the literal `skipped` to *skipped*, and everything else to *pending* ○, the same icon as "never ran".
+2. **Files Jest refuses to run.** Discovery globs `*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}` across the whole project. The instrumented config deletes the project's `testMatch` / `testRegex`, so Jest falls back to its **default `testMatch`**, which excludes `.mjs`/`.cjs`. The project's `testPathIgnorePatterns` is kept, and `--runTestsByPath` still applies it. The result:
+   - E2E specs (Playwright/Cypress `*.spec.ts`), ignored folders and `.mjs` tests appear in the tree, but Jest never runs them.
+   - They come back "missing" → plain-Jest fallback → "No tests found" → no result → stuck pending/running (BUG-23 #2).
+3. **Queued behind a slow or hung batch.** Batches are drained by a fixed pool of `cpus/4` workers. A batch stuck on a hanging test (BUG-23 #5) holds its slot, and the remaining batches sit in the queue as *pending*.
+4. **Discovered names that Jest names differently**, e.g. computed titles or `describe.each` placeholders that never match a real result. These are removed on cleanup, but only when the file produced results.
+
+**Fix**
+- Map Jest's `pending`/`todo` → `skipped` (and show a distinct icon for todo).
+- Ask Jest which files it would run: `jest --listTests` with the *project's* config, once per session. This already exists as `JestAdapter.discoverTests` → `JestRunner.discoverTests`, but nothing calls it. Show files outside that set greyed out as "not run by Jest config" instead of running them.
+- With the watchdog (BUG-23) in place, a blocked worker is visible in the log.
+
+**Verify** — a file with `test.skip` shows the skipped icon. A Playwright `e2e/*.spec.ts` doesn't spin and is marked "not a Jest test".
 
 ---
 
@@ -299,7 +364,8 @@ Discovery globs `*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}`, but `JestAdapter.isTest
 ## Suggested order
 
 1. **BUG-03 + BUG-08 + BUG-06** — one change: spawn Jest's JS entry with `node`, no shell. Fixes Windows patterns, Stop, and Debug together.
-2. **BUG-07** — config loading. Biggest cause of slow "fallback" runs.
-3. **BUG-04** — enables the smart-rerun and covering-tests features.
-4. **BUG-05, BUG-09, BUG-10, BUG-11** — small, contained fixes.
-5. **BUG-14** — add tests (start with the new `LineSplitter` / `stripAnsi`), then the rest.
+2. **BUG-15 + BUG-23 + BUG-24** — run lifecycle: run registry, "running only when started", cleanup on every failure path, skipped ≠ pending. This is the "finished but still running / spinning forever / never started" group.
+3. **BUG-07** — config loading. Biggest cause of slow "fallback" runs.
+4. **BUG-04** — enables the smart-rerun and covering-tests features.
+5. **BUG-05, BUG-09, BUG-10, BUG-11** — small, contained fixes.
+6. **BUG-14** — add tests (start with the new `LineSplitter` / `stripAnsi`), then the rest.

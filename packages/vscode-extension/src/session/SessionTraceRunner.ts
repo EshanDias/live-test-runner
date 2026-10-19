@@ -112,13 +112,14 @@ function toFileRunResult(rec: ReporterRecord): FileRunResult {
 export class SessionTraceRunner {
   /** Batch counter — "b7" in log lines ties a batch's messages together. */
   private static _batchSeq = 0;
-  private readonly _executors = new Map<string, Executor>();
+  /** file path → the executor (and its batch id) currently running that file. */
+  private readonly _executors = new Map<string, { executor: Executor; batch: string }>();
   private readonly _binaryResolver = new BinaryResolver();
   private _killed = false;
 
   kill(): void {
     this._killed = true;
-    for (const executor of this._executors.values()) {
+    for (const { executor } of this._executors.values()) {
       executor.kill();
     }
     this._executors.clear();
@@ -320,8 +321,18 @@ module.exports = {
 
     // Track which files received reporter results for missing-file detection.
     const received = new Set<string>();
+    /** File Jest is executing right now (from liveReporter "start" records). */
+    let current: { file: string; at: number } | undefined;
 
     const onRecord = (raw: unknown) => {
+      const ev = raw as { ltrEvent?: string; testFilePath?: string; at?: number };
+      if (ev?.ltrEvent === 'start') {
+        if (ev.testFilePath) {
+          current = { file: path.normalize(ev.testFilePath), at: ev.at ?? Date.now() };
+          log.trace(`${batch}: started ${path.basename(current.file)}`);
+        }
+        return;
+      }
       const rec = raw as ReporterRecord;
       if (!rec || !rec.testFilePath) { return; }
       rec.testFilePath = path.normalize(rec.testFilePath);
@@ -343,6 +354,33 @@ module.exports = {
 
     if (this._killed) { return { missing: filePaths }; }
 
+    // Watchdog: a batch with no finished file for a long time is either slow
+    // or hung. Say which file it is on so the two can be told apart.
+    let lastProgressAt = Date.now();
+    let lastReceived = 0;
+    let nextWarnAt = Date.now() + SLOW_BATCH_WARN_MS;
+    const watchdog = setInterval(() => {
+      const now = Date.now();
+      if (received.size !== lastReceived) {
+        lastReceived = received.size;
+        lastProgressAt = now;
+        nextWarnAt = Math.max(nextWarnAt, now + SLOW_BATCH_WARN_MS);
+        return;
+      }
+      if (now < nextWarnAt) { return; }
+      nextWarnAt = now + SLOW_BATCH_WARN_MS * 2;
+      const onFile = current && !received.has(current.file)
+        ? `currently on ${path.basename(current.file)} (${Math.round((now - current.at) / 1000)}s in that file)`
+        : current
+          ? 'between files'
+          : 'no test file has started yet (Jest is still starting up / loading config)';
+      log.warn(
+        `${batch}: no file has finished in ${Math.round((now - lastProgressAt) / 1000)}s — ` +
+        `${received.size}/${filePaths.length} done, ${onFile}. ` +
+        'Slow tests keep making progress; if this repeats for the same file, a test there is probably hanging (never-resolving promise, infinite loop, open handle).',
+      );
+    }, 5_000);
+
     try {
       let binary: string;
       try {
@@ -357,9 +395,20 @@ module.exports = {
       // Cancel any in-flight executor already running these files, then create a
       // fresh one registered under each file path so kill() can reach it.
       const executor = new Executor();
+      const cancelled = new Set<string>();
       for (const fp of filePaths) {
-        this._executors.get(fp)?.kill();
-        this._executors.set(fp, executor);
+        const prev = this._executors.get(fp);
+        if (prev && !cancelled.has(prev.batch)) {
+          cancelled.add(prev.batch);
+          // The whole previous batch dies, not just this file — its unfinished
+          // files come back as "missing" and are retried (slower) by SessionManager.
+          log.info(
+            `${batch}: ${path.basename(fp)} was still running in ${prev.batch} — cancelling ${prev.batch}; ` +
+            'its unfinished files will be retried',
+          );
+          prev.executor.kill();
+        }
+        this._executors.set(fp, { executor, batch });
       }
 
       executor.setLogger(emit);
@@ -412,8 +461,10 @@ module.exports = {
     } catch (err) {
       log.error(`${batch}: Jest run failed`, err);
     } finally {
+      clearInterval(watchdog);
       for (const fp of filePaths) {
-        this._executors.delete(fp);
+        // Only remove our own registration — a newer batch may own this file now.
+        if (this._executors.get(fp)?.batch === batch) { this._executors.delete(fp); }
       }
       try { fs.unlinkSync(tempConfigPath); } catch {}
     }
@@ -742,6 +793,9 @@ function _mergeCounters(a: LiveCov, b: FileCov): LiveCov {
     ),
   };
 }
+
+/** A batch with no finished file for this long gets a "still running" warning. */
+const SLOW_BATCH_WARN_MS = 60_000;
 
 function secondsSince(t: number): string {
   return `${((Date.now() - t) / 1000).toFixed(1)}s`;

@@ -19,6 +19,22 @@ class LiveReporter {
     // Track reported files to prevent double-reporting when both onTestResult
     // and onTestFileResult fire (Jest 27 calls both; we define both for compat).
     this._reported = new Set();
+    this._started = new Set();
+  }
+
+  // Jest 28+ calls onTestFileStart; older versions call onTestStart.
+  // A small "start" record lets the extension tell which file a long-running
+  // batch is on — the difference between "slow" and "stuck".
+  onTestFileStart(test) { this._handleStart(test); }
+  onTestStart(test) { this._handleStart(test); }
+
+  _handleStart(test) {
+    const testFilePath = test && test.path;
+    if (!this._outputFile || !testFilePath || this._started.has(testFilePath)) { return; }
+    this._started.add(testFilePath);
+    try {
+      fs.appendFileSync(this._outputFile, JSON.stringify({ ltrEvent: 'start', testFilePath, at: Date.now() }) + '\n', 'utf8');
+    } catch (_) { /* best effort — only used for diagnostics */ }
   }
 
   // Jest 27+ calls onTestFileResult; Jest ≤26 calls onTestResult.
@@ -74,7 +90,6 @@ class LiveReporter {
   }
 
   onRunStart() {}
-  onTestStart() {}
   onRunComplete() {}
   getLastError() {}
 }
