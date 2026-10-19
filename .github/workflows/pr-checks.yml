@@ -1,0 +1,68 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: ['**']
+
+jobs:
+  branch-rules:
+    name: Branch rules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch names and targets
+        env:
+          HEAD: ${{ github.head_ref }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          case "$HEAD" in
+            feat/*|hotfix/*|bugfix/*) ;;
+            *) echo "::error::Branch '$HEAD' must start with feat/, hotfix/ or bugfix/"; exit 1 ;;
+          esac
+          if [[ "$HEAD" == bugfix/* && "$BASE" != feat/* ]]; then
+            echo "::error::bugfix/* branches may only be merged into a feat/* branch (target was '$BASE')"; exit 1
+          fi
+          if [[ "$BASE" == "main" && "$HEAD" == bugfix/* ]]; then
+            echo "::error::bugfix/* cannot target main"; exit 1
+          fi
+          if [[ "$HEAD" == hotfix/* && "$BASE" != "main" ]]; then
+            echo "::error::hotfix/* branches must target main"; exit 1
+          fi
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm install -g pnpm@9
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - run: pnpm install
+      - run: pnpm run build
+      - run: pnpm test
+
+  version-bump:
+    name: Version bump (PRs to main)
+    if: github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Require a higher version than main
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          for f in package.json packages/vscode-extension/package.json; do
+            new=$(node -p "require('./$f').version")
+            old=$(git show "origin/$BASE:$f" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+            echo "$f: $old -> $new"
+            highest=$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n1)
+            if [[ "$new" == "$old" || "$highest" != "$new" ]]; then
+              echo "::error::$f version must be bumped above $old (found $new)"; exit 1
+            fi
+          done

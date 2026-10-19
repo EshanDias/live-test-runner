@@ -249,6 +249,30 @@ cd packages/runner && pnpm test
 
 ---
 
+## Git Workflow & Branching
+
+**Never do any work on `main`.** Always create a branch first, then do the work there.
+
+| Branch prefix | Purpose | Created from | PR target |
+|---|---|---|---|
+| `feat/*` | New features | `main` or another `feat/*` | `main` or the parent `feat/*` |
+| `hotfix/*` | Urgent production fixes | `main` | `main` |
+| `bugfix/*` | Bug fixes for in-progress work | `feat/*` or `main` | always the `feat/*` branch |
+
+Rules:
+1. Branch names must start with `feat/`, `hotfix/` or `bugfix/`.
+2. **No direct pushes or merges to `main`.** Changes reach `main` only through a pull request from a `feat/*` or `hotfix/*` branch.
+3. `bugfix/*` branches are never merged directly; they only land through a PR into a `feat/*` branch (and then reach `main` with that feature's PR).
+4. Feature branches may branch off other feature branches and PR back into that feature or into `main`.
+5. **PRs must fail if tests fail** (`pnpm test`).
+6. **PRs to `main` must fail if the version has not been bumped** (where a version check is available).
+
+When asked to make a change while on `main`, create the appropriately named branch before editing anything. Never push or merge to `main` from a local checkout.
+
+Enforcement: `.github/workflows/pr-checks.yml` validates branch names/targets, runs tests, and checks the version bump on PRs to `main`. It must be paired with GitHub branch protection on `main` (require PR, require the checks `Branch rules`, `Tests`, `Version bump (PRs to main)`, block direct pushes) — see `docs/developer-guide.md`.
+
+---
+
 ## Documentation Maintenance
 
 When making changes, update the relevant documentation files:

@@ -400,6 +400,19 @@ Handled in `JestAdapter._getCommand()` — returns `"npm test --"` when `runMode
 
 ---
 
+## Branching and pull requests
+
+- Never commit, push or merge directly to `main`. Create a branch for all work.
+- Branch names start with `feat/`, `hotfix/` or `bugfix/`.
+- `main` only receives changes via a pull request from a `feat/*` or `hotfix/*` branch.
+- `bugfix/*` branches are created from a `feat/*` branch or `main`, but their PR always targets the `feat/*` branch. They are never merged directly.
+- `feat/*` branches can branch from other `feat/*` branches and PR back into that feature or into `main`.
+- PRs fail if tests fail. PRs to `main` fail if the version has not been bumped.
+
+`.github/workflows/pr-checks.yml` enforces this on every PR with three jobs: `Branch rules` (name prefix and allowed targets), `Tests` (`pnpm test`), and `Version bump (PRs to main)` (root and extension `package.json` versions must be higher than on `main`).
+
+One-time GitHub setup (Settings → Branches → rule for `main`): require a pull request before merging, require status checks `Branch rules`, `Tests` and `Version bump (PRs to main)`, and disallow direct pushes and force pushes (include administrators). Optionally add the same protection for `feat/*` so bugfix PRs are also gated by tests.
+
 ## Publishing
 
 ```bash
