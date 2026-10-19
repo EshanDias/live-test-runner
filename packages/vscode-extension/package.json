@@ -83,7 +83,17 @@
       },
       {
         "command": "liveTestRunner.showOutput",
-        "title": "Show Raw Output",
+        "title": "Show Jest Output",
+        "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.showLogs",
+        "title": "Show Logs",
+        "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.copyDiagnostics",
+        "title": "Copy Diagnostic Report",
         "category": "Live Test Runner"
       },
       {

@@ -5,9 +5,9 @@ import {
   TestCaseRunResult,
   ConsoleEntry,
 } from "../types";
-import { logger } from "../utils/logger";
+import { createLogger, stripAnsi } from "../utils/logger";
 
-const FILE = "ResultParser.ts";
+const log = createLogger("ResultParser");
 
 /**
  * Parses the JSON output produced by `jest --json --outputFile=<file>` into
@@ -134,7 +134,13 @@ export class ResultParser {
         errors: passed ? [] : [stderr || "Tests failed"],
       };
     } catch (err) {
-      logger.error(FILE, 'parse', `Failed to parse Jest JSON output — stderr="${stderr.slice(0, 300)}" rawSnippet="${raw.slice(0, 200)}"`, err);
+      // Usually means Jest crashed before writing results (bad config, missing
+      // transformer, syntax error in setup files). The stderr tail says why.
+      const why = stripAnsi(stderr).trim().split(/\r?\n/).slice(-15).join("\n    ");
+      log.error(
+        `Could not read Jest's JSON result (${raw.trim() ? "invalid JSON" : "no output"}). Jest said:\n    ${why || "(nothing)"}`,
+        err,
+      );
       return this.empty(false, [
         stderr || raw || "Jest failed to produce JSON output",
       ]);
@@ -190,7 +196,7 @@ export class ResultParser {
           .join("\n");
       });
     } catch (err) {
-      logger.warn(FILE, 'stripStackTraces', 'Failed to strip stack traces from failure messages', err);
+      log.warn("Could not strip stack traces from failure messages", err);
       return [];
     }
   }

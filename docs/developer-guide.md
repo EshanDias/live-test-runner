@@ -143,6 +143,63 @@ To support multiple concurrent VS Code windows, every extension instance must op
 
 Use `spawn`, never `exec`. `exec` has a buffer limit that silently truncates large outputs. `spawn` streams.
 
+### Logging
+
+Two output channels, two purposes:
+
+| Channel | Written by | Content |
+|---------|-----------|---------|
+| **Live Test Runner** (`LogOutputChannel`) | `logger.scope('Area')` | The extension's own log — levelled, timestamped |
+| **Live Test Runner: Jest Output** (plain) | `Executor` raw sink | Jest process output, ANSI-stripped, line-buffered, tagged `[jest#N]` |
+
+**How to log**
+
+```ts
+// extension
+import { logger } from '../utils/logger';
+const log = logger.scope('Session');
+log.info('Session started — 58 test file(s)');
+log.warn('Falling back to plain Jest', err);   // err → " — <message>"
+log.error('Could not start Jest', err);        // err → message + 6 stack frames
+
+// runner / core (no vscode dependency)
+import { createLogger } from './utils/logger';
+const log = createLogger('Executor');
+```
+
+`runner`'s `setLogSink()` is installed by `logger.init()`, so runner/core logs land in the same channel.
+
+**Choosing a level**
+
+| Level | Use for | Example |
+|-------|---------|---------|
+| `error` | Broken, needs action | Jest binary not found, cannot read results |
+| `warn` | Degraded but recovered, or a user problem that blocks results | Fallback to plain Jest, test file failed to run, file not instrumented |
+| `info` | Milestones — about one line per user action | Activation, discovery summary, `Run #N … summary` |
+| `debug` | Details useful when diagnosing | Batch start/end, spawn/exit, coverage merge counts |
+| `trace` | Per-file chatter | Instrumenting `x.ts`, cache hit, per-file coverage % |
+
+Rules:
+- **One summary line per run**, not one per file. Per-file detail belongs at `debug`/`trace`.
+- Put the *cause* in the message: when Jest fails, include its stderr tail (`tail()` from runner).
+- Never write extension diagnostics to the Jest Output channel. It holds only Jest's output, plus `──── Run #N ────` separators.
+- Correlation tags: `Run #N` (SessionManager), `bN` (SessionTraceRunner batch), `jest#N` (Executor process).
+
+**Logging from inside the Jest process** (instrumentation `.js` files): write `[LTR:<level>] message\n` to stderr. `Executor` routes those lines to the log at that level and strips them from captured stderr. `LTR_LOG_LEVEL` (set from the channel level) lets the scripts skip debug/trace writes:
+
+```js
+const _LTR_RANK = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 };
+const _ltrMin = _LTR_RANK[process.env.LTR_LOG_LEVEL] ?? _LTR_RANK.info;
+function _ltrLog(level, msg) {
+  if (_LTR_RANK[level] < _ltrMin) { return; }
+  // One line per message — continuation lines would leak into the raw output
+  const text = String(msg).replace(/\s*Require stack:[\s\S]*$/, '').replace(/\s*\r?\n\s*/g, ' ↵ ');
+  process.stderr.write(`[LTR:${level}] ${text}\n`);
+}
+```
+
+**Diagnostics** — `Live Test Runner: Copy Diagnostic Report` builds a Markdown report (versions, project setup, settings, last 300 debug+ log lines from an in-memory ring buffer, even when the channel is at `info`). Ask users for it in bug reports.
+
 ### Session guard
 
 All on-save behavior and CodeLens buttons are session-guarded. Nothing runs in the background. Users explicitly start and stop sessions. This keeps resource usage predictable and prevents surprise background work.

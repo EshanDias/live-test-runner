@@ -48,7 +48,7 @@ Dependency direction: `vscode-extension` → `core` → `runner`. The runner has
 |---|---|
 | Activity Bar | Beaker icon — opens the Explorer view |
 | Primary sidebar | **Explorer view** — recursive file → node tree (unlimited nesting), summary counts, search; switches to **Timeline sidebar** (State / Watch / Call Stack) in timeline mode |
-| Panel › Output | **Raw output channel** — every Jest command + full stderr, unformatted ANSI |
+| Panel › Output | **Live Test Runner** — levelled extension log (error / warning / info / debug / trace). **Live Test Runner: Jest Output** — raw Jest output, ANSI-stripped, each line tagged `[jest#N]` |
 | Panel › Test Results | **Results view** — 3-column scoped view in normal mode; **Timeline view** (bar + controls + console/errors) in timeline mode |
 | Editor gutter | Status icons (✓ / ✗ / ⟳ / ○) per test line; active-step highlight in timeline mode |
 | Editor inline | Duration text after each test (normal mode); variable ghost text at current step (timeline mode) |

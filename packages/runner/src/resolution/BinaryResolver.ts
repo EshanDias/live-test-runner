@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { logger } from '../utils/logger';
+import { createLogger } from '../utils/logger';
 
-const FILE = 'BinaryResolver.ts';
+const log = createLogger('BinaryResolver');
 
 /**
  * Resolves the Jest binary for standard (non-CRA) projects.
@@ -24,7 +24,7 @@ export class BinaryResolver {
    */
   resolve(projectRoot: string, userOverride?: string): string {
     if (userOverride?.trim()) {
-      logger.debug(FILE, 'resolve', `Using user-provided override: "${userOverride.trim()}"`);
+      log.trace(`Using jest command override: ${userOverride.trim()}`);
       return userOverride.trim();
     }
 
@@ -32,7 +32,7 @@ export class BinaryResolver {
     const localBin = path.join(projectRoot, 'node_modules', '.bin', 'jest');
     if (fs.existsSync(localBin) || fs.existsSync(localBin + '.cmd')) {
       const resolved = platformCmd(localBin);
-      logger.debug(FILE, 'resolve', `Resolved via local .bin: "${resolved}"`);
+      log.trace(`Jest binary (local): ${resolved}`);
       return resolved;
     }
 
@@ -40,20 +40,20 @@ export class BinaryResolver {
     const workspaceBin = this.findInParent(projectRoot);
     if (workspaceBin) {
       const resolved = platformCmd(workspaceBin);
-      logger.debug(FILE, 'resolve', `Resolved via workspace parent: "${resolved}"`);
+      log.trace(`Jest binary (parent workspace): ${resolved}`);
       return resolved;
     }
 
     // 3. Legacy jest.js path (older installs without .bin symlink)
     const legacyJs = path.join(projectRoot, 'node_modules', 'jest', 'bin', 'jest.js');
     if (fs.existsSync(legacyJs)) {
-      logger.debug(FILE, 'resolve', `Resolved via legacy jest.js path: "${legacyJs}"`);
+      log.trace(`Jest binary (legacy jest.js): ${legacyJs}`);
       // Return the .js path directly; the caller will invoke it with `node`
       return legacyJs;
     }
 
     // 4. npx jest — last resort
-    logger.warn(FILE, 'resolve', `No local Jest binary found for "${projectRoot}" — falling back to npx`);
+    log.warn(`No local Jest install found under ${projectRoot} — falling back to "npx jest" (slower, may download Jest)`);
     return platformCmd('npx');
   }
 
@@ -70,7 +70,8 @@ export class BinaryResolver {
       const real = fs.realpathSync(binary);
       if (real.endsWith('.js')) { return true; }
     } catch (err) {
-      logger.warn(FILE, 'isNodeScript', `realpathSync failed for binary="${binary}" — ${(err as NodeJS.ErrnoException).message}`);
+      // Expected for bare commands such as "npx" that are not file paths.
+      log.trace(`realpath failed for ${binary}: ${(err as NodeJS.ErrnoException).message}`);
     }
     return false;
   }

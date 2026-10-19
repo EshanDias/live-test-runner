@@ -20,7 +20,7 @@ import {
 import { TimelineEvent } from './TimelineEvent';
 import { logger } from '../utils/logger';
 
-const FILE = 'JestInstrumentedRunner.ts';
+const log = logger.scope('Timeline');
 
 const TRACE_TRANSFORM_PATH = path.resolve(
   __dirname,
@@ -33,10 +33,13 @@ function escapeRegex(str: string): string {
 }
 
 export class JestInstrumentedRunner implements IInstrumentedRunner {
-  private readonly executor = new Executor();
+  private readonly executor: Executor;
   private readonly binaryResolver = new BinaryResolver();
 
-  constructor(private readonly _tmpDir: string) {}
+  /** @param rawLog sink for raw Jest output (the "Jest Output" channel). */
+  constructor(private readonly _tmpDir: string, private readonly _rawLog: (msg: string) => void = () => {}) {
+    this.executor = new Executor(_rawLog);
+  }
 
   async run(options: {
     filePath: string;
@@ -44,7 +47,8 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
     projectRoot: string;
   }): Promise<TimelineStore> {
     const { filePath, testFullName, projectRoot } = options;
-    logger.info(FILE, 'run', `Starting instrumented run — testFullName="${testFullName}" file="${filePath}"`);
+    this._rawLog('');
+    this._rawLog(`──── Timeline · "${testFullName}" · ${new Date().toLocaleTimeString()} ────`);
 
     // 1. Temp file for JSONL trace output
     const traceFile = path.join(
@@ -153,22 +157,26 @@ module.exports = {
     try {
       fs.writeFileSync(tempConfigPath, configContent, 'utf8');
     } catch (err) {
-      logger.error(FILE, 'run', `Failed to write temp Jest config: ${tempConfigPath}`, err);
+      log.error(`Could not write the temporary Jest config ${tempConfigPath}`, err);
       throw err;
     }
 
-    logger.debug(FILE, 'run', `Temp config written: ${tempConfigPath}`);
-    logger.debug(FILE, 'run', `Trace output file: ${traceFile}`);
-    logger.debug(FILE, 'run', `Transform path: ${TRACE_TRANSFORM_PATH} (exists=${fs.existsSync(TRACE_TRANSFORM_PATH)})`);
+    if (!fs.existsSync(TRACE_TRANSFORM_PATH)) {
+      log.error(`Trace transform is missing at ${TRACE_TRANSFORM_PATH} — the extension build is incomplete`);
+    }
 
-    // DEBUG — dump everything to a known file for easy inspection
-    const debugLog =
-      `traceFile: ${traceFile}\n` +
-      `tempConfigPath: ${tempConfigPath}\n` +
-      `TRACE_TRANSFORM_PATH: ${TRACE_TRANSFORM_PATH}\n` +
-      `TRACE_TRANSFORM_PATH exists: ${fs.existsSync(TRACE_TRANSFORM_PATH)}\n` +
-      `\n--- tempConfig ---\n${configContent}\n`;
-    fs.writeFileSync(path.join(this._tmpDir, 'ltr-debug.log'), debugLog, 'utf8');
+    // At Debug level, keep the generated config + Jest output on disk so a
+    // failed trace can be reproduced by hand. Off by default (it is large).
+    const debugLogPath = logger.isEnabled('debug') ? path.join(this._tmpDir, 'ltr-timeline-debug.log') : undefined;
+    if (debugLogPath) {
+      fs.writeFileSync(
+        debugLogPath,
+        `traceFile: ${traceFile}\ntempConfigPath: ${tempConfigPath}\nTRACE_TRANSFORM_PATH: ${TRACE_TRANSFORM_PATH}\n` +
+        `\n--- tempConfig ---\n${configContent}\n`,
+        'utf8',
+      );
+      log.debug(`Timeline debug dump: ${debugLogPath}`);
+    }
 
     // 3. Set the env var that traceRuntime.js reads to know where to write events
     process.env.TRACE_OUTPUT_FILE = traceFile;
@@ -177,9 +185,8 @@ module.exports = {
       let binary: string;
       try {
         binary = this.binaryResolver.resolve(projectRoot);
-        logger.debug(FILE, 'run', `Resolved Jest binary: ${binary}`);
       } catch (err) {
-        logger.error(FILE, 'run', `Failed to resolve Jest binary for "${projectRoot}"`, err);
+        log.error(`Could not find a Jest binary for ${projectRoot}`, err);
         throw err;
       }
       const escapedName = escapeRegex(testFullName);
@@ -198,18 +205,18 @@ module.exports = {
           tempConfigPath,
         ],
         cwd: projectRoot,
+        extraEnv: { LTR_LOG_LEVEL: logger.level },
       });
 
-      logger.debug(FILE, 'run', `Jest instrumented run complete — passed=${result.passed}`);
-      if (!result.passed) {
-        logger.warn(FILE, 'run', `Jest exited with failure — stderr snippet: ${result.stderr.slice(0, 500)}`);
-      }
+      // A failing test is normal here (people trace failing tests) — debug only.
+      log.debug(`Instrumented Jest run exited — ${result.passed ? 'passed' : 'failed'}`);
 
-      // DEBUG — append Jest output to the debug log
-      fs.appendFileSync(
-        path.join(this._tmpDir, 'ltr-debug.log'),
-        `\n--- Jest stdout ---\n${result.stdout}\n--- Jest stderr ---\n${result.stderr}\n`,
-      );
+      if (debugLogPath) {
+        fs.appendFileSync(
+          debugLogPath,
+          `\n--- Jest stdout ---\n${result.stdout}\n--- Jest stderr ---\n${result.stderr}\n`,
+        );
+      }
     } finally {
       // Clean up env var and temp config regardless of outcome
       delete process.env.TRACE_OUTPUT_FILE;
@@ -222,18 +229,16 @@ module.exports = {
 
     // 4. Parse the trace file into a TimelineStore
     if (!fs.existsSync(traceFile)) {
-      logger.error(FILE, 'run', `Trace file was not produced — no output to parse: ${traceFile}`);
-    } else {
-      const traceSize = fs.statSync(traceFile).size;
-      logger.debug(FILE, 'run', `Trace file produced: ${traceFile} (${traceSize} bytes)`);
+      // Jest crashed before the test ran, or the name pattern matched nothing.
+      // The caller warns about the empty timeline; this just records the cause.
+      log.debug(`No trace file was written (${traceFile})`);
     }
 
     let store: TimelineStore;
     try {
       store = this.parseEvents(traceFile);
-      logger.info(FILE, 'run', `Parsed trace — ${store.steps.length} steps, ${store.errors.length} errors`);
     } catch (err) {
-      logger.error(FILE, 'run', `parseEvents threw for trace file: ${traceFile}`, err);
+      log.error(`Could not parse the trace file ${traceFile}`, err);
       throw err;
     } finally {
       try {
@@ -278,12 +283,14 @@ module.exports = {
     try {
       raw = fs.readFileSync(filePath, 'utf8');
     } catch (err) {
-      logger.error(FILE, 'parseEvents', `Could not read trace file: "${filePath}"`, err);
+      // Missing file is already reported by run(); only log other read errors.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        log.error(`Could not read trace file ${filePath}`, err);
+      }
       return store;
     }
 
     const lines = raw.split('\n').filter((l) => l.trim().length > 0);
-    logger.debug(FILE, 'parseEvents', `Parsing ${lines.length} event lines from "${filePath}"`);
 
     let malformedCount = 0;
     for (const line of lines) {
@@ -357,7 +364,7 @@ module.exports = {
     }
 
     if (malformedCount > 0) {
-      logger.warn(FILE, 'parseEvents', `Skipped ${malformedCount} malformed JSON lines in "${filePath}"`);
+      log.warn(`Skipped ${malformedCount} corrupt event line(s) in the trace — some steps may be missing`);
     }
 
     return store;

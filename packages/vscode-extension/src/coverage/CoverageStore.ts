@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { CoverageEntry, CoveragePct, CoverageTotals, LiveCov } from './types';
 import { logger } from '../utils/logger';
 
-const FILE = 'CoverageStore.ts';
+const log = logger.scope('Coverage');
 
 export class CoverageStore {
   private readonly _entries = new Map<string, CoverageEntry>();
@@ -24,14 +24,12 @@ export class CoverageStore {
     filePath: string,
     data: { manifestPath: string; counters: LiveCov; pct: CoveragePct },
   ): void {
-    const prev = this._entries.get(filePath);
     this._entries.set(filePath, { state: 'measured', ...data });
-    logger.debug(FILE, 'setMeasuredEntry',
-      `[Coverage] ${prev ? 'Updated' : 'New'} measured entry: "${filePath}" ` +
-      `stmts=${data.pct.statements.covered}/${data.pct.statements.total} ` +
-      `branches=${data.pct.branches.covered}/${data.pct.branches.total} ` +
-      `fns=${data.pct.functions.covered}/${data.pct.functions.total} ` +
-      `lines=${data.pct.lines.covered}/${data.pct.lines.total}`,
+    log.trace(
+      `${filePath}: stmts ${data.pct.statements.covered}/${data.pct.statements.total}, ` +
+      `branches ${data.pct.branches.covered}/${data.pct.branches.total}, ` +
+      `fns ${data.pct.functions.covered}/${data.pct.functions.total}, ` +
+      `lines ${data.pct.lines.covered}/${data.pct.lines.total}`,
     );
     this.onDidChange.fire();
   }
@@ -40,7 +38,7 @@ export class CoverageStore {
     const entry = this._entries.get(filePath);
     if (entry?.state === 'measured') {
       this._entries.set(filePath, { ...entry, state: 'measured-stale' });
-      logger.debug(FILE, 'markFileStale', `[Coverage] Marked stale: "${filePath}"`);
+      log.trace(`Marked stale: ${filePath}`);
       this.onDidChange.fire();
     }
   }
@@ -49,22 +47,19 @@ export class CoverageStore {
     const entry = this._entries.get(filePath);
     if (entry?.state === 'measured-stale') {
       this._entries.set(filePath, { ...entry, state: 'measured' });
-      logger.debug(FILE, 'clearStale', `[Coverage] Cleared stale flag: "${filePath}"`);
+      log.trace(`Cleared stale flag: ${filePath}`);
       this.onDidChange.fire();
     }
   }
 
   markScanComplete(): void {
     this._scanComplete = true;
-    logger.info(FILE, 'markScanComplete', `[Coverage] Source scan complete — ${this._entries.size} entries in store`);
     this.onDidChange.fire();
   }
 
   clear(): void {
-    const prev = this._entries.size;
     this._entries.clear();
     this._scanComplete = false;
-    logger.info(FILE, 'clear', `[Coverage] Store cleared — removed ${prev} entries`);
     this.onDidChange.fire();
   }
 

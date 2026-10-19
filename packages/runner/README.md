@@ -70,6 +70,24 @@ jest --config <resolved> --watchAll=false --forceExit --no-bail --json \
 
 `--outputFile` is required. Jest's stdout is never parsed — on Windows, large JSON payloads are silently truncated through pipes.
 
+`Executor` output handling:
+- Pipes use `setEncoding('utf8')`, so multi-byte characters split across chunks stay intact.
+- The raw sink (constructor arg) receives **complete lines only**, ANSI-stripped and tagged `[jest#N]`.
+- Lines of the form `[LTR:<level>] msg` (written by instrumentation inside Jest) go to the logger at that level and are left out of the captured `stderr`.
+
+### Logging
+
+The runner has no VS Code dependency, so it logs through a replaceable sink:
+
+```ts
+import { createLogger, setLogSink } from '@live-test-runner/runner';
+
+const log = createLogger('MyArea');      // log.trace/debug/info/warn/error
+setLogSink((level, scope, message, err) => { /* forward anywhere */ });
+```
+
+The default sink writes info/warn/error to `console`. The extension installs its own sink at activation. `core` reuses this logger. Helpers: `stripAnsi(text)`, `tail(text, n)` (last *n* non-empty lines, for error context).
+
 ### Result types
 
 ```typescript

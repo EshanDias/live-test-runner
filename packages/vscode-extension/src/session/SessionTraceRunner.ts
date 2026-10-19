@@ -15,7 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
@@ -23,7 +23,8 @@ import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
 import { logger } from '../utils/logger';
 
-const FILE = 'SessionTraceRunner.ts';
+const log = logger.scope('Runner');
+const covLog = logger.scope('Coverage');
 
 const SESSION_TRANSFORM_PATH = path.resolve(
   __dirname,
@@ -109,6 +110,8 @@ function toFileRunResult(rec: ReporterRecord): FileRunResult {
 }
 
 export class SessionTraceRunner {
+  /** Batch counter — "b7" in log lines ties a batch's messages together. */
+  private static _batchSeq = 0;
   private readonly _executors = new Map<string, Executor>();
   private readonly _binaryResolver = new BinaryResolver();
   private _killed = false;
@@ -152,9 +155,11 @@ export class SessionTraceRunner {
     onFileDone: (filePath: string, status: 'passed' | 'failed') => void;
     log?: (msg: string) => void;
   }): Promise<{ missing: string[] }> {
-    const { filePaths, projectRoot, traceStore, store: _store, applyFileResult, onFileDone, log } = options;
+    const { filePaths, projectRoot, traceStore, store: _store, applyFileResult, onFileDone, log: rawLog } = options;
     if (filePaths.length === 0) { return { missing: [] }; }
-    const emit = log ?? (() => {});
+    const emit = rawLog ?? (() => {});
+    const batch = `b${++SessionTraceRunner._batchSeq}`;
+    const startedAt = Date.now();
 
     fs.mkdirSync(this._tmpDir, { recursive: true });
 
@@ -166,15 +171,11 @@ export class SessionTraceRunner {
     const covCountersFile = path.join(this._coverageDir, `ltr-cov-${ts}-${rand}.jsonl`);
     const tempConfigPath  = path.join(this._tmpDir, `ltr-cfg-${ts}-${rand}.js`);
 
-    logger.info(FILE, 'runFiles', `[Coverage] Preparing coverage dirs — manifestDir="${this._manifestDir}" coverageDir="${this._coverageDir}"`);
     try {
       fs.mkdirSync(this._manifestDir, { recursive: true });
-      logger.info(FILE, 'runFiles', `[Coverage] manifestDir ready: "${this._manifestDir}"`);
     } catch (err) {
-      logger.error(FILE, 'runFiles', `[Coverage] Failed to create manifestDir "${this._manifestDir}"`, err);
+      covLog.error(`Could not create ${this._manifestDir} — coverage will be missing for this run`, err);
     }
-    logger.info(FILE, 'runFiles', `[Coverage] Coverage counters file will be: "${covCountersFile}"`);
-    logger.info(FILE, 'runFiles', `[Coverage] Trace file will be: "${traceFile}"`);
 
     // Normalize to forward slashes: jest normalises all file paths to forward
     // slashes before checking transform patterns, so the regex must match the
@@ -253,7 +254,7 @@ if (!_baseConfigLoaded || !baseConfig.testEnvironment) {
         }
       }
     } catch (_e) {
-      process.stderr.write('[LTR] CRA config extraction failed: ' + _e.message + '\\n');
+      process.stderr.write('[LTR:error] CRA config extraction (react-scripts test --showConfig) failed: ' + String(_e.message).replace(/\\s*\\r?\\n\\s*/g, ' ↵ ') + '\\n');
     }
   }
 }
@@ -325,12 +326,18 @@ module.exports = {
       if (!rec || !rec.testFilePath) { return; }
       rec.testFilePath = path.normalize(rec.testFilePath);
       received.add(rec.testFilePath);
+      if (rec.failureMessage) {
+        // The file itself failed to run (syntax error, missing module, setup
+        // crash, or an instrumentation problem) — no test inside it executed.
+        const firstLine = rec.failureMessage.split('\n').find((l) => l.trim()) ?? '';
+        log.warn(`${batch}: ${path.basename(rec.testFilePath)} failed to run — ${firstLine.trim()}`);
+      }
       try {
         const fileResult = toFileRunResult(rec);
         applyFileResult(rec.testFilePath, fileResult);
         onFileDone(rec.testFilePath, rec.status);
       } catch (err) {
-        logger.error(FILE, 'runFiles', `Failed to apply result for "${rec.testFilePath}"`, err);
+        log.error(`${batch}: could not apply results for ${rec.testFilePath}`, err);
       }
     };
 
@@ -341,14 +348,11 @@ module.exports = {
       try {
         binary = this._resolveBinary(projectRoot);
       } catch (err) {
-        logger.error(FILE, 'runFiles', `Failed to resolve Jest binary for "${projectRoot}"`, err);
+        log.error(`Could not find a Jest binary for ${projectRoot}`, err);
         throw err;
       }
 
-      const relNames = filePaths
-        .map((p) => path.relative(projectRoot, p))
-        .join(', ');
-      emit(`[SessionTrace] Running batch (${filePaths.length}): ${relNames}`);
+      log.debug(`${batch}: running ${filePaths.length} file(s) — ${filePaths.map((p) => path.basename(p)).join(', ')}`);
 
       // Cancel any in-flight executor already running these files, then create a
       // fresh one registered under each file path so kill() can reach it.
@@ -359,7 +363,6 @@ module.exports = {
       }
 
       executor.setLogger(emit);
-      logger.info(FILE, 'runFiles', `[Coverage] Launching Jest batch — binary="${binary}" files=${filePaths.length} covCountersFile="${covCountersFile}" traceFile="${traceFile}"`);
 
       const result = await executor.runWithReporterPolling(
         {
@@ -374,55 +377,40 @@ module.exports = {
             '--cacheDirectory', this._transformCacheDir,
             '--maxWorkers=1',
             '--testLocationInResults',
+            // Jest silently switches to verbose mode when exactly one test file
+            // runs (and honours `verbose: true` from the project config). In
+            // verbose mode console output is printed straight to the terminal
+            // and testResult.console is empty, so the Results panel showed no
+            // logs for single-file reruns. Forcing it off keeps console buffered.
+            '--verbose=false',
           ],
           cwd: projectRoot,
           extraEnv: {
             SESSION_TRACE_FILE:   traceFile,
             COVERAGE_OUTPUT_FILE: covCountersFile,
             LTR_MANIFEST_DIR:     this._manifestDir,
+            LTR_LOG_LEVEL:        logger.level,
           },
         },
         reporterFile,
         onRecord,
       );
 
-      logger.info(FILE, 'runFiles', `[Coverage] Jest batch finished — passed=${result.passed} stderrBytes=${result.stderr?.length ?? 0} receivedFiles=${received.size}/${filePaths.length}`);
-      if (received.size === 0 && result.stdout) {
-        logger.warn(FILE, 'runFiles', `[Coverage] Jest produced 0 results — stdout:\n${result.stdout}`);
-      }
-
-      // Diagnostic: check coverage file state immediately after Jest exits
-      const covExists = fs.existsSync(covCountersFile);
-      if (covExists) {
-        try {
-          const covSize = fs.statSync(covCountersFile).size;
-          logger.info(FILE, 'runFiles', `[Coverage] covCountersFile exists after Jest exit — size=${covSize} bytes path="${covCountersFile}"`);
-        } catch (statErr) {
-          logger.warn(FILE, 'runFiles', `[Coverage] covCountersFile exists but stat failed`, statErr);
-        }
+      if (this._killed) {
+        log.debug(`${batch}: stopped by the user after ${secondsSince(startedAt)}`);
+      } else if (received.size === 0) {
+        // Whole batch produced nothing — Jest itself failed (config, transform,
+        // environment). SessionManager falls back to plain Jest next; this line
+        // records WHY so the fallback isn't a mystery.
+        log.warn(
+          `${batch}: instrumented Jest run returned no results for ${filePaths.length} file(s). Jest said:\n` +
+          tail(result.stderr + '\n' + result.stdout),
+        );
       } else {
-        logger.warn(FILE, 'runFiles', `[Coverage] covCountersFile NOT found after Jest exit — path="${covCountersFile}"`);
-        // Check if stderr has coverage hints
-        if (result.stderr) {
-          const covLines = result.stderr.split('\n').filter((l: string) => l.includes('[LTR][Coverage]'));
-          if (covLines.length > 0) {
-            logger.info(FILE, 'runFiles', `[Coverage] Coverage-related stderr lines:\n${covLines.join('\n')}`);
-          } else {
-            logger.warn(FILE, 'runFiles', `[Coverage] No [LTR][Coverage] lines in stderr — instrumentation may not have loaded`);
-          }
-        }
-      }
-
-      // Log coverage-related stderr lines regardless
-      if (result.stderr) {
-        const covLines = result.stderr.split('\n').filter((l: string) => l.includes('[LTR][Coverage]'));
-        if (covLines.length > 0) {
-          logger.info(FILE, 'runFiles', `[Coverage] Jest stderr coverage lines (${covLines.length}):\n${covLines.slice(0, 20).join('\n')}`);
-        }
+        log.debug(`${batch}: done in ${secondsSince(startedAt)} — ${received.size}/${filePaths.length} file(s) reported`);
       }
     } catch (err) {
-      logger.error(FILE, 'runFiles', `Jest batch run threw`, err);
-      emit(`[SessionTrace] Jest run error: ${(err as Error).message}`);
+      log.error(`${batch}: Jest run failed`, err);
     } finally {
       for (const fp of filePaths) {
         this._executors.delete(fp);
@@ -432,9 +420,9 @@ module.exports = {
 
     // Parse trace hits and update ExecutionTraceStore.
     try {
-      this._parseTrace(traceFile, traceStore, emit);
+      this._parseTrace(traceFile, traceStore, batch);
     } catch (err) {
-      logger.error(FILE, 'runFiles', `_parseTrace failed`, err);
+      log.error(`${batch}: could not parse the trace file`, err);
     } finally {
       try { fs.unlinkSync(traceFile); } catch {}
       try { fs.unlinkSync(reporterFile); } catch {}
@@ -442,9 +430,9 @@ module.exports = {
 
     // Parse coverage counters and promote CoverageStore entries.
     try {
-      this._parseCoverage(covCountersFile, projectRoot, emit);
+      this._parseCoverage(covCountersFile, projectRoot, batch);
     } catch (err) {
-      logger.error(FILE, 'runFiles', `_parseCoverage failed`, err);
+      covLog.error(`${batch}: could not parse coverage counters`, err);
     }
 
     const missing = filePaths.filter((fp) => !received.has(fp));
@@ -475,28 +463,22 @@ module.exports = {
 
   // ── Private: parse light-trace JSONL and update ExecutionTraceStore ──────────
 
-  private _parseCoverage(covCountersFile: string, projectRoot: string, emit: (msg: string) => void): void {
-    logger.info(FILE, '_parseCoverage', `[Coverage] Starting coverage parse — file="${covCountersFile}"`);
-
+  private _parseCoverage(covCountersFile: string, projectRoot: string, batch: string): void {
     if (!fs.existsSync(covCountersFile)) {
-      logger.warn(FILE, '_parseCoverage', `[Coverage] Coverage counters file does not exist — no coverage data for this run. file="${covCountersFile}"`);
-      emit(`[Coverage] No coverage counters file produced (instrumentation may not have run)`);
+      // Normal when the batch imported no instrumented source files (or was killed).
+      covLog.debug(`${batch}: no coverage counters written`);
       return;
     }
-
-    logger.info(FILE, '_parseCoverage', `[Coverage] Coverage counters file exists: "${covCountersFile}"`);
 
     let raw: string;
     try {
       raw = fs.readFileSync(covCountersFile, 'utf8');
-      logger.info(FILE, '_parseCoverage', `[Coverage] Read coverage counters file: ${raw.length} bytes`);
     } catch (err) {
-      logger.error(FILE, '_parseCoverage', `[Coverage] Could not read coverage file: "${covCountersFile}"`, err);
+      covLog.error(`${batch}: could not read ${covCountersFile}`, err);
       return;
     }
 
     const lines = raw.split('\n').filter((l) => l.trim().length > 0);
-    logger.info(FILE, '_parseCoverage', `[Coverage] Coverage counters file has ${lines.length} worker record(s)`);
 
     // Merge all workers: sum within this run
     const mergedCov: Record<string, FileCov> = {};
@@ -504,8 +486,6 @@ module.exports = {
     for (const line of lines) {
       let parsed: { workerPid: number; cov: Record<string, FileCov> };
       try { parsed = JSON.parse(line); } catch { parseErrors++; continue; }
-      const workerHashes = Object.keys(parsed.cov).length;
-      logger.debug(FILE, '_parseCoverage', `[Coverage] Merging worker pid=${parsed.workerPid} — ${workerHashes} file-hash(es)`);
       for (const [hash, fileCov] of Object.entries(parsed.cov)) {
         if (!mergedCov[hash]) {
           mergedCov[hash] = { s: { ...fileCov.s }, b: {}, f: { ...fileCov.f } };
@@ -529,35 +509,19 @@ module.exports = {
     }
 
     if (parseErrors > 0) {
-      logger.warn(FILE, '_parseCoverage', `[Coverage] ${parseErrors} worker record(s) failed to parse`);
+      covLog.warn(`${batch}: ${parseErrors} coverage record(s) were corrupt and skipped (a Jest worker may have been killed mid-write)`);
     }
-
-    const totalHashes = Object.keys(mergedCov).length;
-    logger.info(FILE, '_parseCoverage', `[Coverage] Merged ${totalHashes} unique file-hash(es) from ${lines.length} worker record(s)`);
-    emit(`[Coverage] Merged ${totalHashes} file-hash(es) from ${lines.length} worker record(s)`);
 
     // Promote CoverageStore entries — max() merge with existing for cross-run accumulation
     let promoted = 0;
-    let missingManifests = 0;
     let excluded = 0;
+    const missingManifests: string[] = [];
     let manifestReadErrors = 0;
-
-    logger.info(FILE, '_parseCoverage', `[Coverage] Checking manifests in "${this._manifestDir}"`);
-
-    // List manifest dir contents for diagnostics
-    try {
-      const manifestFiles = fs.readdirSync(this._manifestDir);
-      logger.info(FILE, '_parseCoverage', `[Coverage] manifestDir contains ${manifestFiles.length} file(s)`);
-    } catch (err) {
-      logger.warn(FILE, '_parseCoverage', `[Coverage] Could not read manifestDir "${this._manifestDir}"`, err);
-    }
 
     for (const [fileHash, counters] of Object.entries(mergedCov)) {
       const manifestPath = path.join(this._manifestDir, `${fileHash}.json`);
       if (!fs.existsSync(manifestPath)) {
-        missingManifests++;
-        logger.warn(FILE, '_parseCoverage', `[Coverage] Manifest missing for hash ${fileHash} — expected at "${manifestPath}"`);
-        emit(`[Coverage] Manifest missing for hash ${fileHash}, skipping`);
+        missingManifests.push(fileHash);
         continue;
       }
 
@@ -566,7 +530,7 @@ module.exports = {
         manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Manifest;
       } catch (err) {
         manifestReadErrors++;
-        logger.error(FILE, '_parseCoverage', `[Coverage] Could not read manifest "${manifestPath}"`, err);
+        covLog.debug(`${batch}: unreadable manifest ${manifestPath} — ${(err as Error).message}`);
         continue;
       }
 
@@ -574,7 +538,6 @@ module.exports = {
       const relPath = path.relative(projectRoot, normalizedFilePath);
       if (_isExcludedFromCoverage(relPath)) {
         excluded++;
-        logger.debug(FILE, '_parseCoverage', `[Coverage] Excluded from coverage: "${relPath}"`);
         continue;
       }
 
@@ -585,25 +548,25 @@ module.exports = {
           : counters;
 
       const pct = calcCoverage(manifest, merged);
-      logger.debug(FILE, '_parseCoverage',
-        `[Coverage] Promoting "${relPath}" — stmts=${pct.statements.covered}/${pct.statements.total} ` +
-        `branches=${pct.branches.covered}/${pct.branches.total} fns=${pct.functions.covered}/${pct.functions.total} ` +
-        `lines=${pct.lines.covered}/${pct.lines.total}`,
-      );
       this._coverageStore.setMeasuredEntry(normalizedFilePath, { manifestPath, counters: merged, pct });
       promoted++;
     }
 
-    logger.info(FILE, '_parseCoverage',
-      `[Coverage] Done — promoted=${promoted} excluded=${excluded} missingManifests=${missingManifests} manifestReadErrors=${manifestReadErrors}`,
+    covLog.debug(
+      `${batch}: ${promoted} file(s) measured, ${excluded} excluded (from ${lines.length} worker record(s))`,
     );
-    emit(`[Coverage] Promoted ${promoted} file(s) to measured (excluded=${excluded}, missingManifests=${missingManifests})`);
+    if (missingManifests.length > 0 || manifestReadErrors > 0) {
+      // Counters without a manifest cannot be mapped to lines — those files show no coverage.
+      covLog.warn(
+        `${batch}: coverage dropped for ${missingManifests.length + manifestReadErrors} file(s) — ` +
+        `${missingManifests.length} manifest(s) missing, ${manifestReadErrors} unreadable (folder: ${this._manifestDir})`,
+      );
+    }
 
     try {
       fs.unlinkSync(covCountersFile);
-      logger.debug(FILE, '_parseCoverage', `[Coverage] Deleted coverage counters file: "${covCountersFile}"`);
     } catch (err) {
-      logger.warn(FILE, '_parseCoverage', `[Coverage] Could not delete coverage counters file "${covCountersFile}"`, err);
+      covLog.debug(`${batch}: could not delete ${covCountersFile} — ${(err as Error).message}`);
     }
   }
 
@@ -612,10 +575,10 @@ module.exports = {
   private _parseTrace(
     traceFile: string,
     traceStore: ExecutionTraceStore,
-    emit: (msg: string) => void,
+    batch: string,
   ): void {
     if (!fs.existsSync(traceFile)) {
-      emit('[SessionTrace] No trace output produced');
+      log.trace(`${batch}: no trace file written`);
       return;
     }
 
@@ -623,7 +586,7 @@ module.exports = {
     try {
       raw = fs.readFileSync(traceFile, 'utf8');
     } catch (err) {
-      logger.error(FILE, '_parseTrace', `Could not read trace file: "${traceFile}"`, err);
+      log.error(`${batch}: could not read trace file ${traceFile}`, err);
       return;
     }
 
@@ -759,7 +722,7 @@ module.exports = {
     }
 
     const totalTests = Array.from(testsByFile.values()).reduce((n, recs) => n + recs.length, 0);
-    emit(`[SessionTrace] Traced ${totalTests} test(s) across ${testsByFile.size} file(s)`);
+    log.debug(`${batch}: traced ${totalTests} test(s) across ${testsByFile.size} file(s)`);
   }
 }
 
@@ -778,6 +741,10 @@ function _mergeCounters(a: LiveCov, b: FileCov): LiveCov {
       Object.keys({ ...a.f, ...b.f }).map((id) => [id, Math.max(a.f[id] ?? 0, b.f[id] ?? 0)]),
     ),
   };
+}
+
+function secondsSince(t: number): string {
+  return `${((Date.now() - t) / 1000).toFixed(1)}s`;
 }
 
 function _extractSuiteName(fullTestName: string): string {

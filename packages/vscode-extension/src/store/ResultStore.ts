@@ -730,6 +730,18 @@ export class ResultStore {
     return undefined;
   }
 
+  /** All test (leaf) nodes belonging to any of the given files — one pass over the pool. */
+  getTestNodesForFiles(fileIds: Iterable<string>): TestNode[] {
+    const wanted = new Set(fileIds);
+    const result: TestNode[] = [];
+    for (const node of this.nodes.values()) {
+      if (node.type === 'test' && wanted.has(node.fileId)) {
+        result.push(node);
+      }
+    }
+    return result;
+  }
+
   getFileNodes(fileId: string): TestNode[] {
     const result: TestNode[] = [];
     for (const node of this.nodes.values()) {

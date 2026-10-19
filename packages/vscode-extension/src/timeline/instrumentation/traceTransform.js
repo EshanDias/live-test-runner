@@ -24,6 +24,17 @@
 const path = require('path');
 const RUNTIME_PATH = path.resolve(__dirname, 'traceRuntime.js');
 
+// Log protocol: "[LTR:<level>] msg" lines on stderr are routed by the
+// extension's Executor into the "Live Test Runner" log at that level.
+const _LTR_RANK = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 };
+const _ltrMin = _LTR_RANK[process.env.LTR_LOG_LEVEL] ?? _LTR_RANK.info;
+function _ltrLog(level, msg) {
+  if (_LTR_RANK[level] < _ltrMin) { return; }
+  // One line per message so continuation lines don't leak into raw output.
+  const text = String(msg).replace(/\s*Require stack:[\s\S]*$/, '').replace(/\s*\r?\n\s*/g, ' ↵ ');
+  process.stderr.write(`[LTR:${level}] timeline transform: ${text}\n`);
+}
+
 // ---------------------------------------------------------------------------
 // Lazy-resolve Babel packages from the user's project rootDir so we don't
 // need to bundle them inside the extension. Any project using babel-jest has
@@ -46,7 +57,7 @@ function loadBabel(rootDir) {
     _rootDir = rootDir;
     return true;
   } catch (e) {
-    process.stderr.write(`[LTR-TRANSFORM] could not load Babel packages from ${rootDir}: ${e.message}\n`);
+    _ltrLog('error', `could not load Babel from ${rootDir} — the timeline will be inaccurate: ${e.message}`);
     return false;
   }
 }
@@ -63,7 +74,7 @@ function chainTransform(sourceCode, sourcePath, options) {
       Array.isArray(v) ? [p, ...v] : [p, v],
     );
   }
-  process.stderr.write(`[LTR-TRANSFORM] transform chain entries: ${transforms.length}\n`);
+  _ltrLog('trace', `${transforms.length} transform entr(ies) to chain for ${sourcePath}`);
 
   for (const entry of transforms) {
     const [pattern, moduleName] = entry;
@@ -81,7 +92,7 @@ function chainTransform(sourceCode, sourcePath, options) {
       if (result && typeof result.code === 'string') { return result.code; }
       if (typeof result === 'string') { return result; }
     } catch (_e) {
-      process.stderr.write(`[LTR-TRANSFORM] chain transformer error: ${_e.message}\n`);
+      _ltrLog('warn', `project transformer "${moduleName}" failed on ${sourcePath}: ${_e.message}`);
     }
     break;
   }
@@ -111,13 +122,14 @@ function chainTransform(sourceCode, sourcePath, options) {
         }
 
         const transformer = createTransformer({ configFile: false, presets });
-        process.stderr.write(`[LTR-TRANSFORM] babel-jest fallback with presets: ${JSON.stringify(presets.map(p => p[0]))}\n`);
+        _ltrLog('debug', `babel-jest fallback for ${sourcePath} with presets ${JSON.stringify(presets.map(p => p[0]))}`);
         const result = transformer.process(sourceCode, sourcePath, options);
         if (result && typeof result.code === 'string') { return result.code; }
         if (typeof result === 'string') { return result; }
       }
     } catch (_e) {
-      process.stderr.write(`[LTR-TRANSFORM] babel-jest fallback failed: ${_e.message}\n`);
+      _ltrLog('warn', `babel-jest fallback failed (files run untranspiled): ${_e.message}`);
+      _ltrLog('debug', `babel-jest fallback failed on ${sourcePath}`);
     }
   }
 
@@ -185,7 +197,7 @@ function instrumentAST(code, sourcePath) {
       plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport'],
     });
   } catch (e) {
-    process.stderr.write(`[LTR-TRANSFORM] AST parse failed: ${e.message}\n`);
+    _ltrLog('debug', `parse failed for ${sourcePath}: ${e.message}`);
     return null;
   }
 
@@ -279,7 +291,7 @@ function instrumentAST(code, sourcePath) {
   try {
     output = _generate(ast, { retainLines: false, compact: false }, code);
   } catch (e) {
-    process.stderr.write(`[LTR-TRANSFORM] AST generate failed: ${e.message}\n`);
+    _ltrLog('debug', `code generation failed for ${sourcePath}: ${e.message}`);
     return null;
   }
 
@@ -291,8 +303,10 @@ function instrumentAST(code, sourcePath) {
 // ---------------------------------------------------------------------------
 module.exports = {
   process(sourceCode, sourcePath, options) {
-    process.stderr.write(`[LTR-TRANSFORM] called for: ${sourcePath}\n`);
-    process.stderr.write(`[LTR-TRANSFORM] TRACE_OUTPUT_FILE: ${process.env.TRACE_OUTPUT_FILE || '(not set)'}\n`);
+    _ltrLog('trace', `instrumenting ${sourcePath}`);
+    if (!process.env.TRACE_OUTPUT_FILE) {
+      _ltrLog('warn', 'TRACE_OUTPUT_FILE is not set — no timeline steps will be recorded');
+    }
 
     const rootDir = options && options.config && options.config.rootDir;
 
@@ -306,10 +320,9 @@ module.exports = {
         // Prepend runtime require to the final CJS output — after transpilation so
         // babel-jest never sees mixed ESM + CJS in the same file.
         const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${transpiledCode}`;
-        process.stderr.write(`[LTR-TRANSFORM] instrument→transpile succeeded, output length: ${finalCode.length}\n`);
         return { code: finalCode };
       }
-      process.stderr.write(`[LTR-TRANSFORM] AST instrumentation failed, falling back to regex\n`);
+      _ltrLog('warn', `AST instrumentation failed for ${sourcePath} — using the regex fallback (line numbers may be off)`);
     }
 
     // 3. Regex fallback — transpile first then instrument (old order, line numbers

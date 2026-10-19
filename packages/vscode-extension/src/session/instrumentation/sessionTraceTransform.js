@@ -1,5 +1,4 @@
 'use strict';
-process.stderr.write('[LTR-SESSION-TRANSFORM] module loaded\n');
 /**
  * sessionTraceTransform.js — light-trace Jest transform.
  *
@@ -18,6 +17,19 @@ const path   = require('path');
 const fs     = require('fs');
 const crypto = require('crypto');
 const RUNTIME_PATH = path.resolve(__dirname, 'sessionTraceRuntime.js');
+
+// Log protocol: "[LTR:<level>] msg" lines on stderr are routed by the
+// extension's Executor into the "Live Test Runner" log at that level.
+// LTR_LOG_LEVEL mirrors the log channel level so quiet levels cost nothing.
+const _LTR_RANK = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 };
+const _ltrMin = _LTR_RANK[process.env.LTR_LOG_LEVEL] ?? _LTR_RANK.info;
+function _ltrLog(level, msg) {
+  if (_LTR_RANK[level] < _ltrMin) { return; }
+  // Keep each message on ONE line — continuation lines would otherwise leak
+  // into the raw Jest output. Node's "Require stack:" list is pure noise here.
+  const text = String(msg).replace(/\s*Require stack:[\s\S]*$/, '').replace(/\s*\r?\n\s*/g, ' ↵ ');
+  process.stderr.write(`[LTR:${level}] transform: ${text}\n`);
+}
 
 // Read once and cache — used to invalidate the Jest transform cache when
 // this file or the runtime file changes between extension rebuilds.
@@ -79,7 +91,7 @@ function loadBabel(rootDir) {
     _rootDir = rootDir;
     return true;
   } catch (e) {
-    process.stderr.write(`[LTR][Coverage] loadBabel: FAILED to load Babel for rootDir="${rootDir}" — ${e.message}\n`);
+    _ltrLog('error', `could not load Babel (@babel/parser, traverse, generator, types) for ${rootDir} — coverage and smart reruns are disabled: ${e.message}`);
     return false;
   }
 }
@@ -108,7 +120,7 @@ function invokeTransformer(moduleName, sourceCode, sourcePath, options, transfor
   try {
     resolvedPath = require.resolve(moduleName, { paths: [rootDir, __dirname].filter(Boolean) });
   } catch (resolveErr) {
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] resolve failed for ${moduleName}: ${resolveErr.message}\n`);
+    _ltrLog('warn', `could not resolve transformer "${moduleName}": ${resolveErr.message}`);
   }
   // Extract per-transformer config (index 2 of the transform entry, e.g. { tsconfig: '...' }).
   // Jest passes this as options.transformerConfig — ts-jest, @swc/jest etc. read it from there.
@@ -128,7 +140,7 @@ function invokeTransformer(moduleName, sourceCode, sourcePath, options, transfor
       transformer = mod.createTransformer(transformerConfig || {});
     }
   } catch (requireErr) {
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] require failed for ${resolvedPath}: ${requireErr.message}\n`);
+    _ltrLog('warn', `could not load transformer ${resolvedPath}: ${requireErr.message}`);
     return null;
   }
   if (!transformer || typeof transformer.process !== 'function') { return null; }
@@ -163,7 +175,7 @@ function chainTransform(sourceCode, sourcePath, options) {
       const result = invokeTransformer(moduleName, sourceCode, sourcePath, options, transforms);
       if (result !== null) { return result; }
     } catch (_e) {
-      process.stderr.write(`[LTR-SESSION-TRANSFORM] chain error: ${_e.message}\n`);
+      _ltrLog('warn', `project transformer "${moduleName}" failed on ${sourcePath}: ${_e.message}`);
     }
     break;
   }
@@ -200,7 +212,10 @@ function chainTransform(sourceCode, sourcePath, options) {
         if (typeof result === 'string') { return result; }
       }
     } catch (_e) {
-      process.stderr.write(`[LTR-SESSION-TRANSFORM] babel-jest fallback failed: ${_e.message}\n`);
+      // No file name in the warning: the cause is the same for every file, so
+      // identical lines collapse into one "repeated N times" entry.
+      _ltrLog('warn', `babel-jest fallback failed (files run untranspiled): ${_e.message}`);
+      _ltrLog('debug', `babel-jest fallback failed on ${sourcePath}`);
     }
   }
 
@@ -559,7 +574,7 @@ function instrumentAST(code, sourcePath) {
       plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator'],
     });
   } catch (e) {
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] AST parse failed for ${sourcePath}: ${e.message}\n`);
+    _ltrLog('debug', `parse failed for ${sourcePath}: ${e.message}`);
     return null;
   }
 
@@ -922,14 +937,14 @@ function instrumentAST(code, sourcePath) {
   // Write manifest to disk (transform runs in Jest child process — disk is the bridge)
   const manifestDir = process.env.LTR_MANIFEST_DIR;
   if (!manifestDir) {
-    process.stderr.write(`[LTR][Coverage] manifest: LTR_MANIFEST_DIR env not set — manifest will not be written for "${sourcePath}"\n`);
+    _ltrLog('warn', `LTR_MANIFEST_DIR is not set — no coverage for ${sourcePath}`);
   } else {
     const manifestFile = path.join(manifestDir, `${fileHash}.json`);
     try {
       fs.mkdirSync(manifestDir, { recursive: true });
       fs.writeFileSync(manifestFile, JSON.stringify(manifest), 'utf8');
     } catch (_e) {
-      process.stderr.write(`[LTR][Coverage] manifest: FAILED to write "${manifestFile}" — ${_e.message}\n`);
+      _ltrLog('warn', `could not write coverage manifest ${manifestFile}: ${_e.message}`);
     }
   }
 
@@ -937,7 +952,7 @@ function instrumentAST(code, sourcePath) {
   try {
     output = _generate(ast, { retainLines: false, compact: false }, code);
   } catch (e) {
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] generate failed: ${e.message}\n`);
+    _ltrLog('debug', `code generation failed for ${sourcePath}: ${e.message}`);
     return null;
   }
   return output.code;
@@ -959,12 +974,11 @@ module.exports = {
     // npm-run-test execution. Smart on-save reruns fall back to --findRelatedTests
     // (still correct, just slightly broader scope).
     if (IS_TEST_FILE_RE.test(sourcePath)) {
-      process.stderr.write(`[LTR] Skipping instrumentation for test file: ${sourcePath}\n`);
       const transpiledCode = chainTransform(sourceCode, sourcePath, options);
       return { code: transpiledCode };
     }
 
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] Instrumenting: ${sourcePath}\n`);
+    _ltrLog('trace', `instrumenting ${sourcePath}`);
 
     // Detect whether the project uses a strict transformer (ts-jest, @swc/jest, etc.)
     // Strict transformers run the real TS compiler and reject our injected globals.
@@ -988,7 +1002,7 @@ module.exports = {
           return { code: finalCode };
         }
         // Instrumentation failed — return at least transpiled code so tests can run
-        process.stderr.write(`[LTR-SESSION-TRANSFORM] instrumentation failed for ${sourcePath}, running uninstrumented\n`);
+        _ltrLog('warn', `could not instrument ${sourcePath} — it runs without coverage/trace (set log level to Debug for the parse error)`);
         return { code: transpiledCode };
       }
 
@@ -997,12 +1011,11 @@ module.exports = {
       if (instrumented) {
         const transpiledCode = chainTransform(instrumented, sourcePath, options);
         const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${transpiledCode}`;
-        process.stderr.write(`[LTR-SESSION-TRANSFORM] OK (lenient): ${sourcePath}\n`);
         return { code: finalCode };
       }
     }
 
-    process.stderr.write(`[LTR-SESSION-TRANSFORM] instrumentation failed for ${sourcePath}, running uninstrumented\n`);
+    _ltrLog('warn', `could not instrument ${sourcePath} — it runs without coverage/trace (set log level to Debug for the parse error)`);
     const transpiledCode = chainTransform(sourceCode, sourcePath, options);
     return { code: transpiledCode };
   },

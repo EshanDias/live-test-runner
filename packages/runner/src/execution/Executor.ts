@@ -3,9 +3,17 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { BinaryResolver } from '../resolution/BinaryResolver';
-import { logger } from '../utils/logger';
+import { createLogger, LogLevel, stripAnsi } from '../utils/logger';
 
-const FILE = 'Executor.ts';
+const log = createLogger('Executor');
+const childLog = createLogger('Jest');
+
+/**
+ * Lines written by our instrumentation inside the Jest process use the form
+ * `[LTR:<level>] message`. They are routed to the structured log at that level
+ * instead of the raw Jest output, and are excluded from captured stderr.
+ */
+const CHILD_LOG_RE = /^\[LTR:(trace|debug|info|warn|error)\] ?(.*)$/;
 
 export interface ExecutionResult {
   passed: boolean;
@@ -25,21 +33,48 @@ export interface ExecutorCommand {
 }
 
 /**
+ * Splits a stream of text chunks into complete lines. Chunks from a child
+ * process can end mid-line (or, without setEncoding, mid-character), so lines
+ * are only emitted once their newline has arrived.
+ */
+class LineSplitter {
+  private _buf = '';
+  constructor(private readonly _onLine: (line: string) => void) {}
+
+  push(chunk: string): void {
+    const parts = (this._buf + chunk).split('\n');
+    this._buf = parts.pop() ?? '';
+    for (const p of parts) { this._onLine(p.endsWith('\r') ? p.slice(0, -1) : p); }
+  }
+
+  flush(): void {
+    if (!this._buf) { return; }
+    const rest = this._buf.endsWith('\r') ? this._buf.slice(0, -1) : this._buf;
+    this._buf = '';
+    this._onLine(rest);
+  }
+}
+
+/**
  * Executes Jest as a child process.
  *
  * Key design decisions:
  *  - Uses `--outputFile=<tmpfile>` instead of capturing stdout to avoid Windows
  *    pipe-buffering issues that can truncate large JSON output.
- *  - Streams stderr to the logger in real time so the user sees progress.
+ *  - Streams stderr to the output sink line by line, ANSI-stripped and tagged
+ *    with a per-process id (`[jest#12]`) so concurrent runs can be told apart.
  *  - Stdout is still captured as a fallback (CRA occasionally skips --outputFile
  *    on a bailed run and writes JSON to stdout instead).
- *  - A single ChildProcess reference is held so killProcesses() works cleanly.
+ *  - A single ChildProcess reference is held so kill() works cleanly.
  */
 export class Executor {
+  private static _seq = 0;
+
   private child?: ChildProcess;
   private logger: (msg: string) => void;
   private readonly tmpDir: string;
 
+  /** @param logger Sink for raw Jest output lines (the "Jest Output" channel). */
   constructor(logger: (msg: string) => void = () => {}, tmpDir?: string) {
     this.logger = logger;
     this.tmpDir = tmpDir ?? os.tmpdir();
@@ -58,7 +93,7 @@ export class Executor {
    */
   async runWithJsonCapture(command: ExecutorCommand): Promise<ExecutionResult & { jsonOutput: string }> {
     if (!fs.existsSync(command.cwd)) {
-      logger.error(FILE, 'runWithJsonCapture', `Project root does not exist: "${command.cwd}"`);
+      log.error(`Project root does not exist: ${command.cwd}`);
       return {
         passed: false,
         stdout: '',
@@ -75,7 +110,6 @@ export class Executor {
     const args = [...command.args, `--outputFile=${tmpFile}`];
     const { binary, cmdArgs } = this.buildInvocation(command.binary, args);
 
-    this.logger(`> ${binary} ${cmdArgs.join(' ')}`);
     this.kill();
 
     const result = await this.spawn(binary, cmdArgs, command.cwd, command.extraEnv);
@@ -86,15 +120,17 @@ export class Executor {
       if (fs.existsSync(tmpFile)) {
         jsonOutput = fs.readFileSync(tmpFile, 'utf8');
         if (!jsonOutput.trim()) {
-          logger.warn(FILE, 'runWithJsonCapture', `Output file exists but is empty — falling back to stdout. tmpFile="${tmpFile}"`);
+          log.debug('Jest wrote an empty --outputFile — using stdout instead');
           jsonOutput = result.stdout;
         }
       } else {
-        logger.warn(FILE, 'runWithJsonCapture', `Output file not produced by Jest — falling back to stdout. tmpFile="${tmpFile}"`);
+        log.debug('Jest did not write --outputFile — using stdout instead');
         jsonOutput = result.stdout;
       }
       if (!jsonOutput.trim()) {
-        logger.error(FILE, 'runWithJsonCapture', `No JSON output produced (file empty and stdout empty) — binary="${command.binary}" cwd="${command.cwd}"`);
+        log.error(
+          `Jest produced no JSON result (cwd: ${command.cwd}). Last stderr lines:\n${tail(result.stderr)}`,
+        );
       }
     } finally {
       try { fs.unlinkSync(tmpFile); } catch { /* ignore cleanup errors */ }
@@ -117,16 +153,20 @@ export class Executor {
     onRecord: (record: unknown) => void,
   ): Promise<ExecutionResult> {
     if (!fs.existsSync(command.cwd)) {
-      logger.error(FILE, 'runWithReporterPolling', `Project root does not exist: "${command.cwd}"`);
+      log.error(`Project root does not exist: ${command.cwd}`);
       return { passed: false, stdout: '', stderr: `Project root does not exist: ${command.cwd}` };
     }
 
     const { binary, cmdArgs } = this.buildInvocation(command.binary, command.args);
-    this.logger(`> ${binary} ${cmdArgs.join(' ')}`);
     this.kill();
 
     let offset = 0;
     let partial = '';
+    let badRecords = 0;
+
+    const parseRecord = (text: string) => {
+      try { onRecord(JSON.parse(text)); } catch { badRecords++; }
+    };
 
     const pollReporter = () => {
       if (!fs.existsSync(reporterFile)) { return; }
@@ -143,18 +183,25 @@ export class Executor {
         partial = lines.pop() ?? '';
         for (const line of lines) {
           const trimmed = line.trim();
-          if (trimmed) { try { onRecord(JSON.parse(trimmed)); } catch {} }
+          if (trimmed) { parseRecord(trimmed); }
         }
-      } catch {}
+      } catch (err) {
+        log.debug(`Reporter poll failed (will retry): ${(err as Error).message}`);
+      }
     };
 
     const interval = setInterval(pollReporter, 200);
     try {
-      return await this.spawn(binary, cmdArgs, command.cwd, command.extraEnv);
+      // Stdout is forwarded here: test console output written directly by the
+      // test (or by a verbose reporter) would otherwise be invisible.
+      return await this.spawn(binary, cmdArgs, command.cwd, command.extraEnv, true);
     } finally {
       clearInterval(interval);
       pollReporter();
-      if (partial.trim()) { try { onRecord(JSON.parse(partial.trim())); } catch {} }
+      if (partial.trim()) { parseRecord(partial.trim()); }
+      if (badRecords > 0) {
+        log.warn(`${badRecords} reporter record(s) could not be parsed and were skipped`);
+      }
     }
   }
 
@@ -163,7 +210,7 @@ export class Executor {
    */
   async run(command: ExecutorCommand): Promise<ExecutionResult> {
     if (!fs.existsSync(command.cwd)) {
-      logger.error(FILE, 'run', `Project root does not exist: "${command.cwd}"`);
+      log.error(`Project root does not exist: ${command.cwd}`);
       return {
         passed: false,
         stdout: '',
@@ -172,7 +219,6 @@ export class Executor {
     }
 
     const { binary, cmdArgs } = this.buildInvocation(command.binary, command.args);
-    this.logger(`> ${binary} ${cmdArgs.join(' ')}`);
     this.kill();
 
     return this.spawn(binary, cmdArgs, command.cwd, command.extraEnv);
@@ -202,9 +248,21 @@ export class Executor {
     return { binary, cmdArgs: args };
   }
 
-  private spawn(binary: string, cmdArgs: string[], cwd: string, extraEnv?: Record<string, string>): Promise<ExecutionResult> {
+  private spawn(
+    binary: string,
+    cmdArgs: string[],
+    cwd: string,
+    extraEnv?: Record<string, string>,
+    forwardStdout = false,
+  ): Promise<ExecutionResult> {
     return new Promise((resolve) => {
+      const tag = `jest#${++Executor._seq}`;
+      const startedAt = Date.now();
       const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(binary);
+
+      const raw = (line: string) => this.logger(line ? `[${tag}] ${stripAnsi(line)}` : '');
+      raw(`> ${binary} ${cmdArgs.join(' ')}`);
+      log.debug(`${tag} started: ${path.basename(binary)} (${cmdArgs.length} args, cwd ${cwd})`);
 
       const child = spawn(binary, cmdArgs, {
         cwd,
@@ -221,39 +279,64 @@ export class Executor {
       this.child = child;
       child.stdin?.end();
 
+      // setEncoding uses a StringDecoder, so multi-byte UTF-8 characters
+      // (✓ ✕ ● › …) split across chunk boundaries decode correctly instead
+      // of turning into U+FFFD replacement symbols.
+      child.stdout?.setEncoding('utf8');
+      child.stderr?.setEncoding('utf8');
+
       let stdout = '';
       let stderr = '';
       let exitCode: number | null = null;
+      let exitSignal: NodeJS.Signals | null = null;
       let stdoutEnded = !child.stdout;
       let stderrEnded = !child.stderr;
       let resolved = false;
+
+      const outLines = forwardStdout ? new LineSplitter(raw) : undefined;
+      const errLines = new LineSplitter((line) => {
+        const m = CHILD_LOG_RE.exec(line);
+        if (m) {
+          childLog[m[1] as LogLevel](`${tag}: ${m[2]}`);
+          return;
+        }
+        stderr += line + '\n';
+        raw(line);
+      });
 
       const maybeResolve = () => {
         if (resolved || exitCode === null || !stdoutEnded || !stderrEnded) return;
         resolved = true;
         this.child = undefined;
+        const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
+        log.debug(`${tag} exited (${exitSignal ? `signal ${exitSignal}` : `code ${exitCode}`}) after ${secs}s`);
         resolve({ passed: exitCode === 0, stdout, stderr });
       };
 
-      child.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
-      child.stdout?.on('end', () => { stdoutEnded = true; maybeResolve(); });
+      child.stdout?.on('data', (d: string) => { stdout += d; outLines?.push(d); });
+      child.stdout?.on('end', () => { outLines?.flush(); stdoutEnded = true; maybeResolve(); });
 
-      child.stderr?.on('data', (d: Buffer) => {
-        const chunk = d.toString();
-        stderr += chunk;
-        this.logger(chunk.trimEnd());
-      });
-      child.stderr?.on('end', () => { stderrEnded = true; maybeResolve(); });
+      child.stderr?.on('data', (d: string) => errLines.push(d));
+      child.stderr?.on('end', () => { errLines.flush(); stderrEnded = true; maybeResolve(); });
 
-      child.on('exit', (code) => { exitCode = code ?? 1; maybeResolve(); });
+      child.on('exit', (code, signal) => { exitCode = code ?? 1; exitSignal = signal; maybeResolve(); });
 
       child.on('error', (err) => {
         if (resolved) return;
-        logger.error(FILE, 'spawn', `Child process error — binary="${binary}" cwd="${cwd}"`, err);
+        const hint = (err as NodeJS.ErrnoException).code === 'ENOENT'
+          ? ' — the Jest binary was not found. Run npm install, or set liveTestRunner.jestCommand.'
+          : '';
+        log.error(`${tag} could not start "${binary}" (cwd ${cwd})${hint}`, err);
         resolved = true;
         this.child = undefined;
         resolve({ passed: false, stdout: '', stderr: err.message });
       });
     });
   }
+}
+
+/** Last `n` non-empty lines of a text block, ANSI-stripped — for error context. */
+export function tail(text: string, n = 25): string {
+  const lines = stripAnsi(text).split(/\r?\n/).filter((l) => l.trim());
+  return lines.slice(-n).map((l) => '    ' + l).join('\n') || '    (no output)';
 }

@@ -463,7 +463,9 @@ All in `packages/vscode-extension/package.json`:
 - `liveTestRunner.startTesting`
 - `liveTestRunner.stopTesting`
 - `liveTestRunner.selectProjectRoot`
-- `liveTestRunner.showRawOutput`
+- `liveTestRunner.showOutput` — "Show Jest Output": raw Jest output channel
+- `liveTestRunner.showLogs` — "Show Logs": levelled extension log channel
+- `liveTestRunner.copyDiagnostics` — "Copy Diagnostic Report": versions, project setup, settings, recent logs → clipboard + untitled doc
 - `liveTestRunner.rerunFromEditor`
 - `liveTestRunner.debugFromEditor`
 - `liveTestRunner.focusResult`
@@ -538,7 +540,11 @@ All in `packages/vscode-extension/package.json`:
 | Webview base | `packages/vscode-extension/src/views/BaseWebviewProvider.ts` |
 | Shared list renderer | `packages/vscode-extension/src/webview/testListLayout.js` |
 | Duration utils (JS) | `packages/vscode-extension/src/webview/utils.js` |
-| Jest spawn | `packages/runner/src/execution/Executor.ts` |
+| Jest spawn (line-buffered, UTF-8 safe, `[LTR:level]` routing) | `packages/runner/src/execution/Executor.ts` |
+| Extension logger (LogOutputChannel, ring buffer) | `packages/vscode-extension/src/utils/logger.ts` |
+| Runner/core logger + sink | `packages/runner/src/utils/logger.ts` |
+| Diagnostic report | `packages/vscode-extension/src/utils/diagnostics.ts` |
+| Known bugs + root causes | `docs/bugs-and-issues.md` |
 | Framework detection | `packages/runner/src/framework/FrameworkDetector.ts` |
 | CRA config extraction | `packages/runner/src/framework/adapters/CRAAdapter.ts` |
 | Coverage mapping | `packages/core/src/CoverageMap.ts` |
@@ -563,3 +569,5 @@ All in `packages/vscode-extension/package.json`:
 13. **`TimelineDecorationManager` is separate from `DecorationManager`.** It never touches pass/fail gutter icons — completely independent decoration types.
 14. **Timeline Maps are serialised before postMessage.** `TimelineStore.variables` and `TimelineStore.logs` are `Map<number, ...>` in the extension host. They are converted to plain objects (`Object.fromEntries`) before sending to webviews, since Maps are not JSON-serialisable.
 15. **`scope-logs` and `scope-changed` are always separate messages.** They have different lifecycles.
+16. **Logging goes through the logger, never `console.*` or the Jest Output channel.** Extension: `logger.scope('Area')`. runner/core: `createLogger('Area')`. Instrumentation inside Jest: `[LTR:<level>] msg` on stderr. One `info` summary per run; per-file detail at `debug`/`trace`. See developer-guide → Logging.
+17. **Session Jest runs pass `--verbose=false`.** Jest auto-enables verbose for single-file runs, which stops console buffering and empties `testResult.console` (Results panel shows no logs).

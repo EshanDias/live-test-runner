@@ -17,7 +17,7 @@ import {
 import { nameToPattern } from '../session/SessionManager';
 import { logger } from '../utils/logger';
 
-const FILE = 'JestAdapter.ts';
+const log = logger.scope('Jest');
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
@@ -57,7 +57,7 @@ export class JestAdapter implements IFrameworkAdapter {
         !!pkg.scripts?.test?.includes('jest')
       );
     } catch (err) {
-      logger.warn(FILE, 'detect', `Could not read package.json at "${projectRoot}" — assuming not a Jest project`, err);
+      log.warn(`Could not read ${projectRoot}/package.json — assuming this is not a Jest project`, err);
       return false;
     }
   }
@@ -66,9 +66,9 @@ export class JestAdapter implements IFrameworkAdapter {
 
   async discoverTests(
     projectRoot: string,
-    log: (msg: string) => void,
+    rawLog: (msg: string) => void,
   ): Promise<string[]> {
-    const runner = this._createRunner(projectRoot, log);
+    const runner = this._createRunner(projectRoot, rawLog);
     return runner.discoverTests(projectRoot);
   }
 
@@ -91,28 +91,26 @@ export class JestAdapter implements IFrameworkAdapter {
     store: ResultStore,
     filePath: string,
     projectRoot: string,
-    log: (msg: string) => void,
+    rawLog: (msg: string) => void,
   ): Promise<'passed' | 'failed'> {
-    logger.debug(FILE, 'runFile', `Running file: "${filePath}"`);
-    const runner = this._createRunner(projectRoot, log);
+    const runner = this._createRunner(projectRoot, rawLog);
     let jsonResult: Awaited<ReturnType<typeof runner.runTestFileJson>>;
     try {
       jsonResult = await runner.runTestFileJson(filePath);
     } catch (err) {
-      logger.error(FILE, 'runFile', `runTestFileJson threw for "${filePath}"`, err);
+      log.error(`Could not run ${filePath}`, err);
       return 'failed';
     }
     const fileResult = jsonResult.fileResults[0];
     if (!fileResult) {
-      logger.warn(FILE, 'runFile', `No fileResult returned for "${filePath}" — treating as failed`);
+      log.warn(`Jest returned no result for ${filePath} — marking it failed`);
       return 'failed';
     }
     try {
       this._applyFileResult(store, filePath, fileResult);
     } catch (err) {
-      logger.error(FILE, 'runFile', `_applyFileResult threw for "${filePath}"`, err);
+      log.error(`Could not apply results for ${filePath}`, err);
     }
-    logger.debug(FILE, 'runFile', `File result: ${fileResult.status} — "${filePath}"`);
     return fileResult.status === 'passed' ? 'passed' : 'failed';
   }
 
@@ -121,11 +119,11 @@ export class JestAdapter implements IFrameworkAdapter {
     filePath: string,
     fullName: string,
     projectRoot: string,
-    log: (msg: string) => void,
+    rawLog: (msg: string) => void,
     opts?: RerunOptions,
   ): Promise<void> {
-    logger.debug(FILE, 'runTestCase', `Running test case — file="${filePath}" pattern="${fullName}"`);
-    const runner = this._createRunner(projectRoot, log);
+    log.debug(`Scoped run in ${filePath} — pattern ${fullName}`);
+    const runner = this._createRunner(projectRoot, rawLog);
     // Determine if this is a suite-level rerun (no individual test node)
     const isSuiteRun = opts?.nodeId
       ? store.getNode(opts.nodeId)?.type === 'suite'
@@ -134,7 +132,7 @@ export class JestAdapter implements IFrameworkAdapter {
     try {
       jsonResult = await runner.runTestCaseJson(filePath, fullName, isSuiteRun);
     } catch (err) {
-      logger.error(FILE, 'runTestCase', `runTestCaseJson threw — file="${filePath}" pattern="${fullName}"`, err);
+      log.error(`Could not run pattern ${fullName} in ${filePath}`, err);
       return;
     }
     const fileResult = jsonResult.fileResults[0];
@@ -142,10 +140,10 @@ export class JestAdapter implements IFrameworkAdapter {
       try {
         this._applyFileResult(store, filePath, fileResult, opts);
       } catch (err) {
-        logger.error(FILE, 'runTestCase', `_applyFileResult threw — file="${filePath}" pattern="${fullName}"`, err);
+        log.error(`Could not apply scoped results for ${filePath}`, err);
       }
     } else {
-      logger.warn(FILE, 'runTestCase', `No fileResult for "${filePath}" pattern="${fullName}"`);
+      log.warn(`Jest returned no result for ${filePath} (pattern ${fullName}) — the test name may no longer match`);
     }
   }
 
@@ -159,15 +157,14 @@ export class JestAdapter implements IFrameworkAdapter {
     store: ResultStore,
     sourceFilePath: string,
     projectRoot: string,
-    log: (msg: string) => void,
+    rawLog: (msg: string) => void,
   ): Promise<string[]> {
-    logger.debug(FILE, 'runRelatedTests', `Running --findRelatedTests for "${sourceFilePath}"`);
-    const runner = this._createRunner(projectRoot, log);
+    const runner = this._createRunner(projectRoot, rawLog);
     let jsonResult: Awaited<ReturnType<typeof runner.runRelatedTestsJson>>;
     try {
       jsonResult = await runner.runRelatedTestsJson(sourceFilePath);
     } catch (err) {
-      logger.error(FILE, 'runRelatedTests', `runRelatedTestsJson threw for "${sourceFilePath}"`, err);
+      log.error(`jest --findRelatedTests failed for ${sourceFilePath}`, err);
       return [];
     }
     const affectedPaths: string[] = [];
@@ -176,7 +173,7 @@ export class JestAdapter implements IFrameworkAdapter {
         this._applyFileResult(store, fileResult.testFilePath, fileResult);
         affectedPaths.push(fileResult.testFilePath);
       } catch (err) {
-        logger.error(FILE, 'runRelatedTests', `_applyFileResult threw for "${fileResult.testFilePath}"`, err);
+        log.error(`Could not apply results for ${fileResult.testFilePath}`, err);
       }
     }
     return affectedPaths;
@@ -210,10 +207,10 @@ export class JestAdapter implements IFrameworkAdapter {
 
   private _createRunner(
     projectRoot: string,
-    log: (msg: string) => void,
+    rawLog: (msg: string) => void,
   ): JestRunner {
     const cmd = this._getCommand();
-    const runner = new JestRunner(cmd, log, this._tmpDir);
+    const runner = new JestRunner(cmd, rawLog, this._tmpDir);
     runner.setProjectRoot(projectRoot);
     return runner;
   }

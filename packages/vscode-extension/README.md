@@ -113,9 +113,22 @@ Step through any test case line by line — variable values as inline ghost text
 | `Stop Testing and Clear Cache` | Stop + wipe discovery cache |
 | `Clear Cache and Restart Testing` | Fresh restart |
 | `Select Project Root` | Pick root in multi-folder workspace |
-| `Show Raw Output` | Open raw Jest output channel |
+| `Show Logs` | Open the extension log (filter by level) |
+| `Show Jest Output` | Open raw Jest output |
+| `Copy Diagnostic Report` | Copy versions, setup and recent logs for a bug report |
 
 > **Tip:** Shift-click **⏹ Stop** to stop and clear cache in one click.
+
+---
+
+## Troubleshooting
+
+- **Output → "Live Test Runner"** — what the extension did: one line per run, warnings when something falls back. Set the level to **Debug** (⚙ in the Output panel) for details.
+- **Output → "Live Test Runner: Jest Output"** — exactly what Jest printed.
+- Reporting a bug? Run **Copy Diagnostic Report** and attach it.
+
+<!-- [TODO: USER_INPUT_NEEDED] Screenshot of the Output panel showing the levelled "Live Test Runner" log with a Run summary line -->
+
 
 ---
 

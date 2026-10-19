@@ -7,9 +7,9 @@ import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { Executor } from './execution/Executor';
 import { ResultParser } from './parsing/ResultParser';
-import { logger } from './utils/logger';
+import { createLogger } from './utils/logger';
 
-const FILE = 'JestRunner.ts';
+const log = createLogger('JestRunner');
 
 /**
  * JestRunner — the public-facing test runner for Jest-based projects.
@@ -53,7 +53,7 @@ export class JestRunner implements TestRunner {
   }
 
   async discoverTests(projectRoot: string): Promise<string[]> {
-    logger.info(FILE, 'discoverTests', `Discovering tests in: "${projectRoot}"`);
+    log.debug(`Listing tests with jest --listTests in ${projectRoot}`);
     this.initAdapter(projectRoot);
     const adapter = this.requireAdapter();
     const cwd = this.requireProjectRoot();
@@ -76,7 +76,7 @@ export class JestRunner implements TestRunner {
     // don't parse Jest's error text as test file paths (Bug 3).
     if (!result.passed && this.isJestValidationError(result.stderr)) {
       const err = new Error(`[JestRunner] Jest config validation failed:\n${result.stderr.trim()}`);
-      logger.error(FILE, 'discoverTests', `Jest config validation failed for "${projectRoot}"`, err);
+      log.error(`Jest rejected the project config in ${projectRoot}:\n${result.stderr.trim()}`);
       throw err;
     }
 
@@ -84,12 +84,12 @@ export class JestRunner implements TestRunner {
       result.stdout + '\n' + result.stderr,
     );
     if (found.length > 0) {
-      logger.info(FILE, 'discoverTests', `Found ${found.length} test files via --listTests`);
+      log.debug(`--listTests found ${found.length} test file(s)`);
       return found;
     }
 
     // Last resort: filesystem scan
-    logger.warn(FILE, 'discoverTests', '--listTests returned no results — falling back to filesystem scan');
+    log.warn('jest --listTests returned no files — falling back to a filesystem scan');
     return this.discoverFromFilesystem(projectRoot);
   }
 
@@ -276,7 +276,7 @@ export class JestRunner implements TestRunner {
       try {
         return JSON.parse(fs.readFileSync(p, 'utf8'));
       } catch (err) {
-        logger.warn(FILE, 'getCoverage', `Could not parse coverage-final.json at "${p}"`, err);
+        log.warn(`Could not parse ${p}`, err);
       }
     }
     return {};
@@ -299,7 +299,7 @@ export class JestRunner implements TestRunner {
   private requireAdapter(): FrameworkAdapter {
     if (!this.adapter) {
       const err = new Error('JestRunner: no adapter — call setProjectRoot() or discoverTests() first.');
-      logger.error(FILE, 'requireAdapter', 'Adapter not initialised', err);
+      log.error(err.message);
       throw err;
     }
     return this.adapter;
@@ -308,7 +308,7 @@ export class JestRunner implements TestRunner {
   private requireProjectRoot(): string {
     if (!this.projectRoot) {
       const err = new Error('JestRunner: projectRoot not set — call discoverTests(projectRoot) first.');
-      logger.error(FILE, 'requireProjectRoot', 'Project root not set', err);
+      log.error(err.message);
       throw err;
     }
     return this.projectRoot;

@@ -33,7 +33,7 @@ function flushRecord(type) {
   try {
     fs.appendFileSync(outputFile, JSON.stringify(rec) + '\n', 'utf8');
   } catch (_e) {
-    process.stderr.write(`[LTR][Coverage] sessionTraceRuntime flushRecord: FAILED to write "${outputFile}" — ${_e.message}\n`);
+    process.stderr.write(`[LTR:error] trace: could not write ${outputFile} — ${_e.message}\n`);
   }
   _hits = null;
 }
@@ -88,6 +88,6 @@ process.on('exit', () => {
       'utf8',
     );
   } catch (_e) {
-    process.stderr.write(`[LTR][Coverage] sessionTraceRuntime exit: FAILED to write "${covOutputFile}" — ${_e.message}\n`);
+    process.stderr.write(`[LTR:error] coverage: could not write ${covOutputFile} on exit — ${_e.message}\n`);
   }
 });

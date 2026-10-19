@@ -2,6 +2,21 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [Unreleased]
+
+### Improvements
+
+- **Cleaner, levelled logs** — the "Live Test Runner" output now has error / warning / info / debug levels you can filter (Output ⚙ → Set Log Level). You get one summary line per run instead of hundreds of internal messages.
+- **Separate Jest output** — Jest's own output has its own channel, "Live Test Runner: Jest Output", without colour-code garbage.
+- **Copy Diagnostic Report** — a new command that collects everything needed for a bug report in one click.
+
+### Bug Fixes
+
+- **Console logs now always show** in the Results panel, including after saving or rerunning a single test file.
+- **No more `�` symbols** in the Output panel.
+
+---
+
 ## [2.0.3] - 2026-05-15
 
 ### Bug Fixes

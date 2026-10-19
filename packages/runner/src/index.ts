@@ -36,5 +36,16 @@ export { ViteAdapter, UnsupportedFrameworkError } from './framework/adapters/Vit
 
 // Lower-level layers — exposed for testing and advanced usage
 export { BinaryResolver } from './resolution/BinaryResolver';
-export { Executor } from './execution/Executor';
+export { Executor, tail } from './execution/Executor';
+
+// Logging — the extension installs a sink so runner/core logs reach its log channel
+export {
+  createLogger,
+  setLogSink,
+  stripAnsi,
+  describeError,
+  LogLevel,
+  LogSink,
+  ScopedLogger,
+} from './utils/logger';
 export { ResultParser } from './parsing/ResultParser';

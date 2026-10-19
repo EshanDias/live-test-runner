@@ -2,6 +2,33 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [Unreleased]
+
+### Logging overhaul
+
+- **Levelled log channel** — "Live Test Runner" is now a VS Code `LogOutputChannel` with real `error` / `warning` / `info` / `debug` / `trace` levels, timestamps and a user-selectable level (Output ⚙ → Set Log Level). Lines read `[Area] message`.
+- **Raw Jest output split out** — Jest's own output moved to a separate channel, **Live Test Runner: Jest Output**. It is ANSI-stripped, line-buffered, and each line is tagged with its process (`[jest#12]`) so output from concurrent batches can be told apart. Each run starts with a `──── Run #N · label ────` separator.
+- **One summary per run** — `Run #N <trigger> — files · passed · failed · skipped · time — failing: …` replaces scattered start/finish lines. Discovery logs one summary (files, tests, cache hits, parse failures) instead of a "Cache hit" line per file.
+- **Noise removed** — about 20 `[Coverage]` INFO lines per batch, the per-file `[LTR-SESSION-TRANSFORM] …` and `[LTR-TRANSFORM] …` lines, the reporter's PASS/FAIL dump (duplicated Jest's output), the `console.log` on every coverage-decoration refresh, and the timeline `ltr-debug.log` written on every run (now only at Debug level).
+- **Diagnostics that matter kept or added** — when an instrumented batch returns no results, the warning includes the tail of Jest's stderr. Test files that fail to execute are a WARN with the first error line. The fallback to plain Jest says which files and why. Spawn failures (`ENOENT`) suggest the fix. Coverage drops (missing manifests) are summarised in one line.
+- **Runner/core logs now visible** — `@live-test-runner/runner` exposes `createLogger` / `setLogSink`. The extension installs a sink, so runner/core warnings (e.g. the `npx jest` fallback) appear in the log channel instead of only in DevTools. `core` reuses the runner logger.
+- **Child-process log protocol** — instrumentation running inside Jest writes `[LTR:<level>] msg` to stderr. `Executor` routes those lines to the log at that level and removes them from captured stderr. `LTR_LOG_LEVEL` is passed to Jest so instrumentation skips debug/trace writes at the default level.
+- **Repeat collapsing and early buffering** — identical consecutive lines collapse into "previous message repeated N more times". Lines logged before the channel exists are buffered and flushed.
+- **New commands** — `Live Test Runner: Show Logs`, and `Live Test Runner: Copy Diagnostic Report` (versions, project/Jest setup, settings, last 300 debug+ log lines from an in-memory ring buffer → clipboard + untitled Markdown doc). `Show Raw Output` is renamed `Show Jest Output`.
+
+### Bug Fixes
+
+- **Console logs missing from the Results panel** — Jest enables verbose mode on its own when a single test file runs (and when the config sets `verbose: true`). Verbose mode prints console calls directly and leaves `testResult.console` empty, so single-file reruns (e.g. saving a test file) showed no logs. Session runs now pass `--verbose=false`. Verified against Jest 29: 0 → 2 captured entries.
+- **Garbled symbols in the Output panel** — `Executor` decoded each pipe chunk separately, so multi-byte characters (`✓ ✕ ● ›`) split across chunks became `�`. It now uses `setEncoding('utf8')`, emits only complete lines, and strips ANSI codes (the channel's `ansi` language id did not render them).
+
+### Docs
+
+- `docs/bugs-and-issues.md` — full audit: 22 issues with symptom, root cause, fix and verification steps.
+- `docs/live-test-runner-guide.html` — navigable user & contributor guide.
+- Developer guide: new **Logging** section (levels, scopes, correlation tags, child-process protocol).
+
+---
+
 ## [2.0.3] - 2026-05-15
 
 ### Bug Fixes
