@@ -15,17 +15,23 @@ jobs:
           BASE: ${{ github.base_ref }}
         run: |
           case "$HEAD" in
-            feat/*|hotfix/*|bugfix/*) ;;
-            *) echo "::error::Branch '$HEAD' must start with feat/, hotfix/ or bugfix/"; exit 1 ;;
+            release/*|feat/*|hotfix/*|bugfix/*) ;;
+            *) echo "::error::Branch '$HEAD' must start with release/, feat/, hotfix/ or bugfix/"; exit 1 ;;
           esac
-          if [[ "$HEAD" == bugfix/* && "$BASE" != feat/* ]]; then
-            echo "::error::bugfix/* branches may only be merged into a feat/* branch (target was '$BASE')"; exit 1
+          if [[ "$BASE" == "main" && "$HEAD" != release/* && "$HEAD" != hotfix/* ]]; then
+            echo "::error::main only accepts PRs from release/* or hotfix/* (got '$HEAD')"; exit 1
           fi
-          if [[ "$BASE" == "main" && "$HEAD" == bugfix/* ]]; then
-            echo "::error::bugfix/* cannot target main"; exit 1
+          if [[ "$BASE" == release/* && "$HEAD" != feat/* && "$HEAD" != bugfix/* && "$HEAD" != hotfix/* ]]; then
+            echo "::error::release/* only accepts PRs from feat/*, bugfix/* or hotfix/* (got '$HEAD')"; exit 1
           fi
-          if [[ "$HEAD" == hotfix/* && "$BASE" != "main" ]]; then
-            echo "::error::hotfix/* branches must target main"; exit 1
+          if [[ "$HEAD" == bugfix/* && "$BASE" != feat/* && "$BASE" != release/* ]]; then
+            echo "::error::bugfix/* may only target a feat/* or release/* branch (got '$BASE')"; exit 1
+          fi
+          if [[ "$HEAD" == release/* && "$BASE" != "main" ]]; then
+            echo "::error::release/* may only target main (got '$BASE')"; exit 1
+          fi
+          if [[ "$HEAD" == hotfix/* && "$BASE" != "main" && "$BASE" != release/* ]]; then
+            echo "::error::hotfix/* must target main or a release/* branch (got '$BASE')"; exit 1
           fi
 
   test:
