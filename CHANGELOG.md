@@ -2,6 +2,16 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [2.0.4] - 2026-10-19
+
+### Maintenance
+
+- Added PR checks workflow (branch naming/target rules, tests, version-bump check on PRs to `main`).
+- Replaced the tag-triggered publish workflow with `release.yml`: merging to `main` builds, tests, publishes, then tags `vX.Y.Z` and creates a GitHub Release.
+- Introduced `release/*` branches; documented the branching workflow in `CLAUDE.md` and `docs/developer-guide.md`.
+
+---
+
 ## [2.0.3] - 2026-05-15
 
 ### Bug Fixes
