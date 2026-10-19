@@ -17,6 +17,14 @@ All notable changes to Live Test Runner are documented here.
 
 ---
 
+## [2.0.4] - 2026-10-19
+
+### Maintenance
+
+- No changes to extension behaviour; internal release tooling only.
+
+---
+
 ## [2.0.3] - 2026-05-15
 
 ### Bug Fixes
