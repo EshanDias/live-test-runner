@@ -116,9 +116,12 @@ export class SessionTraceRunner {
   private readonly _executors = new Map<string, { executor: Executor; batch: string }>();
   private readonly _binaryResolver = new BinaryResolver();
   private _killed = false;
+  /** Bumped by kill(): records from batches started before it are dropped. */
+  private _generation = 0;
 
   kill(): void {
     this._killed = true;
+    this._generation++;
     for (const { executor } of this._executors.values()) {
       executor.kill();
     }
@@ -323,8 +326,11 @@ module.exports = {
     const received = new Set<string>();
     /** File Jest is executing right now (from liveReporter "start" records). */
     let current: { file: string; at: number } | undefined;
+    const generation = this._generation;
 
     const onRecord = (raw: unknown) => {
+      // Stopped: results still flushed by a dying Jest must not reach the tree.
+      if (generation !== this._generation) { return; }
       const ev = raw as { ltrEvent?: string; testFilePath?: string; at?: number };
       if (ev?.ltrEvent === 'start') {
         if (ev.testFilePath) {
@@ -445,7 +451,7 @@ module.exports = {
         onRecord,
       );
 
-      if (this._killed) {
+      if (this._killed || generation !== this._generation) {
         log.debug(`${batch}: stopped by the user after ${secondsSince(startedAt)}`);
       } else if (received.size === 0) {
         // Whole batch produced nothing — Jest itself failed (config, transform,
@@ -504,11 +510,10 @@ module.exports = {
    * CRA's bundled binary when it exists, exactly like CRAAdapter.resolveBinary().
    */
   private _resolveBinary(projectRoot: string): string {
-    const craJest = path.join(
-      projectRoot, 'node_modules', 'react-scripts', 'node_modules', '.bin', 'jest',
-    );
-    if (fs.existsSync(craJest + '.cmd')) { return `${craJest}.cmd`; }
-    if (fs.existsSync(craJest))          { return craJest; }
+    if (fs.existsSync(path.join(projectRoot, 'node_modules', 'react-scripts'))) {
+      const entry = BinaryResolver.resolveCraJestEntry(projectRoot);
+      if (entry) { return entry; }
+    }
     return this._binaryResolver.resolve(projectRoot);
   }
 

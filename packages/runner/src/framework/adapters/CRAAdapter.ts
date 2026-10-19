@@ -5,6 +5,7 @@ import { LTR_BASE_CACHE_DIR } from '../../constants';
 import { Framework } from "../../types";
 import { FrameworkAdapter } from "./FrameworkAdapter";
 import { readPackageJson } from "./JestAdapter";
+import { BinaryResolver } from "../../resolution/BinaryResolver";
 
 /**
  * Handles Create React App (react-scripts) projects.
@@ -52,6 +53,12 @@ export class CRAAdapter implements FrameworkAdapter {
    * (present in newer CRA versions that list jest as a peer dep).
    */
   resolveBinary(projectRoot: string): string {
+    // 0. Jest's JS entry point as react-scripts resolves it — run with node, no shell.
+    const entry = BinaryResolver.resolveCraJestEntry(projectRoot);
+    if (entry) {
+      return entry;
+    }
+
     // 1. Jest bundled inside react-scripts (most reliable for CRA)
     const craJest = path.join(
       projectRoot,

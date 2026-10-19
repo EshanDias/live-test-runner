@@ -288,31 +288,37 @@ export class SessionManager {
 
   // ── Editor commands ───────────────────────────────────────────────────────
 
+  /** @returns the launch configuration used, or undefined when nothing was started. */
   async debugFromEditor(
     filePath: string,
     testFullName?: string,
-  ): Promise<void> {
+    isSuite = false,
+  ): Promise<vscode.DebugConfiguration | undefined> {
     const projectRoot = this._getProjectRoot();
     if (!projectRoot) {
       log.warn('Debug: no project root configured — nothing to debug');
-      return;
+      return undefined;
     }
-    log.info(`Debug: ${testFullName ? `"${testFullName}"` : 'whole file'} in ${path.basename(filePath)}`);
+    log.info(`Debug: ${testFullName ? `${isSuite ? 'suite' : 'test'} "${testFullName}"` : 'whole file'} in ${path.basename(filePath)}`);
     try {
       const folder = vscode.workspace.getWorkspaceFolder(
         vscode.Uri.file(filePath),
       );
-      const config = this._adapter.getDebugConfig(
+      const config = await this._adapter.getDebugConfig(
         projectRoot,
         filePath,
         testFullName,
+        isSuite,
       );
       const started = await vscode.debug.startDebugging(folder, config);
       if (!started) {
         log.warn(`Debug: VS Code refused to start the debug session (program: ${config.program})`);
+        return undefined;
       }
+      return config;
     } catch (err) {
       log.error(`Debug: could not start a debug session for ${filePath}`, err);
+      return undefined;
     }
   }
 

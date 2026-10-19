@@ -53,6 +53,13 @@ export function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel('Live Test Runner: Jest Output');
   logger.init(logChannel);
 
+  // End-to-end tests (e2e/ at the repo root) read the raw Jest output.
+  const e2eRawOutput: string[] | undefined = process.env.LTR_E2E ? [] : undefined;
+  if (e2eRawOutput) {
+    const appendLine = outputChannel.appendLine.bind(outputChannel);
+    outputChannel.appendLine = (line: string) => { e2eRawOutput.push(line); appendLine(line); };
+  }
+
   const extVersion = (context.extension?.packageJSON as { version?: string } | undefined)?.version ?? '?';
   log.info(
     `Live Test Runner v${extVersion} · VS Code ${vscode.version} · ${process.platform}-${process.arch} · Node ${process.versions.node}`,
@@ -500,6 +507,15 @@ export function activate(context: vscode.ExtensionContext) {
     { dispose: () => logger.dispose() },
     logChannel,
   );
+
+  // Internals for the end-to-end tests only — never returned in normal use.
+  if (e2eRawOutput) {
+    return {
+      store, session, traceStore, coverageStore, discovery, observers, statusBar,
+      instrumentedRunner, logger, rawOutput: e2eRawOutput, sessionDir: LTR_SESSION_TMP_DIR,
+    };
+  }
+  return undefined;
 }
 
 let _cleanTraceDir: (() => void) | undefined;
@@ -551,20 +567,16 @@ async function debugFromEditor(
   line: number,
   store: ResultStore,
   session: SessionManager,
-): Promise<void> {
+): Promise<vscode.DebugConfiguration | undefined> {
   try {
     const entry = store.getLineMap(filePath).get(line);
-    if (entry) {
-      const node = store.getNode(entry.nodeId);
-      await session.debugFromEditor(filePath, node?.fullName);
-      return;
-    }
-    // describe block — use node fullName as testNamePattern so Jest runs all tests within it
-    const nodeId = await _resolveNodeAtLine(filePath, line, store);
-    const fullName = nodeId ? store.getNode(nodeId)?.fullName : undefined;
-    await session.debugFromEditor(filePath, fullName);
+    const nodeId = entry?.nodeId ?? await _resolveNodeAtLine(filePath, line, store);
+    const node = nodeId ? store.getNode(nodeId) : undefined;
+    // A suite (describe block or .each template) runs every test inside it.
+    return await session.debugFromEditor(filePath, node?.fullName, node ? node.type === 'suite' : false);
   } catch (err) {
     log.error(`Debug from editor failed for ${filePath}:${line}`, err);
+    return undefined;
   }
 }
 

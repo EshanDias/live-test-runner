@@ -1,8 +1,8 @@
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { BinaryResolver } from '../resolution/BinaryResolver';
+import { BinaryResolver, nodeRuntime } from '../resolution/BinaryResolver';
 import { createLogger, LogLevel, stripAnsi } from '../utils/logger';
 
 const log = createLogger('Executor');
@@ -22,7 +22,7 @@ export interface ExecutionResult {
 }
 
 export interface ExecutorCommand {
-  /** Absolute path to the jest binary (or 'npx'). */
+  /** Jest's JS entry point, a binary path, or a command name such as 'npx' / 'npm'. */
   binary: string;
   /** Arguments to pass to the binary. */
   args: string[];
@@ -66,6 +66,12 @@ class LineSplitter {
  *  - Stdout is still captured as a fallback (CRA occasionally skips --outputFile
  *    on a bailed run and writes JSON to stdout instead).
  *  - A single ChildProcess reference is held so kill() works cleanly.
+ *  - Jest's JS entry point runs with `node` and no shell, so arguments (paths
+ *    with spaces, `^…$` name patterns, `a|b`) reach Jest exactly as given.
+ *    A shell is used only for commands that need one (user `jestCommand`,
+ *    npx, .cmd shims), with every argument quoted.
+ *  - kill() ends the whole process tree — on Windows killing only the direct
+ *    child left Jest (or a shell's grandchild) running.
  */
 export class Executor {
   private static _seq = 0;
@@ -108,11 +114,11 @@ export class Executor {
     );
 
     const args = [...command.args, `--outputFile=${tmpFile}`];
-    const { binary, cmdArgs } = this.buildInvocation(command.binary, args);
+    const inv = this.buildInvocation(command.binary, args);
 
     this.kill();
 
-    const result = await this.spawn(binary, cmdArgs, command.cwd, command.extraEnv);
+    const result = await this.spawn(inv, command.cwd, command.extraEnv);
 
     // Prefer the output file; fall back to captured stdout for CRA edge cases.
     let jsonOutput = '';
@@ -157,7 +163,7 @@ export class Executor {
       return { passed: false, stdout: '', stderr: `Project root does not exist: ${command.cwd}` };
     }
 
-    const { binary, cmdArgs } = this.buildInvocation(command.binary, command.args);
+    const inv = this.buildInvocation(command.binary, command.args);
     this.kill();
 
     let offset = 0;
@@ -194,7 +200,7 @@ export class Executor {
     try {
       // Stdout is forwarded here: test console output written directly by the
       // test (or by a verbose reporter) would otherwise be invisible.
-      return await this.spawn(binary, cmdArgs, command.cwd, command.extraEnv, true);
+      return await this.spawn(inv, command.cwd, command.extraEnv, true);
     } finally {
       clearInterval(interval);
       pollReporter();
@@ -218,39 +224,43 @@ export class Executor {
       };
     }
 
-    const { binary, cmdArgs } = this.buildInvocation(command.binary, command.args);
+    const inv = this.buildInvocation(command.binary, command.args);
     this.kill();
 
-    return this.spawn(binary, cmdArgs, command.cwd, command.extraEnv);
+    return this.spawn(inv, command.cwd, command.extraEnv);
   }
 
+  /** Ends the running Jest process and everything it started (workers, shells). */
   kill(): void {
-    if (this.child && !this.child.killed) {
-      try { this.child.kill('SIGTERM'); } catch { /* ignore */ }
-    }
+    const child = this.child;
     this.child = undefined;
+    if (!child || child.pid === undefined || child.exitCode !== null) { return; }
+    killTree(child);
   }
 
   // ── Private ─────────────────────────────────────────────────────────────────
 
   /**
-   * Handles the `node <script.js>` case for legacy jest.js binary paths.
-   * All other binaries are invoked directly.
+   * Decides how to start `binary`:
+   *  - a .js entry point → `node <entry> …args`, no shell
+   *  - npx / npm / yarn / a .cmd shim on Windows → through the shell, args quoted
+   *  - anything else → executed directly
    */
-  private buildInvocation(binary: string, args: string[]): { binary: string; cmdArgs: string[] } {
+  private buildInvocation(binary: string, args: string[]): Invocation {
     if (BinaryResolver.isNodeScript(binary)) {
-      return { binary: process.execPath, cmdArgs: [binary, ...args] };
+      const node = nodeRuntime();
+      return { file: node.binary, args: [binary, ...args], shell: false, env: node.env };
     }
     // npx needs the jest subcommand first
-    if (binary === 'npx' || binary === 'npx.cmd') {
-      return { binary, cmdArgs: ['jest', ...args] };
-    }
-    return { binary, cmdArgs: args };
+    const cmdArgs = /^npx(\.cmd)?$/i.test(binary) ? ['jest', ...args] : args;
+    const needsShell = process.platform === 'win32'
+      ? /\.(cmd|bat)$/i.test(binary) || !path.isAbsolute(binary)
+      : false;
+    return { file: binary, args: cmdArgs, shell: needsShell, env: {} };
   }
 
   private spawn(
-    binary: string,
-    cmdArgs: string[],
+    inv: Invocation,
     cwd: string,
     extraEnv?: Record<string, string>,
     forwardStdout = false,
@@ -258,23 +268,25 @@ export class Executor {
     return new Promise((resolve) => {
       const tag = `jest#${++Executor._seq}`;
       const startedAt = Date.now();
-      const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(binary);
+      const binary = inv.file;
 
       const raw = (line: string) => this.logger(line ? `[${tag}] ${stripAnsi(line)}` : '');
-      raw(`> ${binary} ${cmdArgs.join(' ')}`);
-      log.debug(`${tag} started: ${path.basename(binary)} (${cmdArgs.length} args, cwd ${cwd})`);
+      raw(`> ${[inv.file, ...inv.args].map(displayArg).join(' ')}`);
+      log.debug(`${tag} started: ${path.basename(binary)} (${inv.args.length} args, cwd ${cwd})`);
 
-      const child = spawn(binary, cmdArgs, {
-        cwd,
-        shell: useShell,
-        env: {
-          ...process.env,
-          NODE_ENV: 'test',
-          BABEL_ENV: 'test',
-          CI: 'true',
-          ...extraEnv,
-        },
-      });
+      const env = {
+        ...process.env,
+        NODE_ENV: 'test',
+        BABEL_ENV: 'test',
+        CI: 'true',
+        ...inv.env,
+        ...extraEnv,
+      };
+      // With a shell, Node would join the args unquoted (DEP0190), so build the
+      // command line ourselves with every argument quoted for that shell.
+      const child = inv.shell
+        ? spawn([inv.file, ...inv.args].map(shellQuote).join(' '), { cwd, env, shell: true, windowsHide: true, detached: !IS_WIN })
+        : spawn(inv.file, inv.args, { cwd, env, windowsHide: true, detached: !IS_WIN });
 
       this.child = child;
       child.stdin?.end();
@@ -333,6 +345,57 @@ export class Executor {
       });
     });
   }
+}
+
+const IS_WIN = process.platform === 'win32';
+
+interface Invocation {
+  file: string;
+  args: string[];
+  shell: boolean;
+  env: Record<string, string>;
+}
+
+/** Quote one argument for the platform shell (cmd.exe on Windows, sh elsewhere). */
+function shellQuote(arg: string): string {
+  if (/^[\w\-.:\\/=@+,]+$/.test(arg)) { return arg; }
+  if (IS_WIN) {
+    // MSVCRT rules: backslashes are literal unless they precede a quote.
+    return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
+  }
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Argument as shown in the "> command" line of the Jest Output channel. */
+function displayArg(arg: string): string {
+  return /[\s"|&^<>]/.test(arg) ? JSON.stringify(arg) : arg;
+}
+
+/**
+ * Kill a child and its descendants. Windows has no process groups, so the
+ * tree is ended with taskkill /T. Elsewhere the child leads its own process
+ * group (spawned detached), so signalling -pid reaches every descendant.
+ */
+function killTree(child: ChildProcess): void {
+  const pid = child.pid as number;
+  if (IS_WIN) {
+    const taskkill = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
+    try {
+      const r = spawnSync(taskkill, ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 10_000 });
+      if (r.status === 0) { return; }
+      log.debug(`taskkill exited ${r.status} for pid ${pid} — falling back to child.kill()`);
+    } catch (err) {
+      log.debug(`taskkill failed for pid ${pid}: ${(err as Error).message}`);
+    }
+    try { child.kill(); } catch { /* already gone */ }
+    return;
+  }
+  try { process.kill(-pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch { /* gone */ } }
+  const force = setTimeout(() => {
+    try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ }
+  }, 3000);
+  force.unref?.();
+  child.once('exit', () => clearTimeout(force));
 }
 
 /** Last `n` non-empty lines of a text block, ANSI-stripped — for error context. */

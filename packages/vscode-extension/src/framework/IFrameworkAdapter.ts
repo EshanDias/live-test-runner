@@ -87,10 +87,14 @@ export interface IFrameworkAdapter {
     log: (msg: string) => void,
   ): Promise<string[]>;
 
-  /** VS Code debug launch configuration for running a test under the debugger. */
+  /**
+   * VS Code debug launch configuration for running a test (or, with
+   * `isSuite`, every test in a suite) under the debugger.
+   */
   getDebugConfig(
     projectRoot: string,
     filePath: string,
     testFullName?: string,
-  ): vscode.DebugConfiguration;
+    isSuite?: boolean,
+  ): Promise<vscode.DebugConfiguration>;
 }

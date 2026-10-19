@@ -12,6 +12,17 @@ import { createLogger } from './utils/logger';
 const log = createLogger('JestRunner');
 
 /**
+ * A file path as Jest expects it on the command line (--runTestsByPath,
+ * --findRelatedTests): forward slashes and an upper-case drive letter, which
+ * is how Jest sees its realpath'd rootDir on Windows. No-op elsewhere.
+ */
+export function toJestPathArg(filePath: string): string {
+  return filePath
+    .replace(/\\/g, '/')
+    .replace(/^([a-z]):\//, (_, d: string) => `${d.toUpperCase()}:/`);
+}
+
+/**
  * JestRunner — the public-facing test runner for Jest-based projects.
  *
  * Responsibilities (thin orchestration only):
@@ -227,7 +238,10 @@ export class JestRunner implements TestRunner {
       '--runTestsByPath',
       this.normalisePath(filePath),
       '--testNamePattern',
-      isTestSuite ? `^${testFullName}` : `^${testFullName}$`,
+      // Group the pattern: callers may pass several names joined with "|",
+      // and ^a|b$ would mean "starts with a OR ends with b".
+      // A suite matches its tests ("Suite test name"), so it ends at a space.
+      isTestSuite ? `^(?:${testFullName})(?: |$)` : `^(?:${testFullName})$`,
     ];
 
     const { passed, jsonOutput, stderr } =
@@ -407,9 +421,7 @@ export class JestRunner implements TestRunner {
    * Both transforms are no-ops on macOS / Linux.
    */
   private normalisePath(filePath: string): string {
-    return filePath
-      .replace(/\\/g, '/')
-      .replace(/^([a-z]):\//, (_, d: string) => `${d.toUpperCase()}:/`);
+    return toJestPathArg(filePath);
   }
 
   private discoverFromFilesystem(projectRoot: string): string[] {

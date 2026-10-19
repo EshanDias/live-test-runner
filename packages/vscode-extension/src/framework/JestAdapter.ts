@@ -1,8 +1,12 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import {
   JestRunner,
   FileRunResult,
   ConsoleEntry,
+  BinaryResolver,
+  FrameworkDetector,
+  toJestPathArg,
 } from '@live-test-runner/runner';
 import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
@@ -23,10 +27,6 @@ const log = logger.scope('Jest');
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
 function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');
-}
-
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
@@ -181,24 +181,41 @@ export class JestAdapter implements IFrameworkAdapter {
 
   // ── Debug ──────────────────────────────────────────────────────────────────
 
-  getDebugConfig(
+  async getDebugConfig(
     projectRoot: string,
     filePath: string,
     testFullName?: string,
-  ): vscode.DebugConfiguration {
-    const args: string[] = [filePath];
-    if (testFullName) {
-      args.push('--testNamePattern', escapeRegex(testFullName));
+    isSuite = false,
+  ): Promise<vscode.DebugConfiguration> {
+    // Jest's JS entry point, resolved from the project root (not the workspace
+    // folder) — `.bin/jest` is a shell script on Windows and cannot be a program.
+    const framework = new FrameworkDetector().detect(projectRoot);
+    const isCra = framework.framework === 'cra';
+    const program =
+      (isCra ? BinaryResolver.resolveCraJestEntry(projectRoot) : BinaryResolver.resolveJestEntry(projectRoot))
+      ?? path.join(projectRoot, 'node_modules', 'jest', 'bin', 'jest.js');
+
+    const args: string[] = [];
+    if (isCra) {
+      // CRA keeps its Jest config inside react-scripts — use the extracted copy.
+      const config = await framework.resolveConfig(projectRoot);
+      if (config) { args.push('--config', config); }
     }
-    args.push('--runInBand', '--no-coverage');
+    args.push('--runTestsByPath', toJestPathArg(filePath));
+    if (testFullName) {
+      const p = nameToPattern(testFullName);
+      args.push('--testNamePattern', isSuite ? `^(?:${p})(?: |$)` : `^(?:${p})$`);
+    }
+    args.push('--runInBand', '--no-coverage', '--watchAll=false');
     return {
       type: 'node',
       request: 'launch',
       name: 'Debug Jest test',
-      program: '${workspaceFolder}/node_modules/.bin/jest',
+      program,
       args,
       cwd: projectRoot,
       console: 'integratedTerminal',
+      env: { NODE_ENV: 'test', BABEL_ENV: 'test' },
       skipFiles: ['<node_internals>/**'],
     };
   }
