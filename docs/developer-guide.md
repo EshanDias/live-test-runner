@@ -400,19 +400,31 @@ Handled in `JestAdapter._getCommand()` — returns `"npm test --"` when `runMode
 
 ---
 
+## Branching and pull requests
+
+Flow: `main` → `release/x.y.z` (created from `main`) ← `feat/*`, `bugfix/*`, `hotfix/*` via PR. When the batch is ready, one PR `release/x.y.z` → `main` carries the version bump and changelogs. Merging it releases.
+
+- Never commit, push or merge directly to `main` or `release/*`. Create a branch for all work.
+- Branch names start with `release/`, `feat/`, `hotfix/` or `bugfix/`.
+- `main` accepts PRs only from `release/*` and `hotfix/*`.
+- `release/*` accepts PRs from `feat/*`, `bugfix/*` and `hotfix/*`.
+- `bugfix/*` PRs target a `feat/*` or `release/*` branch, never `main`.
+- `feat/*` branches can branch from other `feat/*` branches and PR back into that feature or into a `release/*`.
+- PRs fail if tests fail. PRs to `main` fail if the version has not been bumped.
+
+`.github/workflows/pr-checks.yml` enforces this on every PR with three jobs: `Branch rules` (name prefix and allowed targets), `Tests` (`pnpm test`), and `Version bump (PRs to main)` (root and extension `package.json` versions must be higher than on `main`).
+
+One-time GitHub setup (Settings → Branches): add a rule for `main` and another for `release/*`. For both: require a pull request before merging, require status checks `Branch rules` and `Tests`, and disallow direct pushes and force pushes (include administrators). On `main` also require `Version bump (PRs to main)`.
 ## Publishing
 
-```bash
-cd packages/vscode-extension
-pnpm run build
-vsce package     # produces a .vsix file for testing
-vsce publish     # publishes to VS Code Marketplace
-```
+Releases are automatic. Merging a `release/*` (or `hotfix/*`) PR into `main` runs `.github/workflows/release.yml`: build → test → publish to VS Code Marketplace and Open VSX → on success, create the `vX.Y.Z` tag and a GitHub Release. If publishing fails no tag is created; fix and re-run the workflow. Do not push release tags manually.
 
-Before publishing:
-1. Bump the version in `packages/vscode-extension/package.json`
-2. Update `CHANGELOG.md`
+Before opening the `release/*` → `main` PR:
+1. Bump the version in the root `package.json` and `packages/vscode-extension/package.json`
+2. Update both `CHANGELOG.md` files
 3. Run `pnpm run build` from the root to verify everything compiles
+
+To test a package locally: `cd packages/vscode-extension && pnpm run build && vsce package` (produces a `.vsix`).
 
 ---
 

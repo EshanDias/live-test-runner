@@ -249,6 +249,34 @@ cd packages/runner && pnpm test
 
 ---
 
+## Git Workflow & Branching
+
+**Never do any work on `main`.** Always create a branch first, then do the work there.
+
+| Branch prefix | Purpose | Created from | PR target |
+|---|---|---|---|
+| `release/<version>` | Collects a batch of changes for one release (e.g. `release/2.1.0`) | `main` | `main` |
+| `feat/*` | New features | `main`, a `release/*`, or another `feat/*` | a `release/*` or the parent `feat/*` |
+| `bugfix/*` | Bug fixes | `feat/*`, `release/*` or `main` | the `feat/*` or `release/*` it was branched from |
+| `hotfix/*` | Urgent production fixes | `main` | `main`, or a `release/*` |
+
+Rules:
+1. Branch names must start with `release/`, `feat/`, `hotfix/` or `bugfix/`.
+2. **No direct pushes or merges to `main` or `release/*`.** Everything lands through a pull request.
+3. `main` only accepts PRs from `release/*` (normal flow) and `hotfix/*` (urgent fixes).
+4. `release/*` accepts PRs from `feat/*`, `bugfix/*` and `hotfix/*`.
+5. `bugfix/*` PRs only target a `feat/*` or `release/*` branch, never `main`.
+6. Feature branches may branch off other feature branches and PR back into that feature or into a `release/*`.
+7. **PRs must fail if tests fail** (`pnpm test`).
+8. **PRs to `main` must fail if the version has not been bumped.** Bump the version in the `release/*` branch (root and `packages/vscode-extension/package.json`) along with the changelogs.
+9. **Merging to `main` triggers the release pipeline** (`.github/workflows/release.yml`): build, test, publish, and only on success create the `vX.Y.Z` tag and GitHub Release. Never create release tags by hand.
+
+When asked to make a change while on `main` or `release/*`, create the appropriately named branch before editing anything. Never push or merge to either from a local checkout.
+
+Enforcement: `.github/workflows/pr-checks.yml` validates branch names/targets, runs tests, and checks the version bump on PRs to `main`. It must be paired with GitHub branch protection on `main` and `release/*` (require PR, require the checks `Branch rules`, `Tests`, plus `Version bump (PRs to main)` on `main`, block direct pushes) — see `docs/developer-guide.md`.
+
+---
+
 ## Documentation Maintenance
 
 When making changes, update the relevant documentation files:
