@@ -99,12 +99,17 @@ export class DecorationManager implements IResultObserver {
     }
 
     for (const [line, entry] of lineMap) {
+      // A line past the end (file shortened since the run) would be clamped
+      // to the last line and show its duration at the end of the file.
+      if (line < 1 || line - 1 >= editor.document.lineCount) { continue; }
       const node = this.store.getNode(entry.nodeId);
       if (!node) {
         continue;
       }
 
-      const range = new vscode.Range(line - 1, 0, line - 1, 0);
+      // End of the line, so the duration text follows the code.
+      const lineLength = editor.document.lineAt(line - 1).text.length;
+      const range = new vscode.Range(line - 1, lineLength, line - 1, lineLength);
       const status = node.status;
       const statusKey = `status-${status}`;
 

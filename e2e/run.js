@@ -15,6 +15,8 @@
  *   VSCODE_EXE              VS Code executable (default: the usual install location)
  *   LTR_E2E_CRA_REPO        a CRA project for scenarios that need one
  *   LTR_E2E_TSJEST_REPO     a ts-jest project for scenarios that need one
+ *   LTR_E2E_EXTENSION_DIR   extension folder to test (default packages/vscode-extension;
+ *                           an unpacked .vsix checks the published files)
  *
  * Fixtures (e2e/fixtures/<name>) are copied to a temp folder whose path
  * contains spaces, and `npm install` runs there once (re-run when
@@ -28,7 +30,11 @@ const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const EXT_DIR = path.join(ROOT, 'packages', 'vscode-extension');
+// LTR_E2E_EXTENSION_DIR: run against another copy of the extension, e.g. an
+// unpacked .vsix (its `extension/` folder) to check what is actually published.
+const EXT_DIR = process.env.LTR_E2E_EXTENSION_DIR
+  ? path.resolve(process.env.LTR_E2E_EXTENSION_DIR)
+  : path.join(ROOT, 'packages', 'vscode-extension');
 const SCENARIO_DIR = path.join(__dirname, 'scenarios');
 const WORK_ROOT = path.join(os.tmpdir(), 'ltr e2e'); // the space is deliberate
 

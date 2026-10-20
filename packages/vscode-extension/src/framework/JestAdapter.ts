@@ -384,6 +384,10 @@ export class JestAdapter implements IFrameworkAdapter {
         }
       }
 
+      // Generated .each tests have no line of their own in discovery — without
+      // a location from Jest, use the template's so "go to file" finds the
+      // test.each(...) call.
+      const line = tc.location?.line ?? (leafTemplate ? store.getNode(leafTemplate.id)?.line : undefined);
       store.nodeStarted(
         filePath,
         testNodeId,
@@ -391,7 +395,7 @@ export class JestAdapter implements IFrameworkAdapter {
         'test',
         tc.title,
         tc.fullName || tc.title,
-        tc.location?.line,
+        line,
       );
 
       // Jest reports test.skip / xit / tests skipped by .only as "pending" and

@@ -485,6 +485,8 @@ Before opening the `release/*` → `main` PR:
 
 To test a package locally: `cd packages/vscode-extension && pnpm run build && vsce package` (produces a `.vsix`).
 
+What goes into the `.vsix` is set by `packages/vscode-extension/.vscodeignore` (`npx @vscode/vsce ls --no-dependencies` lists it). Sources are bundled into `out/`, but the webviews load their HTML / JS / CSS from `src/webview` at runtime, so that folder must stay in the package.
+
 ---
 
 ## Testing
@@ -512,6 +514,9 @@ pnpm build                                   # the e2e run uses packages/vscode-
 node e2e/run.js --all                        # every scenario whose workspace is available
 node e2e/run.js basic-stop basic-hang        # selected scenarios
 LTR_E2E_DEBUG=1 node e2e/run.js basic-hang   # debug-level logs (also inside Jest)
+# Test what is actually published: package, unpack, point the suite at it
+(cd packages/vscode-extension && npx @vscode/vsce package --no-dependencies -o /tmp/ltr.vsix)
+unzip -q /tmp/ltr.vsix -d /tmp/ltr-vsix && LTR_E2E_EXTENSION_DIR=/tmp/ltr-vsix/extension node e2e/run.js --all
 ```
 
 - **Launcher** (`e2e/run.js`) starts VS Code with `--extensionDevelopmentPath`, an isolated user-data dir and `--extensionTestsPath=e2e/lib/hostEntry.js`, and prints the report. VS Code: `VSCODE_EXE`, else the local install, else (or with `LTR_E2E_VSCODE=download|stable|<version>`) a build downloaded into `.vscode-test/` by `@vscode/test-electron`. Full logs land in `LTR_E2E_RUNS_DIR` (default `%TEMP%\ltr-e2e-runs` on Windows, `/tmp/ltr-e2e` elsewhere — short, because VS Code's IPC socket path must stay under ~103 characters): `<scenario>/extension.log`, `jest-output.log`, `report.json`. `diag-*` scenarios are investigation tools and are not part of `--all`.
