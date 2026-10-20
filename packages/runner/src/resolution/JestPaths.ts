@@ -2,46 +2,59 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Jest resolves symlinks in its rootDir, so it reports — and only accepts —
- * file paths under the project's *real* path. VS Code keeps the path the
- * folder was opened by: on macOS the temp folder /var/folders/… is a link to
- * /private/var/folders/…, and any checkout opened through a symlink differs
- * the same way. Without translation, every file Jest lists or reports looks
- * like an unknown file, and every path we pass matches nothing.
+ * Jest resolves its rootDir to the *real* path (`fs.realpathSync.native`), so
+ * it reports — and only accepts — file paths spelled that way. VS Code keeps
+ * the path the folder was opened by, which can differ:
+ *  - macOS: the temp folder /var/folders/… is a symlink to /private/var/…;
+ *    any checkout opened through a symlink differs the same way.
+ *  - Windows: 8.3 short names — C:\Users\RUNNER~1\… is C:\Users\runneradmin\…
+ *    (GitHub's Windows runners, and %TEMP% for long user names) — plus
+ *    junctions and subst drives.
+ * Without translation, every file Jest lists or reports looks like an unknown
+ * file, and every path we pass matches nothing ("No files found").
  *
  * Each project root registers both spellings. Paths sent to Jest use the real
  * one (`toJestPath`), paths read back from Jest use the editor's
- * (`fromJestPath`). Unregistered or non-symlinked roots pass through unchanged.
- *
- * Windows is left alone: Jest's spelling there differs only in drive-letter
- * case, which `toJestPathArg` already handles.
+ * (`fromJestPath`). Roots whose spellings agree pass through unchanged. On
+ * Windows, comparisons ignore case and slash direction; drive-letter case is
+ * still normalised by `toJestPathArg`.
  */
 interface RootSpelling { link: string; real: string }
 
-const symlinkedRoots: RootSpelling[] = [];
+const differingRoots: RootSpelling[] = [];
 const checkedRoots = new Set<string>();
+let windows = process.platform === 'win32';
+
+/** Same path for comparison purposes (case- and slash-insensitive on Windows). */
+function comparable(p: string): string {
+  return windows ? p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() : p;
+}
 
 /** Records a project root's real path if it differs from how it was given. */
-export function registerProjectRoot(root: string): void {
-  if (process.platform === 'win32' || !root) { return; }
-  const link = path.resolve(root);
-  if (checkedRoots.has(link)) { return; }
-  checkedRoots.add(link);
+export function registerProjectRoot(
+  root: string,
+  realpath: (p: string) => string = fs.realpathSync.native,
+): void {
+  if (!root) { return; }
+  const link = windows ? path.win32.resolve(root) : path.resolve(root);
+  const key = comparable(link);
+  if (checkedRoots.has(key)) { return; }
+  checkedRoots.add(key);
   let real: string;
   try {
-    real = fs.realpathSync(link);
+    real = realpath(link);
   } catch {
     return; // missing folder — nothing to translate
   }
-  if (real === link) { return; }
-  symlinkedRoots.push({ link, real });
+  if (comparable(real) === key) { return; }
+  differingRoots.push({ link, real });
   // Longest first, so nested roots win over their parents.
-  symlinkedRoots.sort((a, b) => b.link.length - a.link.length);
+  differingRoots.sort((a, b) => b.link.length - a.link.length);
 }
 
 /** Editor spelling → Jest's (real) spelling. */
 export function toJestPath(filePath: string): string {
-  for (const r of symlinkedRoots) {
+  for (const r of differingRoots) {
     const p = swapPrefix(filePath, r.link, r.real);
     if (p !== undefined) { return p; }
   }
@@ -50,7 +63,7 @@ export function toJestPath(filePath: string): string {
 
 /** Jest's (real) spelling → editor spelling. */
 export function fromJestPath(filePath: string): string {
-  for (const r of symlinkedRoots) {
+  for (const r of differingRoots) {
     const p = swapPrefix(filePath, r.real, r.link);
     if (p !== undefined) { return p; }
   }
@@ -58,13 +71,19 @@ export function fromJestPath(filePath: string): string {
 }
 
 function swapPrefix(p: string, from: string, to: string): string | undefined {
-  if (p === from) { return to; }
-  if (p.startsWith(from + path.sep)) { return to + p.slice(from.length); }
+  const cp = comparable(p);
+  const cf = comparable(from);
+  if (cp === cf) { return to; }
+  // On Windows `comparable` only changes case and slashes, so lengths match
+  // and the rest of `p` keeps its own spelling.
+  const sep = windows ? '/' : path.sep;
+  if (cp.startsWith(cf + sep)) { return to + p.slice(cf.length); }
   return undefined;
 }
 
-/** For tests only. */
-export function _resetProjectRoots(): void {
-  symlinkedRoots.length = 0;
+/** For tests only: forget registered roots; optionally pretend to be (not) Windows. */
+export function _resetProjectRoots(asWindows: boolean = process.platform === 'win32'): void {
+  differingRoots.length = 0;
   checkedRoots.clear();
+  windows = asWindows;
 }

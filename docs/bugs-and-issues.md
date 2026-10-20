@@ -60,6 +60,7 @@ Run them with `node e2e/run.js --all` (see [developer-guide.md](developer-guide.
 | [BUG-38](#bug-38) | 🟠 | ✅ | **New:** tests in `__tests__/` folders (no `.test.` in the name) were not found |
 | [BUG-39](#bug-39) | 🔴 | ✅ | **New:** a file run by several Jest projects kept only the last project's result |
 | [BUG-40](#bug-40) | 🔴 | ✅ | **New:** coverage dropped on every Start after the first (cached transforms) |
+| [BUG-42](#bug-42) | 🔴 | ✅ | **New (Windows):** 8.3 short paths (`RUNNER~1`) — nothing ran on GitHub's Windows runners |
 | [BUG-41](#bug-41) | 🟠 | ✅ | **New:** tooling — pnpm 10+ could not install or test; e2e could not start VS Code ≥ 1.142 on macOS |
 
 ---
@@ -239,6 +240,10 @@ The file row of both test lists shows a duration when the store has one, but not
 - **e2e could not launch VS Code ≥ 1.142 on macOS:** its binary is now `Code`, not `Electron`; the launcher tries both.
 - **e2e compared lower-cased paths** with case-sensitive macOS paths (`…/T/…`, `/Users/…`), so plain-Jest comparisons found no files on macOS; the harness keeps case and maps symlinked paths.
 - Dependencies updated (Jest 30, ESLint 10 flat config, TypeScript 6.0, esbuild 0.28, `@vscode/test-electron` 3); `tsc` over the extension now passes (the logger class returned by `activate()` was not exported).
+
+<a id="bug-42"></a>
+### BUG-42 🔴 ✅ Windows 8.3 short paths: nothing ran (new)
+**Found by:** the first real CI run of the e2e suite on `windows-latest` — every scenario failed with Jest's "No files found". **Cause:** the runner's temp folder is `C:\Users\RUNNER~1\…`, an 8.3 short name for `C:\Users\runneradmin\…`. VS Code opened the project by the short name; Jest resolves its rootDir with `realpathSync.native`, which expands it — the same mismatch as BUG-36, which had left Windows out. Users hit it when a project is opened through a short path (e.g. under `%TEMP%` with a long user name), a junction or a `subst` drive. **Fix:** `JestPaths` now applies on Windows too, resolves roots with `realpathSync.native` like Jest, and compares paths case- and slash-insensitively there. The e2e harness maps plain-Jest paths the same way. **Verified:** unit tests simulating the runner's paths; all e2e scenarios still pass on macOS; Windows CI.
 
 ---
 
