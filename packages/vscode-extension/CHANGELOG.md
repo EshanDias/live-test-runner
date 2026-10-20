@@ -23,6 +23,11 @@ All notable changes to Live Test Runner are documented here.
 - **Smart on-save reruns** now rerun only the tests that use the saved file; hover shows which tests cover a line.
 - **▷ Debug** debugs only the chosen test, on Windows and in Create React App projects too.
 - **Timeline Debugger** works on Windows, for `.each` tests and TypeScript projects.
+- **macOS / symlinked folders** — projects opened through a symlink now run normally (before, every file showed as skipped and ▷ Debug found no tests).
+- **Projects that also list Vitest** (e.g. libraries testing with both) run on Jest instead of reporting "vite is not supported".
+- **Tests in `__tests__` folders** are found, and any file your Jest config runs shows up in the tree.
+- **Multi-project Jest configs** — a test run under several projects (e.g. jsdom and node) shows failed if it failed in any of them.
+- **Coverage stays after restarting** — coverage no longer disappears on the second Start Testing.
 - **Faster restarts** — compiled files are cached per project between sessions, and Start no longer waits for Jest to list your test files when nothing changed.
 - **Test files show how long they took** in the test lists.
 - **New test files run when you save them**, even if you created them after clicking Start.

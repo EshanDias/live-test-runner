@@ -6,8 +6,8 @@ Everything you need to build, extend, and publish Live Test Runner.
 
 ## Prerequisites
 
-- Node.js 18+
-- pnpm (`npm install -g pnpm`)
+- Node.js 22+ (CI uses 24)
+- pnpm — the version is pinned in `package.json` (`packageManager`); with Corepack (`corepack enable`) or pnpm 10+ installed, the right version is used automatically. Build scripts allowed to run are listed under `allowBuilds` in `pnpm-workspace.yaml`.
 - VS Code
 
 ---
@@ -501,7 +501,7 @@ cd packages/runner && pnpm run test
 
 **Unit tests** live in `packages/*/test/*.test.ts` and import `src/` directly — the root `jest.esbuild.js` transformer compiles TypeScript with esbuild (no build step). Runner: `Executor` (arguments verbatim, process-tree kill, timeouts), config helpers. Extension: modules without a VS Code dependency (`ResultStore`, `utils/testNames`). Keep VS Code-free logic in such modules so it stays unit-testable.
 
-`pnpm lint` uses the root `.eslintrc.cjs`; both run in the PR checks.
+`pnpm lint` uses the root `eslint.config.mjs` (ESLint flat config, TypeScript files only); both run in the PR checks.
 
 ### End-to-end tests
 

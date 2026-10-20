@@ -123,7 +123,7 @@ export class Executor {
     const result = await this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs);
 
     // Prefer the output file; fall back to captured stdout for CRA edge cases.
-    let jsonOutput = '';
+    let jsonOutput: string;
     try {
       if (fs.existsSync(tmpFile)) {
         jsonOutput = fs.readFileSync(tmpFile, 'utf8');

@@ -10,20 +10,6 @@ const fs = require('fs');
 const path = require('path');
 const h = require('../lib/harness');
 
-/** Per-file counts { passed, failed, skipped } from a `jest --json` result. */
-function baselineCounts(file) {
-  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const out = new Map();
-  for (const tr of json.testResults) {
-    const c = { passed: 0, failed: 0, skipped: 0 };
-    for (const a of tr.assertionResults) {
-      if (a.status === 'passed') { c.passed++; } else if (a.status === 'failed') { c.failed++; } else { c.skipped++; }
-    }
-    out.set(tr.name.toLowerCase(), c);
-  }
-  return out;
-}
-
 function storeCounts(api, fileId) {
   const c = { passed: 0, failed: 0, skipped: 0, other: 0 };
   for (const n of api.store.getFileNodes(fileId)) {
@@ -54,7 +40,7 @@ module.exports = {
     // Test-for-test comparison with plain Jest.
     const baseline = process.env.LTR_E2E_TSJEST_BASELINE;
     if (baseline && fs.existsSync(baseline)) {
-      const want = baselineCounts(baseline);
+      const want = h.jestJsonCounts(JSON.parse(fs.readFileSync(baseline, 'utf8')), workspace);
       const diffs = [];
       for (const [file, c] of want) {
         const key = api.store.findFileKey(file);
@@ -73,22 +59,29 @@ module.exports = {
     t.check('BUG-04 trace maps source files to tests', mapped.length > 5, `${mapped.length} source file(s) mapped`);
     const measured = [...api.coverageStore.getAllEntries()].filter(([, e]) => e.state === 'measured');
     t.check('coverage measured for source files', measured.length > 5, `${measured.length} measured`);
+    const dropped = logs.filter((l) => /coverage dropped/.test(l));
+    t.check('no coverage dropped (cached transforms keep their manifests)', dropped.length === 0, dropped.join('\n'));
 
-    // ▶ Run a single test.
+    // ▶ Run a single test. Jest runs it once per project that includes its
+    // file (e.g. jest-dom: jsdom + node), so expect that many passes.
     const testNode = h.allNodes(api).find((n) => n.type === 'test' && n.status === 'passed' && / /.test(n.fullName) && !n.fullName.includes('%'));
+    const runsPerFile = baseline && fs.existsSync(baseline)
+      ? h.jestJsonRunsPerFile(JSON.parse(fs.readFileSync(baseline, 'utf8')), workspace)
+      : new Map();
+    const runs = runsPerFile.get(testNode.fileId) ?? 1;
     {
       const mark = h.rawMark(api);
       await vscode.commands.executeCommand('liveTestRunner.rerunScope', {
         scope: 'test', fileId: testNode.fileId, nodeId: testNode.id, fullName: testNode.fullName,
       });
       const sums = h.jestTestSummaries(h.rawSince(api, mark));
-      t.check(`BUG-03 ▶ Run "${testNode.fullName.slice(0, 60)}" ran exactly 1 test`, sums.length === 1 && sums[0].passed === 1, JSON.stringify(sums));
+      t.check(`BUG-03 ▶ Run "${testNode.fullName.slice(0, 60)}" ran only that test (${runs} Jest project(s))`, sums.length === 1 && sums[0].passed === runs, JSON.stringify(sums));
       t.eq('the test still passes', api.store.getNode(testNode.id).status, 'passed');
     }
 
     // Save a source file that only some tests use → trace-based rerun, then restore it.
     const candidates = mapped
-      .filter((f) => f.toLowerCase().startsWith(srcRoot) && /\.ts$/.test(f))
+      .filter((f) => f.toLowerCase().startsWith(srcRoot) && /\.[jt]sx?$/.test(f))
       .map((f) => ({ f, n: api.traceStore.getAffectedTestFiles(f).length }))
       .filter((x) => x.n >= 1 && x.n <= 3)
       .sort((a, b) => a.n - b.n);
@@ -126,7 +119,7 @@ module.exports = {
         const env = { ...process.env, ...config.env }; delete env.ELECTRON_RUN_AS_NODE;
         const r = spawnSync(process.platform === 'win32' ? 'node.exe' : 'node', [config.program, ...config.args], { cwd: config.cwd, encoding: 'utf8', env, timeout: 300_000 });
         const sums = h.jestTestSummaries(`${r.stdout}\n${r.stderr}`.split(/\r?\n/));
-        t.check('BUG-06 debug config runs exactly that test', sums.length === 1 && sums[0].passed === 1, JSON.stringify(sums) + (r.stderr || '').slice(-400));
+        t.check(`BUG-06 debug config runs only that test (${runs} Jest project(s))`, sums.length === 1 && sums[0].passed === runs, JSON.stringify(sums) + (r.stderr || '').slice(-400));
       } else {
         t.check('BUG-06 debug session started', false);
       }

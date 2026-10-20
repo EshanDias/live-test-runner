@@ -21,6 +21,7 @@ import {
   tail,
   testScriptJestArgs,
   toInputConfig,
+  toJestPath,
 } from '@live-test-runner/runner';
 import { logger } from '../utils/logger';
 
@@ -110,9 +111,10 @@ export class ProjectJestConfig {
  * node_modules. Jest tests transform patterns against forward- or back-slashed
  * paths depending on version, and the drive letter's case is unpredictable on
  * Windows (VS Code gives `c:\`, Jest's realpath `C:\`), so both are accepted.
+ * Built from the root's real path: Jest matches it against realpath'd files.
  */
 export function sourceTransformPattern(projectRoot: string): string {
-  const rootFwd = projectRoot.replace(/\\/g, '/');
+  const rootFwd = toJestPath(projectRoot).replace(/\\/g, '/');
   const driveMatch = rootFwd.match(/^([a-zA-Z]):(.*)/);
   const escapedRoot = driveMatch
     ? `[${driveMatch[1].toLowerCase()}${driveMatch[1].toUpperCase()}]:${escapeRegex(driveMatch[2])}`

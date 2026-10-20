@@ -8,7 +8,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, toJestPathArg } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, toJestPathArg, registerProjectRoot, toJestPath, fromJestPath } from '@live-test-runner/runner';
 import { IInstrumentedRunner } from './IInstrumentedRunner';
 import { ProjectJestConfig, sourceTransformPattern, upperDrive } from '../session/ProjectJestConfig';
 import { nameToPattern } from '../utils/testNames';
@@ -74,6 +74,7 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
     // This ensures imported source files (axiosConfig.js, incidentApi.js, etc.)
     // are also instrumented — not just the test file itself. Windows-safe:
     // either separator, either drive-letter case.
+    registerProjectRoot(projectRoot);
     const srcTransformPattern = sourceTransformPattern(projectRoot);
     // The project's config as Jest resolves it (any format) — see ProjectJestConfig.
     const resolvedConfigPath = this._projectConfig ? await this._projectConfig.get(projectRoot) : undefined;
@@ -159,9 +160,10 @@ module.exports = {
   ...baseConfig,
   // rootDir must be the project root, not the /tmp/ directory where this config
   // file lives — otherwise Jest cannot find any test files. Upper-case drive
-  // letter to match the --runTestsByPath argument (Jest compares case-sensitively).
-  rootDir: ${JSON.stringify(upperDrive(projectRoot))},
-  roots: [${JSON.stringify(upperDrive(projectRoot))}],
+  // letter and real path to match the --runTestsByPath argument (Jest compares
+  // case-sensitively and resolves symlinks).
+  rootDir: ${JSON.stringify(upperDrive(toJestPath(projectRoot)))},
+  roots: [${JSON.stringify(upperDrive(toJestPath(projectRoot)))}],
   transform: {
     // Our entry first — matches only the exact file being debugged
     [${JSON.stringify(srcTransformPattern)}]: ${JSON.stringify(TRACE_TRANSFORM_PATH)},
@@ -327,7 +329,7 @@ module.exports = {
           const step: Step = {
             stepId: event.stepId,
             line: event.line,
-            file: event.file,
+            file: event.file ? fromJestPath(event.file) : event.file,
             functionName: event.functionName,
           };
           store.steps.push(step);

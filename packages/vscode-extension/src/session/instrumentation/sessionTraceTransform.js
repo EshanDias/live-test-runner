@@ -52,8 +52,14 @@ function getRuntimeHash() {
   return _runtimeHash;
 }
 
-function _fileHash(filePath) {
-  return crypto.createHash('sha256').update(filePath).digest('hex').slice(0, 16);
+/**
+ * Coverage id of one version of a file: path + content. Jest's persistent
+ * transform cache can serve this file's instrumented code in a later session
+ * without calling process() again, so the manifest it needs must already be on
+ * disk under the same id — never overwritten by another version of the file.
+ */
+function _fileHash(filePath, code) {
+  return crypto.createHash('sha256').update(filePath).update('\0').update(code).digest('hex').slice(0, 16);
 }
 
 // ── Lazy Babel loader ────────────────────────────────────────────────────────
@@ -578,7 +584,7 @@ function instrumentAST(code, sourcePath) {
   }
 
   // Coverage manifest — built during the walk below
-  const fileHash = _fileHash(sourcePath);
+  const fileHash = _fileHash(sourcePath, code);
   const manifest = {
     filePath: sourcePath,
     statements: /** @type {Record<string, {start:{line:number,col:number},end:{line:number,col:number}}>} */ ({}),

@@ -44,13 +44,15 @@ src/
 │       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs
 │       ├── JestAdapter.ts            Plain Jest + Next.js + Jest
 │       ├── CRAAdapter.ts             Create React App
-│       └── ViteAdapter.ts            Vitest stub — not yet implemented
+│       └── ViteAdapter.ts            Vitest stub — only when the project has no Jest dep/config
 ├── resolution/
-│   └── BinaryResolver.ts             Finds jest binary in project node_modules
+│   ├── BinaryResolver.ts             Finds jest binary in project node_modules
+│   └── JestPaths.ts                  Symlinked roots: editor path ↔ Jest's realpath
 ├── execution/
 │   └── Executor.ts                   Spawns Jest, reads --outputFile JSON on exit
 └── parsing/
-    └── ResultParser.ts               Parses runner JSON output → RunResult
+    ├── ResultParser.ts               Parses runner JSON output → RunResult
+    └── mergeFileResults.ts           Merges reports of one file run by several Jest projects
 ```
 
 **Process model:** Jest is always `node <jest/bin/jest.js>` (`BinaryResolver.resolveJestEntry`, CRA: `resolveCraJestEntry`) with **no shell** — Windows `.cmd` shims broke arguments and paths with spaces. `nodeRuntime()` prefers `node` on PATH. `Executor.kill()` kills the process tree; `timeoutMs` stops a hanging run. Path arguments: forward slashes + upper-case drive (`toJestPathArg`).

@@ -2,10 +2,10 @@
 
 > Audit of the whole app (runner · core · extension · instrumentation), done on branch `feat/logging-overhaul` (2026-10-19).
 > Fixed on `bugfix/audit-fixes` (2026-10-20). Each entry: **cause → fix → how it was verified**.
-> Once an entry is also verified on macOS, remove it.
+> All entries verified on Windows and macOS (2026-10-20: every e2e scenario, plus vscode-jest, jest-dom and a CRA app on macOS).
 
 **Severity:** 🔴 High (wrong results / feature broken) · 🟠 Medium (flaky or misleading) · 🟡 Low (cleanup / polish)
-**Status:** ✅ fixed and verified on Windows (e2e) · 🍎 still to verify on macOS · 🔲 open
+**Status:** ✅ fixed and verified (e2e) · 🔲 open
 
 **How things were verified.** `e2e/` launches a real VS Code with the extension and drives real commands against real Jest processes:
 - fixture projects, copied to a temp folder whose path contains spaces: `basic` (plain Jest 29, `verbose: true`), `ts-config` (`jest.config.ts` + ts-jest), `esm-fn-config` (async `jest.config.mjs`);
@@ -20,37 +20,47 @@ Run them with `node e2e/run.js --all` (see [developer-guide.md](developer-guide.
 
 | ID | Sev | Status | Title |
 |----|-----|--------|-------|
-| [BUG-01](#bug-01) | 🔴 | ✅ 🍎 | Console logs sometimes don't appear in the Results panel |
-| [BUG-02](#bug-02) | 🔴 | ✅ 🍎 | Output channel shows symbols / garbage instead of letters |
-| [BUG-03](#bug-03) | 🔴 | ✅ 🍎 | Windows: `cmd.exe` mangled patterns — and broke every run in paths with spaces |
-| [BUG-04](#bug-04) | 🔴 | ✅ 🍎 | Per-test trace was never recorded → smart reruns and "covering tests" never worked |
-| [BUG-05](#bug-05) | 🔴 | ✅ 🍎 | CodeLens **▷ Debug** always debugged the whole file |
-| [BUG-06](#bug-06) | 🔴 | ✅ 🍎 | Debug launch config broken on Windows, in sub-folder roots and for CRA |
-| [BUG-07](#bug-07) | 🔴 | ✅ 🍎 | `jest.config.ts` / `.mjs` / function configs ignored by the instrumented runner |
-| [BUG-08](#bug-08) | 🟠 | ✅ 🍎 | Stop did not kill Jest; results kept arriving after Stop |
-| [BUG-09](#bug-09) | 🟠 | ✅ 🍎 | Coverage randomly 0% for tested files; O(N²) coverage messages |
-| [BUG-10](#bug-10) | 🟠 | ✅ 🍎 | Scoped reruns overwrote the file's console output |
-| [BUG-11](#bug-11) | 🟠 | ✅ 🍎 | Test count drifted up after files were deleted |
-| [BUG-12](#bug-12) | 🟠 | ✅ 🍎 | Timeline recorded 0 steps on Windows, for `.each` tests and TypeScript |
-| [BUG-13](#bug-13) | 🟠 | ✅ 🍎 | Windows drive-letter case mismatch |
+| [BUG-01](#bug-01) | 🔴 | ✅ | Console logs sometimes don't appear in the Results panel |
+| [BUG-02](#bug-02) | 🔴 | ✅ | Output channel shows symbols / garbage instead of letters |
+| [BUG-03](#bug-03) | 🔴 | ✅ | Windows: `cmd.exe` mangled patterns — and broke every run in paths with spaces |
+| [BUG-04](#bug-04) | 🔴 | ✅ | Per-test trace was never recorded → smart reruns and "covering tests" never worked |
+| [BUG-05](#bug-05) | 🔴 | ✅ | CodeLens **▷ Debug** always debugged the whole file |
+| [BUG-06](#bug-06) | 🔴 | ✅ | Debug launch config broken on Windows, in sub-folder roots and for CRA |
+| [BUG-07](#bug-07) | 🔴 | ✅ | `jest.config.ts` / `.mjs` / function configs ignored by the instrumented runner |
+| [BUG-08](#bug-08) | 🟠 | ✅ | Stop did not kill Jest; results kept arriving after Stop |
+| [BUG-09](#bug-09) | 🟠 | ✅ | Coverage randomly 0% for tested files; O(N²) coverage messages |
+| [BUG-10](#bug-10) | 🟠 | ✅ | Scoped reruns overwrote the file's console output |
+| [BUG-11](#bug-11) | 🟠 | ✅ | Test count drifted up after files were deleted |
+| [BUG-12](#bug-12) | 🟠 | ✅ | Timeline recorded 0 steps on Windows, for `.each` tests and TypeScript |
+| [BUG-13](#bug-13) | 🟠 | ✅ | Windows drive-letter case mismatch |
 | [BUG-14](#bug-14) | 🟠 | ✅ | `pnpm test` / `pnpm lint` could never pass |
-| [BUG-15](#bug-15) | 🔴 | ✅ 🍎 | "Finished" shown while tests were still running |
-| [BUG-16](#bug-16) | 🟡 | ✅ 🍎 | Large-project performance |
-| [BUG-17](#bug-17) | 🟡 | ✅ 🍎 | `.mjs` / `.cjs` test files treated as source files; `testFilePatterns` ignored |
+| [BUG-15](#bug-15) | 🔴 | ✅ | "Finished" shown while tests were still running |
+| [BUG-16](#bug-16) | 🟡 | ✅ | Large-project performance |
+| [BUG-17](#bug-17) | 🟡 | ✅ | `.mjs` / `.cjs` test files treated as source files; `testFilePatterns` ignored |
 | [BUG-18](#bug-18) | 🟡 | ✅ | Dead / undocumented settings and doc mismatches |
-| [BUG-19](#bug-19) | 🟡 | ✅ 🍎 | `process.on('exit')` listener added once per test file |
+| [BUG-19](#bug-19) | 🟡 | ✅ | `process.on('exit')` listener added once per test file |
 | [BUG-20](#bug-20) | 🟡 | ✅ | CRA transformer options dropped |
 | [BUG-21](#bug-21) | 🟡 | ✅ | Debug leftovers |
 | [BUG-22](#bug-22) | 🟡 | ✅ | Logs were noisy, single-level and partly invisible |
-| [BUG-23](#bug-23) | 🔴 | ✅ 🍎 | Tests spun ("running") forever |
-| [BUG-24](#bug-24) | 🟠 | ✅ 🍎 | Some tests never started (stayed ○ pending) |
-| [BUG-25](#bug-25) | 🔴 | ✅ 🍎 | **New:** whole files of results vanished (stale-suite cleanup) |
-| [BUG-26](#bug-26) | 🟠 | ✅ 🍎 | **New:** tests with the same name collapsed — a failure could be hidden |
-| [BUG-27](#bug-27) | 🟠 | ✅ 🍎 | **New:** instrumentation broke when tests `jest.mock('fs')` |
-| [BUG-28](#bug-28) | 🟠 | ✅ 🍎 | **New:** hooks in `setupTests.js` erased the per-test trace |
-| [BUG-29](#bug-29) | 🟠 | ✅ 🍎 | **New:** every session re-transformed the whole project |
-| [BUG-30](#bug-30) | 🟡 | ✅ 🍎 | **New:** saving files outside the project triggered runs |
-| [BUG-31](#bug-31) | 🔴 | ✅ 🍎 | **New:** an instrumentation crash failed every test file importing that source |
+| [BUG-23](#bug-23) | 🔴 | ✅ | Tests spun ("running") forever |
+| [BUG-24](#bug-24) | 🟠 | ✅ | Some tests never started (stayed ○ pending) |
+| [BUG-25](#bug-25) | 🔴 | ✅ | **New:** whole files of results vanished (stale-suite cleanup) |
+| [BUG-26](#bug-26) | 🟠 | ✅ | **New:** tests with the same name collapsed — a failure could be hidden |
+| [BUG-27](#bug-27) | 🟠 | ✅ | **New:** instrumentation broke when tests `jest.mock('fs')` |
+| [BUG-28](#bug-28) | 🟠 | ✅ | **New:** hooks in `setupTests.js` erased the per-test trace |
+| [BUG-29](#bug-29) | 🟠 | ✅ | **New:** every session re-transformed the whole project |
+| [BUG-30](#bug-30) | 🟡 | ✅ | **New:** saving files outside the project triggered runs |
+| [BUG-31](#bug-31) | 🔴 | ✅ | **New:** an instrumentation crash failed every test file importing that source |
+| [BUG-32](#bug-32) | 🟠 | ✅ | **New:** Start waited for `jest --listTests` every time |
+| [BUG-33](#bug-33) | 🟠 | ✅ | **New:** a test file created after Start was ignored on save |
+| [BUG-34](#bug-34) | 🟠 | ✅ | **New:** `--findRelatedTests` results went nowhere; coverage stayed "stale" |
+| [BUG-35](#bug-35) | 🟡 | ✅ | **New:** no time shown on test files |
+| [BUG-36](#bug-36) | 🔴 | ✅ | **New (macOS):** projects opened through a symlink — every file "skipped", Debug ran nothing |
+| [BUG-37](#bug-37) | 🔴 | ✅ | **New:** projects with both Jest and Vitest were treated as Vitest (nothing ran) |
+| [BUG-38](#bug-38) | 🟠 | ✅ | **New:** tests in `__tests__/` folders (no `.test.` in the name) were not found |
+| [BUG-39](#bug-39) | 🔴 | ✅ | **New:** a file run by several Jest projects kept only the last project's result |
+| [BUG-40](#bug-40) | 🔴 | ✅ | **New:** coverage dropped on every Start after the first (cached transforms) |
+| [BUG-41](#bug-41) | 🟠 | ✅ | **New:** tooling — pnpm 10+ could not install or test; e2e could not start VS Code ≥ 1.142 on macOS |
 
 ---
 
@@ -203,7 +213,36 @@ The file row of both test lists shows a duration when the store has one, but not
 
 ---
 
+<a id="bug-36"></a>
+### BUG-36 🔴 ✅ Projects opened through a symlink broke on macOS (new)
+**Found by:** the e2e suite on macOS — the fixtures live in `os.tmpdir()`, `/var/folders/…`, a symlink to `/private/var/folders/…`. **Cause:** Jest resolves symlinks in its `rootDir`, so it lists, reports and only accepts real paths, while VS Code keeps the path the folder was opened by. Every `--listTests` path looked unknown (all files shown as skipped, nothing ran), `--runTestsByPath` matched nothing (▷ Debug: "No tests found"), and coverage/trace paths never matched the editor's. Hits any project opened through a symlinked folder (macOS or Linux). **Fix:** `runner/src/resolution/JestPaths.ts` records each project root's real path; paths sent to Jest use it (`toJestPathArg`, generated configs' `rootDir`/`roots`, the transform pattern) and every path read back (`--listTests`, JSON results, reporter records, traces, coverage manifests, Timeline steps) is mapped to the editor's spelling. Windows is unchanged (drive-letter case is still handled as in BUG-13). **Verified:** all e2e scenarios on macOS with the default (symlinked) temp folder; unit tests.
+
+<a id="bug-37"></a>
+### BUG-37 🔴 ✅ Jest + Vitest projects were treated as Vitest (new)
+**Found by:** `@testing-library/jest-dom` (tests with both): "The "vite" framework is not yet supported", 0 files run. **Cause:** `ViteAdapter` matched any `vitest` dependency and is checked before `JestAdapter`. **Fix:** a project is Vitest only when nothing marks it as Jest (no `jest` dependency, no Jest config). `jest.config.cts/.mts/.json` now count as Jest configs. **Verified:** `repo-tsjest` on jest-dom; `frameworkDetector.test.ts`.
+
+<a id="bug-38"></a>
+### BUG-38 🟠 ✅ Tests in `__tests__/` folders were not found (new)
+**Found by:** jest-dom (`src/__tests__/to-be-checked.js` …). **Cause:** discovery and the default `testFilePatterns` only knew `*.test.*` / `*.spec.*`; Jest's default `testMatch` also runs every JS/TS file in `__tests__`. **Fix:** `**/__tests__/**/*.*` added to the default patterns (and `isTestFile`); on Start, any file `jest --listTests` reports that discovery missed (custom `testMatch` / `testRegex`) is discovered and added (`TestDiscoveryService.addFiles`). **Verified:** `repo-tsjest` on jest-dom (31 files).
+
+<a id="bug-39"></a>
+### BUG-39 🔴 ✅ Several Jest projects running one file: last result won (new)
+**Found by:** jest-dom runs every test file under a `jsdom` and a `node` project. **Cause:** Jest reports such a file once per project; each report replaced the previous one, so a test that failed under one project and passed under the other could show green. **Fix:** `mergeFileResults` (runner) merges reports of the same file — a test fails if it failed in any project and keeps every project's failure messages; console output is combined. Used by `ResultParser` and the session runner (which counts progress once per file). **Verified:** `repo-tsjest` on jest-dom (▶ Run / ▷ Debug run the test once per project), `mergeFileResults.test.ts`.
+
+<a id="bug-40"></a>
+### BUG-40 🔴 ✅ Coverage dropped on every Start after the first (new)
+**Found by:** running jest-dom twice: "coverage dropped for 37 file(s) — 37 manifest(s) missing"; vscode-jest showed the same warning without failing the check. **Cause:** BUG-29 keeps Jest's transform cache across sessions, but coverage manifests are written by the transform into the session folder — a cached transform writes none. **Fix:** manifests live next to the transform cache and are named by file path **and content**, so cached code always finds its own manifest; coverage from different versions of a file is no longer merged. **Verified:** `repo-tsjest` twice in a row on jest-dom (new check: no coverage dropped).
+
+<a id="bug-41"></a>
+### BUG-41 🟠 ✅ Tooling: pnpm 10+, ESLint, e2e on new VS Code (new)
+- **pnpm 10+ refused to install or test:** `@live-test-runner/runner` declared a dependency on `core` it never imports (a cycle: `ERR_PNPM_TASK_CYCLE`), and build-script approval moved from `package.json#pnpm.onlyBuiltDependencies` to `pnpm-workspace.yaml#allowBuilds`. The cycle is removed, approvals moved, and pnpm is pinned with `packageManager` (CI uses it via `pnpm/action-setup`).
+- **e2e could not launch VS Code ≥ 1.142 on macOS:** its binary is now `Code`, not `Electron`; the launcher tries both.
+- **e2e compared lower-cased paths** with case-sensitive macOS paths (`…/T/…`, `/Users/…`), so plain-Jest comparisons found no files on macOS; the harness keeps case and maps symlinked paths.
+- Dependencies updated (Jest 30, ESLint 10 flat config, TypeScript 6.0, esbuild 0.28, `@vscode/test-electron` 3); `tsc` over the extension now passes (the logger class returned by `activate()` was not exported).
+
+---
+
 ## Still to do
 
-- 🍎 The PR checks run the e2e suite on macOS and Linux too (job `E2E`); the 🍎 marks can be cleared once it is green there. Locally: `node e2e/run.js --all`. Process-group kill, PATH `node` lookup and the Electron fallback are the macOS-specific paths.
 - `test.todo` shares the skipped icon; a distinct todo icon was not added.
+- The Jest monorepo (`jest-test-projects/jest`) was not run through the e2e suite.

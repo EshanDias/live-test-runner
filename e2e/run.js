@@ -44,7 +44,14 @@ async function resolveVscode() {
   const { downloadAndUnzipVSCode } = require('@vscode/test-electron');
   const version = !want || want === 'download' ? 'stable' : want;
   console.log(`[e2e] using downloaded VS Code (${version})`);
-  return downloadAndUnzipVSCode({ version, cachePath: path.join(ROOT, '.vscode-test') });
+  const exe = await downloadAndUnzipVSCode({ version, cachePath: path.join(ROOT, '.vscode-test') });
+  // Newer macOS builds name the binary `Code`, older ones `Electron`;
+  // @vscode/test-electron may return the old name.
+  if (!fs.existsSync(exe) && process.platform === 'darwin') {
+    const alt = ['Code', 'Electron'].map((n) => path.join(path.dirname(exe), n)).find((p) => fs.existsSync(p));
+    if (alt) { return alt; }
+  }
+  return exe;
 }
 
 function localVscodeExe() {

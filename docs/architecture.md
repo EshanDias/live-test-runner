@@ -105,13 +105,17 @@ Current adapters:
 | `CRAAdapter` | Create React App | Runs `--showConfig` once per session to extract the hidden config; cached in memory |
 | `ViteAdapter` | Vitest | Stub — not yet implemented |
 
-`FrameworkDetector` tries adapters in `ADAPTER_PRIORITY` order and returns the first match.
+`FrameworkDetector` tries adapters in `ADAPTER_PRIORITY` order and returns the first match. `ViteAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest.
 
 ### Jest invocation
 
 Two different command shapes are used depending on context:
 
 **How Jest is started.** Always `node <jest/bin/jest.js> …` — Jest's JS entry point resolved from the project (`BinaryResolver.resolveJestEntry`; CRA: the Jest react-scripts depends on), run with `node` from PATH (fallback: the editor's runtime with `ELECTRON_RUN_AS_NODE=1`) and **no shell**, so arguments (paths with spaces, `^…$` patterns, `a|b`) reach Jest verbatim. A shell is used only for a user `jestCommand` / npx, with every argument quoted. `Executor.kill()` ends the whole process tree. File paths are passed with forward slashes and an upper-case drive letter (Jest realpaths `rootDir` and compares case-sensitively).
+
+**Path spelling.** Jest resolves symlinks in `rootDir`, so a project opened through a symlink (macOS `/var` → `/private/var`, a symlinked checkout) has two spellings. `runner/src/resolution/JestPaths.ts` records each project root's real path: everything sent to Jest uses it (`toJestPathArg`, generated configs' `rootDir`/`roots`, the transform pattern) and everything read back (`--listTests`, JSON results, reporter records, traces, coverage manifests, Timeline steps) is mapped to the editor's spelling with `fromJestPath`.
+
+**One file, several Jest projects.** A multi-project config can run the same file more than once (e.g. under `jsdom` and `node`). Jest reports each run; `mergeFileResults` (runner) merges them so a test fails if it failed in any project.
 
 **Batch run — `SessionTraceRunner` (initial run + on-save file reruns):**
 ```sh

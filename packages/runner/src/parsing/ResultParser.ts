@@ -6,6 +6,8 @@ import {
   ConsoleEntry,
 } from "../types";
 import { createLogger, stripAnsi } from "../utils/logger";
+import { fromJestPath } from "../resolution/JestPaths";
+import { mergeByFile } from "./mergeFileResults";
 
 const log = createLogger("ResultParser");
 
@@ -61,7 +63,7 @@ export class ResultParser {
 
           return {
             // Jest's --json output calls the file path `name`.
-            testFilePath: fr.testFilePath ?? fr.name ?? "",
+            testFilePath: fromJestPath(fr.testFilePath ?? fr.name ?? ""),
             status: fr.status === "passed" ? "passed" : "failed",
             failureMessage: fr.failureMessage || undefined,
             testCases,
@@ -131,7 +133,8 @@ export class ResultParser {
         numPassedTests: json.numPassedTests ?? 0,
         numFailedTests: json.numFailedTests ?? 0,
         numPendingTests: json.numPendingTests ?? 0,
-        fileResults,
+        // A file run by several Jest projects is reported once per project.
+        fileResults: mergeByFile(fileResults),
         errors: passed ? [] : [stderr || "Tests failed"],
       };
     } catch (err) {

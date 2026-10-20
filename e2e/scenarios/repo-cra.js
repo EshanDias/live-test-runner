@@ -18,18 +18,6 @@ const h = require('../lib/harness');
 
 const FULL = process.env.LTR_E2E_CRA_FULL === '1';
 
-function countsFromJson(json) {
-  const out = new Map();
-  for (const tr of json.testResults) {
-    const c = { passed: 0, failed: 0, skipped: 0 };
-    for (const a of tr.assertionResults) {
-      if (a.status === 'passed') { c.passed++; } else if (a.status === 'failed') { c.failed++; } else { c.skipped++; }
-    }
-    out.set(tr.name.toLowerCase(), c);
-  }
-  return out;
-}
-
 function storeCounts(api, fileId) {
   const c = { passed: 0, failed: 0, skipped: 0, other: 0 };
   for (const n of api.store.getFileNodes(fileId)) {
@@ -96,7 +84,7 @@ module.exports = {
       t.check('no file was stopped as hung', hung.length === 0, hung.join('\n'));
       const baseline = process.env.LTR_E2E_CRA_BASELINE;
       if (baseline && fs.existsSync(baseline)) {
-        compare(api, t, countsFromJson(JSON.parse(fs.readFileSync(baseline, 'utf8'))), 'full run');
+        compare(api, t, h.jestJsonCounts(JSON.parse(fs.readFileSync(baseline, 'utf8')), workspace), 'full run');
       }
       const measured = [...api.coverageStore.getAllEntries()].filter(([, e]) => e.state === 'measured');
       t.check('coverage measured', measured.length > 10, `${measured.length} measured`);
@@ -120,7 +108,7 @@ module.exports = {
     t.eq('no test left running', h.nodesWithStatus(api, 'running').length, 0);
     const fallback = logs.filter((l) => /returned no results|falling back to plain Jest|retrying it with plain Jest/.test(l));
     t.check('CRA: instrumented runs worked (no fallback)', fallback.length === 0, fallback.slice(0, 10).join('\n'));
-    compare(api, t, countsFromJson(plainJest(workspace, sample)), 'sample');
+    compare(api, t, h.jestJsonCounts(plainJest(workspace, sample), workspace), 'sample');
 
     const mapped = api.traceStore.dump().split('\n').filter((l) => l.startsWith('  [source]'));
     t.check('BUG-04 trace maps source files to tests (CRA)', mapped.length > 0, `${mapped.length} mapped`);

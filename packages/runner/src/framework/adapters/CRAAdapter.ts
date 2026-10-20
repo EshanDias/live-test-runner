@@ -175,6 +175,7 @@ export class CRAAdapter implements FrameworkAdapter {
     } catch (err: any) {
       throw new Error(
         `[CRAAdapter] Failed to extract Jest config from react-scripts:\n${err.message}`,
+        { cause: err },
       );
     }
 

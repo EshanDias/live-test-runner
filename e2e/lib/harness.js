@@ -170,7 +170,7 @@ function isoNow() { return new Date().toISOString(); }
 /**
  * Runs the project's tests with plain Jest — the way `npm test` would, honouring
  * the config flags of its test script — and returns per-file counts:
- * Map<lower-cased path, { passed, failed, skipped }>.
+ * Map<path, { passed, failed, skipped }> (see jestJsonCounts).
  */
 function plainJestCounts(workspace) {
   const { spawnSync } = require('child_process');
@@ -196,15 +196,59 @@ function plainJestCounts(workspace) {
   }
   const json = JSON.parse(fs.readFileSync(out, 'utf8'));
   fs.unlinkSync(out);
-  const counts = new Map();
+  return jestJsonCounts(json, workspace);
+}
+
+/**
+ * Per-file counts from a `jest --json` result:
+ * Map<path in the workspace's spelling, { passed, failed, skipped }>.
+ * Jest reports real paths, and the workspace may be opened through a symlink
+ * (macOS: /var → /private/var). Case is kept — store.findFileKey ignores it
+ * only for Windows paths, and macOS paths such as /Users/… are mixed-case.
+ */
+function jestJsonCounts(json, workspace) {
+  const fs = require('fs');
+  const realRoot = fs.realpathSync(workspace);
+  const toWorkspace = (p) => (p.startsWith(realRoot + path.sep) ? workspace + p.slice(realRoot.length) : p);
+  // A file run by several Jest projects (e.g. jsdom + node) is reported once
+  // per project; like the extension, a test counts once, failed if it failed
+  // in any project and passed if it ran in any.
+  const rank = { failed: 2, passed: 1 };
+  const perFile = new Map(); // file → Map<fullName#n, status>
   for (const tr of json.testResults) {
-    const c = { passed: 0, failed: 0, skipped: 0 };
+    const file = toWorkspace(tr.name);
+    const tests = perFile.get(file) ?? new Map();
+    const seen = new Map();
     for (const a of tr.assertionResults) {
-      if (a.status === 'passed') { c.passed++; } else if (a.status === 'failed') { c.failed++; } else { c.skipped++; }
+      const n = seen.get(a.fullName) ?? 0;
+      seen.set(a.fullName, n + 1);
+      const key = `${a.fullName}#${n}`;
+      const prev = tests.get(key);
+      if (!prev || (rank[a.status] ?? 0) > (rank[prev] ?? 0)) { tests.set(key, a.status); }
     }
-    counts.set(tr.name.toLowerCase(), c);
+    perFile.set(file, tests);
+  }
+  const counts = new Map();
+  for (const [file, tests] of perFile) {
+    const c = { passed: 0, failed: 0, skipped: 0 };
+    for (const s of tests.values()) {
+      if (s === 'passed') { c.passed++; } else if (s === 'failed') { c.failed++; } else { c.skipped++; }
+    }
+    counts.set(file, c);
   }
   return counts;
+}
+
+/** How many times a `jest --json` result ran each file (once per Jest project that includes it). */
+function jestJsonRunsPerFile(json, workspace) {
+  const fs = require('fs');
+  const realRoot = fs.realpathSync(workspace);
+  const runs = new Map();
+  for (const tr of json.testResults) {
+    const file = tr.name.startsWith(realRoot + path.sep) ? workspace + tr.name.slice(realRoot.length) : tr.name;
+    runs.set(file, (runs.get(file) ?? 0) + 1);
+  }
+  return runs;
 }
 
 /**
@@ -232,5 +276,5 @@ function checkMatchesPlainJest(api, t, workspace, label = 'results match plain J
 module.exports = {
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
-  statusCounts, isoNow, plainJestCounts, checkMatchesPlainJest,
+  statusCounts, isoNow, plainJestCounts, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,
 };

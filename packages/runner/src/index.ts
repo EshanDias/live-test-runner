@@ -37,6 +37,7 @@ export { toInputConfig, pickGlobalConfig, testScriptJestArgs } from './framework
 
 // Lower-level layers — exposed for testing and advanced usage
 export { BinaryResolver, nodeRuntime, NodeRuntime } from './resolution/BinaryResolver';
+export { registerProjectRoot, toJestPath, fromJestPath } from './resolution/JestPaths';
 export { Executor, tail } from './execution/Executor';
 
 // Logging — the extension installs a sink so runner/core logs reach its log channel
@@ -50,3 +51,4 @@ export {
   ScopedLogger,
 } from './utils/logger';
 export { ResultParser } from './parsing/ResultParser';
+export { mergeFileResults, mergeByFile } from './parsing/mergeFileResults';

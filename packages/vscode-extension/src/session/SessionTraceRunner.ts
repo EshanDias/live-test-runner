@@ -15,7 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toJestPath, fromJestPath, mergeFileResults } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
@@ -139,7 +139,12 @@ export class SessionTraceRunner {
   }
 
   private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
-  private get _manifestDir()  { return path.join(this._tmpDir, 'coverage', 'manifests'); }
+  /**
+   * Coverage manifests sit next to the persistent transform cache: a cached
+   * transform from an earlier session writes no manifest, so they must outlive
+   * the session (named by file path + content, see sessionTraceTransform).
+   */
+  private _manifestDir(projectRoot: string): string { return path.join(this._transformCacheDir(projectRoot), 'ltr-manifests'); }
   /**
    * Transform cache, per project and kept across sessions. It used to live in
    * the session folder, so every Start re-compiled the whole project — minutes
@@ -178,6 +183,11 @@ export class SessionTraceRunner {
     store: ResultStore;
     applyFileResult: (filePath: string, fileResult: FileRunResult) => void;
     onFileDone: (filePath: string, status: 'passed' | 'failed') => void;
+    /**
+     * Another Jest project reported a file already done in this batch; its
+     * merged result was applied. `wasStatus` is what onFileDone reported.
+     */
+    onFileUpdated?: (filePath: string, status: 'passed' | 'failed', wasStatus: 'passed' | 'failed') => void;
     onFileStart?: (filePath: string) => void;
     onFileTimedOut?: (filePath: string, seconds: number) => void;
     /** 0 disables the hang timeout. */
@@ -201,17 +211,21 @@ export class SessionTraceRunner {
     const covCountersFile = path.join(this._coverageDir, `ltr-cov-${ts}-${rand}.jsonl`);
     const tempConfigPath  = path.join(this._tmpDir, `ltr-cfg-${ts}-${rand}.js`);
 
-    try {
-      fs.mkdirSync(this._manifestDir, { recursive: true });
-    } catch (err) {
-      covLog.error(`Could not create ${this._manifestDir} — coverage will be missing for this run`, err);
+    for (const dir of [this._coverageDir, this._manifestDir(projectRoot)]) {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (err) {
+        covLog.error(`Could not create ${dir} — coverage will be missing for this run`, err);
+      }
     }
 
+    registerProjectRoot(projectRoot);
     const srcPattern = sourceTransformPattern(projectRoot);
 
     // The project's config as Jest resolved it (any format) — see ProjectJestConfig.
     const resolvedConfigPath = await this._projectConfig.get(projectRoot);
-    const jestRoot = upperDrive(projectRoot);
+    // Jest's spelling: the real path (symlinks resolved), upper-case drive.
+    const jestRoot = upperDrive(toJestPath(projectRoot));
 
     const configContent = `
 'use strict';
@@ -375,6 +389,8 @@ module.exports = _projects
 
     // Track which files received reporter results for missing-file detection.
     const received = new Set<string>();
+    /** Results applied in this batch — a file run by several Jest projects reports once per project. */
+    const applied = new Map<string, FileRunResult>();
     /** File Jest is executing right now (from liveReporter "start" records). */
     let current: { file: string; at: number } | undefined;
     /** The test running right now (setup-file heartbeats) — what the hang limit measures. */
@@ -382,10 +398,13 @@ module.exports = _projects
     const generation = this._generation;
 
     // Jest may report a path differently from how we passed it (drive-letter
-    // case, separators). Map every reported path back to the caller's key so
-    // results land on the right store entry (BUG-13).
+    // case, separators, symlinks resolved). Map every reported path back to
+    // the caller's key so results land on the right store entry (BUG-13).
     const keyByNorm = new Map(filePaths.map((fp) => [pathKey(fp), fp]));
-    const toKey = (p: string) => keyByNorm.get(pathKey(p)) ?? path.normalize(p);
+    const toKey = (p: string) => {
+      const q = fromJestPath(p);
+      return keyByNorm.get(pathKey(q)) ?? path.normalize(q);
+    };
 
     for (const fp of filePaths) {
       const prev = this._owner.get(fp);
@@ -426,9 +445,16 @@ module.exports = _projects
         log.warn(`${batch}: ${path.basename(rec.testFilePath)} failed to run — ${firstLine.trim()}`);
       }
       try {
-        const fileResult = toFileRunResult(rec);
+        const prev = applied.get(rec.testFilePath);
+        const fileResult = prev ? mergeFileResults(prev, toFileRunResult(rec)) : toFileRunResult(rec);
+        applied.set(rec.testFilePath, fileResult);
         applyFileResult(rec.testFilePath, fileResult);
-        onFileDone(rec.testFilePath, rec.status);
+        if (prev) {
+          log.debug(`${batch}: merged another Jest project's result for ${path.basename(rec.testFilePath)}`);
+          options.onFileUpdated?.(rec.testFilePath, fileResult.status, prev.status);
+        } else {
+          onFileDone(rec.testFilePath, fileResult.status);
+        }
       } catch (err) {
         log.error(`${batch}: could not apply results for ${rec.testFilePath}`, err);
       }
@@ -521,7 +547,7 @@ module.exports = _projects
           extraEnv: {
             SESSION_TRACE_FILE:   traceFile,
             COVERAGE_OUTPUT_FILE: covCountersFile,
-            LTR_MANIFEST_DIR:     this._manifestDir,
+            LTR_MANIFEST_DIR:     this._manifestDir(projectRoot),
             LTR_LOG_LEVEL:        logger.level,
             LTR_REPORTER_FILE:    reporterFile,
           },
@@ -661,7 +687,7 @@ module.exports = _projects
     let manifestReadErrors = 0;
 
     for (const [fileHash, counters] of Object.entries(mergedCov)) {
-      const manifestPath = path.join(this._manifestDir, `${fileHash}.json`);
+      const manifestPath = path.join(this._manifestDir(projectRoot), `${fileHash}.json`);
       if (!fs.existsSync(manifestPath)) {
         missingManifests.push(fileHash);
         continue;
@@ -676,7 +702,7 @@ module.exports = _projects
         continue;
       }
 
-      const normalizedFilePath = manifest.filePath.replace(/^[A-Z]:/, m => m.toLowerCase());
+      const normalizedFilePath = _normPath(manifest.filePath);
       const relPath = path.relative(projectRoot, normalizedFilePath);
       if (_isExcludedFromCoverage(relPath)) {
         excluded++;
@@ -684,8 +710,9 @@ module.exports = _projects
       }
 
       const existing = this._coverageStore.getEntry(normalizedFilePath);
+      // Merge only with counters of the same file version (same manifest).
       const merged: LiveCov =
-        existing?.state === 'measured'
+        existing?.state === 'measured' && existing.manifestPath === manifestPath
           ? _mergeCounters(existing.counters, counters)
           : counters;
 
@@ -701,7 +728,7 @@ module.exports = _projects
       // Counters without a manifest cannot be mapped to lines — those files show no coverage.
       covLog.warn(
         `${batch}: coverage dropped for ${missingManifests.length + manifestReadErrors} file(s) — ` +
-        `${missingManifests.length} manifest(s) missing, ${manifestReadErrors} unreadable (folder: ${this._manifestDir})`,
+        `${missingManifests.length} manifest(s) missing, ${manifestReadErrors} unreadable (folder: ${this._manifestDir(projectRoot)})`,
       );
     }
 
@@ -917,8 +944,9 @@ function _isExcludedFromCoverage(filePath: string): boolean {
   return _COVERAGE_EXCLUDE_RE.some((re) => re.test(filePath));
 }
 
+/** A source path from Jest in the editor's spelling (symlinks, drive-letter case). */
 function _normPath(filePath: string): string {
-  return filePath.replace(/^[A-Z]:/, m => m.toLowerCase());
+  return fromJestPath(filePath).replace(/^[A-Z]:/, m => m.toLowerCase());
 }
 
 /** Comparison key for a file path: normalised, and case-insensitive on Windows. */

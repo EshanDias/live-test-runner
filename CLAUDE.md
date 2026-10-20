@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Development
-pnpm install              # Install dependencies
+pnpm install              # Install dependencies (pnpm version pinned via packageManager)
 pnpm start               # Watch mode (extension only); then press F5 in VS Code
 pnpm build               # Build all packages
 pnpm rebuild             # Clean rebuild (remove dist/, out/, .tsbuildinfo)

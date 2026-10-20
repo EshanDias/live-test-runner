@@ -7,6 +7,7 @@ import {
   BinaryResolver,
   FrameworkDetector,
   toJestPathArg,
+  registerProjectRoot,
 } from '@live-test-runner/runner';
 import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
@@ -80,13 +81,14 @@ export class JestAdapter implements IFrameworkAdapter {
   getFileGlob(): string {
     const patterns = vscode.workspace
       .getConfiguration('liveTestRunner')
-      .get<string[]>('testFilePatterns') ?? ['**/*.test.*', '**/*.spec.*'];
+      .get<string[]>('testFilePatterns') ?? ['**/*.test.*', '**/*.spec.*', '**/__tests__/**/*.*'];
     return `{${patterns.join(',')}}`;
   }
 
   isTestFile(filePath: string): boolean {
-    // Same extensions as discovery (.mjs / .cjs included — BUG-17).
-    return /\.(test|spec)\.(c|m)?[jt]sx?$/i.test(filePath);
+    // Same patterns and extensions as discovery (.mjs / .cjs included — BUG-17).
+    return /\.(test|spec)\.(c|m)?[jt]sx?$/i.test(filePath)
+      || (/[\\/]__tests__[\\/]/.test(filePath) && /\.(c|m)?[jt]sx?$/i.test(filePath));
   }
 
   // ── Run operations ─────────────────────────────────────────────────────────
@@ -199,6 +201,7 @@ export class JestAdapter implements IFrameworkAdapter {
   ): Promise<vscode.DebugConfiguration> {
     // Jest's JS entry point, resolved from the project root (not the workspace
     // folder) — `.bin/jest` is a shell script on Windows and cannot be a program.
+    registerProjectRoot(projectRoot);
     const framework = new FrameworkDetector().detect(projectRoot);
     const isCra = framework.framework === 'cra';
     const program =

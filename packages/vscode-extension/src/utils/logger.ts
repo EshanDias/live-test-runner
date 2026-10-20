@@ -61,7 +61,7 @@ function formatError(level: LogLevel, err: unknown): string {
 
 type Pending = { level: LogLevel; text: string };
 
-class LtrLogger {
+export class LtrLogger {
   private _channel: vscode.LogOutputChannel | undefined;
   private _pending: Pending[] = [];
   private readonly _ring: string[] = [];

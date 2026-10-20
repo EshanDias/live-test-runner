@@ -8,16 +8,18 @@ import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { Executor } from './execution/Executor';
 import { ResultParser } from './parsing/ResultParser';
 import { createLogger } from './utils/logger';
+import { fromJestPath, registerProjectRoot, toJestPath } from './resolution/JestPaths';
 
 const log = createLogger('JestRunner');
 
 /**
  * A file path as Jest expects it on the command line (--runTestsByPath,
- * --findRelatedTests): forward slashes and an upper-case drive letter, which
- * is how Jest sees its realpath'd rootDir on Windows. No-op elsewhere.
+ * --findRelatedTests). Jest realpaths its rootDir, so: the real path under a
+ * symlinked project root (see JestPaths), forward slashes, and an upper-case
+ * drive letter on Windows.
  */
 export function toJestPathArg(filePath: string): string {
-  return filePath
+  return toJestPath(filePath)
     .replace(/\\/g, '/')
     .replace(/^([a-z]):\//, (_, d: string) => `${d.toUpperCase()}:/`);
 }
@@ -101,7 +103,7 @@ export class JestRunner implements TestRunner {
 
     const found = this.parser.parseListTestsOutput(
       result.stdout + '\n' + result.stderr,
-    );
+    ).map(fromJestPath);
     if (found.length > 0) {
       log.debug(`--listTests found ${found.length} test file(s)`);
       return found;
@@ -313,6 +315,7 @@ export class JestRunner implements TestRunner {
   // ── Private ─────────────────────────────────────────────────────────────────
 
   private initAdapter(projectRoot: string): void {
+    registerProjectRoot(projectRoot);
     // Re-detect if root changes (e.g. user switches workspace folder)
     if (this.projectRoot !== projectRoot) {
       this.projectRoot = projectRoot;
@@ -438,7 +441,7 @@ export class JestRunner implements TestRunner {
     const testFiles: string[] = [];
 
     const scan = (dir: string) => {
-      let items: string[] = [];
+      let items: string[];
       try {
         items = fs.readdirSync(path.join(projectRoot, dir));
       } catch {

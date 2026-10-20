@@ -39,6 +39,17 @@ All notable changes to Live Test Runner are documented here.
 - **`--findRelatedTests` reruns (BUG-34)** — `ResultParser` reads the file path from Jest's `name` field (results were filed under an empty path); the coverage "stale" flag is cleared when any on-save rerun ends.
 - **File durations (BUG-35)** — test files show their total time (Jest's start → end) in both test lists; `ResultParser` now prefers that over the sum of test times.
 
+### macOS verification and fixes (BUG-36 … BUG-41)
+
+- **Symlinked project roots (BUG-36)** — Jest resolves symlinks in `rootDir`, so on macOS (`/var` → `/private/var`) and in any project opened through a symlink every listed file looked unknown (all shown skipped), ▷ Debug found no tests and coverage/trace paths never matched. New `JestPaths` (runner) records each root's real path: paths sent to Jest use it, paths read back are mapped to the editor's spelling.
+- **Jest + Vitest projects (BUG-37)** — a `vitest` dependency no longer wins over a Jest dependency or Jest config (e.g. `@testing-library/jest-dom` ran nothing). `jest.config.cts/.mts/.json` are recognised.
+- **`__tests__` folders (BUG-38)** — the default `testFilePatterns` adds `**/__tests__/**/*.*` (Jest's default `testMatch`); on Start, files `jest --listTests` reports but discovery missed are added.
+- **One file in several Jest projects (BUG-39)** — results of a file run by more than one project (e.g. `jsdom` + `node`) are merged (`mergeFileResults`): a test fails if it failed in any project. Before, the last report replaced the others and could hide a failure.
+- **Coverage after the first Start (BUG-40)** — coverage manifests now live next to the persistent transform cache, named by file path and content; cached transforms wrote none into the new session folder, so coverage was dropped.
+- **Tooling (BUG-41)** — removed the unused `runner` → `core` dependency (a cycle pnpm 10+ refuses); build-script approvals moved to `pnpm-workspace.yaml` (`allowBuilds`); pnpm pinned to 12.14.0 via `packageManager`, used by CI through `pnpm/action-setup`. e2e: the launcher finds VS Code ≥ 1.142's `Code` binary on macOS; plain-Jest comparisons keep path case and map symlinks; the real-project scenario handles multi-project configs and checks that no coverage is dropped.
+- **Dependencies** — Jest 30, `@types/jest` 30, ESLint 10 with a flat config (`eslint.config.mjs`, `typescript-eslint` 8), TypeScript 6.0, esbuild 0.28, `@vscode/test-electron` 3. `@types/vscode` and the extension's `@types/node` 16 stay matched to the minimum VS Code (1.74). `tsc` over the extension passes again (the logger class returned by `activate()` is exported).
+- **Verified on macOS** — every e2e scenario; vscode-jest (49 files / 2012 tests), jest-dom (31 files, two Jest projects) and a CRA app (14 files / 143 tests) match plain Jest test for test.
+
 ### Tests
 
 - **End-to-end suite** (`e2e/`): launches a real VS Code with the extension and drives real commands against fixture projects (in a path with spaces) and real repositories, including a test-for-test comparison with plain Jest. `node e2e/run.js --all`.

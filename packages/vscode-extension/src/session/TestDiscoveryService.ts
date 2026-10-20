@@ -7,7 +7,6 @@ import { logger } from '../utils/logger';
 
 const log = logger.scope('Discovery');
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { discoverTests, setLogger: setDiscoveryLogger } = require('./instrumentation/testDiscovery.js') as {
   setLogger: (log: { debug(m: string): void; warn(m: string): void; error(m: string): void }) => void;
   discoverTests: (
@@ -48,7 +47,8 @@ export interface DiscoveryCallbacks {
 const BATCH_SIZE_COLD = 5;
 const BATCH_SIZE_WARM = 25;
 
-const DEFAULT_TEST_PATTERNS = ['**/*.test.*', '**/*.spec.*'];
+/** Jest's default testMatch: *.test.* / *.spec.* files and anything in __tests__. */
+const DEFAULT_TEST_PATTERNS = ['**/*.test.*', '**/*.spec.*', '**/__tests__/**/*.*'];
 /** Only JS/TS sources can be Jest tests (a pattern like *.test.* also matches .snap files). */
 const JS_TS_RE = /\.(c|m)?[jt]sx?$/i;
 
@@ -172,6 +172,28 @@ export class TestDiscoveryService {
         callbacks.onFileRemoved?.(file.fileId);
       }
     }
+  }
+
+  /**
+   * Discovers files the glob patterns missed but Jest runs (a custom testMatch
+   * or testRegex — Jest's --listTests is the source of truth). Files already
+   * in the tree are left alone. @returns the number of files added.
+   */
+  addFiles(filePaths: string[]): number {
+    const store = this._store;
+    const projectRoot = this._projectRoot;
+    if (!store || !projectRoot) { return 0; }
+    const files: unknown[] = [];
+    for (const fp of filePaths) {
+      if (store.findFileKey(fp) || !JS_TS_RE.test(fp) || !fs.existsSync(fp)) { continue; }
+      const data = this._populateFile(fp, projectRoot, store, this._cache);
+      if (data) { files.push(data); }
+    }
+    if (files.length > 0) {
+      this._callbacks?.onBatchDiscovered(files, files.length, files.length);
+      this._cache?.flush();
+    }
+    return files.length;
   }
 
   /**

@@ -2,7 +2,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { JestRunner, FrameworkDetector, LTR_BASE_TMP_DIR } from '@live-test-runner/runner';
+import { JestRunner, FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromJestPath } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
@@ -20,6 +20,11 @@ import { SourceCounter } from '../coverage/SourceCounter';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Session');
+
+/** Comparable keys of Jest's runnable-file list; undefined = unknown (run everything). */
+function toRunnableSet(files: string[] | undefined): Set<string> | undefined {
+  return files ? new Set(files.map(runnableKey)) : undefined;
+}
 
 /** "a.test.ts, b.test.ts, +3 more" — keeps summary lines to one readable line. */
 function shortList(paths: string[], max = 5): string {
@@ -180,14 +185,24 @@ export class SessionManager {
       // (in parallel) how it resolves that config — re-read every session.
       this._projectConfig.reset();
       void this._projectConfig.get(projectRoot);
-      this._runnable = await this._runnableFiles(projectRoot, discovered);
+      const runnableList = await this._runnableFiles(projectRoot, discovered);
       if (token !== this._token) { return; }
+      this._runnable = toRunnableSet(runnableList);
+      if (runnableList) {
+        // Files Jest runs that the glob patterns missed (custom testMatch / testRegex).
+        const known = new Set(discovered.map(runnableKey));
+        const added = this._discovery.addFiles(runnableList.filter((fp) => !known.has(runnableKey(fp))));
+        if (added > 0) {
+          log.info(`Added ${added} test file(s) that the project's Jest config runs but the testFilePatterns setting does not match`);
+          discovered.splice(0, discovered.length, ...this._store.getAllFiles().map((f) => f.filePath));
+        }
+      }
       const testFiles = discovered.filter((fp) => this._isRunnable(fp));
       this._markExcluded(discovered.filter((fp) => !this._isRunnable(fp)));
       log.info(`Session started — ${testFiles.length} test file(s) · framework: ${framework} · root: ${projectRoot}`);
 
       if (testFiles.length === 0) {
-        log.warn('No test files found — nothing to run. Test files must match *.test.* or *.spec.* (js, ts, jsx, tsx, mjs, cjs)');
+        log.warn('No test files found — nothing to run. Jest listed no test files, and none match the liveTestRunner.testFilePatterns setting');
         this._updateStatusBar('✅ Ready');
         this._session.activate();
         return;
@@ -434,7 +449,7 @@ export class SessionManager {
         log.debug(`Saved ${path.basename(filePath)} — not in Jest's file list yet, asking Jest again`);
         const files = this._store.getAllFiles().map((f) => f.filePath);
         if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
-        this._runnable = await this._askJestForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings()));
+        this._runnable = toRunnableSet(await this._askJestForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings())));
         if (token !== this._token) { return; }
         if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
       }
@@ -821,6 +836,11 @@ export class SessionManager {
             this._adapter.applyFileResult(this._store, fp, fr);
           },
           onFileDone,
+          onFileUpdated: (fp, status, wasStatus) => {
+            if (status === 'failed' && wasStatus !== 'failed') { this._progress.failed++; this._postProgress(); }
+            this._notify('onFileResult', fp);
+            this._refreshScopedLogs(fp);
+          },
           onFileStart: markRunning,
           onFileTimedOut: (fp, seconds) => {
             this._store.failFile(fp, hangMessage(seconds));
@@ -970,19 +990,20 @@ export class SessionManager {
    * and no Jest config changed since, otherwise Jest's answer (a full Jest
    * startup — 20 s on a 200-file project, and nothing runs until it is in).
    */
-  private async _runnableFiles(projectRoot: string, discovered: string[]): Promise<Set<string> | undefined> {
+  private async _runnableFiles(projectRoot: string, discovered: string[]): Promise<string[] | undefined> {
     const key = runnableCacheKey(projectRoot, discovered, this._runnerSettings());
     const cached = this._runnableCache.read(projectRoot, key);
     if (cached) {
       log.debug(`Runnable test files: ${cached.length} remembered from the last session (no test or config file changed)`);
-      return new Set(cached.map(runnableKey));
+      // Lists saved by older versions may hold Jest's realpath'd spelling.
+      return cached.map(fromJestPath);
     }
     this._updateStatusBar('Asking Jest which files it runs…');
     return this._askJestForRunnable(projectRoot, key);
   }
 
   /** Asks Jest for the runnable files and remembers the answer under `key`. */
-  private async _askJestForRunnable(projectRoot: string, key: string): Promise<Set<string> | undefined> {
+  private async _askJestForRunnable(projectRoot: string, key: string): Promise<string[] | undefined> {
     const files = await this._listRunnableFiles(projectRoot);
     if (!files) { return undefined; }
     try {
@@ -990,7 +1011,7 @@ export class SessionManager {
     } catch (err) {
       log.debug(`Could not remember the runnable test files — the next Start asks Jest again (${(err as Error).message})`);
     }
-    return new Set(files.map(runnableKey));
+    return files;
   }
 
   /** Settings that change how Jest is called, and so which files it lists. */
@@ -1100,6 +1121,12 @@ export class SessionManager {
   }
 
   private _getProjectRoot(): string | undefined {
+    const root = this._configuredProjectRoot();
+    if (root) { registerProjectRoot(root); }
+    return root;
+  }
+
+  private _configuredProjectRoot(): string | undefined {
     const configured = vscode.workspace
       .getConfiguration('liveTestRunner')
       .get<string>('projectRoot');
