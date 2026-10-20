@@ -95,7 +95,7 @@ export class ResultParser {
             });
 
             const buckets: ConsoleEntry[][] = fileResults.map(() => []);
-            let fallbackIdx = fileResults.findIndex(
+            const fallbackIdx = fileResults.findIndex(
               (fr) => fr.consoleOutput.length === 0,
             );
 
@@ -217,7 +217,8 @@ export class ResultParser {
     // Use \S+ for the status symbol — avoids depending on specific Unicode codepoints
     // that may differ across Jest versions, terminals, or ANSI stripping artefacts.
     const LINE_RE = /^\s+\S+\s+(.+?)\s+\((\d+(?:\.\d+)?)\s*(ms|s)\)\s*$/;
-    const ANSI_RE = /\x1B\[[0-9;]*m/g;
+    // eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1B\[[0-9;]*m/g;
     for (const line of stderr.split(/\r?\n/)) {
       // Strip ANSI codes before matching — Jest wraps symbols and names in color codes
       const clean = line.replace(ANSI_RE, "");

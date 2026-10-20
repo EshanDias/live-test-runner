@@ -253,6 +253,7 @@
     "compile": "node esbuild.js",
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
+    "test": "jest",
     "lint": "eslint src --ext ts"
   },
   "dependencies": {

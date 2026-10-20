@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { ResultStore, TestNode, LineEntry } from '../store/ResultStore';
+import { ResultStore } from '../store/ResultStore';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResultObserver';
-import { getThresholds, DurationThresholds, durationColorVar, durationLabel } from '../utils/duration';
+import { getThresholds, durationColorVar, durationLabel } from '../utils/duration';
 
 /**
  * DecorationManager — drives the gutter icons and inline duration badges.

@@ -596,7 +596,7 @@ async function _resolveNodeAtLine(
   try {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
     const lineText = doc.lineAt(line - 1).text;
-    const m = lineText.match(/describe\s*[\.(]\s*['"`]([^'"`]+)['"`]/);
+    const m = lineText.match(/describe\s*[.(]\s*['"`]([^'"`]+)['"`]/);
     if (!m) { return undefined; }
     // Search all nodes in this file for one matching the describe name
     const allNodes = store.getFileNodes(filePath);

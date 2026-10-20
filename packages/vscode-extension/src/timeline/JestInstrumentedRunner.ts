@@ -11,7 +11,7 @@ import * as path from 'path';
 import { Executor, BinaryResolver, toJestPathArg } from '@live-test-runner/runner';
 import { IInstrumentedRunner } from './IInstrumentedRunner';
 import { ProjectJestConfig, sourceTransformPattern, upperDrive } from '../session/ProjectJestConfig';
-import { nameToPattern } from '../session/SessionManager';
+import { nameToPattern } from '../utils/testNames';
 import {
   TimelineStore,
   Step,

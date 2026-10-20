@@ -18,7 +18,7 @@ import {
   ScopedOutput,
   makeNodeId,
 } from '../store/ResultStore';
-import { nameToPattern } from '../session/SessionManager';
+import { nameToPattern } from '../utils/testNames';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Jest');
@@ -274,7 +274,7 @@ export class JestAdapter implements IFrameworkAdapter {
   ): void {
     // Track which node IDs we've applied so we can scope output correctly.
     let lastTouchedTestNodeId: string | undefined;
-    let touchedNodeIds = new Set<string>();
+    const touchedNodeIds = new Set<string>();
     /** base test id → how many results had it (duplicate full names). */
     const seenTestIds = new Map<string, number>();
 

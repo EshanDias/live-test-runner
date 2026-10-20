@@ -610,14 +610,14 @@ export class ResultStore {
 
         // If it is an ancestor, we NEVER remove it, just revert status so rollup fixes it.
         if (isAncestor && !inSubtree) {
-          node.status = 'pending';
+          this._setStatus(node, 'pending');
           continue;
         }
       }
 
       // If a node is a dynamic anchor, we NEVER remove it, just revert status.
       if (node.isDynamicTemplate) {
-        node.status = 'template';
+        this._setStatus(node, 'template');
         continue;
       }
 
@@ -650,7 +650,7 @@ export class ResultStore {
         nodesToRemove.push(nodeId);
       } else {
         // Syntax error or zero matches: preserve static structure
-        node.status = 'pending';
+        this._setStatus(node, 'pending');
       }
     }
 
@@ -1033,6 +1033,15 @@ export class ResultStore {
     }
 
     this.nodes.delete(nodeId);
+  }
+
+  /** Changes a node's status, keeping the summary counters right for tests. */
+  private _setStatus(node: TestNode, status: TestStatus): void {
+    if (node.type === 'test') {
+      this._adjustSummary(node.status, -1);
+      this._adjustSummary(status, +1);
+    }
+    node.status = status;
   }
 
   private _adjustSummary(status: TestStatus, delta: number): void {

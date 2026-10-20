@@ -53,20 +53,8 @@ interface RunHandle {
   token: number;
 }
 
-/**
- * Convert a test full-name to a regex pattern suitable for --testNamePattern.
- * '…' and '<dynamic>' placeholders (from template-literal test discovery) are
- * expanded to '.*' so they match the real names Jest emits at runtime.
- */
-export function nameToPattern(name: string): string {
-  const escLiteral = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Expand '…', '<dynamic>', Jest's % placeholders (%s, %d, %p, …) and the
-  // $variable / $obj.prop placeholders of it.each`table` into wildcards.
-  return name
-    .split(/…|<dynamic>|%[sdifjopP#%]|\$[A-Za-z_][\w]*(?:\.[\w]+)*/)
-    .map(escLiteral)
-    .join('.*');
-}
+import { nameToPattern } from '../utils/testNames';
+export { nameToPattern };
 
 /**
  * SessionManager — owns the test session lifecycle and all run execution.
