@@ -229,7 +229,7 @@ export class Executor {
     const inv = this.buildInvocation(command.binary, command.args);
     this.kill();
 
-    return this.spawn(inv, command.cwd, command.extraEnv);
+    return this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs);
   }
 
   /** Ends the running Jest process and everything it started (workers, shells). */

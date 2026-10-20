@@ -82,6 +82,7 @@ export class JestRunner implements TestRunner {
     const args = [
       ...prefixArgs,
       ...configArgs,
+      ...adapter.getExtraArgs(projectRoot),
       ...this.baseArgs(),
       '--listTests',
       '--passWithNoTests',

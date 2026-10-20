@@ -180,33 +180,32 @@ function chainTransform(sourceCode, sourcePath, options) {
     break;
   }
 
-  // babel-jest fallback for CRA / projects with no matching transform entry
+  // babel-jest fallback for CRA / projects with no matching transform entry.
+  // Resolved through Node's module lookup — a fixed node_modules/ path breaks
+  // under pnpm / Yarn PnP, and presets that are not installed are skipped.
   const rootDir = options && options.config && options.config.rootDir;
   if (rootDir) {
-    const babelJestPath = path.join(rootDir, 'node_modules', 'babel-jest');
+    const tryResolve = (id) => { try { return require.resolve(id, { paths: [rootDir] }); } catch (_) { return null; } };
     try {
-      const babelJest = require(babelJestPath);
+      const babelJest = require(tryResolve('babel-jest') || 'babel-jest');
       const createTransformer = babelJest.createTransformer
         || (babelJest.default && babelJest.default.createTransformer);
       if (createTransformer) {
+        const reactApp = tryResolve('babel-preset-react-app');
         let presets;
-        const reactAppPreset   = path.join(rootDir, 'node_modules', 'babel-preset-react-app');
-        const presetEnv        = path.join(rootDir, 'node_modules', '@babel', 'preset-env');
-        const presetReact      = path.join(rootDir, 'node_modules', '@babel', 'preset-react');
-        const presetTypescript = path.join(rootDir, 'node_modules', '@babel', 'preset-typescript');
-        const isTs = /\.(ts|tsx)$/.test(sourcePath);
-        try {
-          require(reactAppPreset);
-          presets = [[reactAppPreset, { runtime: 'automatic' }]];
-        } catch (_) {
-          const ps = [[presetEnv, { targets: { node: 'current' } }]];
-          try { require(presetReact); ps.push([presetReact, {}]); } catch (_) {}
-          if (isTs) {
-            try { require(presetTypescript); ps.push([presetTypescript, { allExtensions: true, isTSX: /\.tsx$/.test(sourcePath) }]); } catch (_) {}
-          }
-          presets = ps;
+        if (reactApp) {
+          presets = [[reactApp, { runtime: 'automatic' }]];
+        } else {
+          presets = [];
+          const env = tryResolve('@babel/preset-env');
+          const react = tryResolve('@babel/preset-react');
+          const ts = /\.(ts|tsx)$/.test(sourcePath) ? tryResolve('@babel/preset-typescript') : null;
+          if (env) { presets.push([env, { targets: { node: 'current' } }]); }
+          if (react) { presets.push([react, {}]); }
+          if (ts) { presets.push([ts, { allExtensions: true, isTSX: /\.tsx$/.test(sourcePath) }]); }
         }
-        const transformer = createTransformer({ configFile: false, presets });
+        // No presets installed: babel-jest with the project's own Babel config (Jest's default).
+        const transformer = createTransformer(presets.length ? { configFile: false, presets } : {});
         const result = transformer.process(sourceCode, sourcePath, options);
         if (result && typeof result.code === 'string') { return result.code; }
         if (typeof result === 'string') { return result; }

@@ -22,6 +22,7 @@ import { DecorationManager } from './editor/DecorationManager';
 import { ExplorerView } from './views/ExplorerView';
 import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
+import { ProjectJestConfig } from './session/ProjectJestConfig';
 import { TestDiscoveryService } from './session/TestDiscoveryService';
 import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
@@ -146,11 +147,15 @@ export function activate(context: vscode.ExtensionContext) {
     resultsView.sendScopedData(sel.fileId, sel.nodeId);
   };
 
+  // The project's Jest config as Jest resolves it — shared by session runs and the timeline.
+  const projectConfig = new ProjectJestConfig(LTR_SESSION_TMP_DIR, (msg) => outputChannel.appendLine(msg));
+
   // ── Timeline debugger ──────────────────────────────────────────────────────
   // Reference typed as the interface — never as the concrete class.
   const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner(
     LTR_SESSION_TMP_DIR,
     (msg) => outputChannel.appendLine(msg),
+    projectConfig,
   );
   const timelineDecorations = new TimelineDecorationManager();
 
@@ -311,6 +316,7 @@ export function activate(context: vscode.ExtensionContext) {
     statusBar,
     discovery,
     LTR_SESSION_TMP_DIR,
+    projectConfig,
   );
 
   // Expose cleanup so deactivate() can delete trace files on extension shutdown

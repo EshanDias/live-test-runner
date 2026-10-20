@@ -33,6 +33,7 @@ export { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 export { JestAdapter } from './framework/adapters/JestAdapter';
 export { CRAAdapter } from './framework/adapters/CRAAdapter';
 export { ViteAdapter, UnsupportedFrameworkError } from './framework/adapters/ViteAdapter';
+export { toInputConfig, pickGlobalConfig, testScriptJestArgs } from './framework/jestConfig';
 
 // Lower-level layers — exposed for testing and advanced usage
 export { BinaryResolver, nodeRuntime, NodeRuntime } from './resolution/BinaryResolver';

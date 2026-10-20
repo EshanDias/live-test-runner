@@ -3,6 +3,7 @@ import * as path from 'path';
 import { Framework } from '../../types';
 import { FrameworkAdapter } from './FrameworkAdapter';
 import { BinaryResolver } from '../../resolution/BinaryResolver';
+import { testScriptJestArgs } from '../jestConfig';
 
 /**
  * Handles standard Jest projects (plain Jest, Next.js with jest config, etc.).
@@ -47,8 +48,12 @@ export class JestAdapter implements FrameworkAdapter {
     return undefined;
   }
 
-  getExtraArgs(_projectRoot: string): string[] {
-    return [];
+  /**
+   * Config-relevant flags from the project's `test` script (e.g.
+   * `jest --config jest.unit.config.js --resetMocks`), so runs match `npm test`.
+   */
+  getExtraArgs(projectRoot: string): string[] {
+    return testScriptJestArgs(projectRoot);
   }
 }
 

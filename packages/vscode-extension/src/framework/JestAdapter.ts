@@ -207,6 +207,8 @@ export class JestAdapter implements IFrameworkAdapter {
       const config = await framework.resolveConfig(projectRoot);
       if (config) { args.push('--config', config); }
     }
+    // --config / --resetMocks … from the project's test script, like npm test.
+    args.push(...framework.getExtraArgs(projectRoot));
     args.push('--runTestsByPath', toJestPathArg(filePath));
     if (testFullName) {
       const p = nameToPattern(testFullName);

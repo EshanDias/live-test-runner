@@ -22,6 +22,7 @@ import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
 import { logger } from '../utils/logger';
+import { ProjectJestConfig, sourceTransformPattern, upperDrive } from './ProjectJestConfig';
 
 const log = logger.scope('Runner');
 const covLog = logger.scope('Coverage');
@@ -43,10 +44,6 @@ const COVERAGE_SETUP_PATH = path.resolve(
   'instrumentation',
   'ltrCoverageSetup.js',
 );
-
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /** Light-trace record emitted by sessionTraceRuntime.js */
 interface TestHitRecord {
@@ -147,6 +144,7 @@ export class SessionTraceRunner {
   constructor(
     private readonly _tmpDir: string,
     private readonly _coverageStore: CoverageStore,
+    private readonly _projectConfig: ProjectJestConfig,
   ) {}
 
   /**
@@ -198,19 +196,11 @@ export class SessionTraceRunner {
       covLog.error(`Could not create ${this._manifestDir} — coverage will be missing for this run`, err);
     }
 
-    // Normalize to forward slashes: jest normalises all file paths to forward
-    // slashes before checking transform patterns, so the regex must match the
-    // normalised form regardless of the OS separator.
-    // On Windows, the drive letter case is unpredictable — VS Code may give 'c:\'
-    // while Jest's path.resolve returns 'C:\'. Use a character class [cC] so the
-    // pattern matches regardless of which case Jest uses internally.
-    const rootFwd = projectRoot.replace(/\\/g, '/');
-    const driveMatch = rootFwd.match(/^([a-zA-Z]):(.*)/);
-    const escapedRoot = driveMatch
-      ? `[${driveMatch[1].toLowerCase()}${driveMatch[1].toUpperCase()}]:${escapeRegex(driveMatch[2])}`
-      : escapeRegex(rootFwd);
-    const escapedRootSlash = escapedRoot.replace(/\//g, '[/\\\\]');
-    const srcPattern = `^${escapedRootSlash}[/\\\\](?!node_modules[/\\\\]).+\\.[jt]sx?$`;
+    const srcPattern = sourceTransformPattern(projectRoot);
+
+    // The project's config as Jest resolved it (any format) — see ProjectJestConfig.
+    const resolvedConfigPath = await this._projectConfig.get(projectRoot);
+    const jestRoot = upperDrive(projectRoot);
 
     const configContent = `
 'use strict';
@@ -218,8 +208,21 @@ const _path = require('path');
 const _fs   = require('fs');
 // Temporary Jest config — Live Test Runner combined test+trace run
 let baseConfig = {};
+let _projects = null;
 let _baseConfigLoaded = false;
-try {
+const _resolvedPath = ${JSON.stringify(resolvedConfigPath ?? null)};
+if (_resolvedPath) {
+  // Resolved by Jest itself (jest --showConfig): works for every config format.
+  const r = require(_resolvedPath);
+  if (r.configs.length === 1) {
+    baseConfig = { ...r.global, ...r.configs[0] };
+  } else {
+    baseConfig = { ...r.global };
+    _projects = r.configs;
+  }
+  _baseConfigLoaded = true;
+}
+if (!_baseConfigLoaded) try {
   const e = require(${JSON.stringify(path.join(projectRoot, 'jest.config.js'))});
   baseConfig = (e && e.default) ? e.default : e;
   _baseConfigLoaded = true;
@@ -238,7 +241,7 @@ try {
 
 // CRA fallback: extract the full Jest config from react-scripts if no jest.config was found
 // or if testEnvironment is missing (CRA uses jsdom which must be in the extracted config).
-if (!_baseConfigLoaded || !baseConfig.testEnvironment) {
+if (!_resolvedPath && (!_baseConfigLoaded || !baseConfig.testEnvironment)) {
   const reactScriptsBin = _path.join(${JSON.stringify(projectRoot)}, 'node_modules', 'react-scripts', 'bin', 'react-scripts.js');
   if (_fs.existsSync(reactScriptsBin)) {
     try {
@@ -280,64 +283,79 @@ if (!_baseConfigLoaded || !baseConfig.testEnvironment) {
   }
 }
 
-// We pass explicit file paths via --runTestsByPath so Jest doesn't need
-// to discover tests. Dropping roots avoids Haste scan failures on Windows.
-delete baseConfig.roots;
-delete baseConfig.testMatch;
-delete baseConfig.testRegex;
+// Our transform / setup file on top of one project's config. Test files are
+// passed explicitly (--runTestsByPath, already filtered by jest --listTests),
+// so testMatch / testRegex are dropped.
+function _overlay(cfg) {
+  const c = { ...cfg };
+  delete c.testMatch;
+  delete c.testRegex;
 
-const baseTransformObj = Array.isArray(baseConfig.transform)
-  ? Object.fromEntries(baseConfig.transform.map(([p, t, o]) => o ? [p, [t, o]] : [p, t]))
-  : (baseConfig.transform || {});
+  const baseTransformObj = Array.isArray(c.transform)
+    ? Object.fromEntries(c.transform.map(([p, t, o]) => o ? [p, [t, o]] : [p, t]))
+    : (c.transform || {});
 
-const hasGeneralJsTransform = Object.keys(baseTransformObj).some(pattern => {
-  try { return new RegExp(pattern).test('src/foo.js'); } catch(_) { return false; }
-});
-
-let fallbackTransform = {};
-if (!hasGeneralJsTransform) {
-  const babelJestPath = require.resolve('babel-jest', { paths: [${JSON.stringify(projectRoot)}, __dirname] });
-  let presets;
-  try {
-    const reactAppPreset = require.resolve('babel-preset-react-app', { paths: [${JSON.stringify(projectRoot)}] });
-    presets = [[reactAppPreset, { runtime: 'automatic' }]];
-  } catch(_) {
+  // Jest adds babel-jest for JS/TS when a config has no transform — but only
+  // when transform is unset, and we always set it. Add the same default.
+  const hasGeneralJsTransform = Object.keys(baseTransformObj).some(pattern => {
+    try { return new RegExp(pattern).test('src/foo.js'); } catch(_) { return false; }
+  });
+  let fallbackTransform = {};
+  if (!hasGeneralJsTransform) {
     try {
-      const presetEnv = require.resolve('@babel/preset-env', { paths: [${JSON.stringify(projectRoot)}] });
-      presets = [[presetEnv, { targets: { node: 'current' } }]];
-    } catch(_) { presets = []; }
+      const babelJestPath = require.resolve('babel-jest', { paths: [${JSON.stringify(projectRoot)}, __dirname] });
+      fallbackTransform = { ['\\\\.[jt]sx?$']: babelJestPath };
+    } catch (_) {
+      process.stderr.write('[LTR:warn] babel-jest is not installed — JS/TS files without a transform in the Jest config run untranspiled\\n');
+    }
   }
-  if (presets.length > 0) {
-    fallbackTransform = { ['^.+\\\\.[jt]sx?$']: [babelJestPath, { configFile: false, presets }] };
-  }
+
+  return {
+    ...c,
+    transform: {
+      [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
+      ...baseTransformObj,
+      ...fallbackTransform,
+    },
+    setupFilesAfterEnv: [
+      ...((c.setupFilesAfterEnv || [])),
+      ${JSON.stringify(COVERAGE_SETUP_PATH)},
+    ],
+  };
 }
 
-
-module.exports = {
-  ...baseConfig,
-  // Same drive-letter spelling as the --runTestsByPath arguments (upper case,
-  // like Jest's realpath'd rootDir): Jest compares test paths against roots
-  // case-sensitively, so c:\ vs C:\ made every file "not found".
-  rootDir: ${JSON.stringify(upperDrive(projectRoot))},
-  roots: [${JSON.stringify(upperDrive(projectRoot))}],
+const _upperDrive = (p) => String(p).replace(/^([a-z]):/, (_, d) => d.toUpperCase() + ':');
+const _shared = {
   // Raise test timeout to account for the instrumentation overhead added by
   // sessionTraceTransform (step() calls before every statement slow React renders).
   // Tests that approach the default 5 s limit will timeout under instrumentation.
   testTimeout: Math.max((baseConfig.testTimeout || 5000), 30000),
-  transform: {
-    [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
-    ...baseTransformObj,
-    ...fallbackTransform,
-  },
-  setupFilesAfterEnv: [
-    ...((baseConfig.setupFilesAfterEnv || [])),
-    ${JSON.stringify(COVERAGE_SETUP_PATH)},
-  ],
   reporters: [
     'default',
     [${JSON.stringify(LIVE_REPORTER_PATH)}, { outputFile: ${JSON.stringify(reporterFile)} }],
   ],
 };
+
+module.exports = _projects
+  ? {
+      ...baseConfig,
+      ..._shared,
+      rootDir: ${JSON.stringify(jestRoot)},
+      projects: _projects.map((p) => ({
+        ..._overlay(p),
+        roots: (p.roots || [p.rootDir]).map(_upperDrive),
+      })),
+    }
+  : {
+      ..._overlay(baseConfig),
+      ..._shared,
+      // Same drive-letter spelling as the --runTestsByPath arguments (upper case,
+      // like Jest's realpath'd rootDir): Jest compares test paths against roots
+      // case-sensitively, so c:\\ vs C:\\ made every file "not found". Dropping
+      // the project's roots also avoids Haste scan failures on Windows.
+      rootDir: ${JSON.stringify(jestRoot)},
+      roots: [${JSON.stringify(jestRoot)}],
+    };
 `;
 
     fs.writeFileSync(tempConfigPath, configContent, 'utf8');
@@ -872,11 +890,6 @@ function _isExcludedFromCoverage(filePath: string): boolean {
 
 function _normPath(filePath: string): string {
   return filePath.replace(/^[A-Z]:/, m => m.toLowerCase());
-}
-
-/** `c:\x` → `C:\x` (no-op without a drive letter). */
-function upperDrive(p: string): string {
-  return p.replace(/^([a-z]):/, (_, d: string) => `${d.toUpperCase()}:`);
 }
 
 /** Comparison key for a file path: normalised, and case-insensitive on Windows. */

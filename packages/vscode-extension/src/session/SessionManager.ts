@@ -12,6 +12,7 @@ import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import { SessionTraceRunner } from './SessionTraceRunner';
+import { ProjectJestConfig } from './ProjectJestConfig';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
 import { logger } from '../utils/logger';
@@ -118,8 +119,9 @@ export class SessionManager {
     private readonly _statusBar: vscode.StatusBarItem,
     private readonly _discovery: TestDiscoveryService,
     private readonly _sessionDir: string,
+    private readonly _projectConfig: ProjectJestConfig,
   ) {
-    this._traceRunner = new SessionTraceRunner(this._sessionDir, this._coverageStore);
+    this._traceRunner = new SessionTraceRunner(this._sessionDir, this._coverageStore, this._projectConfig);
   }
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
@@ -187,7 +189,10 @@ export class SessionManager {
       let framework = 'unknown';
       try { framework = new FrameworkDetector().detectFramework(projectRoot); } catch { /* logged by detector */ }
 
-      // Ask Jest which of the discovered files the project's config runs.
+      // Ask Jest which of the discovered files the project's config runs, and
+      // (in parallel) how it resolves that config — re-read every session.
+      this._projectConfig.reset();
+      void this._projectConfig.get(projectRoot);
       this._runnable = await this._listRunnableFiles(projectRoot);
       if (token !== this._token) { return; }
       const testFiles = discovered.filter((fp) => this._isRunnable(fp));
