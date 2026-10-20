@@ -34,6 +34,8 @@ module.exports = {
     // Results
     t.eq('math.test.js results', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });
     t.eq('strings.test.js results', h.statusCounts(api, 'src/strings.test.js'), { passed: 4 });
+    // Nested optional chains used to crash instrumentation of invoice.js.
+    t.eq('invoice.test.js results (nested ?. instrumented)', h.statusCounts(api, 'src/invoice.test.js'), { passed: 2 });
 
     // BUG-24 #1: skipped / todo are "skipped", not "pending" (= never ran).
     t.eq('BUG-24 test.skip is shown as skipped', h.nodeByName(api, 'src/math.test.js', 'Math utils skipped test').status, 'skipped');

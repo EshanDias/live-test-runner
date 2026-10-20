@@ -50,6 +50,7 @@ Run them with `node e2e/run.js --all` (see [developer-guide.md](developer-guide.
 | [BUG-28](#bug-28) | 🟠 | ✅ 🍎 | **New:** hooks in `setupTests.js` erased the per-test trace |
 | [BUG-29](#bug-29) | 🟠 | ✅ 🍎 | **New:** every session re-transformed the whole project |
 | [BUG-30](#bug-30) | 🟡 | ✅ 🍎 | **New:** saving files outside the project triggered runs |
+| [BUG-31](#bug-31) | 🔴 | ✅ 🍎 | **New:** an instrumentation crash failed every test file importing that source |
 
 ---
 
@@ -179,6 +180,10 @@ The cache lived in the per-window session folder, so every Start re-transformed 
 <a id="bug-30"></a>
 ### BUG-30 🟡 ✅ Saves outside the project triggered runs (new)
 VS Code saving its own `settings.json` started `jest --findRelatedTests`. Only JS/TS files inside the project root (not `node_modules`) are handled.
+
+<a id="bug-31"></a>
+### BUG-31 🔴 ✅ Instrumentation crash failed whole test files (new)
+**Found by:** copy-requisition's full run — `App.test.js` and others "failed to run" with `ReferenceError: Container is falsy`. **Cause:** an optional chain inside the call arguments of another optional chain (`a?.b?.c().includes(x?.d())`): the outer rewrite detached the inner node, and branch counting threw. The exception escaped the transform, so every test file importing that module failed. **Fix:** that `?.` is skipped for branch counting; any instrumentation error now falls back to the plain transpiled code (no coverage for that file, tests run normally). **Verified:** `basic-full-run` (`invoice.js` fixture, crashes the old transform); all 421 copy-requisition sources instrument without error.
 
 ---
 

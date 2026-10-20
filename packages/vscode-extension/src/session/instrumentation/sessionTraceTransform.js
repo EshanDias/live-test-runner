@@ -594,6 +594,24 @@ function instrumentAST(code, sourcePath) {
   // Guards against double-registration when replaceWith() triggers re-traversal.
   const registeredFunctions = new WeakSet();
 
+  // Some chain segments end up detached by earlier in-place rewrites (their
+  // path has no container any more) and Babel throws "Container is falsy".
+  // That used to fail the whole test file; now that one `?.` is just not
+  // branch-counted.
+  const replaceOptionalChain = (topPath, replacement, bId, node) => {
+    if (!topPath.container) {
+      delete manifest.branches[bId];
+      _ltrLog('debug', `skipped branch counting for an optional chain at ${sourcePath}:${node.loc?.start?.line ?? '?'} (detached node)`);
+      return;
+    }
+    try {
+      topPath.replaceWith(replacement);
+    } catch (e) {
+      delete manifest.branches[bId];
+      _ltrLog('debug', `skipped branch counting for an optional chain at ${sourcePath}:${node.loc?.start?.line ?? '?'}: ${e.message}`);
+    }
+  };
+
   // Pass 1: wrap test/hook callbacks with enter/exit context calls
   const describeStack = [];
   _traverse(ast, {
@@ -745,7 +763,7 @@ function instrumentAST(code, sourcePath) {
           t.sequenceExpression([makeCovBranchExpr(bId, 0), truthy]),
         );
         generatedCondExprs.add(replacement);
-        topPath.replaceWith(replacement);
+        replaceOptionalChain(topPath, replacement, bId, node);
       },
     },
 
@@ -777,7 +795,7 @@ function instrumentAST(code, sourcePath) {
           t.sequenceExpression([makeCovBranchExpr(bId, 0), truthy]),
         );
         generatedCondExprs.add(replacement);
-        topPath.replaceWith(replacement);
+        replaceOptionalChain(topPath, replacement, bId, node);
       },
     },
 
@@ -961,6 +979,19 @@ function instrumentAST(code, sourcePath) {
 
 const IS_TEST_FILE_RE = /\.(test|spec)\.[jt]sx?$/;
 
+/**
+ * instrumentAST, but never throws: an instrumentation bug must cost coverage
+ * for one file, not make every test file that imports it fail to run.
+ */
+function safeInstrument(code, sourcePath) {
+  try {
+    return instrumentAST(code, sourcePath);
+  } catch (e) {
+    _ltrLog('warn', `could not instrument ${sourcePath} (${e.message}) — it runs without coverage/trace`);
+    return null;
+  }
+}
+
 module.exports = {
   process(sourceCode, sourcePath, options) {
     const rootDir = options && options.config && options.config.rootDir;
@@ -995,7 +1026,7 @@ module.exports = {
       if (strict) {
         // Transpile first with the project's own transformer, then instrument the JS output.
         const transpiledCode = chainTransform(sourceCode, sourcePath, options);
-        const instrumented = instrumentAST(transpiledCode, sourcePath);
+        const instrumented = safeInstrument(transpiledCode, sourcePath);
         if (instrumented) {
           const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${instrumented}`;
           return { code: finalCode };
@@ -1006,7 +1037,7 @@ module.exports = {
       }
 
       // Lenient path: instrument first, then transpile (original behaviour)
-      const instrumented = instrumentAST(sourceCode, sourcePath);
+      const instrumented = safeInstrument(sourceCode, sourcePath);
       if (instrumented) {
         const transpiledCode = chainTransform(instrumented, sourcePath, options);
         const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${transpiledCode}`;
