@@ -22,7 +22,7 @@ import { DecorationManager } from './editor/DecorationManager';
 import { ExplorerView } from './views/ExplorerView';
 import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
-import { ProjectJestConfig } from './session/ProjectJestConfig';
+import { JestProjectConfig } from './session/JestProjectConfig';
 import { TestDiscoveryService } from './session/TestDiscoveryService';
 import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
@@ -49,9 +49,9 @@ function isProcessAlive(pid: number): boolean {
 export function activate(context: vscode.ExtensionContext) {
   // ── Output channels (created first so every later log line has a home) ─────
   // "Live Test Runner"             — structured, levelled extension log
-  // "Live Test Runner: Jest Output" — raw Jest process output, ANSI-stripped
+  // "Live Test Runner: Test Output" — raw test-runner process output, ANSI-stripped
   const logChannel    = vscode.window.createOutputChannel('Live Test Runner', { log: true });
-  const outputChannel = vscode.window.createOutputChannel('Live Test Runner: Jest Output');
+  const outputChannel = vscode.window.createOutputChannel('Live Test Runner: Test Output');
   logger.init(logChannel);
 
   // End-to-end tests (e2e/ at the repo root) read the raw Jest output.
@@ -149,7 +149,7 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   // The project's Jest config as Jest resolves it — shared by session runs and the timeline.
-  const projectConfig = new ProjectJestConfig(LTR_SESSION_TMP_DIR, (msg) => outputChannel.appendLine(msg));
+  const projectConfig = new JestProjectConfig(LTR_SESSION_TMP_DIR, (msg) => outputChannel.appendLine(msg));
 
   // ── Timeline debugger ──────────────────────────────────────────────────────
   // Reference typed as the interface — never as the concrete class.
@@ -649,7 +649,7 @@ async function openTimelineDebugger(
     if (store.steps.length === 0) {
       // Nothing recorded almost always means the test name pattern matched no
       // test, or the trace transform did not apply to the file.
-      tlog.warn(`Trace finished in ${secs}s but captured 0 steps for "${testFullName}" — see "Live Test Runner: Jest Output" for Jest's output`);
+      tlog.warn(`Trace finished in ${secs}s but captured 0 steps for "${testFullName}" — see "Live Test Runner: Test Output" for Jest's output`);
     } else {
       tlog.info(`Trace done in ${secs}s — ${store.steps.length} steps, ${store.errors.length} error(s)`);
     }

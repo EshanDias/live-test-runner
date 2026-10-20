@@ -8,6 +8,8 @@ export { TestRunner } from './TestRunner';
 // Shared result types (canonical names)
 export {
   Framework,
+  FrameworkId,
+  FRAMEWORK_IDS,
   PackageManager,
   TestResult,
   RunResult,
@@ -37,7 +39,7 @@ export { toInputConfig, pickGlobalConfig, testScriptJestArgs } from './framework
 
 // Lower-level layers — exposed for testing and advanced usage
 export { BinaryResolver, nodeRuntime, NodeRuntime } from './resolution/BinaryResolver';
-export { registerProjectRoot, toJestPath, fromJestPath } from './resolution/JestPaths';
+export { registerProjectRoot, toRunnerPath, fromRunnerPath, toJestPath, fromJestPath } from './resolution/RunnerPaths';
 export { Executor, tail } from './execution/Executor';
 
 // Logging — the extension installs a sink so runner/core logs reach its log channel

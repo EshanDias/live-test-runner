@@ -160,7 +160,7 @@ Solution: fully custom webview UI. Gives cross-platform control and enables Wall
 |------|---------|
 | **Activity Bar** | Beaker icon → opens Explorer view |
 | **Primary sidebar** | **Explorer view** (file → node tree with search); switches to **Timeline sidebar** (State/Watch/Call Stack) in timeline mode |
-| **Panel › Output** | **Live Test Runner** — levelled extension log · **Live Test Runner: Jest Output** — raw Jest output (ANSI-stripped, `[jest#N]`-tagged) |
+| **Panel › Output** | **Live Test Runner** — levelled extension log · **Live Test Runner: Test Output** — raw Jest output (ANSI-stripped, `[jest#N]`-tagged) |
 | **Panel › Test Results** | **Results view** (3-column: test list, output, errors) in normal mode; **Timeline view** (bar + controls + console) in timeline mode |
 | **Editor gutter** | Status icons (✓ / ✗ / ⟳ / ○) per test line; active-step highlight in timeline mode |
 | **Editor inline** | Duration text after each test (normal mode); variable ghost text at current step (timeline mode) |
@@ -228,7 +228,7 @@ Key directories:
 5. **Indexes rebuild on reset** — trace files are ground truth; indexes are derived caches
 6. **Lazy initialization** — results are never pre-fetched; observers are called when results are ready
 7. **Per-scope output** — only rerun the scope explicitly requested (test name pattern isolation)
-8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Jest Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/developer-guide.md` → Logging.
+8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Test Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/developer-guide.md` → Logging.
 
 ---
 

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Framework } from '../../types';
+import { FRAMEWORK_IDS, FrameworkId } from '../../types';
 import { FrameworkAdapter } from './FrameworkAdapter';
 import { BinaryResolver } from '../../resolution/BinaryResolver';
 import { testScriptJestArgs } from '../jestConfig';
@@ -24,7 +24,7 @@ const JEST_CONFIG_FILES = [
  * Binary: node_modules/.bin/jest (local install).
  */
 export class JestAdapter implements FrameworkAdapter {
-  readonly framework: Framework = 'jest';
+  readonly framework: FrameworkId = FRAMEWORK_IDS.jest;
 
   private readonly binaryResolver = new BinaryResolver();
 

@@ -2,18 +2,18 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { JestRunner, FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromJestPath } from '@live-test-runner/runner';
+import { JestRunner, FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver } from '../IResultObserver';
 import { IFrameworkAdapter } from '../framework/IFrameworkAdapter';
-import { PLAIN_RUN_HANG_FACTOR } from '../framework/JestAdapter';
+import { PLAIN_RUN_HANG_FACTOR } from '../constants';
 import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import { SessionTraceRunner } from './SessionTraceRunner';
-import { ProjectJestConfig } from './ProjectJestConfig';
+import { IProjectConfig } from './IProjectConfig';
 import { RunnableFilesCache, runnableCacheKey, runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
@@ -111,7 +111,7 @@ export class SessionManager {
     private readonly _statusBar: vscode.StatusBarItem,
     private readonly _discovery: TestDiscoveryService,
     private readonly _sessionDir: string,
-    private readonly _projectConfig: ProjectJestConfig,
+    private readonly _projectConfig: IProjectConfig,
   ) {
     this._traceRunner = new SessionTraceRunner(this._sessionDir, this._coverageStore, this._projectConfig);
   }
@@ -996,7 +996,7 @@ export class SessionManager {
     if (cached) {
       log.debug(`Runnable test files: ${cached.length} remembered from the last session (no test or config file changed)`);
       // Lists saved by older versions may hold Jest's realpath'd spelling.
-      return cached.map(fromJestPath);
+      return cached.map(fromRunnerPath);
     }
     this._updateStatusBar('Asking Jest which files it runs…');
     return this._askJestForRunnable(projectRoot, key);

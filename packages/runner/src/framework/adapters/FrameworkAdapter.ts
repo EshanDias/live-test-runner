@@ -1,4 +1,4 @@
-import { Framework } from '../../types';
+import { FrameworkId } from '../../types';
 
 /**
  * A FrameworkAdapter encapsulates everything that differs between test frameworks:
@@ -10,7 +10,7 @@ import { Framework } from '../../types';
  * Adding a new framework = implementing this interface + registering it in FrameworkDetector.
  */
 export interface FrameworkAdapter {
-  readonly framework: Framework;
+  readonly framework: FrameworkId;
 
   /** Returns true if this adapter handles the given project root. */
   detect(projectRoot: string): boolean;

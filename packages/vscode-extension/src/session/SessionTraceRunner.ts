@@ -15,14 +15,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toJestPath, fromJestPath, mergeFileResults } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
 import { logger } from '../utils/logger';
-import { ProjectJestConfig, sourceTransformPattern, upperDrive } from './ProjectJestConfig';
+import { IProjectConfig } from './IProjectConfig';
+import { sourceTransformPattern, upperDrive } from './JestProjectConfig';
 
 const log = logger.scope('Runner');
 const covLog = logger.scope('Coverage');
@@ -160,7 +161,7 @@ export class SessionTraceRunner {
   constructor(
     private readonly _tmpDir: string,
     private readonly _coverageStore: CoverageStore,
-    private readonly _projectConfig: ProjectJestConfig,
+    private readonly _projectConfig: IProjectConfig,
   ) {}
 
   /**
@@ -222,10 +223,10 @@ export class SessionTraceRunner {
     registerProjectRoot(projectRoot);
     const srcPattern = sourceTransformPattern(projectRoot);
 
-    // The project's config as Jest resolved it (any format) — see ProjectJestConfig.
+    // The project's config as Jest resolved it (any format) — see JestProjectConfig.
     const resolvedConfigPath = await this._projectConfig.get(projectRoot);
     // Jest's spelling: the real path (symlinks resolved), upper-case drive.
-    const jestRoot = upperDrive(toJestPath(projectRoot));
+    const jestRoot = upperDrive(toRunnerPath(projectRoot));
 
     const configContent = `
 'use strict';
@@ -402,7 +403,7 @@ module.exports = _projects
     // the caller's key so results land on the right store entry (BUG-13).
     const keyByNorm = new Map(filePaths.map((fp) => [pathKey(fp), fp]));
     const toKey = (p: string) => {
-      const q = fromJestPath(p);
+      const q = fromRunnerPath(p);
       return keyByNorm.get(pathKey(q)) ?? path.normalize(q);
     };
 
@@ -946,7 +947,7 @@ function _isExcludedFromCoverage(filePath: string): boolean {
 
 /** A source path from Jest in the editor's spelling (symlinks, drive-letter case). */
 function _normPath(filePath: string): string {
-  return fromJestPath(filePath).replace(/^[A-Z]:/, m => m.toLowerCase());
+  return fromRunnerPath(filePath).replace(/^[A-Z]:/, m => m.toLowerCase());
 }
 
 /** Comparison key for a file path: normalised, and case-insensitive on Windows. */

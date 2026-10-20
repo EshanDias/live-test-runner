@@ -47,7 +47,7 @@ src/
 │       └── ViteAdapter.ts            Vitest stub — only when the project has no Jest dep/config
 ├── resolution/
 │   ├── BinaryResolver.ts             Finds jest binary in project node_modules
-│   └── JestPaths.ts                  Symlinked roots: editor path ↔ Jest's realpath
+│   └── RunnerPaths.ts                Symlinked roots: editor path ↔ the test runner's realpath
 ├── execution/
 │   └── Executor.ts                   Spawns Jest, reads --outputFile JSON on exit
 └── parsing/
@@ -63,7 +63,7 @@ node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [fi
      --config <ltr-temp-config.js> --cacheDirectory <per-project transform cache> \
      --maxWorkers=1 --testLocationInResults --verbose=false
 ```
-The temp config starts from the project's config as Jest resolves it (`ProjectJestConfig`: `jest --showConfig` / `react-scripts test --showConfig`, once per session, JSON in the session dir) plus:
+The temp config starts from the project's config as Jest resolves it (`JestProjectConfig`: `jest --showConfig` / `react-scripts test --showConfig`, once per session, JSON in the session dir) plus:
 - `sessionTraceTransform.js` at the front of the transform chain (light trace: line hit maps + coverage counters)
 - `ltrCoverageSetup.js` as the **first** `setupFilesAfterEnv` entry — coverage flush, per-test trace context (`beginTest` / `endTest`), test-start/end heartbeats for the hang watchdog
 - `liveReporter.js` as an extra reporter that appends a `start` record and one result record per file to a JSONL file
@@ -122,6 +122,8 @@ src/
 │   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
 ├── session/
 │   ├── SessionManager.ts           Session lifecycle, batched run pool (CONCURRENCY=cpus/4), on-save, rerun
+│   ├── IProjectConfig.ts           Interface: the project's resolved runner config (get / reset)
+│   ├── JestProjectConfig.ts        IProjectConfig for Jest: `jest --showConfig` once per session
 │   ├── SessionTraceRunner.ts       Runs combined test+trace+coverage batches; populates ResultStore + ExecutionTraceStore + CoverageStore
 │   │   instrumentation/
 │   │   ├── liveReporter.js         Custom Jest reporter: appends one JSON record per completed file to a JSONL file
@@ -470,7 +472,7 @@ All in `packages/vscode-extension/package.json`:
 - `liveTestRunner.startTesting`
 - `liveTestRunner.stopTesting`
 - `liveTestRunner.selectProjectRoot`
-- `liveTestRunner.showOutput` — "Show Jest Output": raw Jest output channel
+- `liveTestRunner.showOutput` — "Show Test Output": raw Jest output channel
 - `liveTestRunner.showLogs` — "Show Logs": levelled extension log channel
 - `liveTestRunner.copyDiagnostics` — "Copy Diagnostic Report": versions, project setup, settings, recent logs → clipboard + untitled doc
 - `liveTestRunner.rerunFromEditor`
@@ -576,5 +578,5 @@ All in `packages/vscode-extension/package.json`:
 13. **`TimelineDecorationManager` is separate from `DecorationManager`.** It never touches pass/fail gutter icons — completely independent decoration types.
 14. **Timeline Maps are serialised before postMessage.** `TimelineStore.variables` and `TimelineStore.logs` are `Map<number, ...>` in the extension host. They are converted to plain objects (`Object.fromEntries`) before sending to webviews, since Maps are not JSON-serialisable.
 15. **`scope-logs` and `scope-changed` are always separate messages.** They have different lifecycles.
-16. **Logging goes through the logger, never `console.*` or the Jest Output channel.** Extension: `logger.scope('Area')`. runner/core: `createLogger('Area')`. Instrumentation inside Jest: `[LTR:<level>] msg` on stderr. One `info` summary per run; per-file detail at `debug`/`trace`. See developer-guide → Logging.
+16. **Logging goes through the logger, never `console.*` or the Test Output channel.** Extension: `logger.scope('Area')`. runner/core: `createLogger('Area')`. Instrumentation inside Jest: `[LTR:<level>] msg` on stderr. One `info` summary per run; per-file detail at `debug`/`trace`. See developer-guide → Logging.
 17. **Session Jest runs pass `--verbose=false`.** Jest auto-enables verbose for single-file runs, which stops console buffering and empties `testResult.console` (Results panel shows no logs).

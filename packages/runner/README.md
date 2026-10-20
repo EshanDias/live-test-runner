@@ -42,7 +42,7 @@ JestRunner (orchestrator)
 
 ### Framework Adapters
 
-Each adapter implements `FrameworkAdapter`:
+Each adapter implements `FrameworkAdapter`. Its `framework` is a `FrameworkId` — an open string id (the shipped ones are in `FRAMEWORK_IDS`), so a new adapter needs no edit to a shared union.
 
 | Method | Purpose |
 |--------|---------|

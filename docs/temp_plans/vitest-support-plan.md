@@ -183,6 +183,7 @@ Done when: `node e2e/run.js repo-matrix` passes on current code and proves the o
 
 **1.1 Neutral naming & open types (1 d)** (C7, C8)
 Sketch: `Framework` → `type FrameworkId = string` with known constants; `toJestPath/fromJestPath` → `toRunnerPath/fromRunnerPath` (keep deprecated aliases one release); `PLAIN_RUN_HANG_FACTOR` into a shared `constants.ts`; output channel "Jest Output" → "Test Output" (tag `[jest#N]`/`[vitest#N]` stays); `ProjectJestConfig` → interface `IProjectConfig` + class `JestProjectConfig`.
+Done (2026-10-20): `FrameworkId` + `FRAMEWORK_IDS` (`jest`, `cra`, `vite`, `unknown`; unused `next` dropped; `Framework` kept as deprecated alias) in `runner/src/types.ts`, used by all adapters and the detector; extension compares against `FRAMEWORK_IDS.cra`. `resolution/JestPaths.ts` → `RunnerPaths.ts` with `toRunnerPath/fromRunnerPath` (+ deprecated `toJestPath/fromJestPath`, unit-tested). `PLAIN_RUN_HANG_FACTOR` → `vscode-extension/src/constants.ts`. `session/IProjectConfig.ts` (`get(root)`, `reset()`); `JestProjectConfig` implements it; `SessionManager`, `SessionTraceRunner`, `JestInstrumentedRunner` take `IProjectConfig` (extension.ts still builds the Jest one — services bundle is 1.4). Channel "Live Test Runner: Test Output" and command title "Show Test Output" (id `liveTestRunner.showOutput` unchanged — the command title rename was not in the sketch, done for consistency). Docs + both CHANGELOGs updated.
 
 **1.2 Generic runner layer (2 d)** (C2)
 Sketch: `Executor` takes `outputFileArg(path)` from the adapter (Jest/Vitest both `--outputFile=`, but not assumed); `ResultParser` becomes `adapter.parseResult(raw)` (Jest parser stays, behind the interface); extract `CommandRunner` (run file / files / test case / related / full suite / kill / path normalisation) with abstract `buildArgs(kind, …)`; `JestRunner extends CommandRunner`. `FrameworkAdapter.createRunner(opts)`.
@@ -359,31 +360,27 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - **Q5** — HTML guide (`docs/live-test-runner-guide.html`): my suggestion is to publish it with GitHub Pages as the project’s docs site, link it from the marketplace README, and add a “Open Guide” command that opens it in a webview — it is clearer than a long README. Want that as a task?
 
-## Handoff — where work stopped (2025-10-20)
+## Handoff — where work stopped (2026-10-20)
 
-**Branches (all local, nothing pushed):**
-- `release/3.0.0` (from `origin/main` @ 2.0.4) — 1 commit: version bump to 3.0.0 + this plan.
-- `feat/vitest-housekeeping` (from `release/3.0.0`) — commits: `pnpm/setup@v3` workflows; **uncommitted at hand-off time:** `e2e/real-repos.js`, `plainJestJson` in `e2e/lib/harness.js`, this doc update (committed right after this note was written — check `git log`).
-- Per CLAUDE.md, never push/merge `release/*` from a local checkout: the owner must push `release/3.0.0` and open the PR `feat/vitest-housekeeping → release/3.0.0`.
+**Branches**
+- `release/3.0.0` — includes PR #34 (`feat/vitest-housekeeping`: 0.2 workflows + 0.3 harness), so CI on `pnpm/setup@v3` ran green on all three OSes.
+- `feat/vitest-decouple` (from `release/3.0.0` @ `e2ba4ae`, **local, not pushed**) — commit 1: 0.3 follow-ups; commit 2: task 1.1. Phase 1 continues on this branch; PR into `release/3.0.0` when phase 1 is done (or earlier, if the owner prefers smaller PRs).
 
-**Done**
-- 0.1 release branch + version.
-- 0.2 `.github/workflows/pr-checks.yml` (2 jobs) and `release.yml` now use `pnpm/setup@v3` (`runtime: node@24`, `cache: true`; release uses `install: false`). YAML validated. Verified locally that `pnpm runtime` installs **only `node`** (no npm/npx): e2e `npm install` and release `npx vsce/ovsx` rely on the runner image's npm — **must be confirmed on the first CI run**; fallback = keep `actions/setup-node` in those two jobs.
-- 0.3 `node e2e/real-repos.js [repo… | --all | --fresh]` clones each real repo (APFS `cp -c`), computes a plain-Jest baseline, runs the existing `repo-tsjest` / `repo-cra` scenario on the clone, and fails if the original repo's `git status`/HEAD/newest-mtime changed. Vitest repos (`unplugin`, `slidev`, `vueuse`) are registered and auto-run once a `repo-vitest` scenario exists (env `LTR_E2E_VITEST_REPO`).
-- Regression status on this branch: `pnpm build`, `pnpm lint`, `pnpm test` (34 runner + 17 extension tests) pass; `node e2e/run.js basic-full-run` passes; `real-repos.js jest-dom` PASS (31 files match plain Jest; originals untouched).
+**Done in this session**
+- 0.3 finished: `e2e/real-repos.js` records each repo's plain-runner per-file counts + extension match in `docs/temp_plans/vitest-baseline.json` (CRA gets a baseline too). Fixed `repo-cra`'s plain run for workspaces under macOS's `/var` symlink (it passed `/var/…` to `--runTestsByPath`; Jest only accepts `/private/var/…`). Baseline green: `jest-dom` 31 files, `vscode-jest` 49 files / 2012 tests, `sample-react-project` 14 files. The heavy `jest` monorepo has **not** been run yet (`node e2e/real-repos.js jest`).
+- 1.1 done — see the task notes below.
+- Gate after 1.1: `pnpm build`, `pnpm lint`, `pnpm test` (35 runner + 17 extension), `node e2e/run.js --all` (11 pass, 2 repo scenarios skipped — covered by `real-repos.js`), `node e2e/real-repos.js` (3/3 PASS, originals untouched).
 
-**Not done / next**
-1. Run `node e2e/real-repos.js vscode-jest sample-react-project` (and `jest` monorepo, heavy) once to record that the baseline is green; run `node e2e/run.js --all`.
-2. Confirm the workflows on a real PR (3 OSes).
-3. Add CHANGELOG entry for the CI change (root CHANGELOG only; not user-facing).
-4. Then **Phase 1 (Decouple from Jest)** — start at task 1.1 on a new branch `feat/vitest-decouple` cut from `release/3.0.0` (after housekeeping is merged).
+**Next**
+1. Task 1.2 (generic runner layer) on `feat/vitest-decouple`.
+2. Optional: one run of `node e2e/real-repos.js jest` for the monorepo baseline.
 
 ## Progress tracker
 
 - [x] 0.1 Release branch + version (done: `release/3.0.0` cut from main@2.0.4, version 3.0.0 in root + extension)
-- [x] 0.2 Workflows → pnpm/setup@v3 (done in YAML; **CI not yet run** — see Handoff)
-- [~] 0.3 Baseline + real-repo harness (harness `e2e/real-repos.js` done; verified on `jest-dom` only — see Handoff)
-- [ ] 1.1 Neutral naming & open types
+- [x] 0.2 Workflows → pnpm/setup@v3 (CI green on PR #34)
+- [x] 0.3 Baseline + real-repo harness (`e2e/real-repos.js`; baseline in `vitest-baseline.json`; 3 light Jest repos green, `jest` monorepo still to run)
+- [x] 1.1 Neutral naming & open types
 - [ ] 1.2 Generic runner layer
 - [ ] 1.3 FrameworkRegistry + detector
 - [ ] 1.4 IBatchRunner + services bundle

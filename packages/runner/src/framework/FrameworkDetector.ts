@@ -1,4 +1,4 @@
-import { Framework } from '../types';
+import { FrameworkId } from '../types';
 import { FrameworkAdapter } from './adapters/FrameworkAdapter';
 import { CRAAdapter } from './adapters/CRAAdapter';
 import { JestAdapter } from './adapters/JestAdapter';
@@ -49,7 +49,7 @@ export class FrameworkDetector {
   }
 
   /** Returns just the framework name without constructing a full adapter. */
-  detectFramework(projectRoot: string): Framework {
+  detectFramework(projectRoot: string): FrameworkId {
     return this.detect(projectRoot).framework;
   }
 }

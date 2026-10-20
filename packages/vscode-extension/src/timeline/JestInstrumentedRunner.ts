@@ -8,9 +8,10 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, toJestPathArg, registerProjectRoot, toJestPath, fromJestPath } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, toJestPathArg, registerProjectRoot, toRunnerPath, fromRunnerPath } from '@live-test-runner/runner';
 import { IInstrumentedRunner } from './IInstrumentedRunner';
-import { ProjectJestConfig, sourceTransformPattern, upperDrive } from '../session/ProjectJestConfig';
+import { IProjectConfig } from '../session/IProjectConfig';
+import { sourceTransformPattern, upperDrive } from '../session/JestProjectConfig';
 import { nameToPattern } from '../utils/testNames';
 import {
   TimelineStore,
@@ -35,13 +36,13 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
   private readonly binaryResolver = new BinaryResolver();
 
   /**
-   * @param _rawLog        sink for raw Jest output (the "Jest Output" channel).
+   * @param _rawLog        sink for raw Jest output (the "Test Output" channel).
    * @param _projectConfig the project's Jest config as Jest resolves it.
    */
   constructor(
     private readonly _tmpDir: string,
     private readonly _rawLog: (msg: string) => void = () => {},
-    private readonly _projectConfig?: ProjectJestConfig,
+    private readonly _projectConfig?: IProjectConfig,
   ) {
     this.executor = new Executor(_rawLog);
   }
@@ -76,7 +77,7 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
     // either separator, either drive-letter case.
     registerProjectRoot(projectRoot);
     const srcTransformPattern = sourceTransformPattern(projectRoot);
-    // The project's config as Jest resolves it (any format) — see ProjectJestConfig.
+    // The project's config as Jest resolves it (any format) — see JestProjectConfig.
     const resolvedConfigPath = this._projectConfig ? await this._projectConfig.get(projectRoot) : undefined;
 
     const configContent = `
@@ -162,8 +163,8 @@ module.exports = {
   // file lives — otherwise Jest cannot find any test files. Upper-case drive
   // letter and real path to match the --runTestsByPath argument (Jest compares
   // case-sensitively and resolves symlinks).
-  rootDir: ${JSON.stringify(upperDrive(toJestPath(projectRoot)))},
-  roots: [${JSON.stringify(upperDrive(toJestPath(projectRoot)))}],
+  rootDir: ${JSON.stringify(upperDrive(toRunnerPath(projectRoot)))},
+  roots: [${JSON.stringify(upperDrive(toRunnerPath(projectRoot)))}],
   transform: {
     // Our entry first — matches only the exact file being debugged
     [${JSON.stringify(srcTransformPattern)}]: ${JSON.stringify(TRACE_TRANSFORM_PATH)},
@@ -329,7 +330,7 @@ module.exports = {
           const step: Step = {
             stepId: event.stepId,
             line: event.line,
-            file: event.file ? fromJestPath(event.file) : event.file,
+            file: event.file ? fromRunnerPath(event.file) : event.file,
             functionName: event.functionName,
           };
           store.steps.push(step);

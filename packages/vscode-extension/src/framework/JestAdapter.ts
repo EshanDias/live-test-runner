@@ -6,6 +6,7 @@ import {
   ConsoleEntry,
   BinaryResolver,
   FrameworkDetector,
+  FRAMEWORK_IDS,
   toJestPathArg,
   registerProjectRoot,
 } from '@live-test-runner/runner';
@@ -21,11 +22,9 @@ import {
 } from '../store/ResultStore';
 import { nameToPattern } from '../utils/testNames';
 import { logger } from '../utils/logger';
+import { PLAIN_RUN_HANG_FACTOR } from '../constants';
 
 const log = logger.scope('Jest');
-
-/** A plain (uninstrumented) single-file run may take this many hang limits in total. */
-export const PLAIN_RUN_HANG_FACTOR = 3;
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
@@ -203,7 +202,7 @@ export class JestAdapter implements IFrameworkAdapter {
     // folder) — `.bin/jest` is a shell script on Windows and cannot be a program.
     registerProjectRoot(projectRoot);
     const framework = new FrameworkDetector().detect(projectRoot);
-    const isCra = framework.framework === 'cra';
+    const isCra = framework.framework === FRAMEWORK_IDS.cra;
     const program =
       (isCra ? BinaryResolver.resolveCraJestEntry(projectRoot) : BinaryResolver.resolveJestEntry(projectRoot))
       ?? path.join(projectRoot, 'node_modules', 'jest', 'bin', 'jest.js');

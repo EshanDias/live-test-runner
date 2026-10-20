@@ -48,7 +48,7 @@ Dependency direction: `vscode-extension` → `core` → `runner`. The runner has
 |---|---|
 | Activity Bar | Beaker icon — opens the Explorer view |
 | Primary sidebar | **Explorer view** — recursive file → node tree (unlimited nesting), summary counts, search; switches to **Timeline sidebar** (State / Watch / Call Stack) in timeline mode |
-| Panel › Output | **Live Test Runner** — levelled extension log (error / warning / info / debug / trace). **Live Test Runner: Jest Output** — raw Jest output, ANSI-stripped, each line tagged `[jest#N]` |
+| Panel › Output | **Live Test Runner** — levelled extension log (error / warning / info / debug / trace). **Live Test Runner: Test Output** — raw Jest output, ANSI-stripped, each line tagged `[jest#N]` |
 | Panel › Test Results | **Results view** — 3-column scoped view in normal mode; **Timeline view** (bar + controls + console/errors) in timeline mode |
 | Editor gutter | Status icons (✓ / ✗ / ⟳ / ○) per test line; active-step highlight in timeline mode |
 | Editor inline | Duration text after each test (normal mode); variable ghost text at current step (timeline mode) |
@@ -88,7 +88,7 @@ JestRunner (orchestrator)
 
 ### Framework adapters
 
-Each adapter implements `FrameworkAdapter`:
+Each adapter implements `FrameworkAdapter` and names itself with a `FrameworkId` — an open string id (`FRAMEWORK_IDS` lists the shipped ones: `jest`, `cra`, `vite`, `unknown`).
 
 | Method | Purpose |
 |--------|---------|
@@ -113,7 +113,7 @@ Two different command shapes are used depending on context:
 
 **How Jest is started.** Always `node <jest/bin/jest.js> …` — Jest's JS entry point resolved from the project (`BinaryResolver.resolveJestEntry`; CRA: the Jest react-scripts depends on), run with `node` from PATH (fallback: the editor's runtime with `ELECTRON_RUN_AS_NODE=1`) and **no shell**, so arguments (paths with spaces, `^…$` patterns, `a|b`) reach Jest verbatim. A shell is used only for a user `jestCommand` / npx, with every argument quoted. `Executor.kill()` ends the whole process tree. File paths are passed with forward slashes and an upper-case drive letter (Jest realpaths `rootDir` and compares case-sensitively).
 
-**Path spelling.** Jest resolves `rootDir` with `realpathSync.native`, so a project opened through a symlink (macOS `/var` → `/private/var`, a symlinked checkout), a Windows 8.3 short name (`RUNNER~1`), a junction or a `subst` drive has two spellings. `runner/src/resolution/JestPaths.ts` records each project root's real path: everything sent to Jest uses it (`toJestPathArg`, generated configs' `rootDir`/`roots`, the transform pattern) and everything read back (`--listTests`, JSON results, reporter records, traces, coverage manifests, Timeline steps) is mapped to the editor's spelling with `fromJestPath`.
+**Path spelling.** Jest resolves `rootDir` with `realpathSync.native`, so a project opened through a symlink (macOS `/var` → `/private/var`, a symlinked checkout), a Windows 8.3 short name (`RUNNER~1`), a junction or a `subst` drive has two spellings. `runner/src/resolution/RunnerPaths.ts` records each project root's real path: everything sent to Jest uses it (`toJestPathArg`, generated configs' `rootDir`/`roots`, the transform pattern) and everything read back (`--listTests`, JSON results, reporter records, traces, coverage manifests, Timeline steps) is mapped to the editor's spelling with `fromRunnerPath`.
 
 **One file, several Jest projects.** A multi-project config can run the same file more than once (e.g. under `jsdom` and `node`). Jest reports each run; `mergeFileResults` (runner) merges them so a test fails if it failed in any project.
 
@@ -123,7 +123,7 @@ node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [fi
      --config <ltr-temp-cfg.js> --cacheDirectory <per-project transform cache> \
      --maxWorkers=1 --testLocationInResults --verbose=false
 ```
-The temp config starts from the project's config **as Jest resolves it** — `ProjectJestConfig` runs `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session, so every config format, preset and multi-project setup works — and layers on `sessionTraceTransform.js` (light trace transform), `ltrCoverageSetup.js` (first `setupFilesAfterEnv` entry: coverage flush, per-test trace context, test heartbeats) and `liveReporter.js` (streaming reporter). Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
+The temp config starts from the project's config **as Jest resolves it** — `JestProjectConfig` runs `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session, so every config format, preset and multi-project setup works — and layers on `sessionTraceTransform.js` (light trace transform), `ltrCoverageSetup.js` (first `setupFilesAfterEnv` entry: coverage flush, per-test trace context, test heartbeats) and `liveReporter.js` (streaming reporter). Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
 
 Reported paths are mapped back to the store's own keys. A file shows ⟳ only once Jest starts it (reporter `start` record). The newest run of a file owns it: an older batch still running the same file is not killed, its result for that file is ignored. A single test running longer than `hangTimeoutSeconds` (setup-file heartbeats) stops the batch; that file is failed and the rest retried.
 

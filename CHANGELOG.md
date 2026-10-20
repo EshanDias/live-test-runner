@@ -4,6 +4,11 @@ All notable changes to Live Test Runner are documented here.
 
 ## [Unreleased]
 
+### Framework decoupling (Vitest support, phase 1)
+
+- **Neutral naming and open framework ids (task 1.1)** — `Framework` (closed union `'jest' | 'cra' | 'next' | 'vite' | 'unknown'`) is now `FrameworkId = string` with the shipped ids in `FRAMEWORK_IDS`; `Framework` stays as a deprecated alias. `toJestPath` / `fromJestPath` → `toRunnerPath` / `fromRunnerPath` (`resolution/JestPaths.ts` → `RunnerPaths.ts`; old names kept as deprecated aliases for one release). `PLAIN_RUN_HANG_FACTOR` moved from the Jest adapter to the extension's `constants.ts`. `ProjectJestConfig` → `JestProjectConfig` implementing the new `IProjectConfig` interface, which `SessionManager`, `SessionTraceRunner` and `JestInstrumentedRunner` now depend on.
+- **"Jest Output" → "Test Output"** — the raw output channel is now **Live Test Runner: Test Output** and the command **Show Test Output** (same id, `liveTestRunner.showOutput`); lines keep their `[jest#N]` tag.
+
 ### Logging overhaul
 
 - **Levelled log channel** — "Live Test Runner" is now a VS Code `LogOutputChannel` with real `error` / `warning` / `info` / `debug` / `trace` levels, timestamps and a user-selectable level (Output ⚙ → Set Log Level). Lines read `[Area] message`.

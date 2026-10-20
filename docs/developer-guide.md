@@ -150,7 +150,7 @@ Two output channels, two purposes:
 | Channel | Written by | Content |
 |---------|-----------|---------|
 | **Live Test Runner** (`LogOutputChannel`) | `logger.scope('Area')` | The extension's own log — levelled, timestamped |
-| **Live Test Runner: Jest Output** (plain) | `Executor` raw sink | Jest process output, ANSI-stripped, line-buffered, tagged `[jest#N]` |
+| **Live Test Runner: Test Output** (plain) | `Executor` raw sink | Jest process output, ANSI-stripped, line-buffered, tagged `[jest#N]` |
 
 **How to log**
 
@@ -182,7 +182,7 @@ const log = createLogger('Executor');
 Rules:
 - **One summary line per run**, not one per file. Per-file detail belongs at `debug`/`trace`.
 - Put the *cause* in the message: when Jest fails, include its stderr tail (`tail()` from runner).
-- Never write extension diagnostics to the Jest Output channel. It holds only Jest's output, plus `──── Run #N ────` separators.
+- Never write extension diagnostics to the Test Output channel. It holds only Jest's output, plus `──── Run #N ────` separators.
 - Correlation tags: `Run #N` (SessionManager), `bN` (SessionTraceRunner batch), `jest#N` (Executor process).
 
 **Logging from inside the Jest process** (instrumentation `.js` files): write `[LTR:<level>] message\n` to stderr. `Executor` routes those lines to the log at that level and strips them from captured stderr. `LTR_LOG_LEVEL` (set from the channel level) lets the scripts skip debug/trace writes:
@@ -299,12 +299,12 @@ Create `packages/runner/src/framework/adapters/VitestAdapter.ts`:
 
 ```typescript
 import { FrameworkAdapter } from './FrameworkAdapter'
-import { Framework } from '../../types'
+import { FrameworkId } from '../../types'
 import * as fs from 'fs'
 import * as path from 'path'
 
 export class VitestAdapter implements FrameworkAdapter {
-  readonly framework: Framework = 'vitest'
+  readonly framework: FrameworkId = 'vitest'   // open string id — add it to FRAMEWORK_IDS if shipped
 
   detect(projectRoot: string): boolean {
     const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))

@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { execFileSync } from "child_process";
 import { LTR_BASE_CACHE_DIR } from '../../constants';
-import { Framework } from "../../types";
+import { FRAMEWORK_IDS, FrameworkId } from "../../types";
 import { FrameworkAdapter } from "./FrameworkAdapter";
 import { readPackageJson } from "./JestAdapter";
 import { BinaryResolver } from "../../resolution/BinaryResolver";
@@ -25,7 +25,7 @@ import { testScriptJestArgs, toInputConfig } from "../jestConfig";
  * package.json changes).
  */
 export class CRAAdapter implements FrameworkAdapter {
-  readonly framework: Framework = "cra";
+  readonly framework: FrameworkId = FRAMEWORK_IDS.cra;
 
   /** key: projectRoot, value: { configJson, pkgMtime, tmpFilePath } */
   private configCache = new Map<string, CachedConfig>();

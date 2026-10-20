@@ -8,18 +8,18 @@ import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { Executor } from './execution/Executor';
 import { ResultParser } from './parsing/ResultParser';
 import { createLogger } from './utils/logger';
-import { fromJestPath, registerProjectRoot, toJestPath } from './resolution/JestPaths';
+import { fromRunnerPath, registerProjectRoot, toRunnerPath } from './resolution/RunnerPaths';
 
 const log = createLogger('JestRunner');
 
 /**
  * A file path as Jest expects it on the command line (--runTestsByPath,
  * --findRelatedTests). Jest realpaths its rootDir, so: the real path under a
- * symlinked project root (see JestPaths), forward slashes, and an upper-case
+ * symlinked project root (see RunnerPaths), forward slashes, and an upper-case
  * drive letter on Windows.
  */
 export function toJestPathArg(filePath: string): string {
-  return toJestPath(filePath)
+  return toRunnerPath(filePath)
     .replace(/\\/g, '/')
     .replace(/^([a-z]):\//, (_, d: string) => `${d.toUpperCase()}:/`);
 }
@@ -103,7 +103,7 @@ export class JestRunner implements TestRunner {
 
     const found = this.parser.parseListTestsOutput(
       result.stdout + '\n' + result.stderr,
-    ).map(fromJestPath);
+    ).map(fromRunnerPath);
     if (found.length > 0) {
       log.debug(`--listTests found ${found.length} test file(s)`);
       return found;

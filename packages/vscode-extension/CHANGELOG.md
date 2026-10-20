@@ -6,6 +6,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### Improvements
 
+- **"Jest Output" is now "Test Output"** — the raw output channel is called "Live Test Runner: Test Output" and the command "Show Test Output", ready for more test frameworks. Nothing else changes.
 - **Cleaner, levelled logs** — the "Live Test Runner" output now has error / warning / info / debug levels you can filter (Output ⚙ → Set Log Level). You get one summary line per run instead of hundreds of internal messages.
 - **Separate Jest output** — Jest's own output has its own channel, "Live Test Runner: Jest Output", without colour-code garbage.
 - **Copy Diagnostic Report** — a new command that collects everything needed for a bug report in one click.

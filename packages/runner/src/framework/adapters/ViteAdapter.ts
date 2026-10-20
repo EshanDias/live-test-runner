@@ -1,4 +1,4 @@
-import { Framework } from '../../types';
+import { FRAMEWORK_IDS, FrameworkId } from '../../types';
 import { FrameworkAdapter } from './FrameworkAdapter';
 import { JestAdapter, readPackageJson } from './JestAdapter';
 
@@ -13,7 +13,7 @@ import { JestAdapter, readPackageJson } from './JestAdapter';
  * and this adapter slot is already wired in.
  */
 export class ViteAdapter implements FrameworkAdapter {
-  readonly framework: Framework = 'vite';
+  readonly framework: FrameworkId = FRAMEWORK_IDS.vite;
 
   detect(projectRoot: string): boolean {
     const pkg = readPackageJson(projectRoot);

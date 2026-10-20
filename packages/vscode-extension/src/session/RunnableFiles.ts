@@ -10,7 +10,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fromJestPath } from '@live-test-runner/runner';
+import { fromRunnerPath } from '@live-test-runner/runner';
 
 /** Files in the project root that can change which tests Jest runs. */
 const CONFIG_FILES = [
@@ -25,7 +25,7 @@ const CONFIG_FILES = [
  * older versions hold Jest's realpath'd spelling), case-insensitive on Windows.
  */
 export function runnableKey(filePath: string): string {
-  const p = path.normalize(fromJestPath(filePath));
+  const p = path.normalize(fromRunnerPath(filePath));
   return process.platform === 'win32' ? p.toLowerCase() : p;
 }
 
