@@ -11,7 +11,10 @@
  *   {"type":"H","tf":"/abs/test.ts","hk":"hook","fh":{"/abs/src.ts":[1,2]}}
  */
 
-const fs = require('fs');
+// Inside Jest this module lives in the test's module registry, where the test
+// may have mocked fs (jest.mock('fs')) — always use the real one.
+// eslint-disable-next-line no-undef
+const fs = (typeof jest !== 'undefined' && jest.requireActual) ? jest.requireActual('fs') : require('fs');
 
 const outputFile    = process.env.SESSION_TRACE_FILE;
 

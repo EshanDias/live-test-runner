@@ -571,6 +571,8 @@ export class ResultStore {
    */
   cleanupStaleNodes(fileId: string, hadTestCases: boolean, scopeNodeId?: string): void {
     const nodesToRemove: string[] = [];
+    /** Stale suites — recomputed from their children, never removed directly. */
+    const staleSuites: string[] = [];
     for (const [nodeId, node] of this.nodes) {
       if (node.fileId !== fileId || node.status !== 'running') {
         continue;
@@ -619,6 +621,16 @@ export class ResultStore {
         continue;
       }
 
+      // A suite is still 'running' when any test under it got no result (e.g.
+      // a discovered `it.each` placeholder Jest names differently). Removing
+      // the suite would remove its whole subtree — every finished test with
+      // it — so whole files of results vanished. Suites are recomputed from
+      // their children instead; ones left empty are swept below.
+      if (node.type === 'suite') {
+        if (hadTestCases) { staleSuites.push(nodeId); } else { node.status = 'pending'; }
+        continue;
+      }
+
       // We remove'running' nodes if:
       // 1. Jest successfully ran at least one test in the file (normal cleanup).
       // 2. OR the node is a child of a dynamic template (always prune stale variations).
@@ -659,6 +671,16 @@ export class ResultStore {
         nodesToRecalculate.add(pId);
       }
       this._removeNode(nodeId);
+    }
+
+    // Stale suites, deepest first, so a parent sees its children's final status.
+    const depth = (id: string) => {
+      let d = 0;
+      for (let p = this.nodes.get(id)?.parentId; p; p = this.nodes.get(p)?.parentId) { d++; }
+      return d;
+    };
+    for (const id of staleSuites.sort((a, b) => depth(b) - depth(a))) {
+      if (this.nodes.has(id)) { this._recalculateSuiteAndBubbleUp(id); }
     }
 
     // After cleanup or scoped run, re-evaluate affected branches

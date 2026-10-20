@@ -59,9 +59,10 @@ interface RunHandle {
  */
 export function nameToPattern(name: string): string {
   const escLiteral = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Expand '…', '<dynamic>', and Jest's % placeholders (%s, %d, %i, etc.) into wildcard matching
+  // Expand '…', '<dynamic>', Jest's % placeholders (%s, %d, %p, …) and the
+  // $variable / $obj.prop placeholders of it.each`table` into wildcards.
   return name
-    .split(/…|<dynamic>|%[sdifjo#%]/)
+    .split(/…|<dynamic>|%[sdifjopP#%]|\$[A-Za-z_][\w]*(?:\.[\w]+)*/)
     .map(escLiteral)
     .join('.*');
 }

@@ -13,6 +13,10 @@
  * _parseCoverage merges records with Math.max so duplicate flushes are safe.
  */
 
+// The real fs, taken before the test file loads: tests often jest.mock('fs'),
+// and a require('fs') in afterAll would then get the mock.
+const _realFs = (typeof jest !== 'undefined' && jest.requireActual) ? jest.requireActual('fs') : require('fs');
+
 // Log protocol: "[LTR:<level>] msg" lines on stderr are routed by the
 // extension's Executor into the "Live Test Runner" log at that level.
 const _LTR_RANK = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 };
@@ -46,7 +50,7 @@ try {
 //   beforeEach…afterEach: 'T' context — that test (and its beforeEach hooks)
 //   between tests       : 'H' context — beforeAll / afterAll hooks
 // 'H' hits count for every test in the file.
-require(require('path').join(__dirname, 'sessionTraceRuntime.js'));
+require(((typeof jest !== 'undefined' && jest.requireActual) ? jest.requireActual('path') : require('path')).join(__dirname, 'sessionTraceRuntime.js'));
 const _ltrTestPath = (() => {
   try { return expect.getState().testPath; } catch (_) { return undefined; }
 })();
@@ -78,7 +82,7 @@ afterAll(() => {
   // Empty is normal for test files that import no instrumented source file.
   if (covEntries === 0) { return; }
   try {
-    require('fs').appendFileSync(
+    _realFs.appendFileSync(
       covOutputFile,
       JSON.stringify({ workerPid: process.pid, cov: globalThis.__cov }) + '\n',
       'utf8',

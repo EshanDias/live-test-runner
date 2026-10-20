@@ -35,6 +35,10 @@ exports.run = async function run() {
     const api = vscode.extensions.getExtension('EshLabs.live-test-runner')?.exports;
     logTail = api.logger.recentLines().filter((l) => /\[(info|warn|error)\]/.test(l)).slice(-80);
     rawTail = api.rawOutput.slice(-120);
+    // Full logs next to the report, for digging into failures.
+    const dir = require('path').dirname(process.env.LTR_E2E_REPORT);
+    fs.writeFileSync(require('path').join(dir, 'extension.log'), api.logger.recentLines().join('\n'));
+    fs.writeFileSync(require('path').join(dir, 'jest-output.log'), api.rawOutput.join('\n'));
   } catch { /* no api */ }
 
   fs.writeFileSync(process.env.LTR_E2E_REPORT, JSON.stringify({ checks: t.checks, log: t.lines, error, logTail, rawTail }, null, 2));

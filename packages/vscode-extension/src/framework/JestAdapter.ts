@@ -270,6 +270,8 @@ export class JestAdapter implements IFrameworkAdapter {
     // Track which node IDs we've applied so we can scope output correctly.
     let lastTouchedTestNodeId: string | undefined;
     let touchedNodeIds = new Set<string>();
+    /** base test id → how many results had it (duplicate full names). */
+    const seenTestIds = new Map<string, number>();
 
     for (const tc of fileResult.testCases) {
       // Build hierarchical suite nodes from ancestorTitles
@@ -353,8 +355,14 @@ export class JestAdapter implements IFrameworkAdapter {
         ancsForId.push(leafTemplate.name);
       }
 
-      // Create/update the test node
-      const testNodeId = makeNodeId(filePath, ancsForId, tc.title);
+      // Create/update the test node. Jest allows several tests with the same
+      // full name (e.g. describe.each with a non-interpolated $object); keying
+      // them by name collapsed them into one node where the last result won —
+      // a failure could be hidden by a later pass. Repeats get their own node.
+      const baseTestId = makeNodeId(filePath, ancsForId, tc.title);
+      const occurrence = (seenTestIds.get(baseTestId) ?? 0) + 1;
+      seenTestIds.set(baseTestId, occurrence);
+      const testNodeId = occurrence === 1 ? baseTestId : `${baseTestId}::#${occurrence}`;
 
       // If we are in a scoped run, only update the store for nodes within that scope.
       // This ensures that non-matching tests reported by Jest ('pending' or 'skipped')

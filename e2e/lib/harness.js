@@ -127,13 +127,19 @@ function jestProcesses(marker) {
       // Paths may differ in drive-letter case and separators — compare loosely.
       const norm = (s) => s.toLowerCase().replace(/\\\\/g, '\\').replace(/\//g, '\\');
       const m = norm(marker);
-      return out.split(/\r?\n/).filter((l) => norm(l).includes(m) && /jest/i.test(l) && !/powershell/i.test(l));
+      return out.split(/\r?\n/).filter((l) => norm(l).includes(m) && isJest(l));
     }
     const out = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-    return out.split('\n').filter((l) => l.includes(marker) && /jest/i.test(l));
+    return out.split('\n').filter((l) => l.includes(marker) && isJest(l));
   } catch {
     return [];
   }
+}
+
+/** A Jest process (node running jest / react-scripts) — not VS Code or the probe itself. */
+function isJest(cmdLine) {
+  return /[\\/](jest|jest-cli|react-scripts)[\\/]bin[\\/]|[\\/]\.bin[\\/]jest|jest-worker|processChild/i.test(cmdLine) &&
+    !/Code(\.exe)?["\s]|extensionDevelopmentPath|powershell/i.test(cmdLine);
 }
 
 /** Save `filePath` through VS Code after applying `edit(text) → text`, so onDidSaveTextDocument fires. */
