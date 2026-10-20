@@ -16,6 +16,9 @@
  *   node e2e/real-repos.js --all           # every repo that has a scenario
  *   node e2e/real-repos.js --fresh         # re-clone instead of reusing the clones
  *
+ * Each repo's plain-runner counts per file (and whether the extension matched
+ * them) are recorded in docs/temp_plans/vitest-baseline.json.
+ *
  * Environment:
  *   LTR_E2E_JEST_REPOS_DIR    default /Users/eshandias/Projects/test/jest-test-projects
  *   LTR_E2E_VITEST_REPOS_DIR  default /Users/eshandias/Projects/test/vitest-projects
@@ -34,12 +37,18 @@ const JEST_DIR = process.env.LTR_E2E_JEST_REPOS_DIR || '/Users/eshandias/Project
 const VITEST_DIR = process.env.LTR_E2E_VITEST_REPOS_DIR || '/Users/eshandias/Projects/test/vitest-projects';
 const CLONES = process.env.LTR_E2E_CLONES_DIR || path.join(os.tmpdir(), 'ltr real repos');
 
-/** name → { dir, scenario, env (the variable the scenario reads), light } */
+/** Per-repo plain-runner baseline, recorded on every run (see recordBaseline). */
+const BASELINE_FILE = path.join(ROOT, 'docs', 'temp_plans', 'vitest-baseline.json');
+
+/**
+ * name → { dir, scenario, env (the variable the scenario reads), light,
+ *          baseline (the variable the scenario reads a plain-Jest result from) }
+ */
 const REPOS = {
-  'jest-dom':             { dir: JEST_DIR, scenario: 'repo-tsjest', env: 'LTR_E2E_TSJEST_REPO', light: true, baseline: 'jest' },
-  'vscode-jest':          { dir: JEST_DIR, scenario: 'repo-tsjest', env: 'LTR_E2E_TSJEST_REPO', light: true, baseline: 'jest' },
-  'sample-react-project': { dir: JEST_DIR, scenario: 'repo-cra',    env: 'LTR_E2E_CRA_REPO',    light: true },
-  'jest':                 { dir: JEST_DIR, scenario: 'repo-tsjest', env: 'LTR_E2E_TSJEST_REPO', light: false, baseline: 'jest' },
+  'jest-dom':             { dir: JEST_DIR, scenario: 'repo-tsjest', env: 'LTR_E2E_TSJEST_REPO', light: true, baseline: 'LTR_E2E_TSJEST_BASELINE' },
+  'vscode-jest':          { dir: JEST_DIR, scenario: 'repo-tsjest', env: 'LTR_E2E_TSJEST_REPO', light: true, baseline: 'LTR_E2E_TSJEST_BASELINE' },
+  'sample-react-project': { dir: JEST_DIR, scenario: 'repo-cra',    env: 'LTR_E2E_CRA_REPO',    light: true, baseline: 'LTR_E2E_CRA_BASELINE' },
+  'jest':                 { dir: JEST_DIR, scenario: 'repo-tsjest', env: 'LTR_E2E_TSJEST_REPO', light: false, baseline: 'LTR_E2E_TSJEST_BASELINE' },
   'unplugin':             { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true },
   'slidev':               { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true },
   'vueuse':               { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true },
@@ -67,6 +76,23 @@ function clone(src, dest, fresh) {
   if (r.status !== 0) { throw new Error(`clone failed (cp exit ${r.status})`); }
 }
 
+/**
+ * Writes the repo's plain-runner per-file counts (paths relative to the repo)
+ * and whether the extension matched them into BASELINE_FILE, keeping the
+ * other repos' entries.
+ */
+function recordBaseline(name, original, copy, json, ok) {
+  const h = require('./lib/harness');
+  let all = {};
+  try { all = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8')); } catch { /* first run */ }
+  const files = {};
+  const counts = [...h.jestJsonCounts(json, copy)].sort(([a], [b]) => a.localeCompare(b));
+  for (const [file, c] of counts) { files[path.relative(copy, file).split(path.sep).join('/')] = c; }
+  const total = Object.values(files).reduce((t, c) => ({ passed: t.passed + c.passed, failed: t.failed + c.failed, skipped: t.skipped + c.skipped }), { passed: 0, failed: 0, skipped: 0 });
+  all[name] = { recorded: new Date().toISOString(), head: git(original, 'rev-parse', 'HEAD').trim(), extensionMatches: ok, files: Object.keys(files).length, total, perFile: files };
+  fs.writeFileSync(BASELINE_FILE, JSON.stringify(all, null, 2) + '\n');
+}
+
 function runScenario(name, env) {
   const r = spawnSync(process.execPath, [path.join(__dirname, 'run.js'), name], { stdio: 'inherit', env: { ...process.env, ...env }, cwd: ROOT });
   return r.status === 0;
@@ -88,18 +114,20 @@ function main() {
     const before = fingerprint(original);
     clone(original, copy, fresh);
     const env = { [repo.env]: copy };
-    if (repo.baseline === 'jest') {
+    let baseline;
+    if (repo.baseline) {
       // Plain Jest on the clone is the reference the extension is compared with.
       const h = require('./lib/harness');
       const out = path.join(os.tmpdir(), `ltr-baseline-${n}.json`);
       console.log(`[repos] ${n}: plain Jest baseline…`);
-      try { fs.writeFileSync(out, JSON.stringify(h.plainJestJson(copy))); env.LTR_E2E_TSJEST_BASELINE = out; }
+      try { baseline = h.plainJestJson(copy); fs.writeFileSync(out, JSON.stringify(baseline)); env[repo.baseline] = out; }
       catch (e) { console.log(`[repos] ${n}: no baseline (${String(e.message).split('\n')[0]})`); }
     }
     console.log(`\n[repos] ===== ${n} (${repo.scenario}) =====`);
     const ok = runScenario(repo.scenario, env);
     const untouched = fingerprint(original) === before;
     if (!untouched) { console.log(`[repos] FAIL ${n}: the ORIGINAL repository changed during the run`); }
+    if (baseline) { recordBaseline(n, original, copy, baseline, ok); }
     results.push({ n, ok: ok && untouched });
   }
   console.log('\n[repos] ── summary ──');

@@ -45,12 +45,16 @@ function plainJest(workspace, files) {
   const out = path.join(os.tmpdir(), `ltr-e2e-cra-${Date.now()}.json`);
   const env = { ...process.env, CI: 'true' };
   delete env.ELECTRON_RUN_AS_NODE;
-  spawnSync(process.platform === 'win32' ? 'node.exe' : 'node', [
+  const r = spawnSync(process.platform === 'win32' ? 'node.exe' : 'node', [
     path.join(workspace, 'node_modules', 'react-scripts', 'bin', 'react-scripts.js'),
     'test', '--resetMocks', '--watchAll=false', '--json', `--outputFile=${out}`, '--runTestsByPath',
-    // Jest matches paths case-sensitively against its realpath'd rootDir (C:\…).
-    ...files.map((f) => f.replace(/\\/g, '/').replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`)),
+    // Jest matches paths case-sensitively against its realpath'd rootDir (C:\…,
+    // and /private/var/… for a workspace under macOS's /var symlink).
+    ...files.map((f) => fs.realpathSync.native(f).replace(/\\/g, '/').replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`)),
   ], { cwd: workspace, env, encoding: 'utf8', timeout: 20 * 60_000 });
+  if (!fs.existsSync(out)) {
+    throw new Error(`plain react-scripts wrote no results (exit ${r.status}${r.error ? `, ${r.error.message}` : ''}): ${(r.stderr || '').slice(-1500)}`);
+  }
   const json = JSON.parse(fs.readFileSync(out, 'utf8'));
   fs.unlinkSync(out);
   return json;

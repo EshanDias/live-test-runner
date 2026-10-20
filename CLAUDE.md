@@ -19,6 +19,7 @@ pnpm test -- --watch     # Run tests in watch mode
 node e2e/run.js --all    # End-to-end: real VS Code + real Jest (build first; also runs in CI on Win/Linux/macOS)
 node e2e/run.js basic-stop basic-hang      # selected scenarios
 # Real projects (optional): LTR_E2E_TSJEST_REPO, LTR_E2E_CRA_REPO (+ LTR_E2E_CRA_FULL=1)
+node e2e/real-repos.js   # real-repo matrix on read-only copies (--all incl. the heavy jest monorepo)
 
 # Linting
 pnpm lint                # Lint all packages

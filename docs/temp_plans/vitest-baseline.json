@@ -1,0 +1,511 @@
+{
+  "sample-react-project": {
+    "recorded": "2026-10-20T19:12:09.034Z",
+    "head": "",
+    "extensionMatches": true,
+    "files": 14,
+    "total": {
+      "passed": 140,
+      "failed": 3,
+      "skipped": 0
+    },
+    "perFile": {
+      "src/api/incidentApi.test.js": {
+        "passed": 6,
+        "failed": 1,
+        "skipped": 0
+      },
+      "src/App.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/components/IncidentCard/IncidentCard.test.js": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/components/IncidentList/IncidentList.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/components/SearchBar/SearchBar.test.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/components/StatusBadge/StatusBadge.test.js": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/hooks/useIncidents.test.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/integration/incidentFlow.test.js": {
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/integration/incidentFormFlow.test.js": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/integration/incidentPipeline.test.js": {
+        "passed": 49,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/pages/Dashboard/Dashboard.test.js": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/pages/IncidentDetail/IncidentDetail.test.js": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/store/slices/incidentSlice.test.js": {
+        "passed": 12,
+        "failed": 2,
+        "skipped": 0
+      },
+      "src/store/slices/userSlice.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "jest-dom": {
+    "recorded": "2026-10-20T19:09:48.929Z",
+    "head": "0ff8904ff4683d676ff70ab68b7f08465c44d0d0",
+    "extensionMatches": true,
+    "files": 31,
+    "total": {
+      "passed": 250,
+      "failed": 18,
+      "skipped": 0
+    },
+    "perFile": {
+      "src/__tests__/to-appear-before.js": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-checked.js": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-disabled.js": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-empty-dom-element.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-empty.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-in-the-document.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-in-the-dom.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-invalid.js": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-partially-checked.js": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-partially-pressed.js": {
+        "passed": 6,
+        "failed": 2,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-pressed.js": {
+        "passed": 5,
+        "failed": 2,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-required.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-visible.js": {
+        "passed": 46,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-contain-element.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-contain-html.js": {
+        "passed": 1,
+        "failed": 1,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-accessible-description.js": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-accessible-errormessage.js": {
+        "passed": 5,
+        "failed": 4,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-accessible-name.js": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-attribute.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-class.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-description.js": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-display-value.js": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-errormessage.js": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-focus.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-form-values.js": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-role.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-selection.js": {
+        "passed": 9,
+        "failed": 4,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-style.js": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-text-content.js": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-value.js": {
+        "passed": 6,
+        "failed": 5,
+        "skipped": 0
+      },
+      "src/__tests__/utils.js": {
+        "passed": 22,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "vscode-jest": {
+    "recorded": "2026-10-20T19:11:04.327Z",
+    "head": "b71edf0b1b80aa22a16222775fbd37dabab3aea0",
+    "extensionMatches": true,
+    "files": 49,
+    "total": {
+      "passed": 2012,
+      "failed": 0,
+      "skipped": 0
+    },
+    "perFile": {
+      "tests/Coverage/CoverageCodeLensProvider.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/CoverageMapProvider.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/CoverageOverlay.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/Formatters/AbstractFormatter.test.ts": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/Formatters/DefaultFormatter.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/Formatters/GutterFormatter.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/Formatters/helpers.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/DebugConfigurationProvider.test.ts": {
+        "passed": 136,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/diagnostics.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/extension-manager.test.ts": {
+        "passed": 111,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/extension.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/helpers.test.ts": {
+        "passed": 148,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/core.test.ts": {
+        "passed": 137,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/helper.test.ts": {
+        "passed": 26,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/outpt-terminal.test.ts": {
+        "passed": 34,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/process-listeners.test.ts": {
+        "passed": 99,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/process-session.test.ts": {
+        "passed": 25,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/run-mode.test.ts": {
+        "passed": 51,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/run-shell.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestProcessManagement/helper.test.ts": {
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestProcessManagement/JestProcess.test.ts": {
+        "passed": 83,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestProcessManagement/JestProcessManager.test.ts": {
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestProcessManagement/test-queue.test.ts": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/language-provider.test.ts": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/logging.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/output-manager.test.ts": {
+        "passed": 200,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/quick-fix.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/reporter.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Settings/helper.test.ts": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/setup-wizard/start-wizard.test.ts": {
+        "passed": 27,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/setup-wizard/tasks/setup-jest-cmdline.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/setup-wizard/tasks/setup-jest-debug.test.ts": {
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/setup-wizard/tasks/setup-monorepo.test.ts": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/setup-wizard/wizard-helper.test.ts": {
+        "passed": 87,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/StatusBar.test.ts": {
+        "passed": 41,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/terminal-link-provider.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/jest-test-runt.test.ts": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/test-coverage.test.ts": {
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/test-item-context-manager.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/test-item-data.test.ts": {
+        "passed": 219,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/test-provider-context.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/test-provider.test.ts": {
+        "passed": 35,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/TestResults/match-by-context.test.ts": {
+        "passed": 57,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/TestResults/match-node.test.ts": {
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/TestResults/snapshot-provider.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/TestResults/TestResult.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/TestResults/TestResultProvider.test.ts": {
+        "passed": 65,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/virtual-workspace-folder.test.ts": {
+        "passed": 25,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/workspace-manager.test.ts": {
+        "passed": 32,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  }
+}
