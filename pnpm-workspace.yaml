@@ -1,2 +1,8 @@
 packages:
-  - "packages/*"
+  - 'packages/*'
+# Dependencies allowed to run install scripts (pnpm 10+).
+allowBuilds:
+  esbuild: true
+  # Prebuilt binaries come from optional dependencies; their scripts are not needed.
+  '@parcel/watcher': false
+  unrs-resolver: false

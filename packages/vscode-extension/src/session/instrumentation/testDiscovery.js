@@ -20,6 +20,16 @@
 let _rootDir = null;
 let _parser, _traverse;
 
+// Injected by TestDiscoveryService (setLogger) so messages reach the
+// extension log channel; falls back to the console when used standalone.
+let _log = {
+  debug: () => {},
+  warn:  (m) => console.warn(`[TestDiscovery] ${m}`),
+  error: (m) => console.error(`[TestDiscovery] ${m}`),
+};
+
+function setLogger(log) { _log = log; }
+
 function loadBabel(rootDir) {
   if (_rootDir === rootDir && _parser) { return true; }
   try {
@@ -30,7 +40,7 @@ function loadBabel(rootDir) {
     _rootDir = rootDir;
     return true;
   } catch (e) {
-    console.error(`[TestDiscovery] Failed to load Babel from "${rootDir}":`, e && (e.message || e));
+    _log.error(`Could not load @babel/parser / @babel/traverse for ${rootDir} — no tests can be discovered: ${e && (e.message || e)}`);
     return false;
   }
 }
@@ -442,7 +452,7 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
   } catch (_e) {
     // Full plugin list failed — could be an older @babel/parser that doesn't support
     // a newer plugin. Retry with a minimal stable set so the file isn't lost entirely.
-    console.warn(`[TestDiscovery] Full-plugin parse failed for "${sourcePath}", retrying with minimal plugins. Error: ${_e && (_e.message || _e)}`);
+    _log.debug(`Full-plugin parse failed for ${sourcePath}, retrying with minimal plugins: ${_e && (_e.message || _e)}`);
     try {
       ast = _parser.parse(sourceCode, {
         sourceType: 'module',
@@ -451,7 +461,7 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
         plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator'],
       });
     } catch (_e2) {
-      console.error(`[TestDiscovery] Minimal-plugin parse also failed for "${sourcePath}":`, _e2 && (_e2.message || _e2));
+      _log.warn(`Could not parse ${sourcePath} — its tests will not appear until it parses: ${_e2 && (_e2.message || _e2)}`);
       return null;
     }
   }
@@ -565,4 +575,4 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
   };
 }
 
-module.exports = { discoverTests };
+module.exports = { discoverTests, setLogger };

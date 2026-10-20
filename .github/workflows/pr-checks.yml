@@ -1,0 +1,129 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: ['**']
+
+jobs:
+  branch-rules:
+    name: Branch rules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch names and targets
+        env:
+          HEAD: ${{ github.head_ref }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          case "$HEAD" in
+            release/*|feat/*|hotfix/*|bugfix/*) ;;
+            *) echo "::error::Branch '$HEAD' must start with release/, feat/, hotfix/ or bugfix/"; exit 1 ;;
+          esac
+          if [[ "$BASE" == "main" && "$HEAD" != release/* && "$HEAD" != hotfix/* ]]; then
+            echo "::error::main only accepts PRs from release/* or hotfix/* (got '$HEAD')"; exit 1
+          fi
+          if [[ "$BASE" == release/* && "$HEAD" != feat/* && "$HEAD" != bugfix/* && "$HEAD" != hotfix/* ]]; then
+            echo "::error::release/* only accepts PRs from feat/*, bugfix/* or hotfix/* (got '$HEAD')"; exit 1
+          fi
+          if [[ "$HEAD" == bugfix/* && "$BASE" != feat/* && "$BASE" != release/* ]]; then
+            echo "::error::bugfix/* may only target a feat/* or release/* branch (got '$BASE')"; exit 1
+          fi
+          if [[ "$HEAD" == release/* && "$BASE" != "main" ]]; then
+            echo "::error::release/* may only target main (got '$BASE')"; exit 1
+          fi
+          if [[ "$HEAD" == hotfix/* && "$BASE" != "main" && "$BASE" != release/* ]]; then
+            echo "::error::hotfix/* must target main or a release/* branch (got '$BASE')"; exit 1
+          fi
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # pnpm version comes from "packageManager" in package.json
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - run: pnpm install
+      - run: pnpm run build
+      - run: pnpm lint
+      - run: pnpm test
+
+  # Real VS Code + real Jest against the fixture projects in e2e/fixtures
+  # (plain Jest, jest.config.ts / ts-jest, async .mjs config, Create React App).
+  # Every fixture's results are also compared with a plain Jest run.
+  e2e:
+    name: E2E (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    # The runner context (runner.temp) is only available inside steps, so
+    # LTR_E2E_RUNS_DIR is set on the steps that use it.
+    env:
+      LTR_E2E_VSCODE: stable
+    steps:
+      - uses: actions/checkout@v5
+      # pnpm version comes from "packageManager" in package.json
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - run: pnpm install
+      - run: pnpm run build
+      # npm cache for the fixtures' own installs (react-scripts is large)
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: e2e-npm-${{ runner.os }}-${{ hashFiles('e2e/fixtures/*/package.json') }}
+      - uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: e2e-vscode-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: e2e-vscode-${{ runner.os }}-
+      - name: Run e2e (Linux, virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node e2e/run.js --all
+        env:
+          LTR_E2E_RUNS_DIR: ${{ runner.temp }}/e2e
+      - name: Run e2e
+        if: runner.os != 'Linux'
+        run: node e2e/run.js --all
+        env:
+          LTR_E2E_RUNS_DIR: ${{ runner.temp }}/e2e
+      - name: Upload e2e logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/e2e/*/report.json
+            ${{ runner.temp }}/e2e/*/extension.log
+            ${{ runner.temp }}/e2e/*/jest-output.log
+          if-no-files-found: ignore
+
+  version-bump:
+    name: Version bump (PRs to main)
+    if: github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Require a higher version than main
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          for f in package.json packages/vscode-extension/package.json; do
+            new=$(node -p "require('./$f').version")
+            old=$(git show "origin/$BASE:$f" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+            echo "$f: $old -> $new"
+            highest=$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n1)
+            if [[ "$new" == "$old" || "$highest" != "$new" ]]; then
+              echo "::error::$f version must be bumped above $old (found $new)"; exit 1
+            fi
+          done

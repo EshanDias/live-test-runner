@@ -40,6 +40,11 @@ export interface IResultObserver extends vscode.Disposable {
   onFilesRerunning(fileIds: string[], nodeId?: string): void;
   onFileResult(filePath: string): void;
   onRunFinished(payload: RunFinishedPayload): void;
+  /**
+   * Files finished / scheduled across every run in flight (a save during the
+   * full suite adds to the same totals). Fires until onRunFinished.
+   */
+  onRunProgress?(completed: number, total: number, failed: number): void;
   onTracingProgress?(completed: number, total: number, done?: boolean): void;
   onSourceScanProgress?(scanned: number, total: number): void;
   onSourceScanDone?(): void;

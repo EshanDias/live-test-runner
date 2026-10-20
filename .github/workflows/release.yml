@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm (version from "packageManager" in package.json)
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node with pnpm cache
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Read version
+        id: version
+        run: echo "version=$(node -p "require('./packages/vscode-extension/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if already released
+        id: check
+        run: |
+          if git rev-parse -q --verify "refs/tags/v${{ steps.version.outputs.version }}" >/dev/null; then
+            echo "Tag v${{ steps.version.outputs.version }} already exists; nothing to release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install deps
+        if: steps.check.outputs.skip == 'false'
+        run: pnpm install
+
+      - name: Build
+        if: steps.check.outputs.skip == 'false'
+        run: pnpm run build
+
+      - name: Test
+        if: steps.check.outputs.skip == 'false'
+        run: pnpm test
+
+      - name: Publish (VS Code Marketplace)
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          npx @vscode/vsce publish -p "$VSCE_PAT" \
+            --no-dependencies \
+            --skip-duplicate \
+            --baseContentUrl "https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension"
+        working-directory: packages/vscode-extension
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish (Open VSX)
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          npx ovsx publish -p "$OVSX_PAT" \
+            --no-dependencies \
+            --skip-duplicate \
+            --baseContentUrl "https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension"
+        working-directory: packages/vscode-extension
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+      - name: Tag and create GitHub Release
+        if: steps.check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            --target "${{ github.sha }}" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --generate-notes

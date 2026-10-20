@@ -24,6 +24,17 @@
 const path = require('path');
 const RUNTIME_PATH = path.resolve(__dirname, 'traceRuntime.js');
 
+// Log protocol: "[LTR:<level>] msg" lines on stderr are routed by the
+// extension's Executor into the "Live Test Runner" log at that level.
+const _LTR_RANK = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 };
+const _ltrMin = _LTR_RANK[process.env.LTR_LOG_LEVEL] ?? _LTR_RANK.info;
+function _ltrLog(level, msg) {
+  if (_LTR_RANK[level] < _ltrMin) { return; }
+  // One line per message so continuation lines don't leak into raw output.
+  const text = String(msg).replace(/\s*Require stack:[\s\S]*$/, '').replace(/\s*\r?\n\s*/g, ' ↵ ');
+  process.stderr.write(`[LTR:${level}] timeline transform: ${text}\n`);
+}
+
 // ---------------------------------------------------------------------------
 // Lazy-resolve Babel packages from the user's project rootDir so we don't
 // need to bundle them inside the extension. Any project using babel-jest has
@@ -46,7 +57,7 @@ function loadBabel(rootDir) {
     _rootDir = rootDir;
     return true;
   } catch (e) {
-    process.stderr.write(`[LTR-TRANSFORM] could not load Babel packages from ${rootDir}: ${e.message}\n`);
+    _ltrLog('error', `could not load Babel from ${rootDir} — the timeline will be inaccurate: ${e.message}`);
     return false;
   }
 }
@@ -54,70 +65,92 @@ function loadBabel(rootDir) {
 // ---------------------------------------------------------------------------
 // Chain through the project's existing transformer (same logic as before)
 // ---------------------------------------------------------------------------
+// Transformers that run the real TypeScript compiler type-check our injected
+// globals, so instrumented TS gets ambient declarations for them.
+const STRICT_TRANSFORMER_RE = /\bts-jest\b|@swc\/jest\b|\besbuild-jest\b/;
+
+function normalisedTransforms(options) {
+  const transforms = (options && options.config && options.config.transform) || {};
+  return Array.isArray(transforms)
+    ? transforms
+    : Object.entries(transforms).map(([p, v]) => (Array.isArray(v) ? [p, ...v] : [p, v]));
+}
+
+function findTransform(transforms, sourcePath) {
+  return transforms.find(([pattern, moduleName]) => moduleName !== __filename && new RegExp(pattern).test(sourcePath));
+}
+
+/** Loads a Jest transformer the way Jest does: `process` directly, or via createTransformer(config). */
+function loadTransformer(moduleName, rootDir, transformerConfig) {
+  let resolved = moduleName;
+  try { resolved = require.resolve(moduleName, { paths: [rootDir, __dirname].filter(Boolean) }); } catch (_) { /* use as given */ }
+  const mod = require(resolved);
+  if (typeof mod.process === 'function') { return mod; }
+  const factory = mod.createTransformer || (mod.default && mod.default.createTransformer);
+  if (typeof factory === 'function') { return factory(transformerConfig || {}); }
+  if (mod.default && typeof mod.default.process === 'function') { return mod.default; }
+  return null;
+}
+
 function chainTransform(sourceCode, sourcePath, options) {
   if (!options || !options.config) { return sourceCode; }
+  const rootDir = options.config.rootDir;
 
-  let transforms = options.config.transform;
-  if (!Array.isArray(transforms)) {
-    transforms = Object.entries(transforms || {}).map(([p, v]) =>
-      Array.isArray(v) ? [p, ...v] : [p, v],
-    );
-  }
-  process.stderr.write(`[LTR-TRANSFORM] transform chain entries: ${transforms.length}\n`);
+  const transforms = normalisedTransforms(options);
+  _ltrLog('trace', `${transforms.length} transform entr(ies) to chain for ${sourcePath}`);
 
-  for (const entry of transforms) {
-    const [pattern, moduleName] = entry;
-    if (moduleName === __filename) { continue; }
-    if (!new RegExp(pattern).test(sourcePath)) { continue; }
-
+  const entry = findTransform(transforms, sourcePath);
+  if (entry) {
+    const [, moduleName, transformerConfig] = entry;
     try {
-      const transformer = require(moduleName);
-      if (typeof transformer.process !== 'function') { continue; }
-      const downstreamOptions = {
-        ...options,
-        config: { ...options.config, transform: transforms.filter(e => e !== entry) },
-      };
-      const result = transformer.process(sourceCode, sourcePath, downstreamOptions);
-      if (result && typeof result.code === 'string') { return result.code; }
-      if (typeof result === 'string') { return result; }
+      const transformer = loadTransformer(moduleName, rootDir, transformerConfig);
+      if (transformer) {
+        const downstreamOptions = {
+          ...options,
+          ...(transformerConfig !== undefined ? { transformerConfig } : {}),
+          config: { ...options.config, transform: transforms.filter(e => e !== entry) },
+        };
+        const result = transformer.process(sourceCode, sourcePath, downstreamOptions);
+        if (result && typeof result.code === 'string') { return result.code; }
+        if (typeof result === 'string') { return result; }
+      }
     } catch (_e) {
-      process.stderr.write(`[LTR-TRANSFORM] chain transformer error: ${_e.message}\n`);
+      _ltrLog('warn', `project transformer "${moduleName}" failed on ${sourcePath}: ${_e.message}`);
     }
-    break;
   }
 
-  // Babel-jest fallback (CRA / generic projects with no matching transform entry)
-  const rootDir = options && options.config && options.config.rootDir;
+  // babel-jest fallback (no matching transform entry). Resolved through Node's
+  // module lookup — a fixed node_modules/ path breaks under pnpm / Yarn PnP.
   if (rootDir) {
-    const babelJestPath = path.join(rootDir, 'node_modules', 'babel-jest');
+    const tryResolve = (id) => { try { return require.resolve(id, { paths: [rootDir] }); } catch (_) { return null; } };
     try {
-      const babelJest = require(babelJestPath);
+      const babelJest = require(tryResolve('babel-jest') || 'babel-jest');
       const createTransformer = babelJest.createTransformer
         || (babelJest.default && babelJest.default.createTransformer);
-
       if (createTransformer) {
+        const reactApp = tryResolve('babel-preset-react-app');
         let presets;
-        const reactAppPreset = path.join(rootDir, 'node_modules', 'babel-preset-react-app');
-        const presetEnv      = path.join(rootDir, 'node_modules', '@babel', 'preset-env');
-        const presetReact    = path.join(rootDir, 'node_modules', '@babel', 'preset-react');
-
-        try {
-          require(reactAppPreset);
-          presets = [[reactAppPreset, { runtime: 'automatic' }]];
-        } catch (_) {
-          const ps = [[presetEnv, { targets: { node: 'current' } }]];
-          try { require(presetReact); ps.push([presetReact, {}]); } catch (_) {}
-          presets = ps;
+        if (reactApp) {
+          presets = [[reactApp, { runtime: 'automatic' }]];
+        } else {
+          presets = [];
+          const env = tryResolve('@babel/preset-env');
+          const react = tryResolve('@babel/preset-react');
+          const ts = /\.tsx?$/.test(sourcePath) ? tryResolve('@babel/preset-typescript') : null;
+          if (env) { presets.push([env, { targets: { node: 'current' } }]); }
+          if (react) { presets.push([react, {}]); }
+          if (ts) { presets.push([ts, { allExtensions: true, isTSX: /\.tsx$/.test(sourcePath) }]); }
         }
-
-        const transformer = createTransformer({ configFile: false, presets });
-        process.stderr.write(`[LTR-TRANSFORM] babel-jest fallback with presets: ${JSON.stringify(presets.map(p => p[0]))}\n`);
+        // No presets found: let babel-jest use the project's own Babel config.
+        const transformer = createTransformer(presets.length ? { configFile: false, presets } : {});
+        _ltrLog('debug', `babel-jest fallback for ${sourcePath} with presets ${JSON.stringify(presets.map(p => p[0]))}`);
         const result = transformer.process(sourceCode, sourcePath, options);
         if (result && typeof result.code === 'string') { return result.code; }
         if (typeof result === 'string') { return result; }
       }
     } catch (_e) {
-      process.stderr.write(`[LTR-TRANSFORM] babel-jest fallback failed: ${_e.message}\n`);
+      _ltrLog('warn', `babel-jest fallback failed (files run untranspiled): ${_e.message}`);
+      _ltrLog('debug', `babel-jest fallback failed on ${sourcePath}`);
     }
   }
 
@@ -185,7 +218,7 @@ function instrumentAST(code, sourcePath) {
       plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport'],
     });
   } catch (e) {
-    process.stderr.write(`[LTR-TRANSFORM] AST parse failed: ${e.message}\n`);
+    _ltrLog('debug', `parse failed for ${sourcePath}: ${e.message}`);
     return null;
   }
 
@@ -279,7 +312,7 @@ function instrumentAST(code, sourcePath) {
   try {
     output = _generate(ast, { retainLines: false, compact: false }, code);
   } catch (e) {
-    process.stderr.write(`[LTR-TRANSFORM] AST generate failed: ${e.message}\n`);
+    _ltrLog('debug', `code generation failed for ${sourcePath}: ${e.message}`);
     return null;
   }
 
@@ -291,25 +324,31 @@ function instrumentAST(code, sourcePath) {
 // ---------------------------------------------------------------------------
 module.exports = {
   process(sourceCode, sourcePath, options) {
-    process.stderr.write(`[LTR-TRANSFORM] called for: ${sourcePath}\n`);
-    process.stderr.write(`[LTR-TRANSFORM] TRACE_OUTPUT_FILE: ${process.env.TRACE_OUTPUT_FILE || '(not set)'}\n`);
+    _ltrLog('trace', `instrumenting ${sourcePath}`);
+    if (!process.env.TRACE_OUTPUT_FILE) {
+      _ltrLog('warn', 'TRACE_OUTPUT_FILE is not set — no timeline steps will be recorded');
+    }
 
     const rootDir = options && options.config && options.config.rootDir;
 
     // 1. Instrument original source first — line numbers match the file on disk.
     //    Import declarations are left in place; the downstream transpiler handles them.
     if (rootDir && loadBabel(rootDir)) {
-      const instrumented = instrumentAST(sourceCode, sourcePath);
+      let instrumented = instrumentAST(sourceCode, sourcePath);
+      const entry = findTransform(normalisedTransforms(options), sourcePath);
+      if (instrumented && entry && STRICT_TRANSFORMER_RE.test(entry[1]) && /\.[cm]?tsx?$/.test(sourcePath)) {
+        // ts-jest type-checks: declare the injected globals (erased on compile).
+        instrumented = `declare var __trace: any; declare var __currentTestName: any;\n${instrumented}`;
+      }
       if (instrumented) {
         // 2. Now transpile the instrumented (still-ESM) code → CJS
         const transpiledCode = chainTransform(instrumented, sourcePath, options);
         // Prepend runtime require to the final CJS output — after transpilation so
         // babel-jest never sees mixed ESM + CJS in the same file.
         const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${transpiledCode}`;
-        process.stderr.write(`[LTR-TRANSFORM] instrument→transpile succeeded, output length: ${finalCode.length}\n`);
         return { code: finalCode };
       }
-      process.stderr.write(`[LTR-TRANSFORM] AST instrumentation failed, falling back to regex\n`);
+      _ltrLog('warn', `AST instrumentation failed for ${sourcePath} — using the regex fallback (line numbers may be off)`);
     }
 
     // 3. Regex fallback — transpile first then instrument (old order, line numbers

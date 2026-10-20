@@ -2,7 +2,7 @@
   "name": "live-test-runner",
   "displayName": "Live Test Runner",
   "description": "Live testing on save for Jest and other frameworks",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "icon": "resources/images/live-test-runner.png",
   "publisher": "EshLabs",
   "engines": {
@@ -83,7 +83,17 @@
       },
       {
         "command": "liveTestRunner.showOutput",
-        "title": "Show Raw Output",
+        "title": "Show Jest Output",
+        "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.showLogs",
+        "title": "Show Logs",
+        "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.copyDiagnostics",
+        "title": "Copy Diagnostic Report",
         "category": "Live Test Runner"
       },
       {
@@ -159,10 +169,19 @@
           "default": 300,
           "description": "Debounce delay in milliseconds before running tests on save"
         },
-        "liveTestRunner.showOutputOnFailure": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show raw output channel when tests fail"
+        "liveTestRunner.hangTimeoutSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "Stop a single test that runs longer than this many seconds (e.g. an infinite loop, which blocks Jest's own testTimeout) and mark its file failed, so the rest of the run continues. Loading a file does not count. 0 disables the limit."
+        },
+        "liveTestRunner.coverageExclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra glob patterns of source files to leave out of the coverage totals (node_modules, test files, configs and build folders are always excluded), e.g. [\"**/stories/**\"]."
         },
         "liveTestRunner.testFilePatterns": {
           "type": "array",
@@ -171,9 +190,10 @@
           },
           "default": [
             "**/*.test.*",
-            "**/*.spec.*"
+            "**/*.spec.*",
+            "**/__tests__/**/*.*"
           ],
-          "description": "Glob patterns for test files"
+          "description": "Glob patterns for test files. Files your Jest config runs (jest --listTests) are added even when no pattern matches them."
         },
         "liveTestRunner.coverageThresholds": {
           "type": "object",
@@ -237,7 +257,8 @@
     "compile": "node esbuild.js",
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
-    "lint": "eslint src --ext ts"
+    "test": "jest",
+    "lint": "eslint \"src/**/*.ts\""
   },
   "dependencies": {
     "@live-test-runner/core": "workspace:*",
@@ -246,8 +267,8 @@
   "devDependencies": {
     "@types/vscode": "^1.74.0",
     "@types/node": "16.x",
-    "typescript": "^4.9.4",
-    "eslint": "^8.28.0",
-    "esbuild": "^0.25.0"
+    "typescript": "~6.0.3",
+    "eslint": "^10.13.0",
+    "esbuild": "^0.28.2"
   }
 }

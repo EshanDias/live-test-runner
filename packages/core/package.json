@@ -11,8 +11,8 @@
   },
   "scripts": {
     "build": "tsc --build",
-    "test": "jest",
-    "lint": "eslint src/**/*.ts"
+    "test": "jest --passWithNoTests",
+    "lint": "eslint \"src/**/*.ts\""
   },
   "dependencies": {
     "@live-test-runner/runner": "workspace:*"

@@ -22,6 +22,7 @@ import { DecorationManager } from './editor/DecorationManager';
 import { ExplorerView } from './views/ExplorerView';
 import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
+import { ProjectJestConfig } from './session/ProjectJestConfig';
 import { TestDiscoveryService } from './session/TestDiscoveryService';
 import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
@@ -32,8 +33,9 @@ import { CoverageStore } from './coverage/CoverageStore';
 import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { logger } from './utils/logger';
+import { buildDiagnosticReport } from './utils/diagnostics';
 
-const FILE = 'extension.ts';
+const log = logger.scope('Extension');
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -45,16 +47,36 @@ function isProcessAlive(pid: number): boolean {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  // ── Output channels (created first so every later log line has a home) ─────
+  // "Live Test Runner"             — structured, levelled extension log
+  // "Live Test Runner: Jest Output" — raw Jest process output, ANSI-stripped
+  const logChannel    = vscode.window.createOutputChannel('Live Test Runner', { log: true });
+  const outputChannel = vscode.window.createOutputChannel('Live Test Runner: Jest Output');
+  logger.init(logChannel);
+
+  // End-to-end tests (e2e/ at the repo root) read the raw Jest output.
+  const e2eRawOutput: string[] | undefined = process.env.LTR_E2E ? [] : undefined;
+  if (e2eRawOutput) {
+    const appendLine = outputChannel.appendLine.bind(outputChannel);
+    outputChannel.appendLine = (line: string) => { e2eRawOutput.push(line); appendLine(line); };
+  }
+
+  const extVersion = (context.extension?.packageJSON as { version?: string } | undefined)?.version ?? '?';
+  log.info(
+    `Live Test Runner v${extVersion} · VS Code ${vscode.version} · ${process.platform}-${process.arch} · Node ${process.versions.node}`,
+  );
+
   // Ensure the shared base directories exist up front so no path checks fail later.
   for (const dir of [LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR]) {
     try {
       fs.mkdirSync(dir, { recursive: true });
     } catch (err) {
-      logger.error(FILE, 'activate', `Failed to create directory: ${dir}`, err);
+      log.error(`Could not create ${dir}`, err);
     }
   }
 
   // Clean up stale session directories from previous or crashed windows.
+  let removedDirs = 0;
   try {
     for (const entry of fs.readdirSync(LTR_BASE_TMP_DIR)) {
       const fullPath = path.join(LTR_BASE_TMP_DIR, entry);
@@ -64,37 +86,34 @@ export function activate(context: vscode.ExtensionContext) {
       if (sessionMatch) {
         const pid = parseInt(sessionMatch[1], 10);
         if (!isProcessAlive(pid)) {
-          logger.debug(FILE, 'activate', `Cleaning stale session dir: ${fullPath} (PID ${pid} not alive)`);
           fs.rmSync(fullPath, { recursive: true, force: true });
+          removedDirs++;
         }
         continue;
       }
 
       // Handle legacy trace directories (blindly clean up to migrate)
       if (entry.startsWith('traces-')) {
-        logger.debug(FILE, 'activate', `Removing legacy trace dir: ${fullPath}`);
         fs.rmSync(fullPath, { recursive: true, force: true });
+        removedDirs++;
       }
     }
   } catch (err) {
-    logger.warn(FILE, 'activate', 'Error during stale session cleanup — continuing', err);
+    log.warn('Stale session cleanup failed — continuing', err);
   }
+  if (removedDirs > 0) { log.debug(`Removed ${removedDirs} stale session folder(s) from ${LTR_BASE_TMP_DIR}`); }
 
   // Create a unique isolated directory for THIS session.
   const sessionDirName = `session-${process.pid}-${Date.now()}`;
   const LTR_SESSION_TMP_DIR = path.join(LTR_BASE_TMP_DIR, sessionDirName);
   try {
     fs.mkdirSync(LTR_SESSION_TMP_DIR, { recursive: true });
-    logger.info(FILE, 'activate', `Session temp dir: ${LTR_SESSION_TMP_DIR}`);
+    log.debug(`Session temp folder: ${LTR_SESSION_TMP_DIR}`);
   } catch (err) {
-    logger.error(FILE, 'activate', `Failed to create session temp directory: ${LTR_SESSION_TMP_DIR}`, err);
+    log.error(`Could not create session temp folder ${LTR_SESSION_TMP_DIR} — runs will fail`, err);
   }
 
-
   // ── Infrastructure ─────────────────────────────────────────────────────────
-  const outputChannel  = vscode.window.createOutputChannel('Live Test Runner', 'ansi');
-  logger.init(outputChannel);
-  logger.info(FILE, 'activate', `Extension activating — PID ${process.pid}`);
   const statusBar      = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.command    = 'liveTestRunner.showPanels';
   statusBar.text       = 'Live Tests: Off';
@@ -116,7 +135,8 @@ export function activate(context: vscode.ExtensionContext) {
   // discovery populates the line map — no need to click Start Testing first.
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
-      { scheme: 'file', pattern: '**/*.{test,spec}.{js,ts,jsx,tsx}' },
+      // Any file can carry lenses — they only appear where discovery mapped tests.
+      { scheme: 'file', pattern: '**/*.{js,ts,jsx,tsx,mjs,cjs,mts,cts}' },
       codeLensProvider,
     ),
   );
@@ -128,9 +148,16 @@ export function activate(context: vscode.ExtensionContext) {
     resultsView.sendScopedData(sel.fileId, sel.nodeId);
   };
 
+  // The project's Jest config as Jest resolves it — shared by session runs and the timeline.
+  const projectConfig = new ProjectJestConfig(LTR_SESSION_TMP_DIR, (msg) => outputChannel.appendLine(msg));
+
   // ── Timeline debugger ──────────────────────────────────────────────────────
   // Reference typed as the interface — never as the concrete class.
-  const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner(LTR_SESSION_TMP_DIR);
+  const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner(
+    LTR_SESSION_TMP_DIR,
+    (msg) => outputChannel.appendLine(msg),
+    projectConfig,
+  );
   const timelineDecorations = new TimelineDecorationManager();
 
   // Last timeline run context, used by the Re-run button in the sidebar.
@@ -165,11 +192,11 @@ export function activate(context: vscode.ExtensionContext) {
         lastTimelineStore as Parameters<typeof timelineDecorations.applyStep>[2],
         stepId,
       ).catch((err) => {
-        logger.error(FILE, 'onStepChanged', `applyStep failed for ${filePath}:${line} stepId=${stepId}`, err);
+        log.warn(`Timeline: could not decorate step ${stepId} at ${filePath}:${line}`, err);
       });
     } else {
       timelineDecorations.highlight(filePath, line).catch((err) => {
-        logger.error(FILE, 'onStepChanged', `highlight failed for ${filePath}:${line}`, err);
+        log.warn(`Timeline: could not highlight ${filePath}:${line}`, err);
       });
     }
   };
@@ -215,7 +242,6 @@ export function activate(context: vscode.ExtensionContext) {
       instrumentedRunner,
       resultsView,
       explorerView,
-      outputChannel,
       lastTimelineOptions,
       (s) => { lastTimelineStore = s; },
     );
@@ -255,24 +281,28 @@ export function activate(context: vscode.ExtensionContext) {
   // ── Session manager ────────────────────────────────────────────────────────
   const discovery = new TestDiscoveryService();
 
+  const discoveryCallbacks = {
+    onFilesFound: (total: number) => {
+      observers.forEach((o) => o.onDiscoveryStarted?.(total));
+    },
+    onBatchDiscovered: (files: unknown[], discovered: number, total: number) => {
+      observers.forEach((o) => o.onDiscoveryProgress?.(files, discovered, total));
+    },
+    onComplete: () => {
+      observers.forEach((o) => o.onDiscoveryComplete?.());
+    },
+    onFileRemoved: (fileId: string) => {
+      observers.forEach((o) => o.onDiscoveryFileRemoved?.(fileId));
+    },
+  };
+
   // Kick off static discovery immediately on activate so tests appear in the
   // sidebar before the user clicks Start Testing.
   if (activationRoot) {
-    logger.info(FILE, 'activate', `Starting test discovery in: ${activationRoot}`);
-    discovery.start(activationRoot, store, (msg) => outputChannel.appendLine(msg), {
-      onFilesFound: (total) => {
-        observers.forEach((o) => o.onDiscoveryStarted?.(total));
-      },
-      onBatchDiscovered: (files, discovered, total) => {
-        observers.forEach((o) => o.onDiscoveryProgress?.(files, discovered, total));
-      },
-      onComplete: () => {
-        observers.forEach((o) => o.onDiscoveryComplete?.());
-      },
-      onFileRemoved: (fileId) => {
-        observers.forEach((o) => o.onDiscoveryFileRemoved?.(fileId));
-      },
-    }, discoveryCache);
+    log.info(`Project root: ${activationRoot}`);
+    discovery.start(activationRoot, store, discoveryCallbacks, discoveryCache);
+  } else {
+    log.info('No project root yet — open a single folder or run "Live Test Runner: Select Project Root"');
   }
 
   const session = new SessionManager(
@@ -287,6 +317,7 @@ export function activate(context: vscode.ExtensionContext) {
     statusBar,
     discovery,
     LTR_SESSION_TMP_DIR,
+    projectConfig,
   );
 
   // Expose cleanup so deactivate() can delete trace files on extension shutdown
@@ -340,7 +371,7 @@ export function activate(context: vscode.ExtensionContext) {
         discoveryCache.releaseLock();
         discoveryCache.clear();
         discoveryCache.writeLock();
-        logger.info(FILE, 'stopAndClearCache', 'Cache cleared for current project');
+        log.info('Session stopped and discovery cache cleared');
       }
     }),
     vscode.commands.registerCommand('liveTestRunner.clearCacheAndRestart', async () => {
@@ -351,18 +382,31 @@ export function activate(context: vscode.ExtensionContext) {
         discoveryCache.writeLock();
         store.clearAll();
         cleanTraceDir();
-        logger.info(FILE, 'clearCacheAndRestart', 'Cache cleared — restarting discovery');
-        discovery.start(activationRoot, store, (msg) => outputChannel.appendLine(msg), {
-          onFilesFound: (total) => { observers.forEach((o) => o.onDiscoveryStarted?.(total)); },
-          onBatchDiscovered: (files, discovered, total) => { observers.forEach((o) => o.onDiscoveryProgress?.(files, discovered, total)); },
-          onComplete: () => { observers.forEach((o) => o.onDiscoveryComplete?.());  },
-          onFileRemoved: (fileId) => { observers.forEach((o) => o.onDiscoveryFileRemoved?.(fileId)); },
-        }, discoveryCache);
+        log.info('Discovery cache cleared — rediscovering tests');
+        discovery.start(activationRoot, store, discoveryCallbacks, discoveryCache);
         vscode.window.showInformationMessage('Live Test Runner: Cache cleared. Click Start Testing to run.');
       }
     }),
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot',  () => session.selectProjectRoot()),
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
+    vscode.commands.registerCommand('liveTestRunner.showLogs',           () => logChannel.show()),
+    vscode.commands.registerCommand('liveTestRunner.copyDiagnostics',    async () => {
+      const report = buildDiagnosticReport({
+        extensionVersion: extVersion,
+        projectRoot:      _resolveProjectRoot(),
+        sessionActive:    session.isActive(),
+        sessionDir:       LTR_SESSION_TMP_DIR,
+        summary:          store.getSummary(),
+        logLevel:         logger.level,
+        recentLogLines:   logger.recentLines(),
+      });
+      await vscode.env.clipboard.writeText(report);
+      const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: report });
+      await vscode.window.showTextDocument(doc, { preview: false });
+      vscode.window.showInformationMessage(
+        'Live Test Runner: diagnostic report copied to the clipboard. Check it for anything private before sharing.',
+      );
+    }),
     vscode.commands.registerCommand('liveTestRunner.showPanels',         () => {
       vscode.commands.executeCommand('liveTestRunner.explorer.focus');
       vscode.commands.executeCommand('liveTestRunner.results.focus');
@@ -435,7 +479,7 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) => {
       lastTimelineOptions = { filePath, testFullName };
-      return openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, outputChannel, lastTimelineOptions,
+      return openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, lastTimelineOptions,
         (s) => { lastTimelineStore = s; });
     }),
 
@@ -447,8 +491,8 @@ export function activate(context: vscode.ExtensionContext) {
       void vscode.env.clipboard.writeText(value);
     }),
     vscode.commands.registerCommand('liveTestRunner.dumpTraceStore', () => {
-      outputChannel.appendLine(traceStore.dump());
-      outputChannel.show();
+      logChannel.info(traceStore.dump());
+      logChannel.show();
     }),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
@@ -467,7 +511,18 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel,
     statusBar,
     { dispose: () => timelineDecorations.dispose() },
+    { dispose: () => logger.dispose() },
+    logChannel,
   );
+
+  // Internals for the end-to-end tests only — never returned in normal use.
+  if (e2eRawOutput) {
+    return {
+      store, session, traceStore, coverageStore, discovery, observers, statusBar,
+      instrumentedRunner, logger, rawOutput: e2eRawOutput, sessionDir: LTR_SESSION_TMP_DIR,
+    };
+  }
+  return undefined;
 }
 
 let _cleanTraceDir: (() => void) | undefined;
@@ -488,13 +543,12 @@ async function rerunFromEditor(
   store: ResultStore,
   session: SessionManager,
 ): Promise<void> {
-  logger.debug(FILE, 'rerunFromEditor', `Rerun requested — file="${filePath}" line=${line}`);
   try {
     const entry = store.getLineMap(filePath).get(line);
     if (entry) {
       const node = store.getNode(entry.nodeId);
       if (node) {
-        logger.debug(FILE, 'rerunFromEditor', `Rerunning node type="${node.type}" fullName="${node.fullName}"`);
+        log.debug(`Rerun from editor: ${node.type} "${node.fullName}"`);
         session.rerunScope({ scope: node.type, fileId: entry.fileId, nodeId: entry.nodeId, fullName: node.fullName });
         return;
       }
@@ -504,14 +558,14 @@ async function rerunFromEditor(
     const nodeId = await _resolveNodeAtLine(filePath, line, store);
     if (nodeId) {
       const node = store.getNode(nodeId);
-      logger.debug(FILE, 'rerunFromEditor', `Rerunning resolved suite nodeId="${nodeId}" fullName="${node?.fullName}"`);
+      log.debug(`Rerun from editor: suite "${node?.fullName}"`);
       session.rerunScope({ scope: 'suite', fileId: filePath, nodeId, fullName: node?.fullName });
       return;
     }
-    logger.debug(FILE, 'rerunFromEditor', `No node found at line ${line} — rerunning full file`);
+    log.debug(`Rerun from editor: no test at ${path.basename(filePath)}:${line} — running the whole file`);
     session.rerunScope({ scope: 'file', fileId: filePath });
   } catch (err) {
-    logger.error(FILE, 'rerunFromEditor', `Unhandled error for "${filePath}:${line}"`, err);
+    log.error(`Rerun from editor failed for ${filePath}:${line}`, err);
   }
 }
 
@@ -520,23 +574,16 @@ async function debugFromEditor(
   line: number,
   store: ResultStore,
   session: SessionManager,
-): Promise<void> {
-  logger.debug(FILE, 'debugFromEditor', `Debug requested — file="${filePath}" line=${line}`);
+): Promise<vscode.DebugConfiguration | undefined> {
   try {
     const entry = store.getLineMap(filePath).get(line);
-    if (entry) {
-      const node = store.getNode(entry.nodeId);
-      logger.debug(FILE, 'debugFromEditor', `Debugging node fullName="${node?.fullName}"`);
-      await session.debugFromEditor(filePath, node?.fullName);
-      return;
-    }
-    // describe block — use node fullName as testNamePattern so Jest runs all tests within it
-    const nodeId = await _resolveNodeAtLine(filePath, line, store);
-    const fullName = nodeId ? store.getNode(nodeId)?.fullName : undefined;
-    logger.debug(FILE, 'debugFromEditor', `Debugging resolved suite fullName="${fullName ?? '(whole file)'}"`);
-    await session.debugFromEditor(filePath, fullName);
+    const nodeId = entry?.nodeId ?? await _resolveNodeAtLine(filePath, line, store);
+    const node = nodeId ? store.getNode(nodeId) : undefined;
+    // A suite (describe block or .each template) runs every test inside it.
+    return await session.debugFromEditor(filePath, node?.fullName, node ? node.type === 'suite' : false);
   } catch (err) {
-    logger.error(FILE, 'debugFromEditor', `Unhandled error for "${filePath}:${line}"`, err);
+    log.error(`Debug from editor failed for ${filePath}:${line}`, err);
+    return undefined;
   }
 }
 
@@ -549,14 +596,14 @@ async function _resolveNodeAtLine(
   try {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
     const lineText = doc.lineAt(line - 1).text;
-    const m = lineText.match(/describe\s*[\.(]\s*['"`]([^'"`]+)['"`]/);
+    const m = lineText.match(/describe\s*[.(]\s*['"`]([^'"`]+)['"`]/);
     if (!m) { return undefined; }
     // Search all nodes in this file for one matching the describe name
     const allNodes = store.getFileNodes(filePath);
     const match = allNodes.find(n => n.type === 'suite' && n.name === m[1]);
     return match?.id;
   } catch (err) {
-    logger.warn(FILE, '_resolveNodeAtLine', `Could not resolve node at ${filePath}:${line}`, err);
+    log.debug(`Could not resolve a describe block at ${filePath}:${line} — ${(err as Error).message}`);
     return undefined;
   }
 }
@@ -567,7 +614,6 @@ async function openTimelineDebugger(
   runner: IInstrumentedRunner,
   resultsView: ResultsView,
   explorerView: ExplorerView,
-  outputChannel: vscode.OutputChannel,
   _optionsRef?: { filePath: string; testFullName: string },
   onStoreReady?: (store: { steps: unknown[]; variables: Record<number, unknown[]> }) => void,
 ): Promise<void> {
@@ -584,8 +630,9 @@ async function openTimelineDebugger(
   explorerView.postMessage({ type: 'route', view: 'timelineSidebar', payload: { testFullName } });
   resultsView.postMessage({ type: 'timeline-loading' });
 
-  outputChannel.appendLine(`[Timeline] Running instrumented trace: ${testFullName}`);
-  logger.info(FILE, 'openTimelineDebugger', `Starting timeline trace — testFullName="${testFullName}" file="${filePath}"`);
+  const tlog = logger.scope('Timeline');
+  const startedAt = Date.now();
+  tlog.info(`Tracing "${testFullName}" (${path.basename(filePath)})`);
 
   try {
     const store = await runner.run({ filePath, testFullName, projectRoot });
@@ -598,15 +645,20 @@ async function openTimelineDebugger(
       logs:      Object.fromEntries(store.logs),
     };
 
-    outputChannel.appendLine(`[Timeline] Trace complete — ${store.steps.length} steps captured.`);
-    logger.info(FILE, 'openTimelineDebugger', `Timeline trace complete — ${store.steps.length} steps captured`);
+    const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
+    if (store.steps.length === 0) {
+      // Nothing recorded almost always means the test name pattern matched no
+      // test, or the trace transform did not apply to the file.
+      tlog.warn(`Trace finished in ${secs}s but captured 0 steps for "${testFullName}" — see "Live Test Runner: Jest Output" for Jest's output`);
+    } else {
+      tlog.info(`Trace done in ${secs}s — ${store.steps.length} steps, ${store.errors.length} error(s)`);
+    }
     onStoreReady?.(serialisableStore as { steps: unknown[]; variables: Record<number, unknown[]> });
     resultsView.postMessage({ type: 'timeline-ready', store: serialisableStore });
     explorerView.postMessage({ type: 'timeline-ready', store: serialisableStore });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    outputChannel.appendLine(`[Timeline] Error: ${message}`);
-    logger.error(FILE, 'openTimelineDebugger', `Timeline trace failed — testFullName="${testFullName}"`, err);
+    tlog.error(`Trace failed for "${testFullName}"`, err);
     vscode.window.showErrorMessage(`Timeline Debugger error: ${message}`);
     resultsView.postMessage({ type: 'timeline-error', message });
   }

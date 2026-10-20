@@ -12,6 +12,9 @@ yarn-error.log*
 *.vsix
 *.tsbuildinfo
 
+# VS Code downloaded by the e2e tests
+.vscode-test/
+
 # Coverage
 coverage/
 !/packages/vscode-extension/src/coverage/

@@ -2,6 +2,49 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [Unreleased]
+
+### Improvements
+
+- **Cleaner, levelled logs** — the "Live Test Runner" output now has error / warning / info / debug levels you can filter (Output ⚙ → Set Log Level). You get one summary line per run instead of hundreds of internal messages.
+- **Separate Jest output** — Jest's own output has its own channel, "Live Test Runner: Jest Output", without colour-code garbage.
+- **Copy Diagnostic Report** — a new command that collects everything needed for a bug report in one click.
+
+### Bug Fixes
+
+- **Console logs now always show** in the Results panel, including after saving or rerunning a single test file.
+- **No more `�` symbols** in the Output panel.
+- **Windows: projects in folders with spaces work** — and ▶ Run on tests with `^ | &` in their names runs exactly that test.
+- **All your results show up** — tests could disappear from the tree (e.g. `it.each` tables, tests with the same name).
+- **No more "finished" while tests are running**, no endless spinners, and **Stop really stops** every Jest process.
+- **Hanging tests are stopped** after `liveTestRunner.hangTimeoutSeconds` (default 5 min per test) and marked failed with an explanation.
+- **Skipped / todo tests** show as skipped; files your Jest config never runs (e2e specs, ignored folders) are no longer run.
+- **TypeScript / ESM Jest configs** (`jest.config.ts`, `.mjs`, function exports, `--config` in your test script) are used.
+- **Smart on-save reruns** now rerun only the tests that use the saved file; hover shows which tests cover a line.
+- **▷ Debug** debugs only the chosen test, on Windows and in Create React App projects too.
+- **Timeline Debugger** works on Windows, for `.each` tests and TypeScript projects.
+- **macOS / symlinked folders, Windows short paths** — projects opened through a symlink, junction or short (`RUNNER~1`-style) path now run normally (before, every file showed as skipped and ▷ Debug found no tests).
+- **Projects that also list Vitest** (e.g. libraries testing with both) run on Jest instead of reporting "vite is not supported".
+- **Tests in `__tests__` folders** are found, and any file your Jest config runs shows up in the tree.
+- **Multi-project Jest configs** — a test run under several projects (e.g. jsdom and node) shows failed if it failed in any of them.
+- **Coverage stays after restarting** — coverage no longer disappears on the second Start Testing.
+- **Test durations** show at the end of the test's line; "go to file" on a generated `.each` test opens the `test.each(...)` line.
+- **Smaller download** — the extension package no longer includes source code and screenshots.
+- **Faster restarts** — compiled files are cached per project between sessions, and Start no longer waits for Jest to list your test files when nothing changed.
+- **Test files show how long they took** in the test lists.
+- **New test files run when you save them**, even if you created them after clicking Start.
+- **Coverage no longer stays "stale"** after saving a source file, and those reruns now update the test tree.
+
+---
+
+## [2.0.4] - 2026-10-19
+
+### Maintenance
+
+- No changes to extension behaviour; internal release tooling only.
+
+---
+
 ## [2.0.3] - 2026-05-15
 
 ### Bug Fixes

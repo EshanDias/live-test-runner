@@ -5,6 +5,8 @@ import { LTR_BASE_CACHE_DIR } from '../../constants';
 import { Framework } from "../../types";
 import { FrameworkAdapter } from "./FrameworkAdapter";
 import { readPackageJson } from "./JestAdapter";
+import { BinaryResolver } from "../../resolution/BinaryResolver";
+import { testScriptJestArgs, toInputConfig } from "../jestConfig";
 
 /**
  * Handles Create React App (react-scripts) projects.
@@ -52,6 +54,12 @@ export class CRAAdapter implements FrameworkAdapter {
    * (present in newer CRA versions that list jest as a peer dep).
    */
   resolveBinary(projectRoot: string): string {
+    // 0. Jest's JS entry point as react-scripts resolves it — run with node, no shell.
+    const entry = BinaryResolver.resolveCraJestEntry(projectRoot);
+    if (entry) {
+      return entry;
+    }
+
     // 1. Jest bundled inside react-scripts (most reliable for CRA)
     const craJest = path.join(
       projectRoot,
@@ -118,8 +126,9 @@ export class CRAAdapter implements FrameworkAdapter {
     return tmpFilePath;
   }
 
-  getExtraArgs(_projectRoot: string): string[] {
-    return [];
+  /** Behaviour flags from `react-scripts test …` (e.g. --resetMocks), as `npm test` uses them. */
+  getExtraArgs(projectRoot: string): string[] {
+    return testScriptJestArgs(projectRoot).filter((a, i, all) => a !== '--config' && all[i - 1] !== '--config');
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
@@ -166,6 +175,7 @@ export class CRAAdapter implements FrameworkAdapter {
     } catch (err: any) {
       throw new Error(
         `[CRAAdapter] Failed to extract Jest config from react-scripts:\n${err.message}`,
+        { cause: err },
       );
     }
 
@@ -197,7 +207,9 @@ export class CRAAdapter implements FrameworkAdapter {
       );
     }
 
-    return JSON.stringify(sanitizeJestConfig(projectConfig), null, 2);
+    // `silent`: react-scripts sets it to suppress console output; dropping it
+    // lets console.log reach the JSON `console` array the UI shows.
+    return JSON.stringify(toInputConfig(projectConfig, ['silent']), null, 2);
   }
 
   /**
@@ -236,58 +248,6 @@ function platformCmd(bin: string): string {
     if (!lower.endsWith(".cmd") && !lower.endsWith(".exe")) return `${bin}.cmd`;
   }
   return bin;
-}
-
-/**
- * Keys that appear in --showConfig output but are NOT valid Jest config options,
- * or that we must override to ensure correct behaviour when running Jest directly.
- *
- * - cwd / name / id: internal Jest fields not accepted via --config
- * - silent: react-scripts sets this to suppress console output; removing it lets
- *   console.log / warn / error / info appear in the Jest JSON `console` array
- *   and in stderr so our parser can surface them in the UI.
- */
-const INVALID_JEST_CONFIG_KEYS: ReadonlySet<string> = new Set(['cwd', 'name', 'id', 'silent']);
-
-/**
- * Normalises the raw config object extracted from react-scripts --showConfig:
- *
- * 1. Strips keys that are not valid Jest config options (e.g. `cwd`).
- * 2. Normalises `moduleNameMapper` and `transform` from Jest's internal
- *    array-of-tuples format back to the plain-object format Jest expects
- *    when passed via --config:
- *
- *      [[pattern, replacement], ...]  →  { pattern: replacement, ... }
- */
-function sanitizeJestConfig(config: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-
-  for (const [key, value] of Object.entries(config)) {
-    if (INVALID_JEST_CONFIG_KEYS.has(key)) continue;
-
-    if (key === 'moduleNameMapper' || key === 'transform') {
-      result[key] = normalizeTupleMap(value);
-    } else {
-      result[key] = value;
-    }
-  }
-
-  return result;
-}
-
-/**
- * Jest internally serialises mapper/transform as arrays of 2-element tuples.
- * When writing a config file for --config, Jest expects a plain object.
- * Returns the value unchanged if it is already an object (or not an array).
- */
-function normalizeTupleMap(value: unknown): unknown {
-  if (
-    Array.isArray(value) &&
-    value.every((item) => Array.isArray(item) && item.length >= 2)
-  ) {
-    return Object.fromEntries(value.map(([k, v]: [string, unknown]) => [k, v]));
-  }
-  return value;
 }
 
 /** Simple djb2-style hash for stable temp file naming — not cryptographic. */

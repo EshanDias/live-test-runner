@@ -2,46 +2,52 @@ import * as vscode from 'vscode';
 import { CoverageEntry, CoveragePct, CoverageTotals, LiveCov } from './types';
 import { logger } from '../utils/logger';
 
-const FILE = 'CoverageStore.ts';
+const log = logger.scope('Coverage');
 
 export class CoverageStore {
   private readonly _entries = new Map<string, CoverageEntry>();
   private _scanComplete = false;
 
   readonly onDidChange = new vscode.EventEmitter<void>();
+  private _fireTimer: ReturnType<typeof setTimeout> | undefined;
 
   // ── Writes ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Static count from the source scan (0 hits). The scan runs alongside the
+   * first test run, so a file may already be measured — never downgrade it
+   * back to 0% (BUG-09).
+   */
   setCountedEntry(
     filePath: string,
     counts: { statements: number; branches: number; functions: number; lines: number },
   ): void {
+    const existing = this._entries.get(filePath);
+    if (existing && existing.state !== 'counted') { return; }
     this._entries.set(filePath, { state: 'counted', ...counts });
-    this.onDidChange.fire();
+    this._changed();
   }
 
   setMeasuredEntry(
     filePath: string,
     data: { manifestPath: string; counters: LiveCov; pct: CoveragePct },
   ): void {
-    const prev = this._entries.get(filePath);
     this._entries.set(filePath, { state: 'measured', ...data });
-    logger.debug(FILE, 'setMeasuredEntry',
-      `[Coverage] ${prev ? 'Updated' : 'New'} measured entry: "${filePath}" ` +
-      `stmts=${data.pct.statements.covered}/${data.pct.statements.total} ` +
-      `branches=${data.pct.branches.covered}/${data.pct.branches.total} ` +
-      `fns=${data.pct.functions.covered}/${data.pct.functions.total} ` +
-      `lines=${data.pct.lines.covered}/${data.pct.lines.total}`,
+    log.trace(
+      `${filePath}: stmts ${data.pct.statements.covered}/${data.pct.statements.total}, ` +
+      `branches ${data.pct.branches.covered}/${data.pct.branches.total}, ` +
+      `fns ${data.pct.functions.covered}/${data.pct.functions.total}, ` +
+      `lines ${data.pct.lines.covered}/${data.pct.lines.total}`,
     );
-    this.onDidChange.fire();
+    this._changed();
   }
 
   markFileStale(filePath: string): void {
     const entry = this._entries.get(filePath);
     if (entry?.state === 'measured') {
       this._entries.set(filePath, { ...entry, state: 'measured-stale' });
-      logger.debug(FILE, 'markFileStale', `[Coverage] Marked stale: "${filePath}"`);
-      this.onDidChange.fire();
+      log.trace(`Marked stale: ${filePath}`);
+      this._changed();
     }
   }
 
@@ -49,23 +55,34 @@ export class CoverageStore {
     const entry = this._entries.get(filePath);
     if (entry?.state === 'measured-stale') {
       this._entries.set(filePath, { ...entry, state: 'measured' });
-      logger.debug(FILE, 'clearStale', `[Coverage] Cleared stale flag: "${filePath}"`);
-      this.onDidChange.fire();
+      log.trace(`Cleared stale flag: ${filePath}`);
+      this._changed();
     }
   }
 
   markScanComplete(): void {
     this._scanComplete = true;
-    logger.info(FILE, 'markScanComplete', `[Coverage] Source scan complete — ${this._entries.size} entries in store`);
-    this.onDidChange.fire();
+    this._changed();
   }
 
   clear(): void {
-    const prev = this._entries.size;
     this._entries.clear();
     this._scanComplete = false;
-    logger.info(FILE, 'clear', `[Coverage] Store cleared — removed ${prev} entries`);
+    if (this._fireTimer) { clearTimeout(this._fireTimer); this._fireTimer = undefined; }
     this.onDidChange.fire();
+  }
+
+  /**
+   * Coalesces change events: every fire re-sends all coverage rows to the
+   * webview, and the source scan writes one entry per file — firing per entry
+   * was O(N²) traffic on large repos (BUG-09).
+   */
+  private _changed(): void {
+    if (this._fireTimer) { return; }
+    this._fireTimer = setTimeout(() => {
+      this._fireTimer = undefined;
+      this.onDidChange.fire();
+    }, CHANGE_DEBOUNCE_MS);
   }
 
   // ── Reads ───────────────────────────────────────────────────────────────────
@@ -149,9 +166,12 @@ export class CoverageStore {
   }
 
   dispose(): void {
+    if (this._fireTimer) { clearTimeout(this._fireTimer); }
     this.onDidChange.dispose();
   }
 }
+
+const CHANGE_DEBOUNCE_MS = 100;
 
 function _pct(covered: number, total: number): number {
   return total === 0 ? 0 : Math.round((covered / total) * 1000) / 10;

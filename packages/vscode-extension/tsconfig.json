@@ -15,5 +15,6 @@
     "composite": true
   },
   "references": [{ "path": "../core" }, { "path": "../runner" }],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", ".vscode-test", "out"]
 }
