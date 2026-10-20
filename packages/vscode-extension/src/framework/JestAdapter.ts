@@ -121,7 +121,7 @@ export class JestAdapter implements IFrameworkAdapter {
     projectRoot: string,
     rawLog: (msg: string) => void,
     opts?: RerunOptions,
-  ): Promise<void> {
+  ): Promise<boolean> {
     log.debug(`Scoped run in ${filePath} — pattern ${fullName}`);
     const runner = this._createRunner(projectRoot, rawLog);
     // Determine if this is a suite-level rerun (no individual test node)
@@ -133,17 +133,19 @@ export class JestAdapter implements IFrameworkAdapter {
       jsonResult = await runner.runTestCaseJson(filePath, fullName, isSuiteRun);
     } catch (err) {
       log.error(`Could not run pattern ${fullName} in ${filePath}`, err);
-      return;
+      return false;
     }
     const fileResult = jsonResult.fileResults[0];
-    if (fileResult) {
-      try {
-        this._applyFileResult(store, filePath, fileResult, opts);
-      } catch (err) {
-        log.error(`Could not apply scoped results for ${filePath}`, err);
-      }
-    } else {
+    if (!fileResult) {
       log.warn(`Jest returned no result for ${filePath} (pattern ${fullName}) — the test name may no longer match`);
+      return false;
+    }
+    try {
+      this._applyFileResult(store, filePath, fileResult, opts);
+      return true;
+    } catch (err) {
+      log.error(`Could not apply scoped results for ${filePath}`, err);
+      return false;
     }
   }
 
@@ -169,11 +171,15 @@ export class JestAdapter implements IFrameworkAdapter {
     }
     const affectedPaths: string[] = [];
     for (const fileResult of jsonResult.fileResults) {
+      // Jest reports its own spelling of the path (e.g. C:\ vs c:\) — use the
+      // store's key, or the result would create a duplicate file entry.
+      const fileId = store.findFileKey(fileResult.testFilePath) ?? fileResult.testFilePath;
       try {
-        this._applyFileResult(store, fileResult.testFilePath, fileResult);
-        affectedPaths.push(fileResult.testFilePath);
+        store.markFileRunning(fileId);
+        this._applyFileResult(store, fileId, fileResult);
+        affectedPaths.push(fileId);
       } catch (err) {
-        log.error(`Could not apply results for ${fileResult.testFilePath}`, err);
+        log.error(`Could not apply results for ${fileId}`, err);
       }
     }
     return affectedPaths;
@@ -229,6 +235,9 @@ export class JestAdapter implements IFrameworkAdapter {
     const cmd = this._getCommand();
     const runner = new JestRunner(cmd, rawLog, this._tmpDir);
     runner.setProjectRoot(projectRoot);
+    runner.setFileTimeout(1000 * (vscode.workspace
+      .getConfiguration('liveTestRunner')
+      .get<number>('hangTimeoutSeconds') ?? 300));
     return runner;
   }
 
@@ -366,14 +375,15 @@ export class JestAdapter implements IFrameworkAdapter {
         tc.location?.line,
       );
 
+      // Jest reports test.skip / xit / tests skipped by .only as "pending" and
+      // test.todo as "todo". Both ran (as skipped) — never show them as ○
+      // "not run yet" (BUG-24).
       const status: TestStatus =
         tc.status === 'passed'
           ? 'passed'
           : tc.status === 'failed'
             ? 'failed'
-            : tc.status === 'skipped'
-              ? 'skipped'
-              : 'pending';
+            : 'skipped';
 
       store.nodeResult(
         testNodeId,

@@ -15,7 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
@@ -112,8 +112,14 @@ function toFileRunResult(rec: ReporterRecord): FileRunResult {
 export class SessionTraceRunner {
   /** Batch counter — "b7" in log lines ties a batch's messages together. */
   private static _batchSeq = 0;
-  /** file path → the executor (and its batch id) currently running that file. */
-  private readonly _executors = new Map<string, { executor: Executor; batch: string }>();
+  /** Every Jest process this runner started that is still running — for kill(). */
+  private readonly _running = new Set<Executor>();
+  /**
+   * file path → the batch whose result counts for it: the newest run of the
+   * file. An older batch still running the same file is left alone (killing
+   * it would cancel its other files too) and its result for that file ignored.
+   */
+  private readonly _owner = new Map<string, string>();
   private readonly _binaryResolver = new BinaryResolver();
   private _killed = false;
   /** Bumped by kill(): records from batches started before it are dropped. */
@@ -122,10 +128,11 @@ export class SessionTraceRunner {
   kill(): void {
     this._killed = true;
     this._generation++;
-    for (const { executor } of this._executors.values()) {
+    for (const executor of this._running) {
       executor.kill();
     }
-    this._executors.clear();
+    this._running.clear();
+    this._owner.clear();
   }
 
   reset(): void {
@@ -148,7 +155,12 @@ export class SessionTraceRunner {
    * - Calls applyFileResult for each file as results arrive (streaming).
    * - Calls onFileDone after each file so the UI status bar stays live.
    * - Updates traceStore with the source→test dependency map after the run.
+   * - Calls onFileStart when Jest begins executing a file (files queued in
+   *   the batch are not running yet).
+   * - Calls onFileTimedOut when a file runs longer than hangTimeoutMs; the
+   *   batch is then stopped and its unfinished files come back as missing.
    * - Returns the list of files that produced no result (crashed mid-batch).
+   *   Result paths are always the caller's own keys (`filePaths` entries).
    */
   async runFiles(options: {
     filePaths: string[];
@@ -157,9 +169,14 @@ export class SessionTraceRunner {
     store: ResultStore;
     applyFileResult: (filePath: string, fileResult: FileRunResult) => void;
     onFileDone: (filePath: string, status: 'passed' | 'failed') => void;
+    onFileStart?: (filePath: string) => void;
+    onFileTimedOut?: (filePath: string, seconds: number) => void;
+    /** 0 disables the hang timeout. */
+    hangTimeoutMs?: number;
     log?: (msg: string) => void;
   }): Promise<{ missing: string[] }> {
     const { filePaths, projectRoot, traceStore, store: _store, applyFileResult, onFileDone, log: rawLog } = options;
+    const hangTimeoutMs = options.hangTimeoutMs ?? 0;
     if (filePaths.length === 0) { return { missing: [] }; }
     const emit = rawLog ?? (() => {});
     const batch = `b${++SessionTraceRunner._batchSeq}`;
@@ -298,8 +315,11 @@ if (!hasGeneralJsTransform) {
 
 module.exports = {
   ...baseConfig,
-  rootDir: ${JSON.stringify(projectRoot)},
-  roots: [${JSON.stringify(projectRoot)}],
+  // Same drive-letter spelling as the --runTestsByPath arguments (upper case,
+  // like Jest's realpath'd rootDir): Jest compares test paths against roots
+  // case-sensitively, so c:\ vs C:\ made every file "not found".
+  rootDir: ${JSON.stringify(upperDrive(projectRoot))},
+  roots: [${JSON.stringify(upperDrive(projectRoot))}],
   // Raise test timeout to account for the instrumentation overhead added by
   // sessionTraceTransform (step() calls before every statement slow React renders).
   // Tests that approach the default 5 s limit will timeout under instrumentation.
@@ -328,21 +348,41 @@ module.exports = {
     let current: { file: string; at: number } | undefined;
     const generation = this._generation;
 
+    // Jest may report a path differently from how we passed it (drive-letter
+    // case, separators). Map every reported path back to the caller's key so
+    // results land on the right store entry (BUG-13).
+    const keyByNorm = new Map(filePaths.map((fp) => [pathKey(fp), fp]));
+    const toKey = (p: string) => keyByNorm.get(pathKey(p)) ?? path.normalize(p);
+
+    for (const fp of filePaths) {
+      const prev = this._owner.get(fp);
+      if (prev) {
+        log.debug(`${batch}: ${path.basename(fp)} is also still running in ${prev} — only this newer run's result will be used`);
+      }
+      this._owner.set(fp, batch);
+    }
+    const owns = (fp: string) => this._owner.get(fp) === batch;
+
     const onRecord = (raw: unknown) => {
       // Stopped: results still flushed by a dying Jest must not reach the tree.
       if (generation !== this._generation) { return; }
       const ev = raw as { ltrEvent?: string; testFilePath?: string; at?: number };
       if (ev?.ltrEvent === 'start') {
         if (ev.testFilePath) {
-          current = { file: path.normalize(ev.testFilePath), at: ev.at ?? Date.now() };
+          current = { file: toKey(ev.testFilePath), at: ev.at ?? Date.now() };
           log.trace(`${batch}: started ${path.basename(current.file)}`);
+          if (owns(current.file)) { options.onFileStart?.(current.file); }
         }
         return;
       }
       const rec = raw as ReporterRecord;
       if (!rec || !rec.testFilePath) { return; }
-      rec.testFilePath = path.normalize(rec.testFilePath);
+      rec.testFilePath = toKey(rec.testFilePath);
       received.add(rec.testFilePath);
+      if (!owns(rec.testFilePath)) {
+        log.debug(`${batch}: ignoring the result for ${path.basename(rec.testFilePath)} — a newer run of it has started`);
+        return;
+      }
       if (rec.failureMessage) {
         // The file itself failed to run (syntax error, missing module, setup
         // crash, or an instrumentation problem) — no test inside it executed.
@@ -358,7 +398,14 @@ module.exports = {
       }
     };
 
-    if (this._killed) { return { missing: filePaths }; }
+    const release = () => {
+      for (const fp of filePaths) { if (owns(fp)) { this._owner.delete(fp); } }
+    };
+    if (this._killed) { release(); return { missing: [] }; }
+
+    const executor = new Executor();
+    /** Set when the watchdog stopped the batch because a file hung. */
+    let timedOut: { file: string; seconds: number } | undefined;
 
     // Watchdog: a batch with no finished file for a long time is either slow
     // or hung. Say which file it is on so the two can be told apart.
@@ -367,6 +414,16 @@ module.exports = {
     let nextWarnAt = Date.now() + SLOW_BATCH_WARN_MS;
     const watchdog = setInterval(() => {
       const now = Date.now();
+      if (hangTimeoutMs > 0 && !timedOut && current && !received.has(current.file) && now - current.at > hangTimeoutMs) {
+        timedOut = { file: current.file, seconds: Math.round((now - current.at) / 1000) };
+        log.warn(
+          `${batch}: ${path.basename(current.file)} has run for ${timedOut.seconds}s without finishing — stopping it ` +
+          '(probably a hanging test: infinite loop or a promise that never resolves). ' +
+          'The rest of the batch is retried. Change the limit with liveTestRunner.hangTimeoutSeconds.',
+        );
+        executor.kill();
+        return;
+      }
       if (received.size !== lastReceived) {
         lastReceived = received.size;
         lastProgressAt = now;
@@ -398,25 +455,7 @@ module.exports = {
 
       log.debug(`${batch}: running ${filePaths.length} file(s) — ${filePaths.map((p) => path.basename(p)).join(', ')}`);
 
-      // Cancel any in-flight executor already running these files, then create a
-      // fresh one registered under each file path so kill() can reach it.
-      const executor = new Executor();
-      const cancelled = new Set<string>();
-      for (const fp of filePaths) {
-        const prev = this._executors.get(fp);
-        if (prev && !cancelled.has(prev.batch)) {
-          cancelled.add(prev.batch);
-          // The whole previous batch dies, not just this file — its unfinished
-          // files come back as "missing" and are retried (slower) by SessionManager.
-          log.info(
-            `${batch}: ${path.basename(fp)} was still running in ${prev.batch} — cancelling ${prev.batch}; ` +
-            'its unfinished files will be retried',
-          );
-          prev.executor.kill();
-        }
-        this._executors.set(fp, { executor, batch });
-      }
-
+      this._running.add(executor);
       executor.setLogger(emit);
 
       const result = await executor.runWithReporterPolling(
@@ -427,7 +466,7 @@ module.exports = {
             '--forceExit',
             '--no-bail',
             '--runTestsByPath',
-            ...filePaths.map((p) => p.replace(/\\/g, '/')),
+            ...filePaths.map(toJestPathArg),
             '--config', tempConfigPath,
             '--cacheDirectory', this._transformCacheDir,
             '--maxWorkers=1',
@@ -453,6 +492,8 @@ module.exports = {
 
       if (this._killed || generation !== this._generation) {
         log.debug(`${batch}: stopped by the user after ${secondsSince(startedAt)}`);
+      } else if (timedOut) {
+        log.debug(`${batch}: stopped after ${secondsSince(startedAt)} — ${path.basename(timedOut.file)} hung`);
       } else if (received.size === 0) {
         // Whole batch produced nothing — Jest itself failed (config, transform,
         // environment). SessionManager falls back to plain Jest next; this line
@@ -468,12 +509,18 @@ module.exports = {
       log.error(`${batch}: Jest run failed`, err);
     } finally {
       clearInterval(watchdog);
-      for (const fp of filePaths) {
-        // Only remove our own registration — a newer batch may own this file now.
-        if (this._executors.get(fp)?.batch === batch) { this._executors.delete(fp); }
-      }
+      this._running.delete(executor);
       try { fs.unlinkSync(tempConfigPath); } catch {}
     }
+
+    const stopped = generation !== this._generation;
+    if (timedOut && !stopped && owns(timedOut.file)) {
+      received.add(timedOut.file); // reported as failed below — never retried
+      options.onFileTimedOut?.(timedOut.file, timedOut.seconds);
+    }
+    // Files a newer batch took over are that batch's business, not missing here.
+    const missing = stopped ? [] : filePaths.filter((fp) => owns(fp) && !received.has(fp));
+    release();
 
     // Parse trace hits and update ExecutionTraceStore.
     try {
@@ -492,7 +539,6 @@ module.exports = {
       covLog.error(`${batch}: could not parse coverage counters`, err);
     }
 
-    const missing = filePaths.filter((fp) => !received.has(fp));
     return { missing };
   }
 
@@ -826,4 +872,15 @@ function _isExcludedFromCoverage(filePath: string): boolean {
 
 function _normPath(filePath: string): string {
   return filePath.replace(/^[A-Z]:/, m => m.toLowerCase());
+}
+
+/** `c:\x` → `C:\x` (no-op without a drive letter). */
+function upperDrive(p: string): string {
+  return p.replace(/^([a-z]):/, (_, d: string) => `${d.toUpperCase()}:`);
+}
+
+/** Comparison key for a file path: normalised, and case-insensitive on Windows. */
+function pathKey(filePath: string): string {
+  const p = path.normalize(filePath);
+  return process.platform === 'win32' ? p.toLowerCase() : p;
 }

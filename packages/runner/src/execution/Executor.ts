@@ -30,6 +30,8 @@ export interface ExecutorCommand {
   cwd: string;
   /** Extra environment variables merged into the child process env. */
   extraEnv?: Record<string, string>;
+  /** Kill Jest (and its children) if it runs longer than this. 0/undefined = no limit. */
+  timeoutMs?: number;
 }
 
 /**
@@ -118,7 +120,7 @@ export class Executor {
 
     this.kill();
 
-    const result = await this.spawn(inv, command.cwd, command.extraEnv);
+    const result = await this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs);
 
     // Prefer the output file; fall back to captured stdout for CRA edge cases.
     let jsonOutput = '';
@@ -264,6 +266,7 @@ export class Executor {
     cwd: string,
     extraEnv?: Record<string, string>,
     forwardStdout = false,
+    timeoutMs = 0,
   ): Promise<ExecutionResult> {
     return new Promise((resolve) => {
       const tag = `jest#${++Executor._seq}`;
@@ -316,10 +319,23 @@ export class Executor {
         raw(line);
       });
 
+      // A test that never finishes (infinite loop) would hold this run forever.
+      const timer = timeoutMs > 0
+        ? setTimeout(() => {
+            log.warn(
+              `${tag} ran for ${Math.round(timeoutMs / 1000)}s without finishing — stopping it ` +
+              '(probably a hanging test: an infinite loop or a promise that never resolves)',
+            );
+            if (this.child === child) { this.child = undefined; }
+            killTree(child);
+          }, timeoutMs)
+        : undefined;
+
       const maybeResolve = () => {
         if (resolved || exitCode === null || !stdoutEnded || !stderrEnded) return;
         resolved = true;
-        this.child = undefined;
+        if (timer) { clearTimeout(timer); }
+        if (this.child === child) { this.child = undefined; }
         const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
         log.debug(`${tag} exited (${exitSignal ? `signal ${exitSignal}` : `code ${exitCode}`}) after ${secs}s`);
         resolve({ passed: exitCode === 0, stdout, stderr });
@@ -340,7 +356,8 @@ export class Executor {
           : '';
         log.error(`${tag} could not start "${binary}" (cwd ${cwd})${hint}`, err);
         resolved = true;
-        this.child = undefined;
+        if (timer) { clearTimeout(timer); }
+        if (this.child === child) { this.child = undefined; }
         resolve({ passed: false, stdout: '', stderr: err.message });
       });
     });

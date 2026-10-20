@@ -43,6 +43,8 @@ export class JestRunner implements TestRunner {
   private adapter?: FrameworkAdapter;
   private projectRoot?: string;
   private userJestCommand: string;
+  /** Limit for single-file runs (runTestFileJson / runTestCaseJson); 0 = none. */
+  private fileTimeoutMs = 0;
 
   constructor(
     jestCommand: string = '',
@@ -61,6 +63,11 @@ export class JestRunner implements TestRunner {
 
   setProjectRoot(root: string): void {
     this.initAdapter(root);
+  }
+
+  /** Stop single-file runs that take longer than `ms` (a hanging test). 0 disables. */
+  setFileTimeout(ms: number): void {
+    this.fileTimeoutMs = Math.max(0, ms);
   }
 
   async discoverTests(projectRoot: string): Promise<string[]> {
@@ -159,6 +166,7 @@ export class JestRunner implements TestRunner {
         binary,
         args,
         cwd: projectRoot,
+        timeoutMs: this.fileTimeoutMs,
       });
     return this.parser.parse(passed, jsonOutput, stderr);
   }
@@ -249,6 +257,7 @@ export class JestRunner implements TestRunner {
         binary,
         args,
         cwd: projectRoot,
+        timeoutMs: this.fileTimeoutMs,
       });
     return this.parser.parse(passed, jsonOutput, stderr);
   }

@@ -169,6 +169,12 @@
           "default": 300,
           "description": "Debounce delay in milliseconds before running tests on save"
         },
+        "liveTestRunner.hangTimeoutSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "Stop a test file that runs longer than this many seconds without finishing (an infinite loop or a promise that never resolves) and mark it failed, so the rest of the run continues. 0 disables the limit."
+        },
         "liveTestRunner.showOutputOnFailure": {
           "type": "boolean",
           "default": true,

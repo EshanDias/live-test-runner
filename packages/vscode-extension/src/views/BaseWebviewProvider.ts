@@ -148,7 +148,16 @@ export abstract class BaseWebviewProvider
   }
 
   onRunFinished(payload: RunFinishedPayload): void {
+    // Flush pending file results first so the final tree precedes the summary.
+    if (this._resultFlushTimer !== null) {
+      clearTimeout(this._resultFlushTimer);
+      this._flushFileResults();
+    }
     this.postMessage({ type: 'run-finished', ...payload });
+  }
+
+  onRunProgress(completed: number, total: number, failed: number): void {
+    this.postMessage({ type: 'run-progress', completed, total, failed });
   }
 
   onTracingProgress(completed: number, total: number, done?: boolean): void {

@@ -79,6 +79,7 @@ function recordEvents(api) {
     onFilesRerunning: (ids) => snap('files-rerunning', { files: ids.length }),
     onFileResult: (fp) => snap('file-result', { file: path.basename(fp) }),
     onRunFinished: (p) => snap('run-finished', { payload: p }),
+    onRunProgress: (completed, total, failed) => events.push({ type: 'run-progress', at: Date.now(), completed, total, failed }),
     dispose() {},
   };
   api.observers.push(rec);

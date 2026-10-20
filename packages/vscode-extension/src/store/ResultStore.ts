@@ -74,6 +74,8 @@ export interface FileResult {
   output: ScopedOutput;
   /** IDs of nodes that are direct children of this file (no parent suite) */
   rootNodeIds: string[];
+  /** Set when the project's Jest config never runs this file (why, for display). */
+  excluded?: string;
 }
 
 // ── Node ID helper ─────────────────────────────────────────────────────────────
@@ -95,6 +97,12 @@ export function makeNodeId(
   }
   const hash = simpleHash(raw).toString(36);
   return raw.slice(0, MAX_ID_LEN - 12) + '::' + hash;
+}
+
+/** Separator-normalised path, case-folded on Windows (no `path` import: this module stays pure). */
+function normaliseKey(p: string): string {
+  const s = p.replace(/[\\/]+/g, '/');
+  return /^[a-zA-Z]:\//.test(s) ? s.toLowerCase() : s;
 }
 
 function simpleHash(s: string): number {
@@ -368,6 +376,76 @@ export class ResultStore {
         rootNodeIds: [],
       });
     }
+  }
+
+  /**
+   * Reverts every 'running' node and file to 'pending' (templates back to
+   * 'template'). Used on Stop so nothing keeps spinning.
+   * @returns the files that changed.
+   */
+  resetRunning(): string[] {
+    const touched = new Set<string>();
+    const suites: string[] = [];
+    for (const node of this.nodes.values()) {
+      if (node.status !== 'running') { continue; }
+      touched.add(node.fileId);
+      if (node.type === 'test') { this._adjustSummary('running', -1); }
+      else { suites.push(node.id); }
+      node.status = node.isDynamicTemplate ? 'template' : 'pending';
+    }
+    // A suite may hold finished tests next to the ones that were stopped.
+    for (const id of suites) {
+      if (!this.nodes.get(id)?.isDynamicTemplate) { this._recalculateSuiteAndBubbleUp(id); }
+    }
+    for (const file of this.files.values()) {
+      if (file.status === 'running' || touched.has(file.fileId)) {
+        touched.add(file.fileId);
+        this._recalculateFileStatus(file.fileId);
+        if (file.status === 'running') { file.status = 'pending'; }
+      }
+    }
+    return [...touched];
+  }
+
+  /**
+   * Marks a file the project's Jest config never runs (testMatch,
+   * testPathIgnorePatterns, …): it and its tests show as skipped.
+   */
+  markFileExcluded(fileId: string, reason: string): void {
+    const file = this.files.get(fileId);
+    if (!file) { return; }
+    file.excluded = reason;
+    for (const node of this.nodes.values()) {
+      if (node.fileId !== fileId || node.isDynamicTemplate) { continue; }
+      if (node.type === 'test') {
+        this._adjustSummary(node.status, -1);
+        this._adjustSummary('skipped', +1);
+      }
+      node.status = 'skipped';
+    }
+    file.status = 'skipped';
+  }
+
+  /**
+   * Fails every test of a file that could not finish (e.g. killed after
+   * hanging), with `message` as the failure shown to the user.
+   */
+  failFile(fileId: string, message: string): void {
+    const file = this.files.get(fileId);
+    if (!file) { return; }
+    for (const node of this.nodes.values()) {
+      if (node.fileId !== fileId) { continue; }
+      if (node.isDynamicTemplate) { node.status = 'template'; continue; }
+      if (node.type === 'test') {
+        this._adjustSummary(node.status, -1);
+        node.status = 'failed';
+        node.failureMessages = [message];
+        this._adjustSummary('failed', +1);
+      } else {
+        node.status = 'failed';
+      }
+    }
+    file.status = 'failed';
   }
 
   fileResult(fileId: string, status: TestStatus, duration?: number): void {
@@ -689,6 +767,19 @@ export class ResultStore {
     return Array.from(this.files.values());
   }
 
+  /**
+   * The store's key for a path that may be spelled differently (separators,
+   * or drive-letter case on Windows — Jest reports `C:\…`, VS Code `c:\…`).
+   */
+  findFileKey(filePath: string): string | undefined {
+    if (this.files.has(filePath)) { return filePath; }
+    const want = normaliseKey(filePath);
+    for (const key of this.files.keys()) {
+      if (normaliseKey(key) === want) { return key; }
+    }
+    return undefined;
+  }
+
   /** Get all direct children nodes of a given node. */
   getChildren(nodeId: string): TestNode[] {
     const node = this.nodes.get(nodeId);
@@ -777,6 +868,7 @@ export class ResultStore {
       file.status = 'pending';
       file.duration = undefined;
       file.output = { lines: [], capturedAt: null };
+      file.excluded = undefined;
     }
     this._summary.passed = 0;
     this._summary.failed = 0;
@@ -818,6 +910,7 @@ export class ResultStore {
       name: f.name,
       status: f.status,
       duration: f.duration,
+      excluded: f.excluded,
       rootNodeIds: f.rootNodeIds,
       nodes: this._serialiseNodes(f.fileId),
     };
