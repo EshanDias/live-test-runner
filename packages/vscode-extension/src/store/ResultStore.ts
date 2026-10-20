@@ -498,6 +498,13 @@ export class ResultStore {
     file.duration = duration;
   }
 
+  /** How long the whole file took in its last full run (Jest's own timing). */
+  setFileDuration(fileId: string, duration: number): void {
+    const file = this.files.get(fileId);
+    if (!file) return;
+    file.duration = duration;
+  }
+
   nodeStarted(
     fileId: string,
     nodeId: string,

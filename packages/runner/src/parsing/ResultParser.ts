@@ -60,7 +60,8 @@ export class ResultParser {
           );
 
           return {
-            testFilePath: fr.testFilePath ?? "",
+            // Jest's --json output calls the file path `name`.
+            testFilePath: fr.testFilePath ?? fr.name ?? "",
             status: fr.status === "passed" ? "passed" : "failed",
             failureMessage: fr.failureMessage || undefined,
             testCases,
@@ -244,13 +245,12 @@ const ANSI_RE = /\x1B\[[0-9;]*m/g;
     testCases: TestCaseRunResult[],
     fr: any,
   ): number {
-    const fromCases = testCases.reduce(
+    // The whole file (loading, setup, hooks and tests), as Jest timed it.
+    if (fr.endTime && fr.startTime) return fr.endTime - fr.startTime;
+    return testCases.reduce(
       (sum, tc) => sum + (tc.duration ?? 0),
       0,
     );
-    if (fromCases > 0) return fromCases;
-    if (fr.endTime && fr.startTime) return fr.endTime - fr.startTime;
-    return 0;
   }
 
   private computeTestCaseDuration(

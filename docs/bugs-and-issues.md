@@ -185,6 +185,22 @@ VS Code saving its own `settings.json` started `jest --findRelatedTests`. Only J
 ### BUG-31 🔴 ✅ Instrumentation crash failed whole test files (new)
 **Found by:** copy-requisition's full run — `App.test.js` and others "failed to run" with `ReferenceError: Container is falsy`. **Cause:** an optional chain inside the call arguments of another optional chain (`a?.b?.c().includes(x?.d())`): the outer rewrite detached the inner node, and branch counting threw. The exception escaped the transform, so every test file importing that module failed. **Fix:** that `?.` is skipped for branch counting; any instrumentation error now falls back to the plain transpiled code (no coverage for that file, tests run normally). **Verified:** `basic-full-run` (`invoice.js` fixture, crashes the old transform); all 421 copy-requisition sources instrument without error.
 
+<a id="bug-32"></a>
+### BUG-32 🟠 ✅ Start waited for `jest --listTests` every time (new)
+**Found by:** "tests take forever to start". copy-requisition's log: Start waited 20.4 s for `jest --listTests` (added for BUG-24) before the first test ran; 3.7 s even on the 2-file CRA fixture. **Fix:** the answer is kept per project (`RunnableFiles.ts`) under a key of the discovered test files, `package.json` / `jest.config.*` size and mtime, and the run settings; Start asks Jest only when one of those changed. The status bar says "Asking Jest which files it runs…" while it does. **Verified:** `basic-full-run` (second Start uses the list), unit tests for the key.
+
+<a id="bug-33"></a>
+### BUG-33 🟠 ✅ A test file created after Start was ignored on save (new)
+It was not in the `--listTests` list taken at Start, so the save was dropped as "not run by this project's Jest config". Saving a test file that is not in the list and not already known as excluded now asks Jest again. **Verified:** `basic-on-save`.
+
+<a id="bug-34"></a>
+### BUG-34 🟠 ✅ `--findRelatedTests` results went nowhere; coverage stayed "stale" (new)
+**Found by:** "coverage data is stale when I hover after saving a source file". Saving a source file with no per-test trace (module-level code only, or a file no test uses) reruns with `jest --findRelatedTests`. Two bugs on that path: the parser read `testFilePath`, but Jest's `--json` calls it `name`, so the results were filed under an empty path (the tree never updated and the total grew by one per save); and only the trace path cleared the stale flag, so the hover said "stale — save to rerun" until the next Start. **Fix:** read `name`; the stale flag is cleared when the save's rerun ends, whatever path it took. **Verified:** `basic-on-save` (`config.js` fixture), parser unit test.
+
+<a id="bug-35"></a>
+### BUG-35 🟡 ✅ No time shown on test files (new)
+The file row of both test lists shows a duration when the store has one, but nothing ever set it. The whole file's time (Jest's start → end, including loading and hooks) is now stored from every whole-file run; scoped reruns keep the last full time. **Verified:** `basic-full-run` (every file that ran has a time).
+
 ---
 
 ## Still to do

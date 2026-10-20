@@ -60,6 +60,40 @@ module.exports = {
     t.check('BUG-10 file output still has "mixed-math" after the pattern rerun', fileOutAfter.includes('mixed-math'),
       JSON.stringify(fileOutAfter));
     t.eq('mixed.test.js still all passed', h.statusCounts(api, 'src/mixed.test.js'), { passed: 3 });
+    const stringsCov = api.coverageStore.getEntry(strings);
+    t.check('coverage of strings.js is not stale after its rerun', stringsCov && stringsCov.state === 'measured',
+      JSON.stringify(stringsCov && stringsCov.state));
+
+    // ── Save a source file with no per-test trace (module-level code only) ──
+    const configSrc = path.join(workspace, 'src', 'config.js');
+    const configKey = configSrc.replace(/^[A-Z]:/, (m) => m.toLowerCase());
+    t.check('config.js coverage measured by the full run', api.coverageStore.getEntry(configKey)?.state === 'measured',
+      JSON.stringify(api.coverageStore.getEntry(configKey)?.state));
+    const since2 = h.isoNow();
+    await h.editAndSave(vscode, configSrc, (s) => s + '\n// touched\n');
+    await waitIdle(api);
+    const logs2 = h.logsSince(api, since2);
+    t.check('config.js save used --findRelatedTests (no trace data)', logs2.some((l) => /No trace data for config\.js/.test(l)),
+      logs2.join('\n'));
+    t.eq('coverage of config.js is not left "stale" after the --findRelatedTests rerun',
+      api.coverageStore.getEntry(configKey)?.state, 'measured');
+    // Jest --json names the file `name`; reading only testFilePath put these
+    // results on a nameless entry, so the tree never updated and the total grew.
+    const orphans = [...api.store.nodes.values()].filter((n) => !n.fileId || !api.store.getFile(n.fileId));
+    t.eq('--findRelatedTests results land on the test file (no orphan nodes)', orphans.map((n) => n.id), []);
+    t.eq('summary.total still equals the test nodes', api.store.getSummary().total,
+      h.allNodes(api).filter((n) => n.type === 'test').length);
+
+    // ── A test file created after Start runs when saved ──
+    const added = path.join(workspace, 'src', 'added.test.js');
+    fs.writeFileSync(added, "test('added after Start', () => { expect(1).toBe(1); });\n");
+    await h.waitFor(() => { try { return h.fileBySuffix(api, 'src/added.test.js'); } catch { return undefined; } }, { what: 'added.test.js to be discovered', timeout: 30_000 });
+    await h.editAndSave(vscode, added, (s) => s + '\n');
+    // Jest is asked for its file list first, so the run starts a little later.
+    await h.waitFor(() => h.statusCounts(api, 'src/added.test.js').passed === 1, { what: 'added.test.js to run', timeout: 60_000 })
+      .catch(() => {});
+    await waitIdle(api);
+    t.eq('a test file created after Start runs on save', h.statusCounts(api, 'src/added.test.js'), { passed: 1 });
 
     // ── Delete a test file during the session ──
     const totalBefore = api.store.getSummary().total;

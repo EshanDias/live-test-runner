@@ -68,6 +68,12 @@ module.exports = {
     const testNodes = h.allNodes(api).filter((n) => n.type === 'test');
     t.eq('BUG-11 summary.total matches the test nodes in the store', api.store.getSummary().total, testNodes.length);
 
+    // Each file that ran shows how long the whole file took.
+    const ranFiles = api.store.getAllFiles().filter((f) => f.status === 'passed' || f.status === 'failed');
+    const noTime = ranFiles.filter((f) => !(f.duration > 0)).map((f) => f.name);
+    t.check(`every file that ran has its total time (${ranFiles.length} files)`, ranFiles.length > 0 && noTime.length === 0,
+      `no duration: ${noTime.join(', ')}`);
+
     // BUG-13: one store entry per file (no case / separator duplicates).
     const keys = api.store.getAllFiles().map((f) => f.fileId.toLowerCase().replace(/\//g, '\\'));
     t.eq('BUG-13 no duplicate file entries', keys.length, new Set(keys).size);
@@ -88,6 +94,15 @@ module.exports = {
     // BUG-09: coverage measured for files the tests used.
     const cov = api.coverageStore.getEntry(mathSrc.replace(/^[A-Z]:/, (m) => m.toLowerCase()));
     t.check('BUG-09 src/math.js coverage is measured', cov && cov.state === 'measured', JSON.stringify(cov));
+
+    // A second Start with no test or config file changed does not wait for
+    // `jest --listTests` again (20 s on a 200-file CRA project).
+    const since2 = h.isoNow();
+    await vscode.commands.executeCommand('liveTestRunner.startTesting');
+    const logs2 = h.logsSince(api, since2);
+    t.check('second Start reuses the runnable-file list', logs2.some((l) => /remembered from the last session/.test(l)) &&
+      !logs2.some((l) => /jest --listTests: \d+ file/.test(l)), logs2.filter((l) => /listTests|Runnable/.test(l)).join('\n'));
+    t.eq('second Start: same results', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });
 
     rec.stop();
   },

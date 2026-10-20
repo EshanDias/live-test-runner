@@ -2,7 +2,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { JestRunner, FrameworkDetector } from '@live-test-runner/runner';
+import { JestRunner, FrameworkDetector, LTR_BASE_TMP_DIR } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
@@ -14,6 +14,7 @@ import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import { SessionTraceRunner } from './SessionTraceRunner';
 import { ProjectJestConfig } from './ProjectJestConfig';
+import { RunnableFilesCache, runnableCacheKey, runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
 import { logger } from '../utils/logger';
@@ -37,12 +38,6 @@ function hangMessage(seconds: number): string {
   return `Stopped after ${seconds}s without finishing — a test in this file probably hangs ` +
     '(an infinite loop or a promise that never resolves). ' +
     'Raise liveTestRunner.hangTimeoutSeconds if the file is just slow.';
-}
-
-/** Key for comparing test-file paths with `jest --listTests` output. */
-function runnableKey(filePath: string): string {
-  const p = path.normalize(filePath);
-  return process.platform === 'win32' ? p.toLowerCase() : p;
 }
 
 interface RunHandle {
@@ -96,6 +91,8 @@ export class SessionManager {
    * on Windows. undefined = unknown (listing failed): run everything.
    */
   private _runnable: Set<string> | undefined;
+  /** `jest --listTests` answers kept between sessions (see RunnableFiles). */
+  private readonly _runnableCache = new RunnableFilesCache(LTR_BASE_TMP_DIR);
 
   constructor(
     private readonly _adapter: IFrameworkAdapter,
@@ -183,7 +180,7 @@ export class SessionManager {
       // (in parallel) how it resolves that config — re-read every session.
       this._projectConfig.reset();
       void this._projectConfig.get(projectRoot);
-      this._runnable = await this._listRunnableFiles(projectRoot);
+      this._runnable = await this._runnableFiles(projectRoot, discovered);
       if (token !== this._token) { return; }
       const testFiles = discovered.filter((fp) => this._isRunnable(fp));
       this._markExcluded(discovered.filter((fp) => !this._isRunnable(fp)));
@@ -431,6 +428,16 @@ export class SessionManager {
 
       // Jest's own list also knows tests named by a custom testRegex/testMatch.
       const isTestFile = this._adapter.isTestFile(filePath) || !!this._runnable?.has(runnableKey(filePath));
+      if (isTestFile && !this._isRunnable(filePath) && !this._store.getFile(filePath)?.excluded) {
+        // A test file created after Start is not in Jest's list yet — ask again
+        // (a file already known to be excluded is not asked about every save).
+        log.debug(`Saved ${path.basename(filePath)} — not in Jest's file list yet, asking Jest again`);
+        const files = this._store.getAllFiles().map((f) => f.filePath);
+        if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
+        this._runnable = await this._askJestForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings()));
+        if (token !== this._token) { return; }
+        if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
+      }
       if (isTestFile && !this._isRunnable(filePath)) {
         log.debug(`Saved ${path.basename(filePath)} — not run by this project's Jest config, ignoring`);
         return;
@@ -448,6 +455,11 @@ export class SessionManager {
       } catch (error) {
         log.error(`On-save rerun failed for ${filePath}`, error);
       } finally {
+        // The rerun is over, whichever way it went (trace-based, the
+        // --findRelatedTests fallback, nothing depends on the file, or an
+        // error): "stale — save to rerun" would otherwise stay until the next
+        // Start. A whole-file traced rerun has already replaced the counters.
+        if (!isTestFile && token === this._token) { this._coverageStore.clearStale(filePath); }
         if (ran.length === 0) {
           log.info(`Run #${run.id} save ${path.basename(filePath)} — no tests depend on this file`);
         }
@@ -577,10 +589,8 @@ export class SessionManager {
       await this._runTestCases(individualCases, projectRoot, token);
     }
 
-    // Scoped reruns don't produce coverage data, so clear the stale flag now
-    // that the rerun is complete — the existing counters are still valid.
-    this._coverageStore.clearStale(sourceFilePath);
-
+    // Scoped reruns don't produce coverage data; onSave clears the stale flag
+    // once this returns — the existing counters are still valid.
     return [...new Set([...filesToRunFull, ...individualCases.map((c) => c.filePath)])];
   }
 
@@ -942,17 +952,51 @@ export class SessionManager {
    * config excludes (e2e specs, ignored folders, .mjs) — running those only
    * produced "No tests found" and spinners (BUG-24).
    */
-  private async _listRunnableFiles(projectRoot: string): Promise<Set<string> | undefined> {
+  private async _listRunnableFiles(projectRoot: string): Promise<string[] | undefined> {
     const startedAt = Date.now();
     try {
       const files = await this._adapter.discoverTests(projectRoot, (msg) => this._outputChannel.appendLine(msg));
       if (files.length === 0) { return undefined; }
       log.debug(`jest --listTests: ${files.length} file(s) in ${secondsSince(startedAt)}`);
-      return new Set(files.map(runnableKey));
+      return files;
     } catch (err) {
       log.warn('Could not ask Jest which files it runs (jest --listTests) — running every discovered test file', err);
       return undefined;
     }
+  }
+
+  /**
+   * The runnable files for Start: the last session's list when no test file
+   * and no Jest config changed since, otherwise Jest's answer (a full Jest
+   * startup — 20 s on a 200-file project, and nothing runs until it is in).
+   */
+  private async _runnableFiles(projectRoot: string, discovered: string[]): Promise<Set<string> | undefined> {
+    const key = runnableCacheKey(projectRoot, discovered, this._runnerSettings());
+    const cached = this._runnableCache.read(projectRoot, key);
+    if (cached) {
+      log.debug(`Runnable test files: ${cached.length} remembered from the last session (no test or config file changed)`);
+      return new Set(cached.map(runnableKey));
+    }
+    this._updateStatusBar('Asking Jest which files it runs…');
+    return this._askJestForRunnable(projectRoot, key);
+  }
+
+  /** Asks Jest for the runnable files and remembers the answer under `key`. */
+  private async _askJestForRunnable(projectRoot: string, key: string): Promise<Set<string> | undefined> {
+    const files = await this._listRunnableFiles(projectRoot);
+    if (!files) { return undefined; }
+    try {
+      this._runnableCache.write(projectRoot, key, files);
+    } catch (err) {
+      log.debug(`Could not remember the runnable test files — the next Start asks Jest again (${(err as Error).message})`);
+    }
+    return new Set(files.map(runnableKey));
+  }
+
+  /** Settings that change how Jest is called, and so which files it lists. */
+  private _runnerSettings(): string {
+    const cfg = vscode.workspace.getConfiguration('liveTestRunner');
+    return `${cfg.get<string>('runMode') ?? ''}|${cfg.get<string>('jestCommand') ?? ''}`;
   }
 
   private _isRunnable(filePath: string): boolean {

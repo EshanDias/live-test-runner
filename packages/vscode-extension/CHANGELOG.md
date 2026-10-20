@@ -23,7 +23,10 @@ All notable changes to Live Test Runner are documented here.
 - **Smart on-save reruns** now rerun only the tests that use the saved file; hover shows which tests cover a line.
 - **▷ Debug** debugs only the chosen test, on Windows and in Create React App projects too.
 - **Timeline Debugger** works on Windows, for `.each` tests and TypeScript projects.
-- **Faster restarts** — compiled files are cached per project between sessions.
+- **Faster restarts** — compiled files are cached per project between sessions, and Start no longer waits for Jest to list your test files when nothing changed.
+- **Test files show how long they took** in the test lists.
+- **New test files run when you save them**, even if you created them after clicking Start.
+- **Coverage no longer stays "stale"** after saving a source file, and those reruns now update the test tree.
 
 ---
 

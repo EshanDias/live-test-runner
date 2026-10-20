@@ -446,6 +446,12 @@ export class JestAdapter implements IFrameworkAdapter {
       store.setFileOutput(filePath, output);
     }
 
+    // The file's total time, only from a run of the whole file: a scoped rerun
+    // times just the tests it ran, so the last full time stays.
+    if (!opts?.nodeId && !opts?.fullNames && fileResult.duration != null && fileResult.duration > 0) {
+      store.setFileDuration(filePath, fileResult.duration);
+    }
+
     // We no longer set file-level status directly from Jest's file result because
     // it can be misleading during partial/scoped runs. Instead, we rely on the
     // ResultStore bubbling up the aggregate status from the actual test nodes.
