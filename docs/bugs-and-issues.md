@@ -10,7 +10,7 @@
 **How things were verified.** `e2e/` launches a real VS Code with the extension and drives real commands against real Jest processes:
 - fixture projects, copied to a temp folder whose path contains spaces: `basic` (plain Jest 29, `verbose: true`), `ts-config` (`jest.config.ts` + ts-jest), `esm-fn-config` (async `jest.config.mjs`);
 - **vscode-jest** (ts-jest, `automock`, 49 files / 2012 tests) — every file's pass/fail/skip counts compared with a plain `jest --json` run;
-- **copy-requisition** (Create React App, react-scripts 5 / Jest 27, 197 files) — sample files compared with plain `react-scripts test`, plus a full run.
+- **copy-requisition** (Create React App, react-scripts 5 / Jest 27, 197 files) — sample files compared with plain `react-scripts test`, plus a full run: 1789 tests, 1769 passed / 7 failed / 13 skipped — the same totals as plain Jest (two timing-sensitive UI tests swapped pass/fail between the runs). 25.7 min with a warm transform cache vs 32 min plain Jest; no fallback, no hang stop, nothing left spinning.
 
 Run them with `node e2e/run.js --all` (see [developer-guide.md](developer-guide.md#end-to-end-tests)). Scenario names are given below as `scenario`.
 
