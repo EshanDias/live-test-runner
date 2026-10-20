@@ -200,16 +200,30 @@ function plainJestCounts(workspace) {
 }
 
 /**
+ * Maps a path Jest reported (its real path: symlinks resolved, Windows 8.3
+ * short names such as RUNNER~1 expanded) to the workspace's spelling, which is
+ * what the extension's store uses. Case- and slash-insensitive on Windows.
+ */
+function workspaceSpelling(workspace) {
+  const fs = require('fs');
+  const win = process.platform === 'win32';
+  const cmp = (p) => (win ? p.replace(/\\/g, '/').toLowerCase() : p);
+  let realRoot;
+  try { realRoot = fs.realpathSync.native(workspace); } catch { return (p) => p; }
+  const real = cmp(realRoot);
+  const sep = win ? '/' : path.sep;
+  return (p) => (cmp(p).startsWith(real + sep) ? workspace + p.slice(realRoot.length) : p);
+}
+
+/**
  * Per-file counts from a `jest --json` result:
  * Map<path in the workspace's spelling, { passed, failed, skipped }>.
  * Jest reports real paths, and the workspace may be opened through a symlink
- * (macOS: /var → /private/var). Case is kept — store.findFileKey ignores it
+ * (see workspaceSpelling). Case is kept — store.findFileKey ignores it
  * only for Windows paths, and macOS paths such as /Users/… are mixed-case.
  */
 function jestJsonCounts(json, workspace) {
-  const fs = require('fs');
-  const realRoot = fs.realpathSync(workspace);
-  const toWorkspace = (p) => (p.startsWith(realRoot + path.sep) ? workspace + p.slice(realRoot.length) : p);
+  const toWorkspace = workspaceSpelling(workspace);
   // A file run by several Jest projects (e.g. jsdom + node) is reported once
   // per project; like the extension, a test counts once, failed if it failed
   // in any project and passed if it ran in any.
@@ -241,11 +255,10 @@ function jestJsonCounts(json, workspace) {
 
 /** How many times a `jest --json` result ran each file (once per Jest project that includes it). */
 function jestJsonRunsPerFile(json, workspace) {
-  const fs = require('fs');
-  const realRoot = fs.realpathSync(workspace);
+  const toWorkspace = workspaceSpelling(workspace);
   const runs = new Map();
   for (const tr of json.testResults) {
-    const file = tr.name.startsWith(realRoot + path.sep) ? workspace + tr.name.slice(realRoot.length) : tr.name;
+    const file = toWorkspace(tr.name);
     runs.set(file, (runs.get(file) ?? 0) + 1);
   }
   return runs;

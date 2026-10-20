@@ -42,6 +42,7 @@ All notable changes to Live Test Runner are documented here.
 ### macOS verification and fixes (BUG-36 … BUG-41)
 
 - **Symlinked project roots (BUG-36)** — Jest resolves symlinks in `rootDir`, so on macOS (`/var` → `/private/var`) and in any project opened through a symlink every listed file looked unknown (all shown skipped), ▷ Debug found no tests and coverage/trace paths never matched. New `JestPaths` (runner) records each root's real path: paths sent to Jest use it, paths read back are mapped to the editor's spelling.
+- **Windows 8.3 short paths (BUG-42)** — the same translation now covers Windows: a project opened by a short name (`C:\Users\RUNNER~1\…`, as on GitHub's Windows runners), a junction or a `subst` drive ran nothing ("No files found"). Roots are resolved with `realpathSync.native`, like Jest, and compared case- and slash-insensitively.
 - **Jest + Vitest projects (BUG-37)** — a `vitest` dependency no longer wins over a Jest dependency or Jest config (e.g. `@testing-library/jest-dom` ran nothing). `jest.config.cts/.mts/.json` are recognised.
 - **`__tests__` folders (BUG-38)** — the default `testFilePatterns` adds `**/__tests__/**/*.*` (Jest's default `testMatch`); on Start, files `jest --listTests` reports but discovery missed are added.
 - **One file in several Jest projects (BUG-39)** — results of a file run by more than one project (e.g. `jsdom` + `node`) are merged (`mergeFileResults`): a test fails if it failed in any project. Before, the last report replaced the others and could hide a failure.
