@@ -18,60 +18,76 @@ const fs = (typeof jest !== 'undefined' && jest.requireActual) ? jest.requireAct
 
 const outputFile    = process.env.SESSION_TRACE_FILE;
 
-let _currentTestName = null;
-let _currentTestFile = null;
-let _currentContext  = null;
-let _hits            = null;   // Map<srcFile, Set<line>>
+/**
+ * The open context: { kind: 'T' | 'H', file, name?, hk?, hits: Map<srcFile, Set<line>> }.
+ * ltrCoverageSetup.js opens and closes it around every test (beginTest, endTest, ...).
+ */
+let _ctx = null;
+/**
+ * Test/hook wrappers injected into instrumented non-test files (e.g. a
+ * beforeEach in setupTests.js) that ran inside the open context. They add
+ * their hits to it instead of replacing it — replacing it threw away the
+ * running test's hits, so no per-test trace was ever recorded on such projects.
+ */
+let _depth = 0;
 
-function flushRecord(type) {
-  if (!outputFile || !_hits || _hits.size === 0) { _hits = null; return; }
+function flush() {
+  const ctx = _ctx;
+  _ctx = null;
+  _depth = 0;
+  if (!outputFile || !ctx || ctx.hits.size === 0) { return; }
   const fh = {};
-  for (const [file, lines] of _hits) {
+  for (const [file, lines] of ctx.hits) {
     fh[file] = Array.from(lines);
   }
   // hk = hook kind: 'file' (module-level code run while the test file loads),
   // 'hook' (beforeAll/afterAll between tests) or a hook name.
-  const rec = type === 'T'
-    ? { type: 'T', tf: _currentTestFile, tn: _currentTestName, fh }
-    : { type: 'H', tf: _currentTestFile, hk: _currentContext, fh };
+  const rec = ctx.kind === 'T'
+    ? { type: 'T', tf: ctx.file, tn: ctx.name, fh }
+    : { type: 'H', tf: ctx.file, hk: ctx.hk, fh };
   try {
     fs.appendFileSync(outputFile, JSON.stringify(rec) + '\n', 'utf8');
   } catch (_e) {
     process.stderr.write(`[LTR:error] trace: could not write ${outputFile} — ${_e.message}\n`);
   }
-  _hits = null;
+}
+
+function open(kind, file, extra) {
+  flush();
+  _ctx = { kind, file, hits: new Map(), ...extra };
 }
 
 if (!global.__strace) {
   global.__strace = {
+    // ── Test boundaries, driven by ltrCoverageSetup.js ───────────────────────
+    beginFile(testFile) { open('H', testFile, { hk: 'file' }); },
+    beginTest(name, testFile) { open('T', testFile, { name }); },
+    /** After a test: anything until the next test is a file-wide hook. */
+    endTest(testFile) { open('H', testFile, { hk: 'hook' }); },
+    finish() { flush(); },
+
+    // ── Injected around test / hook callbacks in instrumented files ─────────
     enterTest(name, testFile) {
-      _currentTestName = name;
-      _currentTestFile = testFile;
-      _currentContext  = 'test';
-      _hits            = new Map();
+      if (_ctx) { _depth++; return; }
+      open('T', testFile, { name });
     },
-
     exitTest() {
-      flushRecord('T');
-      _currentTestName = null;
-      _currentContext  = null;
+      if (_depth > 0) { _depth--; return; }
+      flush();
     },
-
     enterHook(type, testFile) {
-      _currentTestFile = testFile;
-      _currentContext  = type;
-      _hits            = new Map();
+      if (_ctx) { _depth++; return; }
+      open('H', testFile, { hk: type });
     },
-
     exitHook() {
-      flushRecord('H');
-      _currentContext = null;
+      if (_depth > 0) { _depth--; return; }
+      flush();
     },
 
     step(line, file) {
-      if (!_hits) { return; }
-      let set = _hits.get(file);
-      if (!set) { set = new Set(); _hits.set(file, set); }
+      if (!_ctx) { return; }
+      let set = _ctx.hits.get(file);
+      if (!set) { set = new Set(); _ctx.hits.set(file, set); }
       set.add(line);
     },
 

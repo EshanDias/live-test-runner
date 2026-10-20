@@ -55,24 +55,39 @@ const _ltrTestPath = (() => {
   try { return expect.getState().testPath; } catch (_) { return undefined; }
 })();
 const _strace = global.__strace;
-if (_strace && _ltrTestPath) {
-  _strace.enterHook('file', _ltrTestPath);
+
+// Heartbeats for the extension's hang watchdog: a test that never ends (a
+// synchronous infinite loop blocks Jest's own testTimeout) is told apart from
+// a file that is merely slow to load (cold transform cache).
+const _heartbeatFile = process.env.LTR_REPORTER_FILE;
+function _heartbeat(ltrEvent, name) {
+  if (!_heartbeatFile || !_ltrTestPath) { return; }
+  try {
+    _realFs.appendFileSync(_heartbeatFile, JSON.stringify({ ltrEvent, testFilePath: _ltrTestPath, name, at: Date.now() }) + '\n', 'utf8');
+  } catch (_) { /* diagnostics only */ }
+}
+
+if (_strace && _strace.beginTest && _ltrTestPath) {
+  _strace.beginFile(_ltrTestPath);
+  // This file is the FIRST setupFilesAfterEnv entry, so this beforeEach runs
+  // before the project's own (e.g. in setupTests.js) and their hits count for
+  // the test.
   beforeEach(() => {
-    _strace.exitHook();
     let name;
     try { name = expect.getState().currentTestName; } catch (_) { name = undefined; }
-    _strace.enterTest(name || '<unknown>', _ltrTestPath);
+    _heartbeat('test-start', name);
+    _strace.beginTest(name || '<unknown>', _ltrTestPath);
   });
   afterEach(() => {
-    _strace.exitTest();
-    _strace.enterHook('hook', _ltrTestPath);
+    _strace.endTest(_ltrTestPath);
+    _heartbeat('test-end');
   });
 } else {
   _ltrLog('debug', 'trace: no test path in expect.getState() — per-test trace disabled for this file');
 }
 
 afterAll(() => {
-  if (_strace) { _strace.exitHook(); }
+  if (_strace && _strace.finish) { _strace.finish(); }
   const covOutputFile = process.env.COVERAGE_OUTPUT_FILE;
   if (!covOutputFile) {
     _ltrLog('warn', 'coverage: COVERAGE_OUTPUT_FILE is not set — coverage will be missing');

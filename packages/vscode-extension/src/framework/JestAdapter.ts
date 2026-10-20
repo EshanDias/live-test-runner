@@ -23,6 +23,9 @@ import { logger } from '../utils/logger';
 
 const log = logger.scope('Jest');
 
+/** A plain (uninstrumented) single-file run may take this many hang limits in total. */
+export const PLAIN_RUN_HANG_FACTOR = 3;
+
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
 function stripAnsi(s: string): string {
@@ -238,7 +241,9 @@ export class JestAdapter implements IFrameworkAdapter {
     const cmd = this._getCommand();
     const runner = new JestRunner(cmd, rawLog, this._tmpDir);
     runner.setProjectRoot(projectRoot);
-    runner.setFileTimeout(1000 * (vscode.workspace
+    // Plain runs have no per-test heartbeat, so the limit covers the whole
+    // file (load + all tests) and is wider than the per-test hang limit.
+    runner.setFileTimeout(PLAIN_RUN_HANG_FACTOR * 1000 * (vscode.workspace
       .getConfiguration('liveTestRunner')
       .get<number>('hangTimeoutSeconds') ?? 300));
     return runner;

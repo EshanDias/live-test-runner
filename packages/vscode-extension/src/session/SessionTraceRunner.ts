@@ -15,7 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
@@ -140,8 +140,17 @@ export class SessionTraceRunner {
 
   private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
   private get _manifestDir()  { return path.join(this._tmpDir, 'coverage', 'manifests'); }
-  /** Stable per-session transform cache — shared across all batches so Jest doesn't re-compile every file each run. */
-  private get _transformCacheDir() { return path.join(this._tmpDir, 'ltr-transform-cache'); }
+  /**
+   * Transform cache, per project and kept across sessions. It used to live in
+   * the session folder, so every Start re-compiled the whole project — minutes
+   * per file on a large CRA app. Entries are keyed by the transform's own hash
+   * and the config, so a changed extension or config never reuses stale code.
+   */
+  private _transformCacheDir(projectRoot: string): string {
+    let h = 5381;
+    for (let i = 0; i < projectRoot.length; i++) { h = ((h << 5) + h) ^ projectRoot.toLowerCase().charCodeAt(i); }
+    return path.join(LTR_BASE_TMP_DIR, `transform-cache-${(h >>> 0).toString(36)}`);
+  }
 
   constructor(
     private readonly _tmpDir: string,
@@ -319,9 +328,11 @@ function _overlay(cfg) {
       ...baseTransformObj,
       ...fallbackTransform,
     },
+    // Ours first: its beforeEach opens the per-test trace context before the
+    // project's own hooks run, so their hits count for the test.
     setupFilesAfterEnv: [
-      ...((c.setupFilesAfterEnv || [])),
       ${JSON.stringify(COVERAGE_SETUP_PATH)},
+      ...((c.setupFilesAfterEnv || [])),
     ],
   };
 }
@@ -366,6 +377,8 @@ module.exports = _projects
     const received = new Set<string>();
     /** File Jest is executing right now (from liveReporter "start" records). */
     let current: { file: string; at: number } | undefined;
+    /** The test running right now (setup-file heartbeats) — what the hang limit measures. */
+    let currentTest: { name?: string; at: number } | undefined;
     const generation = this._generation;
 
     // Jest may report a path differently from how we passed it (drive-letter
@@ -386,15 +399,18 @@ module.exports = _projects
     const onRecord = (raw: unknown) => {
       // Stopped: results still flushed by a dying Jest must not reach the tree.
       if (generation !== this._generation) { return; }
-      const ev = raw as { ltrEvent?: string; testFilePath?: string; at?: number };
+      const ev = raw as { ltrEvent?: string; testFilePath?: string; at?: number; name?: string };
       if (ev?.ltrEvent === 'start') {
         if (ev.testFilePath) {
           current = { file: toKey(ev.testFilePath), at: ev.at ?? Date.now() };
+          currentTest = undefined;
           log.trace(`${batch}: started ${path.basename(current.file)}`);
           if (owns(current.file)) { options.onFileStart?.(current.file); }
         }
         return;
       }
+      if (ev?.ltrEvent === 'test-start') { currentTest = { name: ev.name, at: ev.at ?? Date.now() }; return; }
+      if (ev?.ltrEvent === 'test-end') { currentTest = undefined; return; }
       const rec = raw as ReporterRecord;
       if (!rec || !rec.testFilePath) { return; }
       rec.testFilePath = toKey(rec.testFilePath);
@@ -425,7 +441,7 @@ module.exports = _projects
 
     const executor = new Executor();
     /** Set when the watchdog stopped the batch because a file hung. */
-    let timedOut: { file: string; seconds: number } | undefined;
+    let timedOut: { file: string; seconds: number; test?: string } | undefined;
 
     // Watchdog: a batch with no finished file for a long time is either slow
     // or hung. Say which file it is on so the two can be told apart.
@@ -434,11 +450,14 @@ module.exports = _projects
     let nextWarnAt = Date.now() + SLOW_BATCH_WARN_MS;
     const watchdog = setInterval(() => {
       const now = Date.now();
-      if (hangTimeoutMs > 0 && !timedOut && current && !received.has(current.file) && now - current.at > hangTimeoutMs) {
-        timedOut = { file: current.file, seconds: Math.round((now - current.at) / 1000) };
+      // The limit applies to ONE test, not the whole file: loading a big file
+      // on a cold transform cache can legitimately take minutes.
+      if (hangTimeoutMs > 0 && !timedOut && current && currentTest && !received.has(current.file) && now - currentTest.at > hangTimeoutMs) {
+        timedOut = { file: current.file, seconds: Math.round((now - currentTest.at) / 1000), test: currentTest.name };
         log.warn(
-          `${batch}: ${path.basename(current.file)} has run for ${timedOut.seconds}s without finishing — stopping it ` +
-          '(probably a hanging test: infinite loop or a promise that never resolves). ' +
+          `${batch}: ${path.basename(current.file)} has run for ${timedOut.seconds}s without finishing` +
+          `${currentTest.name ? ` (test "${currentTest.name}")` : ''} — stopping it ` +
+          '(probably a hanging test: an infinite loop or a promise that never resolves). ' +
           'The rest of the batch is retried. Change the limit with liveTestRunner.hangTimeoutSeconds.',
         );
         executor.kill();
@@ -488,7 +507,7 @@ module.exports = _projects
             '--runTestsByPath',
             ...filePaths.map(toJestPathArg),
             '--config', tempConfigPath,
-            '--cacheDirectory', this._transformCacheDir,
+            '--cacheDirectory', this._transformCacheDir(projectRoot),
             '--maxWorkers=1',
             '--testLocationInResults',
             // Jest silently switches to verbose mode when exactly one test file
@@ -504,6 +523,7 @@ module.exports = _projects
             COVERAGE_OUTPUT_FILE: covCountersFile,
             LTR_MANIFEST_DIR:     this._manifestDir,
             LTR_LOG_LEVEL:        logger.level,
+            LTR_REPORTER_FILE:    reporterFile,
           },
         },
         reporterFile,

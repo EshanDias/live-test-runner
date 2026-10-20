@@ -8,6 +8,7 @@ import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver } from '../IResultObserver';
 import { IFrameworkAdapter } from '../framework/IFrameworkAdapter';
+import { PLAIN_RUN_HANG_FACTOR } from '../framework/JestAdapter';
 import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
@@ -793,7 +794,7 @@ export class SessionManager {
       if (this._store.getFile(fp)?.status === 'running') {
         // No result at all. Either the file hung and was stopped, or Jest
         // could not run it — never leave it spinning (BUG-23).
-        if (hangTimeoutMs > 0 && Date.now() - startedAt >= hangTimeoutMs) {
+        if (hangTimeoutMs > 0 && Date.now() - startedAt >= hangTimeoutMs * PLAIN_RUN_HANG_FACTOR) {
           this._store.failFile(fp, hangMessage(Math.round((Date.now() - startedAt) / 1000)));
         } else {
           this._store.cleanupStaleNodes(fp, false);

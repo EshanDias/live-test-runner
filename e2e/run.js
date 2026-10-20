@@ -130,6 +130,8 @@ function runScenario(name) {
     '--skip-welcome',
     '--skip-release-notes',
     '--new-window',
+    // LTR_E2E_DEBUG=1: debug-level logs (also inside Jest via LTR_LOG_LEVEL).
+    ...(process.env.LTR_E2E_DEBUG ? ['--log', 'debug'] : []),
   ];
 
   const timeoutMs = (scenario.timeoutMs || 5 * 60_000) + 60_000;
