@@ -1,8 +1,8 @@
 import { CoverageMap } from './CoverageMap';
 import { TestRunner } from '@live-test-runner/runner';
-import { logger } from './utils/logger';
+import { createLogger } from './utils/logger';
 
-const FILE = 'TestSession.ts';
+const log = createLogger('TestSession');
 
 export class TestSession {
   private coverageMap: CoverageMap;
@@ -15,7 +15,7 @@ export class TestSession {
   }
 
   async start(projectRoot: string): Promise<void> {
-    logger.info(FILE, 'start', `Starting test session for "${projectRoot}"`);
+    log.debug(`Warm-up run for ${projectRoot}`);
     this.isActive = true;
     try {
       // Discover tests then do a warm-up run with coverage to build the map
@@ -23,12 +23,12 @@ export class TestSession {
       const result = await this.runner.runFullSuiteJson(projectRoot, true);
       if (result.passed) {
         this.coverageMap.buildFromCoverage(await this.runner.getCoverage());
-        logger.info(FILE, 'start', 'Coverage map built successfully');
+        log.debug('Coverage map built');
       } else {
-        logger.warn(FILE, 'start', `Full suite run did not pass — numFailed=${result.numFailedTests}`);
+        log.debug(`Warm-up run had ${result.numFailedTests} failing test(s) — coverage map not built`);
       }
     } catch (err) {
-      logger.error(FILE, 'start', `Session start failed for "${projectRoot}"`, err);
+      log.error(`Session start failed for ${projectRoot}`, err);
       throw err;
     }
   }

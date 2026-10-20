@@ -8,7 +8,9 @@
  * Circular references in variable values are safely serialised as "[Circular]".
  */
 
-const fs = require('fs');
+// The test may jest.mock('fs') — always write with the real one.
+// eslint-disable-next-line no-undef
+const fs = (typeof jest !== 'undefined' && jest.requireActual) ? jest.requireActual('fs') : require('fs');
 
 const outputFile = process.env.TRACE_OUTPUT_FILE;
 

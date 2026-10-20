@@ -5,10 +5,10 @@ import { ResultStore, makeNodeId } from '../store/ResultStore';
 import { DiscoveryCache } from '../cache/DiscoveryCache';
 import { logger } from '../utils/logger';
 
-const FILE = 'TestDiscoveryService.ts';
+const log = logger.scope('Discovery');
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { discoverTests } = require('./instrumentation/testDiscovery.js') as {
+const { discoverTests, setLogger: setDiscoveryLogger } = require('./instrumentation/testDiscovery.js') as {
+  setLogger: (log: { debug(m: string): void; warn(m: string): void; error(m: string): void }) => void;
   discoverTests: (
     source: string,
     filePath: string,
@@ -25,6 +25,10 @@ const { discoverTests } = require('./instrumentation/testDiscovery.js') as {
     rootTests: Array<{ name: string; line: number; fullName: string }>;
   } | null;
 };
+setDiscoveryLogger(log);
+
+/** Per-pass counters, summarised in one log line when discovery finishes. */
+type DiscoveryStats = { cacheHits: number; parsed: number; noTests: number; failed: number };
 
 export interface DiscoveryCallbacks {
   /** Called once the file list is known, before any AST parsing starts. */
@@ -42,6 +46,19 @@ export interface DiscoveryCallbacks {
 // Warm (cache hits): larger batches since stat+store is ~10x faster than parse.
 const BATCH_SIZE_COLD = 5;
 const BATCH_SIZE_WARM = 25;
+
+/** Jest's default testMatch: *.test.* / *.spec.* files and anything in __tests__. */
+const DEFAULT_TEST_PATTERNS = ['**/*.test.*', '**/*.spec.*', '**/__tests__/**/*.*'];
+/** Only JS/TS sources can be Jest tests (a pattern like *.test.* also matches .snap files). */
+const JS_TS_RE = /\.(c|m)?[jt]sx?$/i;
+
+/** The liveTestRunner.testFilePatterns setting (BUG-17: it used to be ignored). */
+function testFilePatterns(): string[] {
+  const patterns = vscode.workspace
+    .getConfiguration('liveTestRunner')
+    .get<string[]>('testFilePatterns');
+  return patterns && patterns.length > 0 ? patterns : DEFAULT_TEST_PATTERNS;
+}
 
 /** Yields to the event loop so VS Code can process messages between batches. */
 function yieldToEventLoop(): Promise<void> {
@@ -65,15 +82,15 @@ function yieldToEventLoop(): Promise<void> {
  *     (only while no session is active, so live results are never clobbered).
  */
 export class TestDiscoveryService {
-  private _watcher: vscode.FileSystemWatcher | undefined;
+  private _watchers: vscode.FileSystemWatcher[] = [];
   private _discoveryPromise: Promise<void> = Promise.resolve();
   private _isDiscovering = false;
   private _hasCompleted = false;
   private _projectRoot: string | undefined;
   private _store: ResultStore | undefined;
-  private _log: ((msg: string) => void) | undefined;
   private _callbacks: DiscoveryCallbacks | undefined;
   private _cache: DiscoveryCache | undefined;
+  private _stats: DiscoveryStats = { cacheHits: 0, parsed: 0, noTests: 0, failed: 0 };
 
   get isDiscovering(): boolean {
     return this._isDiscovering;
@@ -84,8 +101,8 @@ export class TestDiscoveryService {
   }
 
   restart(): void {
-    if (!this._projectRoot || !this._store || !this._log || !this._callbacks) { return; }
-    this.start(this._projectRoot, this._store, this._log, this._callbacks, this._cache);
+    if (!this._projectRoot || !this._store || !this._callbacks) { return; }
+    this.start(this._projectRoot, this._store, this._callbacks, this._cache);
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -97,29 +114,43 @@ export class TestDiscoveryService {
   start(
     projectRoot: string,
     store: ResultStore,
-    log: (msg: string) => void,
     callbacks: DiscoveryCallbacks,
     cache?: DiscoveryCache,
   ): void {
-    this._watcher?.dispose();
+    this._disposeWatchers();
     this._isDiscovering = true;
     this._projectRoot = projectRoot;
     this._store = store;
-    this._log = log;
     this._callbacks = callbacks;
     this._cache = cache;
+    this._stats = { cacheHits: 0, parsed: 0, noTests: 0, failed: 0 };
+    const startedAt = Date.now();
 
-    this._discoveryPromise = this._run(projectRoot, store, log, callbacks, cache)
+    this._discoveryPromise = this._run(projectRoot, store, callbacks, cache)
+      .then((fileCount) => {
+        const s = this._stats;
+        const tests = store.getSummary().total;
+        const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
+        const detail = [
+          cache ? `${s.cacheHits} from cache` : undefined,
+          `${s.parsed} parsed`,
+          s.noTests ? `${s.noTests} without Jest tests` : undefined,
+          s.failed ? `${s.failed} failed to parse` : undefined,
+        ].filter(Boolean).join(', ');
+        log.info(`Discovered ${tests} test(s) in ${fileCount - s.noTests - s.failed} file(s) in ${secs}s (${detail})`);
+        if (s.failed > 0) {
+          log.warn(`${s.failed} test file(s) could not be read or parsed and are hidden from the tree (see the warnings above)`);
+        }
+      })
       .catch((err) => {
-        log(`[TestDiscovery] Error during discovery: ${err}`);
-        logger.error(FILE, 'start', `Discovery run failed for root="${projectRoot}"`, err);
+        log.error(`Discovery failed for ${projectRoot}`, err);
       })
       .finally(() => {
         this._isDiscovering = false;
         this._hasCompleted = true;
         cache?.flush();
         callbacks.onComplete();
-        this._setupWatcher(projectRoot, store, log, callbacks);
+        this._setupWatcher(projectRoot, store, callbacks);
       });
   }
 
@@ -133,16 +164,36 @@ export class TestDiscoveryService {
   pruneGhostFiles(): void {
     const store = this._store;
     const callbacks = this._callbacks;
-    const log = this._log;
     if (!store || !callbacks) { return; }
     for (const file of store.getAllFiles()) {
       if (!fs.existsSync(file.filePath)) {
-        log?.(`[TestDiscovery] Pruning ghost file: ${file.filePath}`);
-        logger.debug(FILE, 'pruneGhostFiles', `Removing ghost: "${file.filePath}"`);
+        log.debug(`Removed deleted test file from the tree: ${file.filePath}`);
         store.removeFile(file.fileId);
         callbacks.onFileRemoved?.(file.fileId);
       }
     }
+  }
+
+  /**
+   * Discovers files the glob patterns missed but Jest runs (a custom testMatch
+   * or testRegex — Jest's --listTests is the source of truth). Files already
+   * in the tree are left alone. @returns the number of files added.
+   */
+  addFiles(filePaths: string[]): number {
+    const store = this._store;
+    const projectRoot = this._projectRoot;
+    if (!store || !projectRoot) { return 0; }
+    const files: unknown[] = [];
+    for (const fp of filePaths) {
+      if (store.findFileKey(fp) || !JS_TS_RE.test(fp) || !fs.existsSync(fp)) { continue; }
+      const data = this._populateFile(fp, projectRoot, store, this._cache);
+      if (data) { files.push(data); }
+    }
+    if (files.length > 0) {
+      this._callbacks?.onBatchDiscovered(files, files.length, files.length);
+      this._cache?.flush();
+    }
+    return files.length;
   }
 
   /**
@@ -154,31 +205,36 @@ export class TestDiscoveryService {
   }
 
   dispose(): void {
-    this._watcher?.dispose();
-    this._watcher = undefined;
+    this._disposeWatchers();
+  }
+
+  private _disposeWatchers(): void {
+    for (const w of this._watchers) { w.dispose(); }
+    this._watchers = [];
   }
 
   // ── Private: discovery run ─────────────────────────────────────────────────
 
+  /** @returns the number of candidate test files found. */
   private async _run(
     projectRoot: string,
     store: ResultStore,
-    log: (msg: string) => void,
     callbacks: DiscoveryCallbacks,
     cache?: DiscoveryCache,
-  ): Promise<void> {
+  ): Promise<number> {
     // ── Step 1: find all test files (fast — native VS Code glob) ─────────────
-    const pattern = new vscode.RelativePattern(
-      projectRoot,
-      '**/*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}',
-    );
-    const uris  = await vscode.workspace.findFiles(pattern, '**/node_modules/**');
-    const paths = uris.map((u) => u.fsPath).sort();
+    // One search per pattern: VS Code globs don't nest braces reliably.
+    const found = new Set<string>();
+    for (const glob of testFilePatterns()) {
+      const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(projectRoot, glob), '**/node_modules/**');
+      for (const u of uris) { if (JS_TS_RE.test(u.fsPath)) { found.add(u.fsPath); } }
+    }
+    const paths = [...found].sort();
 
-    log(`[TestDiscovery] Found ${paths.length} test file(s)`);
+    log.debug(`Found ${paths.length} candidate test file(s) under ${projectRoot}`);
     callbacks.onFilesFound(paths.length);
 
-    if (paths.length === 0) { return; }
+    if (paths.length === 0) { return 0; }
 
     // ── Step 2: parse ASTs in batches, yielding between each batch ───────────
     // Use larger batches when a cache is present — stat+store is ~10x faster
@@ -195,7 +251,7 @@ export class TestDiscoveryService {
       const batch = paths.slice(i, i + batchSize);
       const batchFiles: unknown[] = [];
       for (const filePath of batch) {
-        const fileData = this._populateFile(filePath, projectRoot, store, log, cache);
+        const fileData = this._populateFile(filePath, projectRoot, store, cache);
         discovered++;
         if (fileData) {
           batchFiles.push(fileData);
@@ -205,6 +261,7 @@ export class TestDiscoveryService {
         callbacks.onBatchDiscovered(batchFiles, discovered, paths.length);
       }
     }
+    return paths.length;
   }
 
   // ── Private: file watcher ──────────────────────────────────────────────────
@@ -212,16 +269,10 @@ export class TestDiscoveryService {
   private _setupWatcher(
     projectRoot: string,
     store: ResultStore,
-    log: (msg: string) => void,
     callbacks: DiscoveryCallbacks,
   ): void {
-    const pattern = new vscode.RelativePattern(
-      projectRoot,
-      '**/*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}',
-    );
-    this._watcher = vscode.workspace.createFileSystemWatcher(pattern);
-
     const handleChange = (uri: vscode.Uri) => {
+      if (!JS_TS_RE.test(uri.fsPath) || /[\\/]node_modules[\\/]/.test(uri.fsPath)) { return; }
       const existing = store.getFile(uri.fsPath);
       if (existing?.status === 'running') { return; }
 
@@ -231,7 +282,7 @@ export class TestDiscoveryService {
       // longer exists, treat it as a deletion so it doesn't remain as a ghost.
       if (!fs.existsSync(uri.fsPath)) {
         if (existing) {
-          log(`[TestDiscovery] File gone before processing, removing: ${uri.fsPath}`);
+          log.debug(`File deleted before it could be re-read: ${uri.fsPath}`);
           store.removeFile(uri.fsPath);
           callbacks.onFileRemoved?.(uri.fsPath);
         }
@@ -242,20 +293,25 @@ export class TestDiscoveryService {
       // correctly repositioned (orphans cleared, moves updated).
       store.clearLineMap(uri.fsPath);
 
-      log(`[TestDiscovery] Re-discovering: ${uri.fsPath}`);
-      const fileData = this._populateFile(uri.fsPath, projectRoot, store, log, this._cache);
+      log.trace(`Re-discovering ${uri.fsPath}`);
+      const fileData = this._populateFile(uri.fsPath, projectRoot, store, this._cache);
       if (fileData) {
         callbacks.onBatchDiscovered([fileData], 1, 1);
         this._cache?.flush();
       }
     };
 
-    this._watcher.onDidChange(handleChange);
-    this._watcher.onDidCreate(handleChange);
-    this._watcher.onDidDelete((uri) => {
-      store.removeFile(uri.fsPath);
-      callbacks.onFileRemoved?.(uri.fsPath);
-    });
+    for (const glob of testFilePatterns()) {
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(projectRoot, glob));
+      watcher.onDidChange(handleChange);
+      watcher.onDidCreate(handleChange);
+      watcher.onDidDelete((uri) => {
+        if (!store.getFile(uri.fsPath)) { return; }
+        store.removeFile(uri.fsPath);
+        callbacks.onFileRemoved?.(uri.fsPath);
+      });
+      this._watchers.push(watcher);
+    }
   }
 
   // ── Private: per-file AST parse + store populate ──────────────────────────
@@ -268,7 +324,6 @@ export class TestDiscoveryService {
     filePath: string,
     projectRoot: string,
     store: ResultStore,
-    log: (msg: string) => void,
     cache?: DiscoveryCache,
   ): unknown | null {
     // ── Try cache first (skip readFile + Babel if mtime unchanged) ────────────
@@ -276,9 +331,7 @@ export class TestDiscoveryService {
 
     if (cache) {
       result = cache.get(filePath) ?? null;
-      if (result) {
-        log(`[TestDiscovery] Cache hit: ${filePath}`);
-      }
+      if (result) { this._stats.cacheHits++; }
     }
 
     if (!result) {
@@ -286,23 +339,25 @@ export class TestDiscoveryService {
       try {
         source = fs.readFileSync(filePath, 'utf8');
       } catch (err) {
-        logger.error(FILE, '_populateFile', `Could not read test file: "${filePath}"`, err);
+        this._stats.failed++;
+        log.warn(`Could not read ${filePath}`, err);
         return null;
       }
 
       try {
         result = discoverTests(source, filePath, projectRoot);
       } catch (err) {
-        logger.error(FILE, '_populateFile', `discoverTests threw for "${filePath}"`, err);
-        log(`[TestDiscovery] AST parse error: ${filePath}`);
+        this._stats.failed++;
+        log.error(`Test discovery crashed on ${filePath}`, err);
         return null;
       }
 
       if (!result) {
-        logger.warn(FILE, '_populateFile', `AST parse returned null for "${filePath}"`);
-        log(`[TestDiscovery] AST parse failed: ${filePath}`);
+        // testDiscovery.js already logged the parse error (or Babel load failure).
+        this._stats.failed++;
         return null;
       }
+      this._stats.parsed++;
 
       // Write to cache only for files that have actual Jest tests
       if (cache && (result.suites.length > 0 || result.rootTests.length > 0)) {
@@ -317,7 +372,8 @@ export class TestDiscoveryService {
     // non-Jest package like tstyche), skip this file entirely so it doesn't
     // appear as an empty entry in the test list.
     if (result.suites.length === 0 && result.rootTests.length === 0) {
-      log(`[TestDiscovery] No Jest tests found, skipping: ${filePath}`);
+      this._stats.noTests++;
+      log.trace(`No Jest tests in ${filePath} — skipped`);
       return null;
     }
 

@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Test Runner Guide</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg-soft: #f6f7f9; --bg-code: #f1f3f5;
+    --fg: #1d2128; --fg-soft: #5b6472; --line: #e3e6ea;
+    --accent: #2f6fde; --accent-soft: #e8f0fd;
+    --ok: #1f9d55; --warn: #c27c0e; --err: #d64545; --info: #2f6fde;
+    --radius: 10px; --side: 248px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15181d; --bg-soft: #1c2027; --bg-code: #232831;
+      --fg: #e6e9ee; --fg-soft: #9aa3b2; --line: #2c323c;
+      --accent: #6ea2ff; --accent-soft: #1f2a3d;
+      --ok: #4cc38a; --warn: #e3a64a; --err: #f07272; --info: #6ea2ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15181d; --bg-soft: #1c2027; --bg-code: #232831;
+    --fg: #e6e9ee; --fg-soft: #9aa3b2; --line: #2c323c;
+    --accent: #6ea2ff; --accent-soft: #1f2a3d;
+    --ok: #4cc38a; --warn: #e3a64a; --err: #f07272; --info: #6ea2ff;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, kbd { font-family: var(--mono); font-size: .88em; }
+  code { background: var(--bg-code); padding: .1em .35em; border-radius: 5px; }
+  kbd { border: 1px solid var(--line); border-bottom-width: 2px; padding: 0 .4em; border-radius: 4px; background: var(--bg-soft); }
+  pre { background: var(--bg-code); padding: 12px 14px; border-radius: var(--radius); overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  pre code { background: none; padding: 0; }
+
+  /* Layout */
+  .side {
+    position: fixed; inset: 0 auto 0 0; width: var(--side); overflow-y: auto;
+    background: var(--bg-soft); border-right: 1px solid var(--line); padding: 20px 14px 40px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; margin: 0 6px 18px; }
+  .brand .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 15px; }
+  .side nav a { display: block; padding: 5px 10px; border-radius: 7px; color: var(--fg-soft); font-size: 14px; }
+  .side nav a:hover { background: var(--accent-soft); color: var(--fg); text-decoration: none; }
+  .side nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .side nav .group { margin: 14px 10px 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-soft); }
+  .theme-btn { margin: 18px 6px 0; width: calc(100% - 12px); padding: 7px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg-soft); cursor: pointer; font: inherit; font-size: 13px; }
+  main { margin-left: var(--side); padding: 36px 48px 80px; max-width: calc(var(--side) + 920px); }
+  .menu-btn { display: none; }
+
+  /* Typography */
+  h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.01em; }
+  h2 { font-size: 22px; margin: 56px 0 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  .lead { font-size: 17px; color: var(--fg-soft); margin: 0 0 22px; }
+  p { margin: 8px 0; }
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin: 3px 0; }
+  .muted { color: var(--fg-soft); }
+
+  /* Components */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; background: var(--bg); }
+  .card b { display: block; margin-bottom: 4px; }
+  .card span { color: var(--fg-soft); font-size: 14px; }
+  .card .ico { font-size: 20px; margin-bottom: 6px; display: block; }
+  .steps { counter-reset: s; list-style: none; padding: 0; }
+  .steps li { counter-increment: s; position: relative; padding: 8px 0 8px 40px; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 7px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--fg-soft); font-weight: 600; }
+  .table-wrap { overflow-x: auto; }
+  .note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 var(--radius) var(--radius) 0; margin: 14px 0; font-size: 14px; }
+  .note.warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; font-family: var(--mono); }
+  .pill.info { color: var(--info); background: color-mix(in srgb, var(--info) 14%, transparent); }
+  .pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+  .pill.err  { color: var(--err);  background: color-mix(in srgb, var(--err) 14%, transparent); }
+  .pill.dbg  { color: var(--fg-soft); background: var(--bg-code); }
+
+  /* Flow diagram */
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 16px 0; }
+  .flow .box { flex: 1 1 140px; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; background: var(--bg-soft); font-size: 13px; }
+  .flow .box b { display: block; font-size: 14px; margin-bottom: 2px; }
+  .flow .arrow { align-self: center; color: var(--fg-soft); font-size: 18px; }
+  .layout { display: grid; grid-template-columns: 70px 1fr; grid-template-rows: auto auto auto; gap: 6px; margin: 14px 0; font-size: 13px; }
+  .layout div { border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg-soft); }
+  .layout .bar { grid-row: 1 / 4; writing-mode: vertical-rl; text-align: center; }
+
+  @media (max-width: 860px) {
+    .side { transform: translateX(-100%); transition: transform .2s; z-index: 10; box-shadow: 0 0 40px rgba(0,0,0,.25); }
+    body.nav-open .side { transform: none; }
+    main { margin-left: 0; padding: 64px 16px 60px; }
+    .menu-btn { display: block; position: fixed; top: 12px; left: 12px; z-index: 11; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; cursor: pointer; }
+    h2 { margin-top: 40px; }
+  }
+</style>
+</head>
+<body>
+<button class="menu-btn" type="button" aria-label="Toggle navigation" onclick="document.body.classList.toggle('nav-open')">☰ Menu</button>
+
+<aside class="side">
+  <div class="brand"><span class="logo">▶</span>Live Test Runner</div>
+  <nav>
+    <div class="group">Start</div>
+    <a href="#overview">Overview</a>
+    <a href="#quick-start">Quick start</a>
+    <div class="group">Features</div>
+    <a href="#explorer">Test Explorer</a>
+    <a href="#on-save">Reruns on save</a>
+    <a href="#editor">Editor integration</a>
+    <a href="#results">Results panel</a>
+    <a href="#coverage">Code coverage</a>
+    <a href="#debugging">Debugging</a>
+    <a href="#timeline">Timeline Debugger</a>
+    <div class="group">Reference</div>
+    <a href="#commands">Commands</a>
+    <a href="#settings">Settings</a>
+    <a href="#logs">Logs &amp; troubleshooting</a>
+    <a href="#support">Support &amp; limits</a>
+    <div class="group">Contributors</div>
+    <a href="#how-it-works">How a run works</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#known-issues">Known issues</a>
+  </nav>
+  <button class="theme-btn" type="button" id="themeBtn">Toggle light / dark</button>
+</aside>
+
+<main>
+
+<!-- ───────────────────────── Overview ───────────────────────── -->
+<section id="overview">
+  <h1>Live Test Runner</h1>
+  <p class="lead">Save a file → the affected Jest tests run → results show up in the editor. You don't need a terminal or any config changes.</p>
+
+  <div class="cards">
+    <div class="card"><span class="ico">⚡</span><b>Reruns on save</b><span>Only the tests affected by the file you saved.</span></div>
+    <div class="card"><span class="ico">🌳</span><b>Test tree</b><span>File → suite → test, ready before the first run.</span></div>
+    <div class="card"><span class="ico">🎯</span><b>Editor feedback</b><span>Gutter icons, inline durations, Run / Debug buttons.</span></div>
+    <div class="card"><span class="ico">📊</span><b>Live coverage</b><span>Per-line bars, plus a hover that shows covering tests.</span></div>
+    <div class="card"><span class="ico">🔍</span><b>Results panel</b><span>Test list · console output · errors.</span></div>
+    <div class="card"><span class="ico">⏱</span><b>Timeline <span class="muted">(preview)</span></b><span>Step through a test after it has run.</span></div>
+  </div>
+</section>
+
+<!-- ───────────────────────── Quick start ───────────────────────── -->
+<section id="quick-start">
+  <h2>Quick start</h2>
+  <ol class="steps">
+    <li>Open a Jest project (a single folder, or set <code>liveTestRunner.projectRoot</code>).</li>
+    <li>Click the <b>beaker</b> icon in the Activity Bar. Tests are discovered right away.</li>
+    <li>Click <b>▶ Start Testing</b>. The full suite runs once.</li>
+    <li>Edit and save. The affected tests rerun automatically.</li>
+  </ol>
+  <div class="note">Nothing runs in the background until you start a session. <b>Stop</b> ends it. Shift-click Stop (or <kbd>Shift</kbd>+<kbd>Delete</kbd> in the views) also clears the cache.</div>
+</section>
+
+<!-- ───────────────────────── Explorer ───────────────────────── -->
+<section id="explorer">
+  <h2>Test Explorer</h2>
+  <p>Shows the sidebar tree of every test file, suite and test.</p>
+  <ul>
+    <li><b>Instant tree</b>: test files are parsed statically (Babel AST) when the extension starts, so nothing has to run first.</li>
+    <li><b>Discovery cache</b>: parsed results are cached per project and keyed by file modification time, so reopening a project is fast.</li>
+    <li><b>Live updates</b>: creating, editing or deleting a test file updates the tree.</li>
+    <li><b>Dynamic tests</b>: <code>test.each</code> and template-literal names appear as a template that fills in with the real cases after a run.</li>
+    <li><b>Coverage tab</b>: project totals plus a per-file list. Click a row to open the file.</li>
+  </ul>
+  <p class="muted">Test files match <code>*.test.*</code> or <code>*.spec.*</code> with js, ts, jsx, tsx, mjs or cjs. <code>node_modules</code> is skipped.</p>
+</section>
+
+<!-- ───────────────────────── On save ───────────────────────── -->
+<section id="on-save">
+  <h2>Reruns on save</h2>
+  <div class="table-wrap"><table>
+    <tr><th>You save…</th><th>What runs</th></tr>
+    <tr><td>A <b>test file</b></td><td>That whole file.</td></tr>
+    <tr><td>A <b>source file</b> with trace data</td><td>Only the tests that executed that file (suites with shared state run as a whole).</td></tr>
+    <tr><td>A <b>source file</b> with no trace data</td><td><code>jest --findRelatedTests</code>, which uses Jest's import graph.</td></tr>
+  </table></div>
+  <ul>
+    <li>Debounced per file (<code>onSaveDebounceMs</code>, default 300 ms).</li>
+    <li>Files run in batches across parallel Jest processes. Results stream in file by file.</li>
+    <li>If an instrumented batch returns no results, those files are retried with plain Jest, one at a time. This is logged as a warning.</li>
+  </ul>
+</section>
+
+<!-- ───────────────────────── Editor ───────────────────────── -->
+<section id="editor">
+  <h2>Editor integration</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Where</th><th>What you see</th></tr>
+    <tr><td>Gutter</td><td>✓ passed · ✗ failed · ⟳ running · ○ pending / skipped</td></tr>
+    <tr><td>After the line</td><td>Test / suite duration, colour-coded by <code>durationThresholds</code></td></tr>
+    <tr><td>CodeLens</td><td><code>▶ Run</code> this test or suite · <code>▷ Debug</code> · <code>◈ Results</code> jumps to it in the panel</td></tr>
+    <tr><td>Status bar</td><td><code>Live Tests: ✅ 12 passed</code>. Click it to open the panels.</td></tr>
+  </table></div>
+</section>
+
+<!-- ───────────────────────── Results ───────────────────────── -->
+<section id="results">
+  <h2>Results panel</h2>
+  <p>Opens in the bottom panel and has three columns: <b>test list</b> · <b>console output</b> (tabs per level: log / info / warn / error) · <b>errors</b>.</p>
+  <ul>
+    <li>Select a file, suite or test to scope the output and errors to it.</li>
+    <li>Output is stored <b>per scope</b>. Jest reports console output per file, so a single test only has its own output after you rerun that test on its own. Until then it shows a placeholder; output from other scopes is never copied in.</li>
+    <li>Each log line has a copy button.</li>
+  </ul>
+</section>
+
+<!-- ───────────────────────── Coverage ───────────────────────── -->
+<section id="coverage">
+  <h2>Code coverage</h2>
+  <p>Coverage is collected during normal runs. There's no extra pass or command.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Bar</th><th>Meaning</th></tr>
+    <tr><td><span style="color:var(--ok)">▌</span> green</td><td>Covered</td></tr>
+    <tr><td><span style="color:var(--warn)">▌</span> amber</td><td>Partially covered (some branches missed)</td></tr>
+    <tr><td><span style="color:var(--err)">▌</span> red</td><td>Never executed</td></tr>
+    <tr><td><span class="muted">▌</span> grey</td><td>Not executable</td></tr>
+  </table></div>
+  <ul>
+    <li><b>Badge</b>: <code>Stmts · Branch · Fns · Lines</code> in the Explorer.</li>
+    <li><b>Hover</b> a line to see the covering tests and which branch arms were missed.</li>
+    <li><b>Stale overlay</b>: a grey tint on a saved file until its rerun finishes.</li>
+    <li>Files no test imports count as 0%, so totals cover the whole project.</li>
+  </ul>
+</section>
+
+<!-- ───────────────────────── Debugging ───────────────────────── -->
+<section id="debugging">
+  <h2>Debugging</h2>
+  <p><code>▷ Debug</code> starts a VS Code Node debug session that runs Jest in band for that test or suite. Breakpoints in tests and source files work as usual.</p>
+  <div class="note warn">Known issues: CodeLens Debug currently debugs the whole file, and the launch config fails on Windows. See <a href="bugs-and-issues.md#bug-05">BUG-05</a> and <a href="bugs-and-issues.md#bug-06">BUG-06</a>.</div>
+</section>
+
+<!-- ───────────────────────── Timeline ───────────────────────── -->
+<section id="timeline">
+  <h2>Timeline Debugger <span class="muted">(preview)</span></h2>
+  <p>Re-runs one test with full instrumentation, then lets you replay it step by step.</p>
+  <ul>
+    <li>Play / step / scrub through each executed line.</li>
+    <li>Variable values shown as ghost text in the editor.</li>
+    <li>Sidebar with State, Watch and Call Stack. Use <b>Add to Watch</b> from the hover.</li>
+    <li>Console output tied to the step that produced it.</li>
+  </ul>
+  <p class="muted">Open it from a test in the Results panel. Leave it with the exit button.</p>
+</section>
+
+<!-- ───────────────────────── Commands ───────────────────────── -->
+<section id="commands">
+  <h2>Commands</h2>
+  <p class="muted">Command Palette → type <b>Live Test Runner</b>.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Command</th><th>Does</th></tr>
+    <tr><td>Start Testing</td><td>Runs everything and starts watching for saves</td></tr>
+    <tr><td>Stop Testing</td><td>Ends the session and kills running Jest processes</td></tr>
+    <tr><td>Stop Testing and Clear Cache</td><td>Stop, then wipe the discovery cache (<kbd>Shift</kbd>+<kbd>Delete</kbd> in the views)</td></tr>
+    <tr><td>Clear Cache and Restart Testing</td><td>Wipe the cache and rediscover tests</td></tr>
+    <tr><td>Select Project Root</td><td>Pick the root folder in multi-folder workspaces</td></tr>
+    <tr><td>Show Logs</td><td>Opens the <b>Live Test Runner</b> log (levelled)</td></tr>
+    <tr><td>Show Jest Output</td><td>Opens the raw Jest output</td></tr>
+    <tr><td>Copy Diagnostic Report</td><td>Copies versions, project setup, settings and recent logs for a bug report</td></tr>
+    <tr><td>Open Timeline Debugger</td><td>Traces a single test</td></tr>
+    <tr><td>Show All Covering Tests</td><td>Quick Pick of every test that ran a line</td></tr>
+    <tr><td>Dump Trace Store <span class="muted">(devMode)</span></td><td>Prints the internal trace indexes</td></tr>
+  </table></div>
+</section>
+
+<!-- ───────────────────────── Settings ───────────────────────── -->
+<section id="settings">
+  <h2>Settings</h2>
+  <p class="muted">All under <code>liveTestRunner.*</code>.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+    <tr><td><code>projectRoot</code></td><td><code>""</code></td><td>Project folder. Detected automatically for single-folder workspaces.</td></tr>
+    <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code>.</td></tr>
+    <tr><td><code>jestCommand</code></td><td><code>""</code></td><td>Override the Jest binary or command.</td></tr>
+    <tr><td><code>onSaveDebounceMs</code></td><td><code>300</code></td><td>Wait after a save before running.</td></tr>
+    <tr><td><code>durationThresholds.*</code></td><td>100 / 500 ms …</td><td>When test, suite and file durations turn amber or red.</td></tr>
+    <tr><td><code>coverageThresholds.red / amber</code></td><td>50 / 80</td><td>Coverage % colour bands.</td></tr>
+    <tr><td><code>devMode</code></td><td><code>false</code></td><td>Enables developer commands.</td></tr>
+  </table></div>
+</section>
+
+<!-- ───────────────────────── Logs ───────────────────────── -->
+<section id="logs">
+  <h2>Logs &amp; troubleshooting</h2>
+
+  <h3>Two output channels</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Channel</th><th>Contains</th><th>Use it to…</th></tr>
+    <tr><td><b>Live Test Runner</b></td><td>The extension's own log: timestamps, levels, one summary per run</td><td>Find out <i>what the extension did</i> and why</td></tr>
+    <tr><td><b>Live Test Runner: Jest Output</b></td><td>Jest's raw output, ANSI-free, each line tagged <code>[jest#N]</code></td><td>See <i>what Jest printed</i></td></tr>
+  </table></div>
+
+  <h3>Levels</h3>
+  <p>
+    <span class="pill err">error</span> something broke and needs action ·
+    <span class="pill warn">warning</span> degraded but recovered (fallbacks, files that failed to run) ·
+    <span class="pill info">info</span> milestones and run summaries ·
+    <span class="pill dbg">debug / trace</span> details, hidden by default
+  </p>
+  <p><b>Change the level:</b> Output panel → pick <i>Live Test Runner</i> → ⚙ → <b>Set Log Level</b>. Or Command Palette → <b>Developer: Set Log Level…</b>. The level also applies inside the Jest process, so debug detail from instrumentation shows up too.</p>
+
+  <h3>Reading a session</h3>
+<pre><code>[info] [Extension] Live Test Runner v2.0.3 · VS Code 1.95.0 · win32-x64 · Node 20.18.0
+[info] [Extension] Project root: c:\work\shop
+[info] [Discovery] Discovered 412 test(s) in 58 file(s) in 0.9s (55 from cache, 3 parsed)
+[info] [Session] Session started — 58 test file(s) · framework: jest · root: c:\work\shop
+[info] [Session] Run #1 full suite — 58 file(s) · 409 passed · 3 failed · 21.4s — failing: cart.test.ts
+[info] [Session] Run #2 save cart.ts — 2 file(s) · 31 passed · 0 failed · 2.2s</code></pre>
+  <ul>
+    <li><b>Run #N</b> numbers each run. The Jest Output channel has a matching <code>──── Run #N ────</code> separator.</li>
+    <li><b>b7</b> (batch) and <b>jest#12</b> (process) tags link debug lines to raw output.</li>
+    <li>Identical lines in a row are collapsed into <i>"previous message repeated N more times"</i>.</li>
+  </ul>
+
+  <h3>Common warnings</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Message</th><th>Meaning / what to do</th></tr>
+    <tr><td><code>instrumented Jest run returned no results … Jest said:</code></td><td>Jest failed before running tests (config, transform, environment). The lines after it are Jest's own error. Often a config format we don't read yet (<a href="bugs-and-issues.md#bug-07">BUG-07</a>).</td></tr>
+    <tr><td><code>falling back to plain Jest, one file at a time</code></td><td>Tests still run, but more slowly and without coverage or smart reruns for those files.</td></tr>
+    <tr><td><code>&lt;file&gt; failed to run — …</code></td><td>The test file could not execute (syntax error, missing module, setup crash).</td></tr>
+    <tr><td><code>could not instrument &lt;file&gt;</code></td><td>That source file runs without coverage. Set the level to Debug to see the parse error.</td></tr>
+    <tr><td><code>falling back to "npx jest"</code></td><td>No local Jest found. Run <code>npm install</code> or set <code>jestCommand</code>.</td></tr>
+    <tr><td><code>no file has finished in 60s — … currently on X</code></td><td>A batch made no progress. If the next warning names a <i>different</i> file, tests are just slow. If it names the <i>same</i> file, a test there is probably hanging (<a href="bugs-and-issues.md#bug-23">BUG-23</a>).</td></tr>
+    <tr><td><code>… was still running in b3 — cancelling b3</code></td><td>A save reran a file that a bigger batch was running. That batch's unfinished files are retried, more slowly.</td></tr>
+    <tr><td><code>Trace finished … captured 0 steps</code></td><td>The timeline matched no test, or the transform didn't apply (<a href="bugs-and-issues.md#bug-12">BUG-12</a>).</td></tr>
+  </table></div>
+
+  <h3>Reporting a bug</h3>
+  <ol class="steps">
+    <li>Set the log level to <b>Debug</b> and reproduce the problem.</li>
+    <li>Run <b>Copy Diagnostic Report</b>. It opens and copies a Markdown report with versions, project setup and the last 300 log lines.</li>
+    <li>Check it for anything private, then attach it to the issue.</li>
+  </ol>
+</section>
+
+<!-- ───────────────────────── Support ───────────────────────── -->
+<section id="support">
+  <h2>Support &amp; limits</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Framework</th><th>Status</th></tr>
+    <tr><td>Jest (babel-jest, ts-jest, @swc/jest)</td><td>✅ Supported</td></tr>
+    <tr><td>Create React App (react-scripts 4 / 5)</td><td>✅ Supported (its Jest config is extracted automatically)</td></tr>
+    <tr><td>Vitest</td><td>🗓 Planned</td></tr>
+  </table></div>
+  <ul>
+    <li>Single-test reruns use <code>--testNamePattern</code>, so tests with overlapping names can run together.</li>
+    <li>Console output is captured per file by Jest. Per-test output needs an individual rerun.</li>
+    <li>Instrumented runs raise <code>testTimeout</code> to at least 30 s to absorb the instrumentation overhead.</li>
+  </ul>
+</section>
+
+<!-- ───────────────────────── How it works ───────────────────────── -->
+<section id="how-it-works">
+  <h2>How a run works</h2>
+  <div class="flow">
+    <div class="box"><b>Trigger</b>Start, save, or ▶ Run</div><div class="arrow">→</div>
+    <div class="box"><b>SessionManager</b>Picks the files or tests and splits them into batches</div><div class="arrow">→</div>
+    <div class="box"><b>Jest child process</b>Temp config + trace transform + live reporter</div><div class="arrow">→</div>
+    <div class="box"><b>Stores</b>ResultStore · CoverageStore · ExecutionTraceStore</div><div class="arrow">→</div>
+    <div class="box"><b>Observers</b>Explorer · Results · gutter · coverage</div>
+  </div>
+  <ul>
+    <li>Jest always runs in a <b>spawned child process</b>, never inside the extension host.</li>
+    <li>The live reporter appends one JSON line per finished file. The extension polls that file, so results stream in.</li>
+    <li>One pass collects results, coverage counters and line hits together.</li>
+    <li>Instrumentation messages reach the log through a small protocol: stderr lines <code>[LTR:&lt;level&gt;] msg</code>.</li>
+  </ul>
+
+  <h3>Where things appear in VS Code</h3>
+  <div class="layout">
+    <div class="bar">Activity Bar → Explorer</div>
+    <div><b>Editor</b>: gutter icons · durations · CodeLens · coverage bars · hover</div>
+    <div><b>Panel</b>: Results / Timeline · Output (Logs, Jest Output)</div>
+    <div><b>Status bar</b>: <code>Live Tests: ✅ 12 passed</code></div>
+  </div>
+</section>
+
+<!-- ───────────────────────── Architecture ───────────────────────── -->
+<section id="architecture">
+  <h2>Architecture</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Package</th><th>Role</th><th>Depends on</th></tr>
+    <tr><td><code>runner</code></td><td>Spawns Jest, detects the framework (Jest / CRA), resolves the binary, parses results, shared logger</td><td>—</td></tr>
+    <tr><td><code>core</code></td><td>Session lifecycle, coverage map</td><td>runner</td></tr>
+    <tr><td><code>vscode-extension</code></td><td>UI, stores, instrumentation, VS Code wiring</td><td>core</td></tr>
+  </table></div>
+  <ul>
+    <li><b>Observer pattern</b>: <code>SessionManager</code> pushes events to <code>IResultObserver</code>s. New UI = new observer.</li>
+    <li><b>Adapter pattern</b>: one adapter per framework in <code>runner</code> plus one in the extension.</li>
+    <li><b>One source of truth</b>: <code>ResultStore</code> for results, trace files on disk for trace indexes.</li>
+    <li><b>Isolation</b>: each VS Code window gets its own <code>session-&lt;pid&gt;-&lt;ts&gt;</code> temp folder.</li>
+  </ul>
+  <p class="muted">More detail: <a href="architecture.md">architecture.md</a> · <a href="developer-guide.md">developer-guide.md</a></p>
+</section>
+
+<!-- ───────────────────────── Known issues ───────────────────────── -->
+<section id="known-issues">
+  <h2>Known issues</h2>
+  <p>All known bugs, with root-cause analysis and suggested fixes, are tracked in <a href="bugs-and-issues.md"><b>bugs-and-issues.md</b></a>. The top ones:</p>
+  <ul>
+    <li><b>Windows</b>: test-name patterns are mangled by <code>cmd.exe</code> (<a href="bugs-and-issues.md#bug-03">BUG-03</a>), and Stop doesn't kill Jest (<a href="bugs-and-issues.md#bug-08">BUG-08</a>).</li>
+    <li>Per-test trace is never recorded, so smart reruns fall back to <code>--findRelatedTests</code> (<a href="bugs-and-issues.md#bug-04">BUG-04</a>).</li>
+    <li><code>jest.config.ts</code> and other formats are not read by instrumented runs (<a href="bugs-and-issues.md#bug-07">BUG-07</a>).</li>
+  </ul>
+</section>
+
+</main>
+
+<script>
+  // Theme toggle (remembered per browser; works without storage too)
+  (function () {
+    const root = document.documentElement;
+    try { const t = localStorage.getItem('ltr-theme'); if (t) root.dataset.theme = t; } catch (_) {}
+    document.getElementById('themeBtn').addEventListener('click', function () {
+      const dark = root.dataset.theme
+        ? root.dataset.theme === 'dark'
+        : matchMedia('(prefers-color-scheme: dark)').matches;
+      root.dataset.theme = dark ? 'light' : 'dark';
+      try { localStorage.setItem('ltr-theme', root.dataset.theme); } catch (_) {}
+    });
+  })();
+
+  // Highlight the current section in the sidebar; close the mobile menu on navigation
+  (function () {
+    const links = Array.from(document.querySelectorAll('.side nav a'));
+    const byId = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+    const obs = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        links.forEach((a) => a.classList.remove('active'));
+        byId.get(e.target.id)?.classList.add('active');
+      }
+    }, { rootMargin: '-10% 0px -80% 0px' });
+    document.querySelectorAll('main section[id]').forEach((s) => obs.observe(s));
+    links.forEach((a) => a.addEventListener('click', () => document.body.classList.remove('nav-open')));
+  })();
+</script>
+</body>
+</html>

@@ -6,8 +6,8 @@ Everything you need to build, extend, and publish Live Test Runner.
 
 ## Prerequisites
 
-- Node.js 18+
-- pnpm (`npm install -g pnpm`)
+- Node.js 22+ (CI uses 24)
+- pnpm — the version is pinned in `package.json` (`packageManager`); with Corepack (`corepack enable`) or pnpm 10+ installed, the right version is used automatically. Build scripts allowed to run are listed under `allowBuilds` in `pnpm-workspace.yaml`.
 - VS Code
 
 ---
@@ -142,6 +142,63 @@ To support multiple concurrent VS Code windows, every extension instance must op
 3. **Safe Cleanup**: On activate, scan the temp root and prune only session folders whose owning PID is inactive (verified via `process.kill(pid, 0)`). 
 
 Use `spawn`, never `exec`. `exec` has a buffer limit that silently truncates large outputs. `spawn` streams.
+
+### Logging
+
+Two output channels, two purposes:
+
+| Channel | Written by | Content |
+|---------|-----------|---------|
+| **Live Test Runner** (`LogOutputChannel`) | `logger.scope('Area')` | The extension's own log — levelled, timestamped |
+| **Live Test Runner: Jest Output** (plain) | `Executor` raw sink | Jest process output, ANSI-stripped, line-buffered, tagged `[jest#N]` |
+
+**How to log**
+
+```ts
+// extension
+import { logger } from '../utils/logger';
+const log = logger.scope('Session');
+log.info('Session started — 58 test file(s)');
+log.warn('Falling back to plain Jest', err);   // err → " — <message>"
+log.error('Could not start Jest', err);        // err → message + 6 stack frames
+
+// runner / core (no vscode dependency)
+import { createLogger } from './utils/logger';
+const log = createLogger('Executor');
+```
+
+`runner`'s `setLogSink()` is installed by `logger.init()`, so runner/core logs land in the same channel.
+
+**Choosing a level**
+
+| Level | Use for | Example |
+|-------|---------|---------|
+| `error` | Broken, needs action | Jest binary not found, cannot read results |
+| `warn` | Degraded but recovered, or a user problem that blocks results | Fallback to plain Jest, test file failed to run, file not instrumented |
+| `info` | Milestones — about one line per user action | Activation, discovery summary, `Run #N … summary` |
+| `debug` | Details useful when diagnosing | Batch start/end, spawn/exit, coverage merge counts |
+| `trace` | Per-file chatter | Instrumenting `x.ts`, cache hit, per-file coverage % |
+
+Rules:
+- **One summary line per run**, not one per file. Per-file detail belongs at `debug`/`trace`.
+- Put the *cause* in the message: when Jest fails, include its stderr tail (`tail()` from runner).
+- Never write extension diagnostics to the Jest Output channel. It holds only Jest's output, plus `──── Run #N ────` separators.
+- Correlation tags: `Run #N` (SessionManager), `bN` (SessionTraceRunner batch), `jest#N` (Executor process).
+
+**Logging from inside the Jest process** (instrumentation `.js` files): write `[LTR:<level>] message\n` to stderr. `Executor` routes those lines to the log at that level and strips them from captured stderr. `LTR_LOG_LEVEL` (set from the channel level) lets the scripts skip debug/trace writes:
+
+```js
+const _LTR_RANK = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 };
+const _ltrMin = _LTR_RANK[process.env.LTR_LOG_LEVEL] ?? _LTR_RANK.info;
+function _ltrLog(level, msg) {
+  if (_LTR_RANK[level] < _ltrMin) { return; }
+  // One line per message — continuation lines would leak into the raw output
+  const text = String(msg).replace(/\s*Require stack:[\s\S]*$/, '').replace(/\s*\r?\n\s*/g, ' ↵ ');
+  process.stderr.write(`[LTR:${level}] ${text}\n`);
+}
+```
+
+**Diagnostics** — `Live Test Runner: Copy Diagnostic Report` builds a Markdown report (versions, project setup, settings, last 300 debug+ log lines from an in-memory ring buffer, even when the channel is at `info`). Ask users for it in bug reports.
 
 ### Session guard
 
@@ -387,6 +444,8 @@ const debounce = config.get<number>('onSaveDebounceMs', 300)
 
 Do not hardcode defaults in extension code — always read from config with a sensible fallback so users can override.
 
+`hangTimeoutSeconds` (default 300) is the longest a single test may run in an instrumented batch before the batch is stopped and that file failed (measured from the setup file's heartbeats, so loading a file does not count). Plain fallback runs get 3× that as a wall-clock limit.
+
 ### `runMode` — npm test integration
 
 `liveTestRunner.runMode` controls how tests are invoked:
@@ -426,6 +485,8 @@ Before opening the `release/*` → `main` PR:
 
 To test a package locally: `cd packages/vscode-extension && pnpm run build && vsce package` (produces a `.vsix`).
 
+What goes into the `.vsix` is set by `packages/vscode-extension/.vscodeignore` (`npx @vscode/vsce ls --no-dependencies` lists it). Sources are bundled into `out/`, but the webviews load their HTML / JS / CSS from `src/webview` at runtime, so that folder must stay in the package.
+
 ---
 
 ## Testing
@@ -440,9 +501,39 @@ Per-package:
 cd packages/runner && pnpm run test
 ```
 
-**Runner tests:** test adapters with a real fixture project root so the adapter resolves real binaries. Test `ResultParser` against saved Jest JSON output files — keeps parsing logic testable without spawning Jest.
+**Unit tests** live in `packages/*/test/*.test.ts` and import `src/` directly — the root `jest.esbuild.js` transformer compiles TypeScript with esbuild (no build step). Runner: `Executor` (arguments verbatim, process-tree kill, timeouts), config helpers. Extension: modules without a VS Code dependency (`ResultStore`, `utils/testNames`). Keep VS Code-free logic in such modules so it stays unit-testable.
 
-**Extension tests:** mock VS Code APIs using VS Code's test harness. Test `ResultStore` independently — it has no VS Code dependencies.
+`pnpm lint` uses the root `eslint.config.mjs` (ESLint flat config, TypeScript files only); both run in the PR checks.
+
+### End-to-end tests
+
+`e2e/` drives the real extension inside a real VS Code against real Jest:
+
+```bash
+pnpm build                                   # the e2e run uses packages/vscode-extension/out
+node e2e/run.js --all                        # every scenario whose workspace is available
+node e2e/run.js basic-stop basic-hang        # selected scenarios
+LTR_E2E_DEBUG=1 node e2e/run.js basic-hang   # debug-level logs (also inside Jest)
+# Test what is actually published: package, unpack, point the suite at it
+(cd packages/vscode-extension && npx @vscode/vsce package --no-dependencies -o /tmp/ltr.vsix)
+unzip -q /tmp/ltr.vsix -d /tmp/ltr-vsix && LTR_E2E_EXTENSION_DIR=/tmp/ltr-vsix/extension node e2e/run.js --all
+```
+
+- **Launcher** (`e2e/run.js`) starts VS Code with `--extensionDevelopmentPath`, an isolated user-data dir and `--extensionTestsPath=e2e/lib/hostEntry.js`, and prints the report. VS Code: `VSCODE_EXE`, else the local install, else (or with `LTR_E2E_VSCODE=download|stable|<version>`) a build downloaded into `.vscode-test/` by `@vscode/test-electron`. Full logs land in `LTR_E2E_RUNS_DIR` (default `%TEMP%\ltr-e2e-runs` on Windows, `/tmp/ltr-e2e` elsewhere — short, because VS Code's IPC socket path must stay under ~103 characters): `<scenario>/extension.log`, `jest-output.log`, `report.json`. `diag-*` scenarios are investigation tools and are not part of `--all`.
+- **CI:** the `E2E` job in `.github/workflows/pr-checks.yml` runs `--all` on Windows, Linux (under `xvfb-run`) and macOS with a downloaded stable VS Code, and uploads the logs when it fails.
+- **What the fixtures cover** — each one encodes problems found on real projects:
+
+  | Fixture | Covers |
+  |---|---|
+  | `basic` | plain Jest 29 in a path with spaces; `verbose: true`; names with `^ \| &`; skip / todo; `.each` (`%s` and `$var` tables); duplicate test names; `jest.mock('fs')`; a `setupTests.js` with hooks; `--resetMocks` in the test script; nested `?.`; files Jest's config excludes (`e2e/`, `.mjs`) |
+  | `ts-config` | `jest.config.ts` + ts-jest + a path alias only that config defines |
+  | `esm-fn-config` | `jest.config.mjs` exporting an async function |
+  | `cra` | Create React App: react-scripts' own Jest 27, jsdom, `setupTests.js` with hooks, `react-scripts test --resetMocks` |
+
+  Every fixture's full run is compared file by file with plain Jest (`checkMatchesPlainJest`). When a real project shows a new problem, reproduce it in a fixture (or a new one) so CI keeps catching it.
+- **Fixtures** (`e2e/fixtures/<name>`) are copied to `%TEMP%/ltr e2e/<name> project` — a path with spaces on purpose — and `npm install`ed once (again when `package.json` changes).
+- **Scenarios** (`e2e/scenarios/*.js`) export `{ workspace, timeoutMs, settings?, run({ api, t, vscode, workspace }) }`. `workspace` is `fixture:<name>`, `env:<VAR>` or a path. With `LTR_E2E=1` the extension's `activate()` returns its internals (`store`, `session`, `traceStore`, `coverageStore`, `observers`, `rawOutput`, …) — never in normal use. Helpers are in `e2e/lib/harness.js` (wait for discovery, record observer events, Jest summaries from raw output, Jest processes still alive, edit + save through VS Code).
+- **Real projects:** `LTR_E2E_TSJEST_REPO` (+ `LTR_E2E_TSJEST_BASELINE`, a `jest --json` result to compare every file with) for `repo-tsjest`; `LTR_E2E_CRA_REPO` for `repo-cra` (quick by default; `LTR_E2E_CRA_FULL=1` + `LTR_E2E_CRA_BASELINE` for the whole project). `repo-tsjest` edits one source file and restores it byte-for-byte; `repo-cra` never writes to the project.
 
 ---
 

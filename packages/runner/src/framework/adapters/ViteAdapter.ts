@@ -1,6 +1,6 @@
 import { Framework } from '../../types';
 import { FrameworkAdapter } from './FrameworkAdapter';
-import { readPackageJson } from './JestAdapter';
+import { JestAdapter, readPackageJson } from './JestAdapter';
 
 /**
  * Stub adapter for Vitest / Vite projects.
@@ -20,7 +20,9 @@ export class ViteAdapter implements FrameworkAdapter {
     if (!pkg) return false;
 
     const deps = { ...pkg.dependencies, ...pkg.devDependencies } as Record<string, string>;
-    return 'vitest' in deps;
+    // Libraries often test with both (e.g. @testing-library/jest-dom): a Jest
+    // dependency or Jest config means the project's tests run on Jest.
+    return 'vitest' in deps && !new JestAdapter().detect(projectRoot);
   }
 
   resolveBinary(_projectRoot: string): string {

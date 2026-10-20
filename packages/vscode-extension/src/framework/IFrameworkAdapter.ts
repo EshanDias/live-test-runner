@@ -59,6 +59,7 @@ export interface IFrameworkAdapter {
   /**
    * Run a single named test case (partial rerun from webview or CodeLens).
    * Writes results into the store at the appropriate scope.
+   * @returns false when no result came back (the caller clears the spinners).
    */
   runTestCase(
     store: ResultStore,
@@ -67,7 +68,7 @@ export interface IFrameworkAdapter {
     projectRoot: string,
     log: (msg: string) => void,
     opts?: RerunOptions,
-  ): Promise<void>;
+  ): Promise<boolean>;
 
   /**
    * Given a session (which holds the coverage map), return the set of test
@@ -87,10 +88,14 @@ export interface IFrameworkAdapter {
     log: (msg: string) => void,
   ): Promise<string[]>;
 
-  /** VS Code debug launch configuration for running a test under the debugger. */
+  /**
+   * VS Code debug launch configuration for running a test (or, with
+   * `isSuite`, every test in a suite) under the debugger.
+   */
   getDebugConfig(
     projectRoot: string,
     filePath: string,
     testFullName?: string,
-  ): vscode.DebugConfiguration;
+    isSuite?: boolean,
+  ): Promise<vscode.DebugConfiguration>;
 }

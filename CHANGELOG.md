@@ -2,6 +2,70 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [Unreleased]
+
+### Logging overhaul
+
+- **Levelled log channel** — "Live Test Runner" is now a VS Code `LogOutputChannel` with real `error` / `warning` / `info` / `debug` / `trace` levels, timestamps and a user-selectable level (Output ⚙ → Set Log Level). Lines read `[Area] message`.
+- **Raw Jest output split out** — Jest's own output moved to a separate channel, **Live Test Runner: Jest Output**. It is ANSI-stripped, line-buffered, and each line is tagged with its process (`[jest#12]`) so output from concurrent batches can be told apart. Each run starts with a `──── Run #N · label ────` separator.
+- **One summary per run** — `Run #N <trigger> — files · passed · failed · skipped · time — failing: …` replaces scattered start/finish lines. Discovery logs one summary (files, tests, cache hits, parse failures) instead of a "Cache hit" line per file.
+- **Noise removed** — about 20 `[Coverage]` INFO lines per batch, the per-file `[LTR-SESSION-TRANSFORM] …` and `[LTR-TRANSFORM] …` lines, the reporter's PASS/FAIL dump (duplicated Jest's output), the `console.log` on every coverage-decoration refresh, and the timeline `ltr-debug.log` written on every run (now only at Debug level).
+- **Diagnostics that matter kept or added** — when an instrumented batch returns no results, the warning includes the tail of Jest's stderr. Test files that fail to execute are a WARN with the first error line. The fallback to plain Jest says which files and why. Spawn failures (`ENOENT`) suggest the fix. Coverage drops (missing manifests) are summarised in one line.
+- **Runner/core logs now visible** — `@live-test-runner/runner` exposes `createLogger` / `setLogSink`. The extension installs a sink, so runner/core warnings (e.g. the `npx jest` fallback) appear in the log channel instead of only in DevTools. `core` reuses the runner logger.
+- **Child-process log protocol** — instrumentation running inside Jest writes `[LTR:<level>] msg` to stderr. `Executor` routes those lines to the log at that level and removes them from captured stderr. `LTR_LOG_LEVEL` is passed to Jest so instrumentation skips debug/trace writes at the default level.
+- **Slow vs. stuck diagnostics** — `liveReporter.js` now writes a `start` record when Jest begins a file. `SessionTraceRunner` runs a watchdog: when no file has finished for 60 s it logs a WARN naming the file currently executing and how long it has been on it (repeats every 2 min while stuck). When an on-save run cancels an in-flight batch that shares a file, an INFO line says which batch was cancelled and that its files will be retried.
+- **Repeat collapsing and early buffering** — identical consecutive lines collapse into "previous message repeated N more times". Lines logged before the channel exists are buffered and flushed.
+- **New commands** — `Live Test Runner: Show Logs`, and `Live Test Runner: Copy Diagnostic Report` (versions, project/Jest setup, settings, last 300 debug+ log lines from an in-memory ring buffer → clipboard + untitled Markdown doc). `Show Raw Output` is renamed `Show Jest Output`.
+
+### Bug Fixes
+
+- **Console logs missing from the Results panel** — Jest enables verbose mode on its own when a single test file runs (and when the config sets `verbose: true`). Verbose mode prints console calls directly and leaves `testResult.console` empty, so single-file reruns (e.g. saving a test file) showed no logs. Session runs now pass `--verbose=false`. Verified against Jest 29: 0 → 2 captured entries.
+- **Garbled symbols in the Output panel** — `Executor` decoded each pipe chunk separately, so multi-byte characters (`✓ ✕ ● ›`) split across chunks became `�`. It now uses `setEncoding('utf8')`, emits only complete lines, and strips ANSI codes (the channel's `ansi` language id did not render them).
+
+### Audit fixes (BUG-03 … BUG-35, see `docs/bugs-and-issues.md`)
+
+- **Jest runs without a shell (BUG-03, BUG-08)** — on Windows Jest ran through its `.cmd` shim via `cmd.exe`: every run failed in project paths containing a space, `^` was stripped and `|` piped. Jest's JS entry point is now resolved (CRA: react-scripts' Jest) and run with `node` from PATH; arguments arrive verbatim. Stop kills the whole process tree. Combined name patterns are grouped (`^(?:a|b)$`; `^a|b$` meant "starts with a OR ends with b").
+- **Run lifecycle (BUG-15, BUG-23, BUG-24)** — one `run-started`/`run-finished` across overlapping runs (a save during the full suite no longer "finishes" it), progress totals from the extension (`run-progress`), Stop is final (no retry/fallback after it). Files show ⟳ only when Jest starts them; every failure path clears spinners; Stop reverts them. A save no longer cancels the batch running the same file. New setting `liveTestRunner.hangTimeoutSeconds` (default 300): a single test running longer is stopped and its file failed with an explanation. Jest's `pending`/`todo` show as skipped; files the project's config never runs (`jest --listTests`) show as skipped and are not run.
+- **Config loading (BUG-07, BUG-12, BUG-20)** — `ProjectJestConfig` reads the project config with `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session: `jest.config.ts/.mjs/.json`, function exports, presets, multi-project configs and `--config` / `--resetMocks` / `--env` in the test script now apply. babel-jest fallback resolved via Node lookup (pnpm). CRA transformer options kept.
+- **Per-test trace (BUG-04, BUG-28, BUG-19)** — the trace context is opened from the setup file (test files are not instrumented), so smart on-save reruns and "covering tests" work; hooks in `setupTests.js` add to the test instead of erasing it; no `process.on('exit')` listener per file.
+- **Lost results (BUG-25, BUG-26)** — stale-suite cleanup removed whole subtrees of finished tests when a discovered placeholder (e.g. `it.each` `case $case`) got no result: vscode-jest showed 165 of 2012 tests. Same-name tests no longer collapse into one node (a failure could be hidden). `nameToPattern` understands `$variable` placeholders.
+- **Instrumentation errors no longer fail test files (BUG-31)** — an optional chain inside another chain's call arguments (`a?.b?.c().includes(x?.d())`) crashed the session transform ("Container is falsy") and every test file importing that module failed to run. That `?.` is skipped for branch counting; any instrumentation error falls back to the plain transpiled code.
+- **Debug (BUG-05, BUG-06)** — ▷ Debug debugs only its test/suite; the launch config uses Jest's JS entry from the project root, CRA's config, `nameToPattern` and an upper-case drive letter.
+- **Timeline (BUG-12)** — Windows-safe source pattern, `.each` names, no env leak into the extension host, resolved config, CRA's Jest; transformers loaded like Jest does (ts-jest projects recorded nothing).
+- **Smaller fixes** — coverage race / O(N²) updates (BUG-09); pattern reruns keep file output (BUG-10); total test count and line maps (BUG-11); drive-letter case mapping (BUG-13); `.mjs`/`.cjs` test files and `testFilePatterns` (BUG-17); instrumentation uses the real `fs` when tests mock it (BUG-27); transform cache kept per project across sessions (BUG-29); saves outside the project ignored (BUG-30); per-file node index and no full-tree resend on view show (BUG-16); summary running count fixed.
+- **Settings (BUG-18)** — removed unused `showOutputOnFailure`; declared `coverageExclude`.
+- **Faster Start (BUG-32)** — the `jest --listTests` answer is kept per project (`RunnableFiles.ts`) and reused while no test file, `package.json` / `jest.config.*` or run setting changed; Start waited 20 s for it on copy-requisition.
+- **New test files run on save (BUG-33)** — a test file created after Start is checked with Jest again instead of being ignored.
+- **`--findRelatedTests` reruns (BUG-34)** — `ResultParser` reads the file path from Jest's `name` field (results were filed under an empty path); the coverage "stale" flag is cleared when any on-save rerun ends.
+- **File durations (BUG-35)** — test files show their total time (Jest's start → end) in both test lists; `ResultParser` now prefers that over the sum of test times.
+
+### macOS verification and fixes (BUG-36 … BUG-41)
+
+- **Symlinked project roots (BUG-36)** — Jest resolves symlinks in `rootDir`, so on macOS (`/var` → `/private/var`) and in any project opened through a symlink every listed file looked unknown (all shown skipped), ▷ Debug found no tests and coverage/trace paths never matched. New `JestPaths` (runner) records each root's real path: paths sent to Jest use it, paths read back are mapped to the editor's spelling.
+- **Jest + Vitest projects (BUG-37)** — a `vitest` dependency no longer wins over a Jest dependency or Jest config (e.g. `@testing-library/jest-dom` ran nothing). `jest.config.cts/.mts/.json` are recognised.
+- **`__tests__` folders (BUG-38)** — the default `testFilePatterns` adds `**/__tests__/**/*.*` (Jest's default `testMatch`); on Start, files `jest --listTests` reports but discovery missed are added.
+- **One file in several Jest projects (BUG-39)** — results of a file run by more than one project (e.g. `jsdom` + `node`) are merged (`mergeFileResults`): a test fails if it failed in any project. Before, the last report replaced the others and could hide a failure.
+- **Coverage after the first Start (BUG-40)** — coverage manifests now live next to the persistent transform cache, named by file path and content; cached transforms wrote none into the new session folder, so coverage was dropped.
+- **Tooling (BUG-41)** — removed the unused `runner` → `core` dependency (a cycle pnpm 10+ refuses); build-script approvals moved to `pnpm-workspace.yaml` (`allowBuilds`); pnpm pinned to 12.14.0 via `packageManager`, used by CI through `pnpm/action-setup`. e2e: the launcher finds VS Code ≥ 1.142's `Code` binary on macOS; plain-Jest comparisons keep path case and map symlinks; the real-project scenario handles multi-project configs and checks that no coverage is dropped.
+- **Dependencies** — Jest 30, `@types/jest` 30, ESLint 10 with a flat config (`eslint.config.mjs`, `typescript-eslint` 8), TypeScript 6.0, esbuild 0.28, `@vscode/test-electron` 3. `@types/vscode` and the extension's `@types/node` 16 stay matched to the minimum VS Code (1.74). `tsc` over the extension passes again (the logger class returned by `activate()` is exported).
+- **Smaller package** — `packages/vscode-extension/.vscodeignore` (from `develop` / `feat/eshan/timeline`, corrected: the webviews load their files from `src/webview`, so that folder is kept) leaves out TypeScript sources, unit tests, source maps, build files and README media (served from GitHub via `--baseContentUrl`): 91 → 34 files, about 150 KB. New e2e option `LTR_E2E_EXTENSION_DIR` runs the suite against an unpacked `.vsix`; it passes.
+- **From `feat/eshan/timeline`** — inline durations sit at the end of the test's line, and a line past the end of a shortened file is skipped (it showed at the end of the file). A result without a location keeps the line discovery found, and generated `.each` tests fall back to their template's line, so "go to file" lands on the `test.each(...)` call.
+- **Verified on macOS** — every e2e scenario; vscode-jest (49 files / 2012 tests), jest-dom (31 files, two Jest projects) and a CRA app (14 files / 143 tests) match plain Jest test for test.
+
+### Tests
+
+- **End-to-end suite** (`e2e/`): launches a real VS Code with the extension and drives real commands against fixture projects (in a path with spaces) and real repositories, including a test-for-test comparison with plain Jest. `node e2e/run.js --all`.
+- **Unit tests** (`packages/*/test`, esbuild transformer) and a root ESLint config; `pnpm lint` added to PR checks (BUG-14).
+- **E2E in CI** — a PR-check job runs the e2e suite on Windows, Linux and macOS with a downloaded VS Code. Fixtures encode what the real projects taught: `it.each` `$var` tables, duplicate names, `jest.mock('fs')`, `setupTests.js` hooks, `--resetMocks` in the test script, slow-loading files, nested `?.`, and a Create React App fixture. Every fixture's results are compared with plain Jest.
+
+### Docs
+
+- `docs/bugs-and-issues.md` — full audit: 22 issues with symptom, root cause, fix and verification steps.
+- `docs/live-test-runner-guide.html` — navigable user & contributor guide.
+- Developer guide: new **Logging** section (levels, scopes, correlation tags, child-process protocol).
+
+---
+
 ## [2.0.4] - 2026-10-19
 
 ### Maintenance

@@ -74,6 +74,8 @@ export interface FileResult {
   output: ScopedOutput;
   /** IDs of nodes that are direct children of this file (no parent suite) */
   rootNodeIds: string[];
+  /** Set when the project's Jest config never runs this file (why, for display). */
+  excluded?: string;
 }
 
 // ── Node ID helper ─────────────────────────────────────────────────────────────
@@ -97,6 +99,12 @@ export function makeNodeId(
   return raw.slice(0, MAX_ID_LEN - 12) + '::' + hash;
 }
 
+/** Separator-normalised path, case-folded on Windows (no `path` import: this module stays pure). */
+function normaliseKey(p: string): string {
+  const s = p.replace(/[\\/]+/g, '/');
+  return /^[a-zA-Z]:\//.test(s) ? s.toLowerCase() : s;
+}
+
 function simpleHash(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
@@ -105,11 +113,53 @@ function simpleHash(s: string): number {
   return Math.abs(h);
 }
 
+// ── Node pool ──────────────────────────────────────────────────────────────────
+
+/**
+ * The flat node pool, plus an index of each file's nodes. Per-file lookups
+ * used to scan every node in the store — O(tests × nodes) while applying a
+ * file's results on large projects (BUG-16).
+ */
+class NodePool extends Map<string, TestNode> {
+  private readonly _byFile = new Map<string, Map<string, TestNode>>();
+
+  set(id: string, node: TestNode): this {
+    const prev = super.get(id);
+    if (prev && prev.fileId !== node.fileId) { this._byFile.get(prev.fileId)?.delete(id); }
+    super.set(id, node);
+    let ofFile = this._byFile.get(node.fileId);
+    if (!ofFile) { ofFile = new Map(); this._byFile.set(node.fileId, ofFile); }
+    ofFile.set(id, node);
+    return this;
+  }
+
+  delete(id: string): boolean {
+    const node = super.get(id);
+    if (node) {
+      const ofFile = this._byFile.get(node.fileId);
+      ofFile?.delete(id);
+      if (ofFile && ofFile.size === 0) { this._byFile.delete(node.fileId); }
+    }
+    return super.delete(id);
+  }
+
+  clear(): void {
+    super.clear();
+    this._byFile?.clear();
+  }
+
+  /** A snapshot of one file's nodes (safe to mutate the pool while iterating). */
+  ofFile(fileId: string): TestNode[] {
+    const ofFile = this._byFile.get(fileId);
+    return ofFile ? Array.from(ofFile.values()) : [];
+  }
+}
+
 // ── Store ──────────────────────────────────────────────────────────────────────
 
 export class ResultStore {
   private files: Map<string, FileResult> = new Map();
-  private nodes: Map<string, TestNode> = new Map();
+  private nodes = new NodePool();
   // key: absolute filePath → Map<1-based lineNumber, LineEntry>
   private _lineMap: Map<string, Map<number, LineEntry>> = new Map();
 
@@ -127,6 +177,8 @@ export class ResultStore {
   clear(): void {
     this.files.clear();
     this.nodes.clear();
+    // Stale line maps kept gutter icons / CodeLens alive after a clear (BUG-11).
+    this._lineMap.clear();
     this._summary = { total: 0, passed: 0, failed: 0, running: 0, totalDuration: 0 };
   }
 
@@ -138,13 +190,12 @@ export class ResultStore {
     const file = this.files.get(fileId);
     if (file) {
       // Remove all nodes belonging to this file
-      for (const [nodeId, node] of this.nodes) {
-        if (node.fileId === fileId) {
-          if (node.type === 'test') {
-            this._adjustSummary(node.status, -1);
-          }
-          this.nodes.delete(nodeId);
+      for (const node of this.nodes.ofFile(fileId)) {
+        if (node.type === 'test') {
+          this._adjustSummary(node.status, -1);
+          this._summary.total--; // BUG-11: the total used to drift up
         }
+        this.nodes.delete(node.id);
       }
       this.files.delete(fileId);
     }
@@ -286,8 +337,9 @@ export class ResultStore {
   ): void {
     const existing = this.nodes.get(nodeId);
     if (existing) {
-      // Update metadata but preserve status and results
-      existing.line = line;
+      // Update metadata but preserve status and results. A result without a
+      // location keeps the line discovery found.
+      if (line != null) { existing.line = line; }
       existing.isDynamicTemplate = isDynamicTemplate;
       if (existing.parentId !== parentId) {
         // Move to new parent
@@ -370,10 +422,87 @@ export class ResultStore {
     }
   }
 
+  /**
+   * Reverts every 'running' node and file to 'pending' (templates back to
+   * 'template'). Used on Stop so nothing keeps spinning.
+   * @returns the files that changed.
+   */
+  resetRunning(): string[] {
+    const touched = new Set<string>();
+    const suites: string[] = [];
+    for (const node of this.nodes.values()) {
+      if (node.status !== 'running') { continue; }
+      touched.add(node.fileId);
+      if (node.type === 'test') { this._adjustSummary('running', -1); }
+      else { suites.push(node.id); }
+      node.status = node.isDynamicTemplate ? 'template' : 'pending';
+    }
+    // A suite may hold finished tests next to the ones that were stopped.
+    for (const id of suites) {
+      if (!this.nodes.get(id)?.isDynamicTemplate) { this._recalculateSuiteAndBubbleUp(id); }
+    }
+    for (const file of this.files.values()) {
+      if (file.status === 'running' || touched.has(file.fileId)) {
+        touched.add(file.fileId);
+        this._recalculateFileStatus(file.fileId);
+        if (file.status === 'running') { file.status = 'pending'; }
+      }
+    }
+    return [...touched];
+  }
+
+  /**
+   * Marks a file the project's Jest config never runs (testMatch,
+   * testPathIgnorePatterns, …): it and its tests show as skipped.
+   */
+  markFileExcluded(fileId: string, reason: string): void {
+    const file = this.files.get(fileId);
+    if (!file) { return; }
+    file.excluded = reason;
+    for (const node of this.nodes.ofFile(fileId)) {
+      if (node.fileId !== fileId || node.isDynamicTemplate) { continue; }
+      if (node.type === 'test') {
+        this._adjustSummary(node.status, -1);
+        this._adjustSummary('skipped', +1);
+      }
+      node.status = 'skipped';
+    }
+    file.status = 'skipped';
+  }
+
+  /**
+   * Fails every test of a file that could not finish (e.g. killed after
+   * hanging), with `message` as the failure shown to the user.
+   */
+  failFile(fileId: string, message: string): void {
+    const file = this.files.get(fileId);
+    if (!file) { return; }
+    for (const node of this.nodes.ofFile(fileId)) {
+      if (node.fileId !== fileId) { continue; }
+      if (node.isDynamicTemplate) { node.status = 'template'; continue; }
+      if (node.type === 'test') {
+        this._adjustSummary(node.status, -1);
+        node.status = 'failed';
+        node.failureMessages = [message];
+        this._adjustSummary('failed', +1);
+      } else {
+        node.status = 'failed';
+      }
+    }
+    file.status = 'failed';
+  }
+
   fileResult(fileId: string, status: TestStatus, duration?: number): void {
     const file = this.files.get(fileId);
     if (!file) return;
     file.status = status;
+    file.duration = duration;
+  }
+
+  /** How long the whole file took in its last full run (Jest's own timing). */
+  setFileDuration(fileId: string, duration: number): void {
+    const file = this.files.get(fileId);
+    if (!file) return;
     file.duration = duration;
   }
 
@@ -490,7 +619,9 @@ export class ResultStore {
    */
   cleanupStaleNodes(fileId: string, hadTestCases: boolean, scopeNodeId?: string): void {
     const nodesToRemove: string[] = [];
-    for (const [nodeId, node] of this.nodes) {
+    /** Stale suites — recomputed from their children, never removed directly. */
+    const staleSuites: string[] = [];
+    for (const node of this.nodes.ofFile(fileId)) { const nodeId = node.id;
       if (node.fileId !== fileId || node.status !== 'running') {
         continue;
       }
@@ -527,14 +658,24 @@ export class ResultStore {
 
         // If it is an ancestor, we NEVER remove it, just revert status so rollup fixes it.
         if (isAncestor && !inSubtree) {
-          node.status = 'pending';
+          this._setStatus(node, 'pending');
           continue;
         }
       }
 
       // If a node is a dynamic anchor, we NEVER remove it, just revert status.
       if (node.isDynamicTemplate) {
-        node.status = 'template';
+        this._setStatus(node, 'template');
+        continue;
+      }
+
+      // A suite is still 'running' when any test under it got no result (e.g.
+      // a discovered `it.each` placeholder Jest names differently). Removing
+      // the suite would remove its whole subtree — every finished test with
+      // it — so whole files of results vanished. Suites are recomputed from
+      // their children instead; ones left empty are swept below.
+      if (node.type === 'suite') {
+        if (hadTestCases) { staleSuites.push(nodeId); } else { node.status = 'pending'; }
         continue;
       }
 
@@ -557,7 +698,7 @@ export class ResultStore {
         nodesToRemove.push(nodeId);
       } else {
         // Syntax error or zero matches: preserve static structure
-        node.status = 'pending';
+        this._setStatus(node, 'pending');
       }
     }
 
@@ -580,6 +721,16 @@ export class ResultStore {
       this._removeNode(nodeId);
     }
 
+    // Stale suites, deepest first, so a parent sees its children's final status.
+    const depth = (id: string) => {
+      let d = 0;
+      for (let p = this.nodes.get(id)?.parentId; p; p = this.nodes.get(p)?.parentId) { d++; }
+      return d;
+    };
+    for (const id of staleSuites.sort((a, b) => depth(b) - depth(a))) {
+      if (this.nodes.has(id)) { this._recalculateSuiteAndBubbleUp(id); }
+    }
+
     // After cleanup or scoped run, re-evaluate affected branches
     for (const nodeId of nodesToRecalculate) {
       this._recalculateSuiteAndBubbleUp(nodeId);
@@ -592,7 +743,7 @@ export class ResultStore {
     while (sweeping) {
       sweeping = false;
       const suitesToRemove: string[] = [];
-      for (const [nodeId, node] of this.nodes) {
+      for (const node of this.nodes.ofFile(fileId)) { const nodeId = node.id;
         if (node.fileId === fileId && node.type === 'suite' && node.children.length === 0) {
           if (node.isDynamicTemplate) {
             node.status = 'template';
@@ -689,6 +840,19 @@ export class ResultStore {
     return Array.from(this.files.values());
   }
 
+  /**
+   * The store's key for a path that may be spelled differently (separators,
+   * or drive-letter case on Windows — Jest reports `C:\…`, VS Code `c:\…`).
+   */
+  findFileKey(filePath: string): string | undefined {
+    if (this.files.has(filePath)) { return filePath; }
+    const want = normaliseKey(filePath);
+    for (const key of this.files.keys()) {
+      if (normaliseKey(key) === want) { return key; }
+    }
+    return undefined;
+  }
+
   /** Get all direct children nodes of a given node. */
   getChildren(nodeId: string): TestNode[] {
     const node = this.nodes.get(nodeId);
@@ -722,7 +886,7 @@ export class ResultStore {
    * never from hot paths.
    */
   findNodeByFullName(fileId: string, fullName: string): TestNode | undefined {
-    for (const node of this.nodes.values()) {
+    for (const node of this.nodes.ofFile(fileId)) {
       if (node.fileId === fileId && node.fullName === fullName) {
         return node;
       }
@@ -730,9 +894,21 @@ export class ResultStore {
     return undefined;
   }
 
-  getFileNodes(fileId: string): TestNode[] {
+  /** All test (leaf) nodes belonging to any of the given files — one pass over the pool. */
+  getTestNodesForFiles(fileIds: Iterable<string>): TestNode[] {
+    const wanted = new Set(fileIds);
     const result: TestNode[] = [];
     for (const node of this.nodes.values()) {
+      if (node.type === 'test' && wanted.has(node.fileId)) {
+        result.push(node);
+      }
+    }
+    return result;
+  }
+
+  getFileNodes(fileId: string): TestNode[] {
+    const result: TestNode[] = [];
+    for (const node of this.nodes.ofFile(fileId)) {
       if (node.fileId === fileId) {
         result.push(node);
       }
@@ -765,6 +941,7 @@ export class ResultStore {
       file.status = 'pending';
       file.duration = undefined;
       file.output = { lines: [], capturedAt: null };
+      file.excluded = undefined;
     }
     this._summary.passed = 0;
     this._summary.failed = 0;
@@ -806,6 +983,7 @@ export class ResultStore {
       name: f.name,
       status: f.status,
       duration: f.duration,
+      excluded: f.excluded,
       rootNodeIds: f.rootNodeIds,
       nodes: this._serialiseNodes(f.fileId),
     };
@@ -814,7 +992,7 @@ export class ResultStore {
   /** Serialise all nodes for a given file as a flat array. */
   private _serialiseNodes(fileId: string): object[] {
     const result: object[] = [];
-    for (const node of this.nodes.values()) {
+    for (const node of this.nodes.ofFile(fileId)) {
       if (node.fileId !== fileId) continue;
       result.push({
         id: node.id,
@@ -903,6 +1081,15 @@ export class ResultStore {
     }
 
     this.nodes.delete(nodeId);
+  }
+
+  /** Changes a node's status, keeping the summary counters right for tests. */
+  private _setStatus(node: TestNode, status: TestStatus): void {
+    if (node.type === 'test') {
+      this._adjustSummary(node.status, -1);
+      this._adjustSummary(status, +1);
+    }
+    node.status = status;
   }
 
   private _adjustSummary(status: TestStatus, delta: number): void {

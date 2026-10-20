@@ -16,7 +16,7 @@ import { EventEmitter } from 'events';
 import { CoverageStore } from './CoverageStore';
 import { logger } from '../utils/logger';
 
-const FILE = 'SourceCounter.ts';
+const log = logger.scope('Coverage');
 
 const YIELD_EVERY = 10;
 
@@ -29,7 +29,7 @@ export class SourceCounter extends EventEmitter {
   }
 
   async run(): Promise<void> {
-    logger.info(FILE, 'run', `[Coverage] SourceCounter starting — projectRoot="${this._projectRoot}"`);
+    const startedAt = Date.now();
     const include = new vscode.RelativePattern(this._projectRoot, '**/*.{js,ts,jsx,tsx}');
     // Flattened — no nested braces, VS Code glob doesn't support them reliably
     const defaultExcludeParts = [
@@ -54,14 +54,13 @@ export class SourceCounter extends EventEmitter {
     try {
       uris = await vscode.workspace.findFiles(include, excludeGlob);
     } catch (err) {
-      logger.error(FILE, 'run', `[Coverage] SourceCounter findFiles failed`, err);
+      log.error('Source file scan failed — coverage totals will only include files touched by tests', err);
       this._store.markScanComplete();
       this.emit('done');
       return;
     }
 
     const total = uris.length;
-    logger.info(FILE, 'run', `[Coverage] SourceCounter found ${total} source file(s) to scan`);
     let scanned = 0;
 
     for (const uri of uris) {
@@ -74,7 +73,7 @@ export class SourceCounter extends EventEmitter {
       }
     }
 
-    logger.info(FILE, 'run', `[Coverage] SourceCounter scan complete — ${scanned}/${total} file(s) counted`);
+    log.debug(`Source scan: ${scanned} file(s) counted in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
     this._store.markScanComplete();
     this.emit('done');
   }
@@ -103,7 +102,8 @@ export class SourceCounter extends EventEmitter {
       if (traverse?.default) { traverse = traverse.default; }
       if (t?.default) { t = t.default; }
     } catch (err) {
-      logger.warn(FILE, '_countFile', `[Coverage] Babel load failed for "${filePath}" — file will report 0 counts`, err);
+      // Same message for every file → the logger collapses the repeats into one line.
+      log.warn(`Could not load Babel from ${this._projectRoot} — source files report 0 coverage totals`, err);
       return { statements: 0, branches: 0, functions: 0, lines: 0 };
     }
 

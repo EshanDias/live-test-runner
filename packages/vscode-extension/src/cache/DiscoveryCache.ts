@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { logger } from '../utils/logger';
 
-const FILE = 'DiscoveryCache.ts';
+const log = logger.scope('Cache');
 
 const CACHE_VERSION  = 1;
 const MAX_PROJECTS   = 10;
@@ -153,7 +153,7 @@ export class DiscoveryCache {
       fs.writeFileSync(this._cacheFilePath, JSON.stringify(this._data), 'utf8');
       this._dirty = false;
     } catch (err) {
-      logger.warn(FILE, 'flush', 'Failed to write discovery cache', err);
+      log.warn(`Could not save the discovery cache (${this._cacheFilePath}) — next start will re-parse all test files`, err);
     }
   }
 
@@ -234,7 +234,7 @@ export function rotateAndCheckCapacity(cacheRootDir: string): CapacityResult {
       projects.push({ dir, lastUsedAt, sizeBytes: dirSizeBytes(dir), isActive });
     }
   } catch (err) {
-    logger.warn(FILE, 'rotateAndCheckCapacity', 'Failed to scan cache root', err);
+    log.warn(`Could not scan ${cacheRoot} for cache eviction`, err);
     return { ok: true };
   }
 
@@ -254,9 +254,9 @@ export function rotateAndCheckCapacity(cacheRootDir: string): CapacityResult {
     try {
       fs.rmSync(p.dir, { recursive: true, force: true });
       projects.splice(projects.indexOf(p), 1);
-      logger.info(FILE, 'rotateAndCheckCapacity', `Evicted LRU cache: ${p.dir}`);
+      log.debug(`Evicted least-recently-used project cache ${p.dir}`);
     } catch (err) {
-      logger.warn(FILE, 'rotateAndCheckCapacity', `Failed to evict ${p.dir}`, err);
+      log.warn(`Could not evict ${p.dir}`, err);
     }
   }
 
