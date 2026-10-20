@@ -444,6 +444,8 @@ const debounce = config.get<number>('onSaveDebounceMs', 300)
 
 Do not hardcode defaults in extension code — always read from config with a sensible fallback so users can override.
 
+`hangTimeoutSeconds` (default 300) is the longest a single test may run in an instrumented batch before the batch is stopped and that file failed (measured from the setup file's heartbeats, so loading a file does not count). Plain fallback runs get 3× that as a wall-clock limit.
+
 ### `runMode` — npm test integration
 
 `liveTestRunner.runMode` controls how tests are invoked:
@@ -497,9 +499,25 @@ Per-package:
 cd packages/runner && pnpm run test
 ```
 
-**Runner tests:** test adapters with a real fixture project root so the adapter resolves real binaries. Test `ResultParser` against saved Jest JSON output files — keeps parsing logic testable without spawning Jest.
+**Unit tests** live in `packages/*/test/*.test.ts` and import `src/` directly — the root `jest.esbuild.js` transformer compiles TypeScript with esbuild (no build step). Runner: `Executor` (arguments verbatim, process-tree kill, timeouts), config helpers. Extension: modules without a VS Code dependency (`ResultStore`, `utils/testNames`). Keep VS Code-free logic in such modules so it stays unit-testable.
 
-**Extension tests:** mock VS Code APIs using VS Code's test harness. Test `ResultStore` independently — it has no VS Code dependencies.
+`pnpm lint` uses the root `.eslintrc.cjs`; both run in the PR checks.
+
+### End-to-end tests
+
+`e2e/` drives the real extension inside a real VS Code against real Jest:
+
+```bash
+pnpm build                                   # the e2e run uses packages/vscode-extension/out
+node e2e/run.js --all                        # every scenario whose workspace is available
+node e2e/run.js basic-stop basic-hang        # selected scenarios
+LTR_E2E_DEBUG=1 node e2e/run.js basic-hang   # debug-level logs (also inside Jest)
+```
+
+- **Launcher** (`e2e/run.js`) starts VS Code (`VSCODE_EXE`, default: the usual install path) with `--extensionDevelopmentPath`, an isolated user-data dir and `--extensionTestsPath=e2e/lib/hostEntry.js`, and prints the report. Full logs land in `%TEMP%/ltr-e2e-runs/<scenario>/` (`extension.log`, `jest-output.log`, `report.json`).
+- **Fixtures** (`e2e/fixtures/<name>`) are copied to `%TEMP%/ltr e2e/<name> project` — a path with spaces on purpose — and `npm install`ed once (again when `package.json` changes).
+- **Scenarios** (`e2e/scenarios/*.js`) export `{ workspace, timeoutMs, settings?, run({ api, t, vscode, workspace }) }`. `workspace` is `fixture:<name>`, `env:<VAR>` or a path. With `LTR_E2E=1` the extension's `activate()` returns its internals (`store`, `session`, `traceStore`, `coverageStore`, `observers`, `rawOutput`, …) — never in normal use. Helpers are in `e2e/lib/harness.js` (wait for discovery, record observer events, Jest summaries from raw output, Jest processes still alive, edit + save through VS Code).
+- **Real projects:** `LTR_E2E_TSJEST_REPO` (+ `LTR_E2E_TSJEST_BASELINE`, a `jest --json` result to compare every file with) for `repo-tsjest`; `LTR_E2E_CRA_REPO` for `repo-cra` (quick by default; `LTR_E2E_CRA_FULL=1` + `LTR_E2E_CRA_BASELINE` for the whole project). `repo-tsjest` edits one source file and restores it byte-for-byte; `repo-cra` never writes to the project.
 
 ---
 

@@ -111,13 +111,19 @@ Current adapters:
 
 Two different command shapes are used depending on context:
 
+**How Jest is started.** Always `node <jest/bin/jest.js> …` — Jest's JS entry point resolved from the project (`BinaryResolver.resolveJestEntry`; CRA: the Jest react-scripts depends on), run with `node` from PATH (fallback: the editor's runtime with `ELECTRON_RUN_AS_NODE=1`) and **no shell**, so arguments (paths with spaces, `^…$` patterns, `a|b`) reach Jest verbatim. A shell is used only for a user `jestCommand` / npx, with every argument quoted. `Executor.kill()` ends the whole process tree. File paths are passed with forward slashes and an upper-case drive letter (Jest realpaths `rootDir` and compares case-sensitively).
+
 **Batch run — `SessionTraceRunner` (initial run + on-save file reruns):**
 ```sh
-jest --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
-     --config <ltr-temp-cfg.js> --cacheDirectory <ltr-cache> \
-     --maxWorkers=1 --testLocationInResults
+node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
+     --config <ltr-temp-cfg.js> --cacheDirectory <per-project transform cache> \
+     --maxWorkers=1 --testLocationInResults --verbose=false
 ```
-The temp config merges the project's `jest.config.*` with `sessionTraceTransform.js` (light trace transform) and `liveReporter.js` (streaming reporter). Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
+The temp config starts from the project's config **as Jest resolves it** — `ProjectJestConfig` runs `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session, so every config format, preset and multi-project setup works — and layers on `sessionTraceTransform.js` (light trace transform), `ltrCoverageSetup.js` (first `setupFilesAfterEnv` entry: coverage flush, per-test trace context, test heartbeats) and `liveReporter.js` (streaming reporter). Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
+
+Reported paths are mapped back to the store's own keys. A file shows ⟳ only once Jest starts it (reporter `start` record). The newest run of a file owns it: an older batch still running the same file is not killed, its result for that file is ignored. A single test running longer than `hangTimeoutSeconds` (setup-file heartbeats) stops the batch; that file is failed and the rest retried.
+
+**Run lifecycle — `SessionManager`.** Every run (full suite, save, ▶ Run) registers on start and ends in a `finally`. Overlapping runs share one progress total (`onRunProgress`) and one `onRunFinished`, sent when the last run ends. A session token changes on Start / Stop; work started under an older token stops before its next batch, retry or fallback. At session start `jest --listTests` (the project's own config) decides which discovered files Jest runs — the others are shown as skipped and never run.
 
 #### Transform pipeline — how `sessionTraceTransform.js` works
 
@@ -189,7 +195,7 @@ CRA hides its Jest configuration. You cannot pass `--json`, `--outputFile`, or `
 3. Writes it to a temp file
 4. All subsequent runs invoke Jest directly — never `react-scripts` at run time
 
-The extracted config is cached in memory per session and invalidated if `package.json` changes.
+The extracted config is cached in memory per session and invalidated if `package.json` changes. Transformer options are kept (`[path, options]`), and behaviour flags from the project's `test` script (e.g. `react-scripts test --resetMocks`) are passed on, so runs match `npm test`.
 
 ### Result types
 

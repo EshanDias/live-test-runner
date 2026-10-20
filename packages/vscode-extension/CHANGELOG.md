@@ -14,6 +14,16 @@ All notable changes to Live Test Runner are documented here.
 
 - **Console logs now always show** in the Results panel, including after saving or rerunning a single test file.
 - **No more `�` symbols** in the Output panel.
+- **Windows: projects in folders with spaces work** — and ▶ Run on tests with `^ | &` in their names runs exactly that test.
+- **All your results show up** — tests could disappear from the tree (e.g. `it.each` tables, tests with the same name).
+- **No more "finished" while tests are running**, no endless spinners, and **Stop really stops** every Jest process.
+- **Hanging tests are stopped** after `liveTestRunner.hangTimeoutSeconds` (default 5 min per test) and marked failed with an explanation.
+- **Skipped / todo tests** show as skipped; files your Jest config never runs (e2e specs, ignored folders) are no longer run.
+- **TypeScript / ESM Jest configs** (`jest.config.ts`, `.mjs`, function exports, `--config` in your test script) are used.
+- **Smart on-save reruns** now rerun only the tests that use the saved file; hover shows which tests cover a line.
+- **▷ Debug** debugs only the chosen test, on Windows and in Create React App projects too.
+- **Timeline Debugger** works on Windows, for `.each` tests and TypeScript projects.
+- **Faster restarts** — compiled files are cached per project between sessions.
 
 ---
 

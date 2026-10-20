@@ -1,10 +1,18 @@
 # Bugs & Issues — Analysis
 
 > Audit of the whole app (runner · core · extension · instrumentation), done on branch `feat/logging-overhaul` (2026-10-19).
-> Each entry has: **symptom → root cause → fix → how to verify**. Work through them one at a time; remove an entry once it is fixed and verified.
+> Fixed on `bugfix/audit-fixes` (2026-10-20). Each entry: **cause → fix → how it was verified**.
+> Once an entry is also verified on macOS, remove it.
 
 **Severity:** 🔴 High (wrong results / feature broken) · 🟠 Medium (flaky or misleading) · 🟡 Low (cleanup / polish)
-**Status:** ✅ fixed in `feat/logging-overhaul` · 🔲 open · 🔍 needs reproduction first
+**Status:** ✅ fixed and verified on Windows (e2e) · 🍎 still to verify on macOS · 🔲 open
+
+**How things were verified.** `e2e/` launches a real VS Code with the extension and drives real commands against real Jest processes:
+- fixture projects, copied to a temp folder whose path contains spaces: `basic` (plain Jest 29, `verbose: true`), `ts-config` (`jest.config.ts` + ts-jest), `esm-fn-config` (async `jest.config.mjs`);
+- **vscode-jest** (ts-jest, `automock`, 49 files / 2012 tests) — every file's pass/fail/skip counts compared with a plain `jest --json` run;
+- **copy-requisition** (Create React App, react-scripts 5 / Jest 27, 197 files) — sample files compared with plain `react-scripts test`, plus a full run.
+
+Run them with `node e2e/run.js --all` (see [developer-guide.md](developer-guide.md#end-to-end-tests)). Scenario names are given below as `scenario`.
 
 ---
 
@@ -12,360 +20,169 @@
 
 | ID | Sev | Status | Title |
 |----|-----|--------|-------|
-| [BUG-01](#bug-01) | 🔴 | ✅ | Console logs sometimes don't appear in the Results panel |
-| [BUG-02](#bug-02) | 🔴 | ✅ | Output channel shows symbols / garbage instead of letters |
-| [BUG-03](#bug-03) | 🔴 | 🔲 | Windows: test-name patterns are mangled by `cmd.exe` (scoped reruns run the wrong tests) |
-| [BUG-04](#bug-04) | 🔴 | 🔲 | Per-test trace is never recorded → smart reruns and "covering tests" never work |
-| [BUG-05](#bug-05) | 🔴 | 🔲 | CodeLens **▷ Debug** always debugs the whole file |
-| [BUG-06](#bug-06) | 🔴 | 🔲 | Debug launch config is broken on Windows, in sub-folder roots and for CRA |
-| [BUG-07](#bug-07) | 🔴 | 🔲 | `jest.config.ts` / `.mjs` / `.json` / function configs are ignored by the instrumented runner |
-| [BUG-08](#bug-08) | 🟠 | 🔲 | Windows: **Stop** does not kill Jest; results keep arriving after Stop |
-| [BUG-09](#bug-09) | 🟠 | 🔲 | Coverage randomly shows 0% for files that were tested (scan vs. run race) |
-| [BUG-10](#bug-10) | 🟠 | 🔲 | Scoped reruns overwrite the file's console output with a partial set |
-| [BUG-11](#bug-11) | 🟠 | 🔲 | Test count drifts up after files are deleted / re-discovered |
-| [BUG-12](#bug-12) | 🟠 | 🔲 | Timeline Debugger records 0 steps on Windows and for `.each` / template-named tests |
-| [BUG-13](#bug-13) | 🟠 | 🔍 | Windows drive-letter case mismatch can make a whole batch look "missing" |
-| [BUG-14](#bug-14) | 🟠 | 🔲 | `pnpm test` / `pnpm lint` always fail (no tests, no ESLint config) — PR checks can never pass |
-| [BUG-15](#bug-15) | 🔴 | 🔲 | "Finished" shown while tests are still running |
-| [BUG-23](#bug-23) | 🔴 | 🔲 | Tests spin ("running") forever |
-| [BUG-24](#bug-24) | 🟠 | 🔲 | Some tests never start (stay ○ pending) |
-| [BUG-16](#bug-16) | 🟡 | 🔲 | Large projects: result application is O(tests × nodes); coverage scan floods the webview |
-| [BUG-17](#bug-17) | 🟡 | 🔲 | Saving an `.mjs` / `.cjs` test file is treated as a source file |
-| [BUG-18](#bug-18) | 🟡 | 🔲 | Dead / undocumented settings and doc mismatches |
-| [BUG-19](#bug-19) | 🟡 | 🔍 | `process.on('exit')` listener added once per test file |
-| [BUG-20](#bug-20) | 🟡 | 🔲 | CRA: transformer options are dropped when the config is extracted |
-| [BUG-21](#bug-21) | 🟡 | ✅ | Debug leftovers: `console.log` on every editor redraw, debug dump on every timeline run |
+| [BUG-01](#bug-01) | 🔴 | ✅ 🍎 | Console logs sometimes don't appear in the Results panel |
+| [BUG-02](#bug-02) | 🔴 | ✅ 🍎 | Output channel shows symbols / garbage instead of letters |
+| [BUG-03](#bug-03) | 🔴 | ✅ 🍎 | Windows: `cmd.exe` mangled patterns — and broke every run in paths with spaces |
+| [BUG-04](#bug-04) | 🔴 | ✅ 🍎 | Per-test trace was never recorded → smart reruns and "covering tests" never worked |
+| [BUG-05](#bug-05) | 🔴 | ✅ 🍎 | CodeLens **▷ Debug** always debugged the whole file |
+| [BUG-06](#bug-06) | 🔴 | ✅ 🍎 | Debug launch config broken on Windows, in sub-folder roots and for CRA |
+| [BUG-07](#bug-07) | 🔴 | ✅ 🍎 | `jest.config.ts` / `.mjs` / function configs ignored by the instrumented runner |
+| [BUG-08](#bug-08) | 🟠 | ✅ 🍎 | Stop did not kill Jest; results kept arriving after Stop |
+| [BUG-09](#bug-09) | 🟠 | ✅ 🍎 | Coverage randomly 0% for tested files; O(N²) coverage messages |
+| [BUG-10](#bug-10) | 🟠 | ✅ 🍎 | Scoped reruns overwrote the file's console output |
+| [BUG-11](#bug-11) | 🟠 | ✅ 🍎 | Test count drifted up after files were deleted |
+| [BUG-12](#bug-12) | 🟠 | ✅ 🍎 | Timeline recorded 0 steps on Windows, for `.each` tests and TypeScript |
+| [BUG-13](#bug-13) | 🟠 | ✅ 🍎 | Windows drive-letter case mismatch |
+| [BUG-14](#bug-14) | 🟠 | ✅ | `pnpm test` / `pnpm lint` could never pass |
+| [BUG-15](#bug-15) | 🔴 | ✅ 🍎 | "Finished" shown while tests were still running |
+| [BUG-16](#bug-16) | 🟡 | ✅ 🍎 | Large-project performance |
+| [BUG-17](#bug-17) | 🟡 | ✅ 🍎 | `.mjs` / `.cjs` test files treated as source files; `testFilePatterns` ignored |
+| [BUG-18](#bug-18) | 🟡 | ✅ | Dead / undocumented settings and doc mismatches |
+| [BUG-19](#bug-19) | 🟡 | ✅ 🍎 | `process.on('exit')` listener added once per test file |
+| [BUG-20](#bug-20) | 🟡 | ✅ | CRA transformer options dropped |
+| [BUG-21](#bug-21) | 🟡 | ✅ | Debug leftovers |
 | [BUG-22](#bug-22) | 🟡 | ✅ | Logs were noisy, single-level and partly invisible |
+| [BUG-23](#bug-23) | 🔴 | ✅ 🍎 | Tests spun ("running") forever |
+| [BUG-24](#bug-24) | 🟠 | ✅ 🍎 | Some tests never started (stayed ○ pending) |
+| [BUG-25](#bug-25) | 🔴 | ✅ 🍎 | **New:** whole files of results vanished (stale-suite cleanup) |
+| [BUG-26](#bug-26) | 🟠 | ✅ 🍎 | **New:** tests with the same name collapsed — a failure could be hidden |
+| [BUG-27](#bug-27) | 🟠 | ✅ 🍎 | **New:** instrumentation broke when tests `jest.mock('fs')` |
+| [BUG-28](#bug-28) | 🟠 | ✅ 🍎 | **New:** hooks in `setupTests.js` erased the per-test trace |
+| [BUG-29](#bug-29) | 🟠 | ✅ 🍎 | **New:** every session re-transformed the whole project |
+| [BUG-30](#bug-30) | 🟡 | ✅ 🍎 | **New:** saving files outside the project triggered runs |
 
 ---
-
-## Fixed in this branch
 
 <a id="bug-01"></a>
-### BUG-01 🔴 ✅ Console logs sometimes don't appear in the Results panel
-
-**Symptom** — `console.log` output shows after **Start Testing**, but disappears after saving a test file, rerunning a single file, or always (in some projects).
-
-**Root cause** — Jest switches to *verbose* mode on its own when **exactly one test file** runs, and also when the project config has `verbose: true`. In verbose mode Jest prints console calls straight to the terminal (`CustomConsole`) and leaves `testResult.console` empty. `liveReporter.js` reads `testResult.console`, so the Results panel gets nothing.
-- Full runs use batches of 5–50 files → not verbose → logs shown.
-- Saving a test file runs a batch of 1 → verbose → logs gone. That's the "sometimes".
-
-**Evidence** — reproduced against Jest 29 with one test file: reporter record had **0** console entries without the flag, **2** with `--verbose=false`.
-
-**Fix (done)** — `SessionTraceRunner.runFiles` now passes `--verbose=false` ([SessionTraceRunner.ts](../packages/vscode-extension/src/session/SessionTraceRunner.ts)). The Executor also forwards child **stdout** to *Jest Output*, so anything printed directly is no longer lost.
-
-**Verify** — start a session, open a test with a `console.log`, save the test file → its log shows in the Results panel. Repeat in a project with `verbose: true` in its Jest config.
-
-> Related, still open: [BUG-10](#bug-10) (scoped reruns replace the file-level output).
-
----
+### BUG-01 🔴 ✅ Console logs sometimes missing
+Jest switches to verbose mode for single-file runs (and with `verbose: true`), which empties `testResult.console`. Session runs pass `--verbose=false`. **Verified:** `basic-full-run` (fixture has `verbose: true`), `basic-scoped-run`.
 
 <a id="bug-02"></a>
-### BUG-02 🔴 ✅ Output channel shows symbols / garbage instead of letters
-
-**Symptom** — `�` characters, `[31m`/`[39m` sequences, or lines cut in half in the Output panel.
-
-**Root causes (three)**
-1. **Split UTF-8 characters** — `Executor` decoded every stdout/stderr chunk with `Buffer.toString()`. Jest's `✓ ✕ ● ›` are 3-byte characters; when a chunk boundary falls inside one, both halves decode to `U+FFFD` (`�`). Verified: `[0xE2] + [0x9C,0x93]` → `"���"` instead of `"✓"`.
-2. **ANSI colour codes** — the channel was created with language id `ansi`, but VS Code's Output panel does not render ANSI. Whenever colour was on (e.g. `FORCE_COLOR` set in the environment), escape codes showed up as text.
-3. **No line buffering** — chunks were written as they arrived. With up to `cpus/4` Jest processes running at once, half-lines from different processes interleaved.
-
-**Fix (done)** — [Executor.ts](../packages/runner/src/execution/Executor.ts):
-- `setEncoding('utf8')` on both pipes (Node's `StringDecoder` handles split characters).
-- A `LineSplitter` emits only complete lines; ANSI is stripped (`stripAnsi`).
-- Every line is tagged with its process: `[jest#12] PASS src/a.test.ts`, so concurrent output can be told apart.
-- Raw Jest output moved to its own channel, **Live Test Runner: Jest Output**.
-
-**Verify** — run a suite with failures and `console.log('✓ ünïcödé')` on Windows and macOS. *Jest Output* has no `�` and no `[3xm`.
-
----
-
-<a id="bug-21"></a>
-### BUG-21 🟡 ✅ Debug leftovers
-
-- `CoverageDecorationManager._refreshEditor` ran `console.log` (two store lookups) on **every** editor refresh. Removed.
-- `JestInstrumentedRunner` wrote `ltr-debug.log` (the full generated config plus all Jest output) on **every** timeline run. Now it is written only when the log level is Debug, and its path is logged.
-
-<a id="bug-22"></a>
-### BUG-22 🟡 ✅ Logs were noisy, single-level and partly invisible
-
-- About 20 `[Coverage]` INFO lines per batch, a "Cache hit" line per test file, a "module loaded / Instrumenting / OK" line per transformed file, plus a PASS/FAIL dump that repeated Jest's own output.
-- Runner/core logs went to `console` only (DevTools), so warnings like the "npx fallback" were invisible to users.
-- Logs written before the channel existed (stale-dir cleanup) were lost.
-
-Fixed by the logging overhaul. See the **Logging** section in [developer-guide.md](developer-guide.md).
-
----
-
-## Open — High
+### BUG-02 🔴 ✅ Garbled output
+Chunk-split UTF-8, ANSI codes, interleaved half-lines. `Executor` uses `setEncoding('utf8')`, a line splitter and `stripAnsi`; each line is tagged `[jest#N]`. **Verified:** fixtures log `✓ ünïcödé`; unit test for `stripAnsi`.
 
 <a id="bug-03"></a>
-### BUG-03 🔴 Windows: test-name patterns are mangled by `cmd.exe`
-
-**Symptom (Windows)** — ▶ Run on a single test or suite, or a trace-based on-save rerun, runs the wrong tests, runs nothing, or errors with `'xyz' is not recognized as an internal or external command`. Paths containing spaces (`C:\Users\John Smith\…`) can also break.
-
-**Root cause** — [Executor.ts](../packages/runner/src/execution/Executor.ts) spawns `.cmd` shims with `shell: true`. Node then **joins the args with spaces and does no quoting** (Node 24 warns: `DEP0190`). `cmd.exe` then:
-- splits `^Math utils adds numbers$` into 4 args,
-- treats `^` as its escape character and removes it,
-- treats `|` (used to combine several test names in `_runTestCases`) as a **pipe**.
-
-**Evidence** — sent `["--testNamePattern","^Math utils adds numbers$","--x","a^b"]` → the `.cmd` received `["--testNamePattern","Math","utils","adds","numbers$","--x","ab"]`. Sending `a|b` gave: `'b' is not recognized as an internal or external command`.
-
-**Fix** — don't go through `cmd.exe`. Resolve the real JS entry point (`require.resolve('jest/bin/jest.js', { paths: [projectRoot] })`, or for CRA `react-scripts/node_modules/jest/bin/jest.js`) and spawn `process.execPath` with it, without a shell. Keep `shell: true` only for a user-supplied `jestCommand`, and quote each arg yourself in that case.
-
-**Verify** — on Windows, ▶ Run a test whose name has spaces → only that test reruns. Save a source file that two tests in one file depend on (combined `a|b` pattern).
-
----
+### BUG-03 🔴 ✅ `cmd.exe` mangled arguments
+Jest ran through its `.cmd` shim with `shell: true`. Worse than first thought: in a project path **containing a space**, *every* run failed (`'C:\…\ltr' is not recognized…`) and all tests spun forever. Also `^` was stripped and `|` piped.
+**Fix:** `BinaryResolver` resolves Jest's JS entry point (through `jest/package.json`, since Jest's `exports` hides `bin/jest.js`; CRA → react-scripts' Jest) and `Executor` runs it with `node` from PATH (fallback: the editor's runtime with `ELECTRON_RUN_AS_NODE`), **no shell**. A shell is used only for a user `jestCommand` / npx, with every argument quoted. Also: combined patterns were `^a|b$` ("starts with a OR ends with b") — now `^(?:a|b)$`; suites match `^(?:name)(?: |$)`.
+**Verified:** `basic-scoped-run` (`a^b | c & d`, same leaf name in two suites, suite rerun — exactly the right tests run), runner unit test (args verbatim from a folder with spaces).
 
 <a id="bug-04"></a>
-### BUG-04 🔴 Per-test trace is never recorded
-
-**Symptom** — on-save reruns always run whole files through `jest --findRelatedTests` (debug log: *"No trace data … using jest --findRelatedTests"*). The coverage hover never lists covering tests. **Show All Covering Tests** is always empty. `Dump Trace Store` shows empty `sourceToTests`.
-
-**Root cause** — the trace runtime records hits only between `__strace.enterTest()` and `exitTest()` ([sessionTraceRuntime.js](../packages/vscode-extension/src/session/instrumentation/sessionTraceRuntime.js) — `step()` returns early while `_hits` is null). Those wrappers are injected around `test()`/`it()` callbacks by `instrumentAST` pass 1, but test files are deliberately **not** instrumented ([sessionTraceTransform.js](../packages/vscode-extension/src/session/instrumentation/sessionTraceTransform.js) `IS_TEST_FILE_RE` branch, done to avoid the `jest.mock` hoisting problem). So `enterTest` never runs and no `T`/`H` records are written. Coverage counters (`__cov`) are unaffected; they don't depend on test context.
-
-**Fix** — open and close the test context from the setup file instead of from injected code. In `ltrCoverageSetup.js`:
-```js
-beforeEach(() => global.__strace?.enterTest(expect.getState().currentTestName, expect.getState().testPath));
-afterEach(() => global.__strace?.exitTest());
-```
-`currentTestName` is space-joined, which matches `ResultStore.fullName`. Also load the runtime from the setup file so `__strace` exists even when no source file is instrumented.
-
-**Evidence** — ran Jest 29 with the session transform, setup and reporter on a test that calls an instrumented `sum.js`. Results, console and coverage counters were all written; the trace file (`SESSION_TRACE_FILE`) was **not** created.
-
-**Verify** — enable `liveTestRunner.devMode`, run, then `Dump Trace Store (Debug)` → `sourceToTests` is populated. Save a source file → debug log shows *"Trace-based rerun … N individual test(s)"*.
-
----
+### BUG-04 🔴 ✅ No per-test trace
+Test files are not instrumented, so `enterTest()` never ran. `ltrCoverageSetup.js` now drives test boundaries (`beginFile` / `beginTest` / `endTest`). Module-load hits feed coverage only (otherwise every save would rerun whole files). Trace paths are mapped to store keys.
+**Verified:** `basic-full-run` (source → tests, covering tests per line), `basic-on-save` (saving `strings.js` reruns only the 2 tests in `mixed.test.js` that call it; `math.test.js` untouched), `repo-tsjest`, `repo-cra`.
 
 <a id="bug-05"></a>
-### BUG-05 🔴 CodeLens ▷ Debug always debugs the whole file
-
-**Root cause** — [CodeLensProvider.ts:58](../packages/vscode-extension/src/editor/CodeLensProvider.ts#L58) passes `[filePath, node.fullName]`, but the `liveTestRunner.debugFromEditor` handler is `(filePath, line)`. `getLineMap().get("<name>")` misses, `_resolveNodeAtLine` calls `doc.lineAt(NaN)` and throws, the error is caught, and the whole file is debugged with no name filter.
-
-**Fix** — pass `line` (the CodeLens already has it), or add a `debugTest(filePath, fullName)` command and call `session.debugFromEditor(filePath, fullName)` directly.
-
-**Verify** — ▷ Debug on one test → only that test runs under the debugger.
-
----
+### BUG-05 🔴 ✅ ▷ Debug debugged the whole file
+The CodeLens passed the test name where the handler expected a line. It now passes the line; suites debug all their tests. **Verified:** `basic-debug` (test, suite, `test.each` — each replayed with plain node: exactly 1 / 4 / 2 tests run).
 
 <a id="bug-06"></a>
-### BUG-06 🔴 Debug launch config is broken on Windows, in sub-folder roots and for CRA
-
-**Root cause** — [JestAdapter.ts:198](../packages/vscode-extension/src/framework/JestAdapter.ts#L198) `getDebugConfig` has three problems:
-- `program: '${workspaceFolder}/node_modules/.bin/jest'`: on Windows `.bin/jest` is a **shell script**, and Node fails with `SyntaxError`.
-- It uses `workspaceFolder`, not `projectRoot`, so it breaks when `liveTestRunner.projectRoot` points to a sub-folder or monorepo package.
-- CRA projects need react-scripts' bundled Jest plus the extracted config, and neither is used.
-- Smaller: the name filter uses `escapeRegex`, not `nameToPattern`, so `test.each` / template names never match.
-
-**Fix** — resolve `jest/bin/jest.js` from `projectRoot` (same resolver as BUG-03), set `cwd: projectRoot`, add `--config <resolved>` for CRA, and use `nameToPattern`.
-
-**Note** — Debug is now logged. If VS Code refuses to start the session, the log shows `Debug: VS Code refused to start the debug session (program: …)`.
-
----
+### BUG-06 🔴 ✅ Debug launch config
+`program` is Jest's JS entry resolved from `projectRoot` (CRA: react-scripts' Jest + `--config <extracted>`), `cwd: projectRoot`, `nameToPattern`, test-script flags, and an upper-case drive letter in `--runTestsByPath` (Jest realpaths `rootDir`, so `c:/…` matched nothing). **Verified:** `basic-debug`, `repo-tsjest`, `repo-cra` (CRA debug config runs exactly 1 test).
 
 <a id="bug-07"></a>
-### BUG-07 🔴 Other Jest config formats are ignored by the instrumented runner
-
-**Symptom** — in TypeScript / ESM projects every batch "produces no results" and everything falls back to plain Jest, one file at a time. Runs are slow, and there is no coverage and no smart rerun. The new logs show it as:
-`WARN [Runner] b3: instrumented Jest run returned no results … Jest said: …` then `WARN [Session] … falling back to plain Jest`.
-
-**Root cause** — the generated temp config ([SessionTraceRunner.ts](../packages/vscode-extension/src/session/SessionTraceRunner.ts) `configContent`, and the timeline equivalent in [JestInstrumentedRunner.ts](../packages/vscode-extension/src/timeline/JestInstrumentedRunner.ts)) only `require`s `jest.config.js`, `jest.config.cjs` and `package.json#jest`. Not handled:
-- `jest.config.ts` / `.mts` / `.cts` / `.mjs` / `.json`,
-- a `--config` passed in the project's `test` script,
-- configs that export a **function** (sync or async). Spreading a function gives `{}`,
-- `projects: [...]` multi-project configs.
-
-When the base config is lost, the project's `transform`, `moduleNameMapper`, `testEnvironment` and `setupFiles` are lost with it.
-
-**Related** — when no project transformer matches, the babel-jest fallback in `sessionTraceTransform.js` / `traceTransform.js` loads `path.join(rootDir, 'node_modules', 'babel-jest')`, a fixed path. Under **pnpm** (not hoisted) or Yarn PnP that path doesn't exist, so files run untranspiled (fatal for TS/ESM). Use `require.resolve('babel-jest', { paths: [rootDir] })` and the same for the presets. The log now shows this as `WARN … babel-jest fallback failed (files run untranspiled)`, collapsed to a single line.
-
-**Fix** — read the config the way Jest does: run `jest --showConfig` once per session and cache it (this already exists for CRA in `CRAAdapter`), then layer our transform/reporter/setup on top. Alternatively, make the generated config an `async` function that `await`s the user's config (works for function exports and `.mjs`).
-
-**Verify** — a ts-jest project with `jest.config.ts`: no "no results" warning, and coverage appears.
-
----
-
-## Open — Medium
+### BUG-07 🔴 ✅ Other config formats ignored
+New `ProjectJestConfig`: `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session; the generated configs build on that (multi-project included). Global options kept: `globalSetup`, `globalTeardown`, `testTimeout`, `testSequencer`, `maxConcurrency`. Config-relevant flags of the project's `test` script (`--config`, `--env`, `--resetMocks`, …) are honoured everywhere. The babel-jest fallback resolves through Node lookup (pnpm / PnP) and skips presets that are not installed.
+**Verified:** `ts-config` and `esm-fn-config` — **fail on the previous code, pass now**; `repo-tsjest`, `repo-cra` (no plain-Jest fallback).
 
 <a id="bug-08"></a>
-### BUG-08 🟠 Windows: Stop does not kill Jest
-
-**Root cause** — with `shell: true`, `child.kill()` kills `cmd.exe` only, and the Node/Jest grandchild keeps running. Its stdout pipe stays open, so the Executor keeps polling the reporter file and **results keep landing in the tree after Stop**. Separately, fallback runs started through `JestAdapter` (a new `JestRunner` per call) are never tracked by `SessionTraceRunner.kill()`, and pending save timers are not cleared on stop.
-
-**Fix** — spawn without a shell (BUG-03 fix), or kill the whole tree on win32 (`taskkill /pid <pid> /T /F`). Track adapter-run executors in a kill-list. Clear `_saveTimers` in `stop()`. Ignore records that arrive after Stop.
-
-**Verify** — start a long suite on Windows, click Stop, then check Task Manager → no `node.exe` Jest processes left.
-
----
+### BUG-08 🟠 ✅ Stop did not kill Jest
+No shell any more; `Executor.kill()` ends the process tree (`taskkill /T` on Windows, process group elsewhere). Records arriving after Stop are dropped; a session token stops every pending batch / retry / fallback. **Verified:** `basic-stop`, `repo-tsjest`, `repo-cra` (no Jest process 3–5 s after Stop, no new process started).
 
 <a id="bug-09"></a>
-### BUG-09 🟠 Coverage randomly shows 0% for tested files
-
-**Root cause** — `SourceCounter.run()` (scan of every source file at session start) runs **in parallel** with the first test run and calls `setCountedEntry` unconditionally ([SourceCounter.ts](../packages/vscode-extension/src/coverage/SourceCounter.ts)). If a batch has already marked `foo.ts` as *measured*, the scan reaching `foo.ts` later overwrites it with *counted* (0 hits). The outcome depends on timing, so it's flaky.
-
-**Fix** — in `setCountedEntry`, skip when an entry is already `measured` / `measured-stale`.
-
-**Also** — `setCountedEntry` fires `onDidChange` **per file**, and each fire re-sends *all* coverage rows to the webview. That's O(N²) traffic on big repos. Debounce it (~100 ms).
-
----
+### BUG-09 🟠 ✅ Coverage 0% race
+`setCountedEntry` never downgrades a measured file; change events are debounced (100 ms). **Verified:** `basic-full-run`, `ts-config` (coverage measured).
 
 <a id="bug-10"></a>
-### BUG-10 🟠 Scoped reruns overwrite the file's console output
-
-**Root cause** — `_runTestCases` runs `kind: 'pattern'` reruns with `{ fullNames }` and no `nodeId`, so `JestAdapter._applyFileResult` ends in `store.setFileOutput(filePath, output)` ([JestAdapter.ts:393](../packages/vscode-extension/src/framework/JestAdapter.ts#L393)). The file-level logs are replaced by the logs of the 2–3 tests that reran. This breaks the "per-scope output / never back-fill" rule in CLAUDE.md.
-
-**Fix** — for pattern runs, store output on each matched test node (or keep the file output and only replace it on whole-file runs).
-
----
+### BUG-10 🟠 ✅ Pattern reruns replaced file output
+A pattern rerun no longer replaces the file's output; its output goes to the test only when exactly one ran. **Verified:** `basic-on-save`.
 
 <a id="bug-11"></a>
-### BUG-11 🟠 Test count drifts up
-
-**Root cause** — `ResultStore.removeFile` ([ResultStore.ts](../packages/vscode-extension/src/store/ResultStore.ts)) decrements passed/failed/running but **not `_summary.total`**. Each deleted or ghost-pruned file inflates the total. Separately, `clear()` (used on workspace-folder change) doesn't clear the line maps, so stale gutter icons and CodeLens stay.
-
-**Fix** — `this._summary.total--` for each removed test node. Call `this._lineMap.clear()` in `clear()`.
-
----
+### BUG-11 🟠 ✅ Count drift
+`removeFile` decrements the total; `clear()` drops line maps. **Verified:** `basic-on-save` (delete a test file mid-session), unit tests.
 
 <a id="bug-12"></a>
-### BUG-12 🟠 Timeline Debugger records 0 steps on Windows / for `.each` tests
-
-**Root causes** in [JestInstrumentedRunner.ts](../packages/vscode-extension/src/timeline/JestInstrumentedRunner.ts):
-- `srcTransformPattern` is `^c:/Users/…` with the exact drive case and `/` only. The session runner already has the Windows-safe version (`[cC]:` and `[/\\]`), but the timeline doesn't.
-- `--testNamePattern ^escapeRegex(name)$`: names containing `%s`, `$var` or `<dynamic>` never match. Use `nameToPattern`.
-- `process.env.TRACE_OUTPUT_FILE = …` mutates the **extension host** env. Every other Jest spawned during a trace inherits it, and two traces race. Pass it via `extraEnv`.
-- Same config-format gap as BUG-07.
-
-The new log line `WARN [Timeline] Trace finished … captured 0 steps` makes this visible now.
-
----
+### BUG-12 🟠 ✅ Timeline 0 steps
+Shared Windows-safe source pattern, `nameToPattern`, `TRACE_OUTPUT_FILE` passed to Jest (no longer mutating the extension host env), resolved project config, CRA's Jest. Also new: transformers are loaded like Jest does (`createTransformer` + options) and ts-jest gets ambient declarations for the injected globals — TypeScript projects recorded nothing before. **Verified:** `basic-timeline` (plain + `.each`, through the command), `ts-config`, `repo-tsjest`, `repo-cra`.
 
 <a id="bug-13"></a>
-### BUG-13 🟠 🔍 Windows drive-letter case mismatch
-
-**Suspicion** — store keys come from VS Code (`c:\…`). `SessionTraceRunner.onRecord` only `path.normalize`s `rec.testFilePath`, while `JestRunner.normalisePath` **uppercases** the drive (`C:/…`) for the plain-Jest path. If Jest reports `C:\…`:
-- `received.has(fp)` misses → the whole batch counts as missing → **every file runs twice** (instrumented + fallback),
-- `runRelatedTests` applies results to `fileResult.testFilePath` → a **duplicate file entry** can appear in the tree.
-
-**Reproduce first** — on Windows at Debug level, look for `b<N>: done … 0/<N> file(s) reported` together with PASS lines in *Jest Output*. If it reproduces, normalise both sides with one helper (lowercase drive + `path.normalize`) everywhere a path becomes a key.
-
----
+### BUG-13 🟠 ✅ Drive-letter case
+Reproduced (debug config, and roots vs `--runTestsByPath` in the generated config). Reporter, trace and `--findRelatedTests` paths are mapped back to the store's keys (case-insensitive on Windows); Jest arguments use an upper-case drive. **Verified:** no duplicate entries / no missing files in every scenario; unit test for `findFileKey`.
 
 <a id="bug-14"></a>
-### BUG-14 🟠 `pnpm test` always fails (and `pnpm lint` too)
-
-**Root cause** — `core` and `runner` run `jest` and have no test files, so Jest exits 1 with *"No tests found"*. The PR-checks workflow requires `pnpm test` to pass, so every PR would fail once enforcement is on. Also, `pnpm lint` fails in every package with *"ESLint couldn't find a configuration file"* because no `.eslintrc` exists in the repo. Both fail the same way on `main`.
-
-**Fix** — add real unit tests. Good first targets: `LineSplitter`/`stripAnsi`, `ResultParser`, `nameToPattern`, `ResultStore` summary counts. Until then, use `jest --passWithNoTests`. Add a root `.eslintrc.cjs` with `@typescript-eslint`, or remove the lint scripts.
-
----
+### BUG-14 🟠 ✅ Tests and lint
+Unit tests (runner: Executor, config helpers; extension: ResultStore, `nameToPattern`) via a small esbuild Jest transformer; root `.eslintrc.cjs`; `pnpm lint` added to PR checks. The tests found one more bug: reverting stale tests to pending left the summary's running count too high (fixed).
 
 <a id="bug-15"></a>
-### BUG-15 🔴 "Finished" shown while tests are still running
-
-**Symptom** — the progress bar disappears and the summary or status bar looks final, but some tests are still spinning or results keep arriving.
-
-**Root causes**
-1. **No notion of "a run in progress"**. Every entry point (`start`, `onSave`, `rerunScope`, `_runAffectedBySourceFile`, `_runTestCases`) runs on its own, and each `_runFiles` / `_runTestCases` call ends with its own `onRunFinished` + status bar update ([SessionManager.ts](../packages/vscode-extension/src/session/SessionManager.ts)). Saving any file during the full run starts a second run. When that one finishes, the webview receives `run-finished` ([testListView.js](../packages/vscode-extension/src/webview/views/testListView.js) `case 'run-finished'`): it hides the progress bar, switches to *watching*, and shows the summary. Meanwhile the full suite is still running.
-2. **One user action can finish twice.** A source-file save can call `_runFiles` *and then* `_runTestCases`, and each sends `run-finished`. The trace-less path (`runRelatedTests`) sends another.
-3. **Wrong progress counts.** `_runTestCases` sends `onFileResult` right after marking nodes *running* ("Mark affected nodes as running"), and the webview adds +1 to `_completedFiles` for every `batch-file-results`. `_totalFiles` is only set by the full run's `run-started`. So partial reruns show numbers like `Running — 61 / 58`.
-4. **Stop is not final.** After Stop, an in-flight batch returns every file as "missing", and `runBatch` then falls back to **plain Jest for each file**: tests run again *after* Stop ([BUG-08](#bug-08) is the Windows variant). `SessionManager` never checks `isActive()` before the fallback.
-
-**Fix**
-- Add a run registry in `SessionManager`: `Set<runId>`, plus a total and completed count per run. Send `run-started` when the set goes empty → non-empty, and send `run-finished` / set the final status bar only when it goes back to empty. Partial reruns add to the running totals.
-- Only send `onFileResult` when a result arrived. Use `onFilesRerunning` for "now running".
-- In `runBatch`, check `this.isActive()` before any fallback or retry, and skip it once stopped.
-
-**Verify** — start the full suite, save a source file mid-run: the progress bar stays until *everything* is done. Stop mid-run: Jest Output shows no new `jest#N` processes after Stop.
-
----
-
-<a id="bug-23"></a>
-### BUG-23 🔴 Tests spin ("running") forever
-
-**Symptom** — ⟳ never turns into ✓/✗, both in the tree and in the gutter. It's unclear whether the test is slow or stuck.
-
-**Root causes** (several, all ending in nodes left `running` in `ResultStore`)
-1. **Queued files are shown as running.** `_runFiles` calls `store.fileStarted()`, which marks *every* file in the run as running before the first batch starts. Each batch is one Jest process with `--maxWorkers=1`, so its files run **one after another**. Concurrency is `cpus/4` batches and a batch holds up to 50 files. On an 8-core machine that's 2 files actually executing while up to 100 show ⟳, and the rest wait. They look stuck but haven't started.
-2. **Hard failures never clear the spinner.** Node cleanup (`cleanupStaleNodes`) only happens inside `_applyFileResult`. Each of these paths skips it, leaving the file's nodes `running` until the next Start:
-   - `JestAdapter.runFile`: no `fileResult` → `return 'failed'`
-   - the `SessionManager` catch path: `store.fileResult(fp, 'failed')` sets the *file* status only
-   - `JestAdapter.runTestCase`: no `fileResult` → just a warning (this is how a Windows-mangled pattern, [BUG-03](#bug-03), turns into a permanent spinner)
-3. **Stop leaves spinners.** `stop()` doesn't reset `running` nodes, so they spin until the next Start (and fallback runs may keep updating them, BUG-15 #4).
-4. **A save cancels a whole batch.** Saving `a.test.ts` while it runs in batch `b3` kills `b3` (all of it, up to 50 files). Its unfinished files come back as missing and are retried, by splitting the batch or falling back to plain Jest **one file at a time**. Those files can spin for minutes. *Now logged:* `b7: a.test.ts was still running in b3 — cancelling b3; its unfinished files will be retried`.
-5. **Genuinely hung tests have no time limit.** `Executor.spawn` has no overall timeout. Instrumented runs raise `testTimeout` to ≥30 s, so a never-resolving promise costs 30 s *per test*. An infinite loop never ends, and it holds a worker slot, which also blocks queued batches (see [BUG-24](#bug-24)).
-6. **Results can be dropped by key mismatch**: if Jest's reported path differs from the store key ([BUG-13](#bug-13)), `BaseWebviewProvider.onFileResult` drops the result (`store.getFile()` is undefined), so the webview spinner stays.
-
-**Diagnostics added (this branch)**
-- `liveReporter.js` now writes a `start` record when Jest *begins* a file.
-- `SessionTraceRunner` runs a watchdog. When no file has finished for 60 s it logs, e.g. `WARN [Runner] b3: no file has finished in 60s — 12/40 done, currently on checkout.test.ts (58s in that file)`. It repeats every 2 min while stuck. **Slow tests show progress between warnings; a hang repeats the same file.**
-- Batch cancellations are logged at INFO (cause 4).
-
-**Fix**
-- Mark a file `running` when its *start* record arrives (the reporter now sends it), and mark queued files `queued`. This needs a new UI state, or just leave them pending.
-- Add a `finally` in every adapter path: on no result, call `cleanupStaleNodes(file, false)` (reverts to `pending`) and log a WARN.
-- On `stop()`, revert all `running` nodes to `pending`.
-- Re-queue only the *saved* file instead of killing a shared batch (or batch on-save runs separately from the full run).
-- Optional per-batch hard timeout (e.g. `max(5 min, files × 60 s)`) that kills the batch and marks the current file failed with "timed out — possible hang".
-
-**Verify** — add a test with `await new Promise(() => {})` and one with `while (true) {}`. The first fails after 30 s; for the second the watchdog names the file, and after the fix the timeout marks it failed and the rest of the batch continues.
-
----
-
-<a id="bug-24"></a>
-### BUG-24 🟠 Some tests never start (stay ○ pending)
-
-**Root causes**
-1. **Skipped tests look identical to not-run tests.** Jest reports `test.skip` / `xit` / tests skipped by `.only` as status **`pending`**, and `test.todo` as `todo`. `JestAdapter._applyFileResult` maps only the literal `skipped` to *skipped*, and everything else to *pending* ○, the same icon as "never ran".
-2. **Files Jest refuses to run.** Discovery globs `*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}` across the whole project. The instrumented config deletes the project's `testMatch` / `testRegex`, so Jest falls back to its **default `testMatch`**, which excludes `.mjs`/`.cjs`. The project's `testPathIgnorePatterns` is kept, and `--runTestsByPath` still applies it. The result:
-   - E2E specs (Playwright/Cypress `*.spec.ts`), ignored folders and `.mjs` tests appear in the tree, but Jest never runs them.
-   - They come back "missing" → plain-Jest fallback → "No tests found" → no result → stuck pending/running (BUG-23 #2).
-3. **Queued behind a slow or hung batch.** Batches are drained by a fixed pool of `cpus/4` workers. A batch stuck on a hanging test (BUG-23 #5) holds its slot, and the remaining batches sit in the queue as *pending*.
-4. **Discovered names that Jest names differently**, e.g. computed titles or `describe.each` placeholders that never match a real result. These are removed on cleanup, but only when the file produced results.
-
-**Fix**
-- Map Jest's `pending`/`todo` → `skipped` (and show a distinct icon for todo).
-- Ask Jest which files it would run: `jest --listTests` with the *project's* config, once per session. This already exists as `JestAdapter.discoverTests` → `JestRunner.discoverTests`, but nothing calls it. Show files outside that set greyed out as "not run by Jest config" instead of running them.
-- With the watchdog (BUG-23) in place, a blocked worker is visible in the log.
-
-**Verify** — a file with `test.skip` shows the skipped icon. A Playwright `e2e/*.spec.ts` doesn't spin and is marked "not a Jest test".
-
----
-
-## Open — Low
+### BUG-15 🔴 ✅ "Finished" while running
+Run registry in `SessionManager`: overlapping runs share one progress total (`run-progress`) and one `run-finished`, sent when the last run ends. Stop is final. **Verified:** `basic-save-during-run` (saves during the full suite: one `run-finished`, after the slow file, progress never > 100%), `basic-stop`.
 
 <a id="bug-16"></a>
-### BUG-16 🟡 Large-project performance
-- `JestAdapter._applyFileResult` calls `store.getFileNodes(filePath)`, a scan of **all** nodes, per ancestor per test case ([JestAdapter.ts:260](../packages/vscode-extension/src/framework/JestAdapter.ts#L260)). `cleanupStaleNodes` scans all nodes several times. On 10k+ tests, applying results blocks the extension host. Add a per-file node index.
-- `BaseWebviewProvider.onDidChangeVisibility` re-sends the entire tree on every show.
-- Coverage scan flooding: see BUG-09.
+### BUG-16 🟡 ✅ Large-project performance
+Per-file node index in `ResultStore`; views no longer re-send the whole tree on every show; coverage events debounced (BUG-09); see also BUG-29. **Verified:** regression suite; vscode-jest full run 27 s vs 37 s plain Jest.
 
 <a id="bug-17"></a>
-### BUG-17 🟡 `.mjs` / `.cjs` test files treated as source files
-Discovery globs `*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}`, but `JestAdapter.isTestFile` only matches `[jt]sx?`. Saving `foo.test.mjs` runs `--findRelatedTests` instead of the file. Also, the `testFilePatterns` setting is read by `getFileGlob()`, which nothing calls: discovery uses a hard-coded glob.
+### BUG-17 🟡 ✅ `.mjs` / `.cjs` test files
+`isTestFile` covers them, and any file `jest --listTests` reports counts as a test file; discovery and its watcher use `testFilePatterns` (JS/TS files only).
 
 <a id="bug-18"></a>
-### BUG-18 🟡 Dead / undocumented settings and doc mismatches
-- `liveTestRunner.showOutputOnFailure` is declared but never read.
-- `liveTestRunner.coverageExclude` is read by `SourceCounter` but not declared in `package.json`, so users can't discover it.
-- CLAUDE.md lists a `⏱ Timeline` CodeLens, which doesn't exist. The timeline opens from the Results panel.
-- CLAUDE.md says CodeLens actions are session-guarded, but `rerunScope` runs without an active session. Decide which is intended and align.
+### BUG-18 🟡 ✅ Settings and docs
+`showOutputOnFailure` removed (never read); `coverageExclude` declared; CLAUDE.md fixed (no Timeline CodeLens; explicit clicks run without a session, on-save is session-guarded).
 
 <a id="bug-19"></a>
-### BUG-19 🟡 🔍 `process.on('exit')` per test file
-`sessionTraceRuntime.js` is `require`d by every instrumented module, in a fresh module registry per test file, and each load registers a `process.on('exit')` handler. In long batches this may trigger `MaxListenersExceededWarning` and N duplicate coverage flushes. `ltrCoverageSetup`'s `afterAll` already flushes, so the exit handler can probably go. Check the Jest Output for the warning first.
+### BUG-19 🟡 ✅ Exit listener per file
+Removed (the setup file's `afterAll` flushes coverage).
 
 <a id="bug-20"></a>
-### BUG-20 🟡 CRA transformer options dropped
-`CRAAdapter.normalizeTupleMap` maps `[pattern, path, options]` tuples to `{ pattern: path }`, which drops `options`. Keep `[path, options]` when present. `SessionTraceRunner` already does this correctly.
+### BUG-20 🟡 ✅ CRA transformer options
+Shared `toInputConfig` keeps `[path, options]`. **Verified:** unit test.
+
+<a id="bug-21"></a>
+### BUG-21 🟡 ✅ Debug leftovers — fixed in `feat/logging-overhaul`.
+
+<a id="bug-22"></a>
+### BUG-22 🟡 ✅ Logging — fixed in `feat/logging-overhaul`.
+
+<a id="bug-23"></a>
+### BUG-23 🔴 ✅ Endless spinners
+- Files show ⟳ when Jest *starts* them (reporter start records), not when queued.
+- Every failure path clears its spinners (no result → pending, scoped runs too); Stop reverts all running nodes.
+- A save no longer kills the batch running the same file: the newest run owns the file, older results for it are ignored.
+- Hangs: a single **test** running longer than `liveTestRunner.hangTimeoutSeconds` (default 300, measured with setup-file heartbeats, so slow file loading doesn't count) is stopped and its file failed with an explanation; the rest of the batch is retried. Plain fallback runs have a 3× wall-clock limit.
+
+**Verified:** `basic-hang` (infinite loop stopped and explained, never-resolving promise fails on Jest's timeout, other files fine), `basic-stop`, `basic-save-during-run`. On copy-requisition the first version (per-file limit) stopped `App.test.js`, which takes 229 s to load even in plain Jest — hence the per-test limit.
+
+<a id="bug-24"></a>
+### BUG-24 🟠 ✅ Never-started tests
+Jest's `pending` / `todo` map to skipped. `jest --listTests` runs once per session: discovered files the config never runs (e2e specs, ignored folders, `.mjs`) are shown as skipped and never run. `$variable` placeholders of `it.each` tables are understood. **Verified:** `basic-full-run`.
+
+<a id="bug-25"></a>
+### BUG-25 🔴 ✅ Whole files of results vanished (new)
+**Found by:** vscode-jest showed 165 of 2012 tests. **Cause:** after a file's results were applied, `cleanupStaleNodes` removed every node still "running". A suite stays running while any discovered placeholder under it (e.g. `it.each` named `case $case`) gets no result — and removing a suite removes its subtree, every finished test included. **Fix:** suites are recomputed from their children, swept only when empty. **Verified:** `diag-apply` (200/200 kept), `repo-tsjest`, unit test.
+
+<a id="bug-26"></a>
+### BUG-26 🟠 ✅ Same-name tests collapsed (new)
+Jest allows identical full names (e.g. `describe.each` with an object). They shared one node and the last result won, so a failure could be hidden. Repeats now get their own node. **Verified:** `repo-tsjest` — 2012/2012 match plain Jest file by file.
+
+<a id="bug-27"></a>
+### BUG-27 🟠 ✅ `jest.mock('fs')` broke instrumentation (new)
+The coverage flush and trace runtimes `require('fs')` inside the test's module registry. They now use the real `fs` (`jest.requireActual`, captured before the test file loads). **Verified:** `repo-tsjest` (no "appendFileSync is not a function").
+
+<a id="bug-28"></a>
+### BUG-28 🟠 ✅ Hooks in `setupTests.js` erased the trace (new)
+Project setup files are instrumented; their wrapped `beforeEach` / `afterEach` replaced the running test's trace context. The runtime nests contexts, and our setup file loads first. **Verified:** `diag-trace`, `repo-cra`.
+
+<a id="bug-29"></a>
+### BUG-29 🟠 ✅ Transform cache per session (new)
+The cache lived in the per-window session folder, so every Start re-transformed the whole project (minutes per file on copy-requisition). It is now per project under the temp root; entries are keyed by the transform's own hash and the config.
+
+<a id="bug-30"></a>
+### BUG-30 🟡 ✅ Saves outside the project triggered runs (new)
+VS Code saving its own `settings.json` started `jest --findRelatedTests`. Only JS/TS files inside the project root (not `node_modules`) are handled.
 
 ---
 
-## Suggested order
+## Still to do
 
-1. **BUG-03 + BUG-08 + BUG-06** — one change: spawn Jest's JS entry with `node`, no shell. Fixes Windows patterns, Stop, and Debug together.
-2. **BUG-15 + BUG-23 + BUG-24** — run lifecycle: run registry, "running only when started", cleanup on every failure path, skipped ≠ pending. This is the "finished but still running / spinning forever / never started" group.
-3. **BUG-07** — config loading. Biggest cause of slow "fallback" runs.
-4. **BUG-04** — enables the smart-rerun and covering-tests features.
-5. **BUG-05, BUG-09, BUG-10, BUG-11** — small, contained fixes.
-6. **BUG-14** — add tests (start with the new `LineSplitter` / `stripAnsi`), then the rest.
+- 🍎 Run the e2e suite on macOS: `node e2e/run.js --all` (set `VSCODE_EXE` if VS Code is not in `/Applications`). Process-group kill, PATH `node` lookup and the Electron fallback are the macOS-specific paths.
+- `test.todo` shares the skipped icon; a distinct todo icon was not added.

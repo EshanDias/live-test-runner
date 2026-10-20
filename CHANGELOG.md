@@ -22,6 +22,23 @@ All notable changes to Live Test Runner are documented here.
 - **Console logs missing from the Results panel** — Jest enables verbose mode on its own when a single test file runs (and when the config sets `verbose: true`). Verbose mode prints console calls directly and leaves `testResult.console` empty, so single-file reruns (e.g. saving a test file) showed no logs. Session runs now pass `--verbose=false`. Verified against Jest 29: 0 → 2 captured entries.
 - **Garbled symbols in the Output panel** — `Executor` decoded each pipe chunk separately, so multi-byte characters (`✓ ✕ ● ›`) split across chunks became `�`. It now uses `setEncoding('utf8')`, emits only complete lines, and strips ANSI codes (the channel's `ansi` language id did not render them).
 
+### Audit fixes (BUG-03 … BUG-30, see `docs/bugs-and-issues.md`)
+
+- **Jest runs without a shell (BUG-03, BUG-08)** — on Windows Jest ran through its `.cmd` shim via `cmd.exe`: every run failed in project paths containing a space, `^` was stripped and `|` piped. Jest's JS entry point is now resolved (CRA: react-scripts' Jest) and run with `node` from PATH; arguments arrive verbatim. Stop kills the whole process tree. Combined name patterns are grouped (`^(?:a|b)$`; `^a|b$` meant "starts with a OR ends with b").
+- **Run lifecycle (BUG-15, BUG-23, BUG-24)** — one `run-started`/`run-finished` across overlapping runs (a save during the full suite no longer "finishes" it), progress totals from the extension (`run-progress`), Stop is final (no retry/fallback after it). Files show ⟳ only when Jest starts them; every failure path clears spinners; Stop reverts them. A save no longer cancels the batch running the same file. New setting `liveTestRunner.hangTimeoutSeconds` (default 300): a single test running longer is stopped and its file failed with an explanation. Jest's `pending`/`todo` show as skipped; files the project's config never runs (`jest --listTests`) show as skipped and are not run.
+- **Config loading (BUG-07, BUG-12, BUG-20)** — `ProjectJestConfig` reads the project config with `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session: `jest.config.ts/.mjs/.json`, function exports, presets, multi-project configs and `--config` / `--resetMocks` / `--env` in the test script now apply. babel-jest fallback resolved via Node lookup (pnpm). CRA transformer options kept.
+- **Per-test trace (BUG-04, BUG-28, BUG-19)** — the trace context is opened from the setup file (test files are not instrumented), so smart on-save reruns and "covering tests" work; hooks in `setupTests.js` add to the test instead of erasing it; no `process.on('exit')` listener per file.
+- **Lost results (BUG-25, BUG-26)** — stale-suite cleanup removed whole subtrees of finished tests when a discovered placeholder (e.g. `it.each` `case $case`) got no result: vscode-jest showed 165 of 2012 tests. Same-name tests no longer collapse into one node (a failure could be hidden). `nameToPattern` understands `$variable` placeholders.
+- **Debug (BUG-05, BUG-06)** — ▷ Debug debugs only its test/suite; the launch config uses Jest's JS entry from the project root, CRA's config, `nameToPattern` and an upper-case drive letter.
+- **Timeline (BUG-12)** — Windows-safe source pattern, `.each` names, no env leak into the extension host, resolved config, CRA's Jest; transformers loaded like Jest does (ts-jest projects recorded nothing).
+- **Smaller fixes** — coverage race / O(N²) updates (BUG-09); pattern reruns keep file output (BUG-10); total test count and line maps (BUG-11); drive-letter case mapping (BUG-13); `.mjs`/`.cjs` test files and `testFilePatterns` (BUG-17); instrumentation uses the real `fs` when tests mock it (BUG-27); transform cache kept per project across sessions (BUG-29); saves outside the project ignored (BUG-30); per-file node index and no full-tree resend on view show (BUG-16); summary running count fixed.
+- **Settings (BUG-18)** — removed unused `showOutputOnFailure`; declared `coverageExclude`.
+
+### Tests
+
+- **End-to-end suite** (`e2e/`): launches a real VS Code with the extension and drives real commands against fixture projects (in a path with spaces) and real repositories, including a test-for-test comparison with plain Jest. `node e2e/run.js --all`.
+- **Unit tests** (`packages/*/test`, esbuild transformer) and a root ESLint config; `pnpm lint` added to PR checks (BUG-14).
+
 ### Docs
 
 - `docs/bugs-and-issues.md` — full audit: 22 issues with symptom, root cause, fix and verification steps.
