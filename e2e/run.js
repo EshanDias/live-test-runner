@@ -38,7 +38,9 @@ function vscodeExe() {
     return path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Microsoft VS Code', 'Code.exe');
   }
   if (process.platform === 'darwin') {
-    return '/Applications/Visual Studio Code.app/Contents/MacOS/Electron';
+    const dir = '/Applications/Visual Studio Code.app/Contents/MacOS';
+    const name = ['Code', 'Electron'].find((n) => fs.existsSync(path.join(dir, n))) || 'Electron';
+    return path.join(dir, name);
   }
   return '/usr/share/code/code';
 }
