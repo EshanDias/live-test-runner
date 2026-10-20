@@ -39,13 +39,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # pnpm version comes from "packageManager" in package.json
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      # pnpm (version from "packageManager" in package.json), Node 24, the
+      # pnpm store cache and `pnpm install` — all in one step.
+      - uses: pnpm/setup@v3
         with:
-          node-version: 24
-          cache: 'pnpm'
-      - run: pnpm install
+          runtime: node@24
+          cache: true
       - run: pnpm run build
       - run: pnpm lint
       - run: pnpm test
@@ -67,13 +66,12 @@ jobs:
       LTR_E2E_VSCODE: stable
     steps:
       - uses: actions/checkout@v5
-      # pnpm version comes from "packageManager" in package.json
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      # pnpm (version from "packageManager" in package.json), Node 24, the
+      # pnpm store cache and `pnpm install` — all in one step.
+      - uses: pnpm/setup@v3
         with:
-          node-version: 24
-          cache: 'pnpm'
-      - run: pnpm install
+          runtime: node@24
+          cache: true
       - run: pnpm run build
       # npm cache for the fixtures' own installs (react-scripts is large)
       - uses: actions/cache@v4

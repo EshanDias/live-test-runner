@@ -57,7 +57,7 @@
 ## 3. Findings that shaped this plan
 
 ### 3.1 Corrections & facts about the environment
-- `pnpm/setup@v1` **exists** and is documented as the replacement for `pnpm/action-setup` + `actions/setup-node` (needs pnpm ≥ 11; this repo pins `pnpm@12.14.0`). The workflows currently use `pnpm/action-setup@v4` + `actions/setup-node@v5` (not v4). It cannot install pnpm 11 on Intel macOS — `macos-latest` is arm64, so fine.
+- `pnpm/setup` **exists** (current major is `@v3`; `@v1` installed pnpm via npm and is outdated — we use `@v3`) and is documented as the replacement for `pnpm/action-setup` + `actions/setup-node` (needs pnpm ≥ 11; this repo pins `pnpm@12.14.0`). The workflows currently use `pnpm/action-setup@v4` + `actions/setup-node@v5` (not v4). It cannot install pnpm 11 on Intel macOS — `macos-latest` is arm64, so fine.
 - `main` is at **2.0.4** (released); `release/3.0.0` branches from it.
 - Jest test repos (`/Users/eshandias/Projects/test/jest-test-projects`, **4** repos): `jest` (monorepo, Babel), `jest-dom` (Jest + a `vitest` devDep and `vitest.js` entry — negative Vitest-detection case, BUG-37), `sample-react-project` (CRA), `vscode-jest` (ts-jest).
 - Vitest test repos (`/Users/eshandias/Projects/test/vitest-projects`), all pnpm monorepos:
@@ -156,10 +156,10 @@ Legend: **S/M/L** = size; days are focused days.
 Sketch: `git switch -c release/3.0.0 origin/main` (2.0.4 is released); bump root + `packages/vscode-extension/package.json` to `3.0.0`; add `## 3.0.0 (unreleased)` headers to both CHANGELOGs; commit this plan as the first commit.
 Done when: branch exists, version bumped, PR-checks happy.
 
-**0.2 Workflows → `pnpm/setup@v1` (0.5 d)**
+**0.2 Workflows → `pnpm/setup@v3` (0.5 d)**
 Sketch (`.github/workflows/pr-checks.yml` ×2 jobs, `release.yml`):
 ```yaml
-- uses: pnpm/setup@v1
+- uses: pnpm/setup@v3
   with:
     runtime: node@24      # replaces actions/setup-node node-version: 24
     cache: true           # replaces cache: 'pnpm'
@@ -168,7 +168,8 @@ Sketch (`.github/workflows/pr-checks.yml` ×2 jobs, `release.yml`):
 - It runs `pnpm install` itself → drop the explicit `pnpm install` steps (tests/e2e jobs). In `release.yml` keep the "skip if already released" optimisation with `install: false` and the existing conditional install step.
 - Keep `actions/cache` steps for `.npm` and `.vscode-test`.
 - Verify on all three OSes (the e2e matrix) — Windows runner is the risk.
-Done when: PR Checks + a `workflow_dispatch` dry run of Release (publish steps guarded) are green.
+Findings: `pnpm runtime` installs **only `node`** (verified locally: no `npm`/`npx` in the bin dir). The e2e job (`npm install` in fixtures) and the release job (`npx vsce/ovsx`) therefore rely on the runner image's own npm; confirm on the first CI run. Fallback if CI shows otherwise: keep `actions/setup-node` in those two jobs only.
+Done when: PR Checks (3 OSes) is green; Release is verified by the first real release.
 
 **0.3 Baseline + real-repo harness (1.5 d)**
 Sketch:
@@ -361,7 +362,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 ## Progress tracker
 
 - [ ] 0.1 Release branch + version
-- [ ] 0.2 Workflows → pnpm/setup@v1
+- [ ] 0.2 Workflows → pnpm/setup@v3
 - [ ] 0.3 Baseline + real-repo harness
 - [ ] 1.1 Neutral naming & open types
 - [ ] 1.2 Generic runner layer
