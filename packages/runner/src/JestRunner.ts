@@ -8,8 +8,21 @@ import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { Executor } from './execution/Executor';
 import { ResultParser } from './parsing/ResultParser';
 import { createLogger } from './utils/logger';
+import { fromJestPath, registerProjectRoot, toJestPath } from './resolution/JestPaths';
 
 const log = createLogger('JestRunner');
+
+/**
+ * A file path as Jest expects it on the command line (--runTestsByPath,
+ * --findRelatedTests). Jest realpaths its rootDir, so: the real path under a
+ * symlinked project root (see JestPaths), forward slashes, and an upper-case
+ * drive letter on Windows.
+ */
+export function toJestPathArg(filePath: string): string {
+  return toJestPath(filePath)
+    .replace(/\\/g, '/')
+    .replace(/^([a-z]):\//, (_, d: string) => `${d.toUpperCase()}:/`);
+}
 
 /**
  * JestRunner — the public-facing test runner for Jest-based projects.
@@ -32,6 +45,8 @@ export class JestRunner implements TestRunner {
   private adapter?: FrameworkAdapter;
   private projectRoot?: string;
   private userJestCommand: string;
+  /** Limit for single-file runs (runTestFileJson / runTestCaseJson); 0 = none. */
+  private fileTimeoutMs = 0;
 
   constructor(
     jestCommand: string = '',
@@ -52,6 +67,11 @@ export class JestRunner implements TestRunner {
     this.initAdapter(root);
   }
 
+  /** Stop single-file runs that take longer than `ms` (a hanging test). 0 disables. */
+  setFileTimeout(ms: number): void {
+    this.fileTimeoutMs = Math.max(0, ms);
+  }
+
   async discoverTests(projectRoot: string): Promise<string[]> {
     log.debug(`Listing tests with jest --listTests in ${projectRoot}`);
     this.initAdapter(projectRoot);
@@ -64,6 +84,7 @@ export class JestRunner implements TestRunner {
     const args = [
       ...prefixArgs,
       ...configArgs,
+      ...adapter.getExtraArgs(projectRoot),
       ...this.baseArgs(),
       '--listTests',
       '--passWithNoTests',
@@ -82,7 +103,7 @@ export class JestRunner implements TestRunner {
 
     const found = this.parser.parseListTestsOutput(
       result.stdout + '\n' + result.stderr,
-    );
+    ).map(fromJestPath);
     if (found.length > 0) {
       log.debug(`--listTests found ${found.length} test file(s)`);
       return found;
@@ -148,6 +169,7 @@ export class JestRunner implements TestRunner {
         binary,
         args,
         cwd: projectRoot,
+        timeoutMs: this.fileTimeoutMs,
       });
     return this.parser.parse(passed, jsonOutput, stderr);
   }
@@ -227,7 +249,10 @@ export class JestRunner implements TestRunner {
       '--runTestsByPath',
       this.normalisePath(filePath),
       '--testNamePattern',
-      isTestSuite ? `^${testFullName}` : `^${testFullName}$`,
+      // Group the pattern: callers may pass several names joined with "|",
+      // and ^a|b$ would mean "starts with a OR ends with b".
+      // A suite matches its tests ("Suite test name"), so it ends at a space.
+      isTestSuite ? `^(?:${testFullName})(?: |$)` : `^(?:${testFullName})$`,
     ];
 
     const { passed, jsonOutput, stderr } =
@@ -235,6 +260,7 @@ export class JestRunner implements TestRunner {
         binary,
         args,
         cwd: projectRoot,
+        timeoutMs: this.fileTimeoutMs,
       });
     return this.parser.parse(passed, jsonOutput, stderr);
   }
@@ -289,6 +315,7 @@ export class JestRunner implements TestRunner {
   // ── Private ─────────────────────────────────────────────────────────────────
 
   private initAdapter(projectRoot: string): void {
+    registerProjectRoot(projectRoot);
     // Re-detect if root changes (e.g. user switches workspace folder)
     if (this.projectRoot !== projectRoot) {
       this.projectRoot = projectRoot;
@@ -407,16 +434,14 @@ export class JestRunner implements TestRunner {
    * Both transforms are no-ops on macOS / Linux.
    */
   private normalisePath(filePath: string): string {
-    return filePath
-      .replace(/\\/g, '/')
-      .replace(/^([a-z]):\//, (_, d: string) => `${d.toUpperCase()}:/`);
+    return toJestPathArg(filePath);
   }
 
   private discoverFromFilesystem(projectRoot: string): string[] {
     const testFiles: string[] = [];
 
     const scan = (dir: string) => {
-      let items: string[] = [];
+      let items: string[];
       try {
         items = fs.readdirSync(path.join(projectRoot, dir));
       } catch {

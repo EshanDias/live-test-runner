@@ -6,6 +6,8 @@ import {
   ConsoleEntry,
 } from "../types";
 import { createLogger, stripAnsi } from "../utils/logger";
+import { fromJestPath } from "../resolution/JestPaths";
+import { mergeByFile } from "./mergeFileResults";
 
 const log = createLogger("ResultParser");
 
@@ -60,7 +62,8 @@ export class ResultParser {
           );
 
           return {
-            testFilePath: fr.testFilePath ?? "",
+            // Jest's --json output calls the file path `name`.
+            testFilePath: fromJestPath(fr.testFilePath ?? fr.name ?? ""),
             status: fr.status === "passed" ? "passed" : "failed",
             failureMessage: fr.failureMessage || undefined,
             testCases,
@@ -95,7 +98,7 @@ export class ResultParser {
             });
 
             const buckets: ConsoleEntry[][] = fileResults.map(() => []);
-            let fallbackIdx = fileResults.findIndex(
+            const fallbackIdx = fileResults.findIndex(
               (fr) => fr.consoleOutput.length === 0,
             );
 
@@ -130,7 +133,8 @@ export class ResultParser {
         numPassedTests: json.numPassedTests ?? 0,
         numFailedTests: json.numFailedTests ?? 0,
         numPendingTests: json.numPendingTests ?? 0,
-        fileResults,
+        // A file run by several Jest projects is reported once per project.
+        fileResults: mergeByFile(fileResults),
         errors: passed ? [] : [stderr || "Tests failed"],
       };
     } catch (err) {
@@ -217,7 +221,8 @@ export class ResultParser {
     // Use \S+ for the status symbol — avoids depending on specific Unicode codepoints
     // that may differ across Jest versions, terminals, or ANSI stripping artefacts.
     const LINE_RE = /^\s+\S+\s+(.+?)\s+\((\d+(?:\.\d+)?)\s*(ms|s)\)\s*$/;
-    const ANSI_RE = /\x1B\[[0-9;]*m/g;
+    // eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1B\[[0-9;]*m/g;
     for (const line of stderr.split(/\r?\n/)) {
       // Strip ANSI codes before matching — Jest wraps symbols and names in color codes
       const clean = line.replace(ANSI_RE, "");
@@ -243,13 +248,12 @@ export class ResultParser {
     testCases: TestCaseRunResult[],
     fr: any,
   ): number {
-    const fromCases = testCases.reduce(
+    // The whole file (loading, setup, hooks and tests), as Jest timed it.
+    if (fr.endTime && fr.startTime) return fr.endTime - fr.startTime;
+    return testCases.reduce(
       (sum, tc) => sum + (tc.duration ?? 0),
       0,
     );
-    if (fromCases > 0) return fromCases;
-    if (fr.endTime && fr.startTime) return fr.endTime - fr.startTime;
-    return 0;
   }
 
   private computeTestCaseDuration(

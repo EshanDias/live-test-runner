@@ -8,14 +8,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Development
-pnpm install              # Install dependencies
+pnpm install              # Install dependencies (pnpm version pinned via packageManager)
 pnpm start               # Watch mode (extension only); then press F5 in VS Code
 pnpm build               # Build all packages
 pnpm rebuild             # Clean rebuild (remove dist/, out/, .tsbuildinfo)
 
 # Testing
-pnpm test                # Run all tests
+pnpm test                # Unit tests (runner + extension store/helpers)
 pnpm test -- --watch     # Run tests in watch mode
+node e2e/run.js --all    # End-to-end: real VS Code + real Jest (build first; also runs in CI on Win/Linux/macOS)
+node e2e/run.js basic-stop basic-hang      # selected scenarios
+# Real projects (optional): LTR_E2E_TSJEST_REPO, LTR_E2E_CRA_REPO (+ LTR_E2E_CRA_FULL=1)
 
 # Linting
 pnpm lint                # Lint all packages
@@ -68,7 +71,7 @@ interface IResultObserver {
 
 **Pattern**: Results flow in one direction — `SessionManager` → observers. **Never pull results from the manager; only observe them.** New features (decorations, panels, timeline) are added by:
 1. Implementing `IResultObserver`
-2. Instantiating in `extension.ts` and calling `sessionManager.addObserver(instance)`
+2. Instantiating in `extension.ts` and adding it to the `observers` array passed to `SessionManager`
 
 No other changes needed.
 
@@ -116,7 +119,7 @@ After the first full run, saving a source file triggers targeted test reruns via
 
 ### 7. Session Guard
 
-All on-save behavior and CodeLens buttons are session-guarded. Nothing runs in the background; users explicitly start/stop sessions. This keeps resource usage predictable.
+On-save reruns are session-guarded: nothing runs in the background until the user clicks Start, and Stop is final (no further batch, retry or fallback starts). Explicit clicks — CodeLens `▶ Run` / `▷ Debug`, rerun buttons — work without a session, because the user asked for exactly that run. This keeps resource usage predictable.
 
 ### 8. Output Attribution
 
@@ -160,7 +163,7 @@ Solution: fully custom webview UI. Gives cross-platform control and enables Wall
 | **Panel › Test Results** | **Results view** (3-column: test list, output, errors) in normal mode; **Timeline view** (bar + controls + console) in timeline mode |
 | **Editor gutter** | Status icons (✓ / ✗ / ⟳ / ○) per test line; active-step highlight in timeline mode |
 | **Editor inline** | Duration text after each test (normal mode); variable ghost text at current step (timeline mode) |
-| **Editor CodeLens** | `▶ Run`, `▷ Debug`, `◈ Results`, `⏱ Timeline` above each block |
+| **Editor CodeLens** | `▶ Run`, `▷ Debug`, `◈ Results` above each block (the Timeline opens from the Results panel) |
 | **Status Bar** | Live summary: `Live Tests: ✅ 12 passed` |
 
 ---
@@ -219,7 +222,7 @@ Key directories:
 
 1. **No circular dependencies** — runner/core must never depend on VS Code
 2. **Always spawn, never exec** — `exec()` buffers and truncates large outputs
-3. **Session-guarded behavior** — on-save and CodeLens only work when session is active
+3. **Session-guarded behavior** — on-save reruns only run while a session is active; explicit CodeLens / rerun clicks always run
 4. **Never back-fill output** — unrun test scopes show placeholders, not inherited file output
 5. **Indexes rebuild on reset** — trace files are ground truth; indexes are derived caches
 6. **Lazy initialization** — results are never pre-fetched; observers are called when results are ready

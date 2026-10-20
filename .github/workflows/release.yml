@@ -22,8 +22,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install pnpm
-        run: npm install -g pnpm@9
+      - name: Install pnpm (version from "packageManager" in package.json)
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node with pnpm cache
         uses: actions/setup-node@v5

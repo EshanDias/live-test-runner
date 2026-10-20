@@ -44,26 +44,33 @@ src/
 │       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs
 │       ├── JestAdapter.ts            Plain Jest + Next.js + Jest
 │       ├── CRAAdapter.ts             Create React App
-│       └── ViteAdapter.ts            Vitest stub — not yet implemented
+│       └── ViteAdapter.ts            Vitest stub — only when the project has no Jest dep/config
 ├── resolution/
-│   └── BinaryResolver.ts             Finds jest binary in project node_modules
+│   ├── BinaryResolver.ts             Finds jest binary in project node_modules
+│   └── JestPaths.ts                  Symlinked roots: editor path ↔ Jest's realpath
 ├── execution/
 │   └── Executor.ts                   Spawns Jest, reads --outputFile JSON on exit
 └── parsing/
-    └── ResultParser.ts               Parses runner JSON output → RunResult
+    ├── ResultParser.ts               Parses runner JSON output → RunResult
+    └── mergeFileResults.ts           Merges reports of one file run by several Jest projects
 ```
+
+**Process model:** Jest is always `node <jest/bin/jest.js>` (`BinaryResolver.resolveJestEntry`, CRA: `resolveCraJestEntry`) with **no shell** — Windows `.cmd` shims broke arguments and paths with spaces. `nodeRuntime()` prefers `node` on PATH. `Executor.kill()` kills the process tree; `timeoutMs` stops a hanging run. Path arguments: forward slashes + upper-case drive (`toJestPathArg`).
 
 **Batch run command (SessionTraceRunner — initial run and on-save file reruns):**
 ```sh
-jest --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
-     --config <ltr-temp-config.js> --cacheDirectory <ltr-cache> \
-     --maxWorkers=1 --testLocationInResults
+node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
+     --config <ltr-temp-config.js> --cacheDirectory <per-project transform cache> \
+     --maxWorkers=1 --testLocationInResults --verbose=false
 ```
-The temp config merges the project's `jest.config.*` with two additions:
-- `sessionTraceTransform.js` at the front of the transform chain (light trace: line hit maps only)
-- `liveReporter.js` as an extra reporter that appends one JSON record per completed file to a JSONL file
+The temp config starts from the project's config as Jest resolves it (`ProjectJestConfig`: `jest --showConfig` / `react-scripts test --showConfig`, once per session, JSON in the session dir) plus:
+- `sessionTraceTransform.js` at the front of the transform chain (light trace: line hit maps + coverage counters)
+- `ltrCoverageSetup.js` as the **first** `setupFilesAfterEnv` entry — coverage flush, per-test trace context (`beginTest` / `endTest`), test-start/end heartbeats for the hang watchdog
+- `liveReporter.js` as an extra reporter that appends a `start` record and one result record per file to a JSONL file
 
-The parent process polls that JSONL file at 200 ms intervals via `Executor.runWithReporterPolling`, firing a callback per record so the UI updates while Jest is still running.
+The parent process polls that JSONL file at 200 ms intervals via `Executor.runWithReporterPolling`, firing a callback per record so the UI updates while Jest is still running. Reported and traced paths are mapped back to store keys.
+
+**Run lifecycle (SessionManager):** runs register in a registry — one `onRunProgress` total and one `onRunFinished` across overlapping runs; a session token makes Stop final. `jest --listTests` at session start decides which discovered files are runnable (others: skipped, `file.excluded`).
 
 **Single-test / scoped-rerun command (JestRunner — CodeLens and individual reruns):**
 ```sh

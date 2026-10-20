@@ -2,21 +2,29 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { JestRunner, FrameworkDetector } from '@live-test-runner/runner';
+import { JestRunner, FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromJestPath } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver } from '../IResultObserver';
 import { IFrameworkAdapter } from '../framework/IFrameworkAdapter';
+import { PLAIN_RUN_HANG_FACTOR } from '../framework/JestAdapter';
 import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import { SessionTraceRunner } from './SessionTraceRunner';
+import { ProjectJestConfig } from './ProjectJestConfig';
+import { RunnableFilesCache, runnableCacheKey, runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Session');
+
+/** Comparable keys of Jest's runnable-file list; undefined = unknown (run everything). */
+function toRunnableSet(files: string[] | undefined): Set<string> | undefined {
+  return files ? new Set(files.map(runnableKey)) : undefined;
+}
 
 /** "a.test.ts, b.test.ts, +3 more" — keeps summary lines to one readable line. */
 function shortList(paths: string[], max = 5): string {
@@ -30,19 +38,23 @@ function secondsSince(t: number): string {
   return `${((Date.now() - t) / 1000).toFixed(1)}s`;
 }
 
-/**
- * Convert a test full-name to a regex pattern suitable for --testNamePattern.
- * '…' and '<dynamic>' placeholders (from template-literal test discovery) are
- * expanded to '.*' so they match the real names Jest emits at runtime.
- */
-export function nameToPattern(name: string): string {
-  const escLiteral = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Expand '…', '<dynamic>', and Jest's % placeholders (%s, %d, %i, etc.) into wildcard matching
-  return name
-    .split(/…|<dynamic>|%[sdifjo#%]/)
-    .map(escLiteral)
-    .join('.*');
+/** Failure shown on the tests of a file that was stopped for running too long. */
+function hangMessage(seconds: number): string {
+  return `Stopped after ${seconds}s without finishing — a test in this file probably hangs ` +
+    '(an infinite loop or a promise that never resolves). ' +
+    'Raise liveTestRunner.hangTimeoutSeconds if the file is just slow.';
 }
+
+interface RunHandle {
+  id: number;
+  label: string;
+  startedAt: number;
+  /** The session token at start — a run from before Stop never closes the current state. */
+  token: number;
+}
+
+import { nameToPattern } from '../utils/testNames';
+export { nameToPattern };
 
 /**
  * SessionManager — owns the test session lifecycle and all run execution.
@@ -65,6 +77,28 @@ export class SessionManager {
   /** Monotonic run counter — every log line about a run carries "Run #N". */
   private _runSeq = 0;
 
+  /**
+   * Changes on every Start and Stop. Work started under an older token stops
+   * before its next step (next batch, retry, fallback) — Stop is final.
+   */
+  private _token = 0;
+  /**
+   * Runs in progress (full suite, saves, ▶ Run …). They can overlap, so
+   * "finished" is only announced when the last one ends (BUG-15).
+   */
+  private _activeRuns = 0;
+  /** Files scheduled / finished across all active runs — drives the progress UI. */
+  private _progress = { completed: 0, total: 0, failed: 0 };
+  /** Set while a full-suite run is part of the active runs. */
+  private _fullSuiteStartedAt: number | undefined;
+  /**
+   * Files the project's Jest config would run (`jest --listTests`), lower-cased
+   * on Windows. undefined = unknown (listing failed): run everything.
+   */
+  private _runnable: Set<string> | undefined;
+  /** `jest --listTests` answers kept between sessions (see RunnableFiles). */
+  private readonly _runnableCache = new RunnableFilesCache(LTR_BASE_TMP_DIR);
+
   constructor(
     private readonly _adapter: IFrameworkAdapter,
     private readonly _store: ResultStore,
@@ -77,8 +111,9 @@ export class SessionManager {
     private readonly _statusBar: vscode.StatusBarItem,
     private readonly _discovery: TestDiscoveryService,
     private readonly _sessionDir: string,
+    private readonly _projectConfig: ProjectJestConfig,
   ) {
-    this._traceRunner = new SessionTraceRunner(this._sessionDir, this._coverageStore);
+    this._traceRunner = new SessionTraceRunner(this._sessionDir, this._coverageStore, this._projectConfig);
   }
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
@@ -99,9 +134,14 @@ export class SessionManager {
 
     if (this._session) {
       log.debug('Restarting: stopping the existing session first');
+      this._traceRunner.kill();
       this._session.stop();
       this._session = undefined;
     }
+    const token = ++this._token;
+    this._activeRuns = 0;
+    this._fullSuiteStartedAt = undefined;
+    this._clearSaveTimers();
 
     // Reset all results to pending before starting a fresh run so the UI
     // immediately shows pending icons rather than stale pass/fail state.
@@ -137,13 +177,32 @@ export class SessionManager {
       }
 
       // ── Derive the file list from the already-populated store ──────────────
-      const testFiles = this._store.getAllFiles().map((f) => f.filePath);
+      const discovered = this._store.getAllFiles().map((f) => f.filePath);
       let framework = 'unknown';
       try { framework = new FrameworkDetector().detectFramework(projectRoot); } catch { /* logged by detector */ }
+
+      // Ask Jest which of the discovered files the project's config runs, and
+      // (in parallel) how it resolves that config — re-read every session.
+      this._projectConfig.reset();
+      void this._projectConfig.get(projectRoot);
+      const runnableList = await this._runnableFiles(projectRoot, discovered);
+      if (token !== this._token) { return; }
+      this._runnable = toRunnableSet(runnableList);
+      if (runnableList) {
+        // Files Jest runs that the glob patterns missed (custom testMatch / testRegex).
+        const known = new Set(discovered.map(runnableKey));
+        const added = this._discovery.addFiles(runnableList.filter((fp) => !known.has(runnableKey(fp))));
+        if (added > 0) {
+          log.info(`Added ${added} test file(s) that the project's Jest config runs but the testFilePatterns setting does not match`);
+          discovered.splice(0, discovered.length, ...this._store.getAllFiles().map((f) => f.filePath));
+        }
+      }
+      const testFiles = discovered.filter((fp) => this._isRunnable(fp));
+      this._markExcluded(discovered.filter((fp) => !this._isRunnable(fp)));
       log.info(`Session started — ${testFiles.length} test file(s) · framework: ${framework} · root: ${projectRoot}`);
 
       if (testFiles.length === 0) {
-        log.warn('No test files found — nothing to run. Test files must match *.test.* or *.spec.* (js, ts, jsx, tsx, mjs, cjs)');
+        log.warn('No test files found — nothing to run. Jest listed no test files, and none match the liveTestRunner.testFilePatterns setting');
         this._updateStatusBar('✅ Ready');
         this._session.activate();
         return;
@@ -172,9 +231,12 @@ export class SessionManager {
       });
 
       // ── Run the tests ──────────────────────────────────────────────────────
-      const run = this._beginRun('full suite');
-      await this._runFiles(testFiles, projectRoot, true);
-      this._endRun(run, testFiles);
+      const run = this._beginRun('full suite', { fullSuite: true });
+      try {
+        await this._runFiles(testFiles, projectRoot, token);
+      } finally {
+        this._endRun(run, testFiles);
+      }
     } catch (error) {
       log.error('Start Testing failed', error);
       this._updateStatusBar('❌ Error');
@@ -184,13 +246,20 @@ export class SessionManager {
 
   stop(decorationManager: DecorationManager): void {
     if (this._session) { log.info('Session stopped'); }
+    this._token++;
+    this._clearSaveTimers();
     this._traceRunner.kill();
     if (this._session) {
       this._session.stop();
       this._session = undefined;
     }
+    // Nothing may keep spinning after Stop (BUG-23).
+    const touched = this._store.resetRunning();
+    this._activeRuns = 0;
+    this._fullSuiteStartedAt = undefined;
     this._store.clearAllLineMaps();
     this._coverageStore.clear();
+    for (const fp of touched) { this._notify('onFileResult', fp); }
     this._notify('onSessionStopped');
     void decorationManager; // already in observers, notified above
     this._updateStatusBar('Off');
@@ -251,6 +320,11 @@ export class SessionManager {
       }
     }
 
+    if (!this._isRunnable(args.fileId)) {
+      log.info(`${path.basename(args.fileId)} is not run by this project's Jest config (testMatch / testPathIgnorePatterns) — nothing to run`);
+      return;
+    }
+
     if ((args.scope === 'test' || args.scope === 'suite') && args.fullName) {
       if (args.nodeId) {
         this._store.markNodeRunning(args.nodeId);
@@ -260,10 +334,11 @@ export class SessionManager {
         [args.fileId],
         args.nodeId,
       );
-      this._updateStatusBar('Running… 1/1');
       const run = this._beginRun(`${args.scope} "${args.fullName}"`);
+      this._addPlanned(1);
+      let ok = false;
       try {
-        await this._adapter.runTestCase(
+        ok = await this._adapter.runTestCase(
           this._store,
           args.fileId,
           nameToPattern(args.fullName),
@@ -273,46 +348,57 @@ export class SessionManager {
         );
       } catch (error) {
         log.error(`Run #${run.id} failed to run ${args.scope} "${args.fullName}" in ${path.basename(args.fileId)}`, error);
+      } finally {
+        if (!ok) { this._store.cleanupStaleNodes(args.fileId, false, args.nodeId); }
+        this._fileFinished(this._store.getFile(args.fileId)?.status === 'failed' ? 'failed' : 'passed');
+        this._notify('onFileResult', args.fileId);
+        this._refreshScopedLogs(args.fileId);
+        this._endRun(run, [args.fileId], args.nodeId);
       }
-      this._notify('onFileResult', args.fileId);
-      this._refreshScopedLogs(args.fileId);
-      this._updateStatusBar('✅ Ready');
-      this._endRun(run, [args.fileId], args.nodeId);
       return;
     }
 
     const run = this._beginRun(`file ${path.basename(args.fileId)}`);
-    await this._runFiles([args.fileId], projectRoot);
-    this._endRun(run, [args.fileId]);
+    try {
+      await this._runFiles([args.fileId], projectRoot, this._token);
+    } finally {
+      this._endRun(run, [args.fileId]);
+    }
   }
 
   // ── Editor commands ───────────────────────────────────────────────────────
 
+  /** @returns the launch configuration used, or undefined when nothing was started. */
   async debugFromEditor(
     filePath: string,
     testFullName?: string,
-  ): Promise<void> {
+    isSuite = false,
+  ): Promise<vscode.DebugConfiguration | undefined> {
     const projectRoot = this._getProjectRoot();
     if (!projectRoot) {
       log.warn('Debug: no project root configured — nothing to debug');
-      return;
+      return undefined;
     }
-    log.info(`Debug: ${testFullName ? `"${testFullName}"` : 'whole file'} in ${path.basename(filePath)}`);
+    log.info(`Debug: ${testFullName ? `${isSuite ? 'suite' : 'test'} "${testFullName}"` : 'whole file'} in ${path.basename(filePath)}`);
     try {
       const folder = vscode.workspace.getWorkspaceFolder(
         vscode.Uri.file(filePath),
       );
-      const config = this._adapter.getDebugConfig(
+      const config = await this._adapter.getDebugConfig(
         projectRoot,
         filePath,
         testFullName,
+        isSuite,
       );
       const started = await vscode.debug.startDebugging(folder, config);
       if (!started) {
         log.warn(`Debug: VS Code refused to start the debug session (program: ${config.program})`);
+        return undefined;
       }
+      return config;
     } catch (err) {
       log.error(`Debug: could not start a debug session for ${filePath}`, err);
+      return undefined;
     }
   }
 
@@ -328,37 +414,71 @@ export class SessionManager {
         .get<number>('onSaveDebounceMs') ?? 300;
 
     const filePath = document.uri.fsPath;
+    // Only the project's own JS/TS files matter — VS Code also saves its
+    // settings.json, untitled buffers, files in other folders, etc.
+    const root = this._getProjectRoot();
+    const rel = root ? path.relative(root, filePath) : '';
+    if (
+      !root || document.uri.scheme !== 'file' ||
+      rel.startsWith('..') || path.isAbsolute(rel) ||
+      /(^|[\\/])node_modules[\\/]/.test(rel) ||
+      !/\.(c|m)?[jt]sx?$/i.test(filePath)
+    ) {
+      return;
+    }
     const existing = this._saveTimers.get(filePath);
     if (existing !== undefined) {
       clearTimeout(existing);
     }
+    const token = this._token;
     const timer = setTimeout(async () => {
       this._saveTimers.delete(filePath);
-      if (!this._session) {
+      if (!this._session || token !== this._token) {
         return;
       }
-      try {
-        const projectRoot = this._getProjectRoot();
-        if (!projectRoot) {
-          return;
-        }
+      const projectRoot = this._getProjectRoot();
+      if (!projectRoot) {
+        return;
+      }
 
-        const run = this._beginRun(`save ${path.basename(filePath)}`);
-        if (this._adapter.isTestFile(filePath)) {
-          await this._runFiles([filePath], projectRoot);
-          this._endRun(run, [filePath]);
+      // Jest's own list also knows tests named by a custom testRegex/testMatch.
+      const isTestFile = this._adapter.isTestFile(filePath) || !!this._runnable?.has(runnableKey(filePath));
+      if (isTestFile && !this._isRunnable(filePath) && !this._store.getFile(filePath)?.excluded) {
+        // A test file created after Start is not in Jest's list yet — ask again
+        // (a file already known to be excluded is not asked about every save).
+        log.debug(`Saved ${path.basename(filePath)} — not in Jest's file list yet, asking Jest again`);
+        const files = this._store.getAllFiles().map((f) => f.filePath);
+        if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
+        this._runnable = toRunnableSet(await this._askJestForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings())));
+        if (token !== this._token) { return; }
+        if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
+      }
+      if (isTestFile && !this._isRunnable(filePath)) {
+        log.debug(`Saved ${path.basename(filePath)} — not run by this project's Jest config, ignoring`);
+        return;
+      }
+      const run = this._beginRun(`save ${path.basename(filePath)}`);
+      let ran: string[] = [];
+      try {
+        if (isTestFile) {
+          ran = [filePath];
+          await this._runFiles(ran, projectRoot, token);
         } else {
           this._coverageStore.markFileStale(filePath);
-          const affected = await this._runAffectedBySourceFile(filePath, projectRoot);
-          if (affected.length === 0) {
-            log.info(`Run #${run.id} save ${path.basename(filePath)} — no tests depend on this file`);
-          } else {
-            this._endRun(run, affected);
-          }
+          ran = await this._runAffectedBySourceFile(filePath, projectRoot, token);
         }
       } catch (error) {
         log.error(`On-save rerun failed for ${filePath}`, error);
-        this._updateStatusBar('✅ Ready');
+      } finally {
+        // The rerun is over, whichever way it went (trace-based, the
+        // --findRelatedTests fallback, nothing depends on the file, or an
+        // error): "stale — save to rerun" would otherwise stay until the next
+        // Start. A whole-file traced rerun has already replaced the counters.
+        if (!isTestFile && token === this._token) { this._coverageStore.clearStale(filePath); }
+        if (ran.length === 0) {
+          log.info(`Run #${run.id} save ${path.basename(filePath)} — no tests depend on this file`);
+        }
+        this._endRun(run, ran, undefined, ran.length === 0);
       }
     }, debounceMs);
     this._saveTimers.set(filePath, timer);
@@ -368,6 +488,10 @@ export class SessionManager {
 
   onWorkspaceFoldersChanged(): void {
     if (this._session) {
+      this._token++;
+      this._activeRuns = 0;
+      this._clearSaveTimers();
+      this._traceRunner.kill();
       this._session.stop();
       this._session = undefined;
       this._store.clear();
@@ -399,9 +523,11 @@ export class SessionManager {
   private async _runAffectedBySourceFile(
     sourceFilePath: string,
     projectRoot: string,
+    token: number,
   ): Promise<string[]> {
-    const affectedTestFiles =
-      this._traceStore.getAffectedTestFiles(sourceFilePath);
+    const affectedTestFiles = this._traceStore
+      .getAffectedTestFiles(sourceFilePath)
+      .filter((fp) => this._isRunnable(fp));
 
     if (affectedTestFiles.length === 0) {
       // No trace data — use jest --findRelatedTests as fallback. This runs Jest's
@@ -409,30 +535,18 @@ export class SessionManager {
       // import the changed source file and reruns them whole. Less precise than
       // trace (whole file, not individual test cases) but correct as a safety net.
       log.debug(`No trace data for ${path.basename(sourceFilePath)} — using jest --findRelatedTests`);
+      this._addPlanned(1);
       const affectedPaths = await this._adapter.runRelatedTests(
         this._store,
         sourceFilePath,
         projectRoot,
         (msg) => this._outputChannel.appendLine(msg),
       );
+      this._fileFinished('passed');
+      if (token !== this._token) { return affectedPaths; }
       for (const fp of affectedPaths) {
         this._notify('onFileResult', fp);
         this._refreshScopedLogs(fp);
-      }
-      if (affectedPaths.length > 0) {
-        const summary = this._store.getSummary();
-        this._notify('onRunFinished', {
-          total: summary.total,
-          passed: summary.passed,
-          failed: summary.failed,
-          totalDuration: undefined,
-          sessionActive: this.isActive(),
-        });
-        this._updateStatusBar(
-          summary.failed > 0
-            ? `❌ ${summary.failed} failed, ${summary.passed} passed`
-            : `✅ ${summary.passed} passed`,
-        );
       }
       return affectedPaths;
     }
@@ -481,19 +595,17 @@ export class SessionManager {
 
     // Run whole files first (if any)
     if (filesToRunFull.length > 0) {
-      await this._runFiles(filesToRunFull, projectRoot);
+      await this._runFiles(filesToRunFull, projectRoot, token);
     }
 
     // Run individual test cases in parallel — one Jest invocation per file with
     // a combined --testNamePattern, up to CONCURRENCY files at a time.
-    if (individualCases.length > 0) {
-      await this._runTestCases(individualCases, projectRoot);
+    if (individualCases.length > 0 && token === this._token) {
+      await this._runTestCases(individualCases, projectRoot, token);
     }
 
-    // Scoped reruns don't produce coverage data, so clear the stale flag now
-    // that the rerun is complete — the existing counters are still valid.
-    this._coverageStore.clearStale(sourceFilePath);
-
+    // Scoped reruns don't produce coverage data; onSave clears the stale flag
+    // once this returns — the existing counters are still valid.
     return [...new Set([...filesToRunFull, ...individualCases.map((c) => c.filePath)])];
   }
 
@@ -511,6 +623,7 @@ export class SessionManager {
   private async _runTestCases(
     cases: { filePath: string; fullName: string }[],
     projectRoot: string,
+    token: number,
   ): Promise<void> {
     const CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
 
@@ -569,14 +682,15 @@ export class SessionManager {
 
     // Promote full-file runs to _runFiles
     if (filesToRunFull.length > 0) {
-      await this._runFiles(filesToRunFull, projectRoot);
+      await this._runFiles(filesToRunFull, projectRoot, token);
     }
 
-    if (scopedRuns.length === 0) {
+    if (scopedRuns.length === 0 || token !== this._token) {
       return;
     }
 
-    // Mark affected nodes (and their descendants) as running
+    // Mark affected nodes (and their descendants) as running. These files
+    // start right away (one Jest each), so ⟳ is accurate here.
     for (const run of scopedRuns) {
       const allNodes = this._store.getFileNodes(run.filePath);
       const namesToMark = new Set(run.names);
@@ -589,15 +703,14 @@ export class SessionManager {
     }
 
     const queue = [...scopedRuns];
-    let completed = 0;
-    this._updateStatusBar(`Running… 0/${queue.length}`);
+    this._addPlanned(queue.length);
     const rawLog = (msg: string) => this._outputChannel.appendLine(msg);
 
     await Promise.all(
       Array.from(
         { length: Math.min(CONCURRENCY, queue.length) },
         async () => {
-          while (true) {
+          while (token === this._token) {
             const run = queue.shift();
             if (!run) {
               break;
@@ -610,8 +723,9 @@ export class SessionManager {
               run.kind === 'node' ? { nodeId: run.nodeId } :
               /* pattern */ { fullNames: new Set(run.names) };
 
+            let ok = false;
             try {
-              await this._adapter.runTestCase(
+              ok = await this._adapter.runTestCase(
                 this._store,
                 run.filePath,
                 pattern,
@@ -622,28 +736,16 @@ export class SessionManager {
             } catch (err) {
               log.error(`Could not run ${names.length} test(s) in ${path.basename(run.filePath)} (pattern ${pattern})`, err);
             }
+            if (token !== this._token) { break; }
+            // No result: put the spinning tests back to pending (BUG-23).
+            if (!ok) { this._store.cleanupStaleNodes(run.filePath, false, run.kind === 'node' ? run.nodeId : undefined); }
 
-            completed++;
-            this._updateStatusBar(`Running… ${completed}/${queue.length + completed}`);
+            this._fileFinished(this._store.getFile(run.filePath)?.status === 'failed' ? 'failed' : 'passed');
             this._notify('onFileResult', run.filePath);
             this._refreshScopedLogs(run.filePath);
           }
         },
       ),
-    );
-
-    const summary = this._store.getSummary();
-    this._notify('onRunFinished', {
-      total: summary.total,
-      passed: summary.passed,
-      failed: summary.failed,
-      totalDuration: undefined,
-      sessionActive: this.isActive(),
-    });
-    this._updateStatusBar(
-      summary.failed > 0
-        ? `❌ ${summary.failed} failed, ${summary.passed} passed`
-        : `✅ ${summary.passed} passed`,
     );
   }
 
@@ -652,49 +754,74 @@ export class SessionManager {
   private async _runFiles(
     filePaths: string[],
     projectRoot: string,
-    isFullSuite = false,
+    token: number,
   ): Promise<void> {
     const CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
     const totalFiles  = filePaths.length;
+    if (totalFiles === 0 || token !== this._token) { return; }
 
     // Batch heuristic: amortise Jest startup across multiple files while keeping
     // batches small enough that the UI stays responsive (results stream per file).
     const BATCH_SIZE = Math.max(5, Math.min(50, Math.ceil(totalFiles / CONCURRENCY)));
 
+    // Files are NOT marked running here: in a batch Jest runs its files one
+    // after another, so a queued file only shows ⟳ once Jest starts it (BUG-23).
     for (const fp of filePaths) {
-      this._store.fileStarted(fp, fp, vscode.workspace.asRelativePath(fp));
+      if (!this._store.getFile(fp)) {
+        this._store.fileDiscovered(fp, fp, vscode.workspace.asRelativePath(fp));
+      }
     }
-
-    if (!isFullSuite) {
-      this._notify('onFilesRerunning', filePaths);
-    }
-    this._updateStatusBar(`Running… 0/${totalFiles}`);
+    this._addPlanned(totalFiles);
 
     const totalStart = Date.now();
     const rawLog = (msg: string) => this._outputChannel.appendLine(msg);
-
-    let completed = 0;
-    let numPassed  = 0;
-    let numFailed  = 0;
+    const live = () => token === this._token;
+    const hangTimeoutMs = 1000 * (vscode.workspace
+      .getConfiguration('liveTestRunner')
+      .get<number>('hangTimeoutSeconds') ?? 300);
 
     const onFileDone = (filePath: string, status: 'passed' | 'failed') => {
-      if (status === 'passed') { numPassed++; } else { numFailed++; }
-      completed++;
-      this._updateStatusBar(`Running… ${completed}/${totalFiles}`);
+      this._fileFinished(status);
       this._notify('onFileResult', filePath);
       this._refreshScopedLogs(filePath);
     };
 
+    const markRunning = (filePath: string) => {
+      if (this._store.getFile(filePath)?.status === 'running') { return; }
+      this._store.markFileRunning(filePath);
+      this._notify('onFilesRerunning', [filePath]);
+    };
+
+    /** Plain-Jest run of one file, with the spinner cleared on every outcome. */
+    const runPlain = async (fp: string): Promise<void> => {
+      if (!live()) { return; }
+      markRunning(fp);
+      const startedAt = Date.now();
+      let status: 'passed' | 'failed' = 'failed';
+      try {
+        status = await this._adapter.runFile(this._store, fp, projectRoot, rawLog);
+      } catch (err) {
+        log.error(`Plain Jest fallback also failed for ${fp}`, err);
+      }
+      if (!live()) { return; }
+      if (this._store.getFile(fp)?.status === 'running') {
+        // No result at all. Either the file hung and was stopped, or Jest
+        // could not run it — never leave it spinning (BUG-23).
+        if (hangTimeoutMs > 0 && Date.now() - startedAt >= hangTimeoutMs * PLAIN_RUN_HANG_FACTOR) {
+          this._store.failFile(fp, hangMessage(Math.round((Date.now() - startedAt) / 1000)));
+        } else {
+          this._store.cleanupStaleNodes(fp, false);
+          this._store.fileResult(fp, 'failed');
+        }
+      }
+      onFileDone(fp, status);
+    };
+
     /** Split-on-crash: retry files that produced no result by halving the batch. */
     const runBatch = async (batch: string[]): Promise<void> => {
-      if (batch.length === 0) { return; }
-      // Mark all files in this batch as running immediately so the UI flips
-      // from pending → running. One bulk notification per batch (not per file)
-      // keeps the postMessage rate sane for large affected-file sets.
-      for (const fp of batch) {
-        this._store.markFileRunning(fp);
-      }
-      this._notify('onFilesRerunning', batch);
+      if (batch.length === 0 || !live()) { return; }
+      // A single-file batch starts right away — show it running now.
+      if (batch.length === 1) { markRunning(batch[0]); }
       let missing: string[];
       try {
         const r = await this._traceRunner.runFiles({
@@ -702,8 +829,24 @@ export class SessionManager {
           projectRoot,
           traceStore: this._traceStore,
           store: this._store,
-          applyFileResult: (fp, fr) => this._adapter.applyFileResult(this._store, fp, fr),
+          applyFileResult: (fp, fr) => {
+            // Results replace the file's tests; mark them running first so
+            // stale discovery placeholders are cleaned up.
+            if (this._store.getFile(fp)?.status !== 'running') { this._store.markFileRunning(fp); }
+            this._adapter.applyFileResult(this._store, fp, fr);
+          },
           onFileDone,
+          onFileUpdated: (fp, status, wasStatus) => {
+            if (status === 'failed' && wasStatus !== 'failed') { this._progress.failed++; this._postProgress(); }
+            this._notify('onFileResult', fp);
+            this._refreshScopedLogs(fp);
+          },
+          onFileStart: markRunning,
+          onFileTimedOut: (fp, seconds) => {
+            this._store.failFile(fp, hangMessage(seconds));
+            onFileDone(fp, 'failed');
+          },
+          hangTimeoutMs,
           log: rawLog,
         });
         missing = r.missing;
@@ -712,7 +855,8 @@ export class SessionManager {
         missing = batch.slice();
       }
 
-      if (missing.length === 0) { return; }
+      // Stopped (or restarted) meanwhile: no retries, no fallback (BUG-15).
+      if (missing.length === 0 || !live()) { return; }
 
       // When the whole batch produced no results the most likely cause is a
       // jest config incompatibility rather than individual test crashes.
@@ -727,17 +871,10 @@ export class SessionManager {
         const fallbackQueue = [...missing];
         await Promise.all(
           Array.from({ length: Math.min(CONCURRENCY, fallbackQueue.length) }, async () => {
-            while (true) {
+            while (live()) {
               const fp = fallbackQueue.shift();
               if (!fp) { break; }
-              try {
-                const status = await this._adapter.runFile(this._store, fp, projectRoot, rawLog);
-                onFileDone(fp, status);
-              } catch (err) {
-                log.error(`Plain Jest fallback also failed for ${fp}`, err);
-                this._store.fileResult(fp, 'failed');
-                onFileDone(fp, 'failed');
-              }
+              await runPlain(fp);
             }
           }),
         );
@@ -747,16 +884,8 @@ export class SessionManager {
       // Partial miss: some files produced results so remaining ones likely
       // crashed mid-batch. Split and retry with smaller batches.
       if (missing.length === 1) {
-        const fp = missing[0];
-        log.warn(`No result for ${path.basename(fp)} — retrying it with plain Jest`);
-        try {
-          const status = await this._adapter.runFile(this._store, fp, projectRoot, rawLog);
-          onFileDone(fp, status);
-        } catch (err) {
-          log.error(`Plain Jest fallback also failed for ${fp}`, err);
-          this._store.fileResult(fp, 'failed');
-          onFileDone(fp, 'failed');
-        }
+        log.warn(`No result for ${path.basename(missing[0])} — retrying it with plain Jest`);
+        await runPlain(missing[0]);
         return;
       }
       log.debug(`${missing.length} file(s) in a batch produced no result — splitting the batch and retrying`);
@@ -776,7 +905,7 @@ export class SessionManager {
       Array.from(
         { length: Math.min(CONCURRENCY, batchQueue.length) },
         async () => {
-          while (true) {
+          while (live()) {
             const batch = batchQueue.shift();
             if (!batch) { break; }
             await runBatch(batch);
@@ -785,24 +914,122 @@ export class SessionManager {
       ),
     );
 
-    log.debug(`${totalFiles} file(s) finished in ${secondsSince(totalStart)} (${batchCount} batch(es), concurrency ${CONCURRENCY})`);
+    if (live()) {
+      log.debug(`${totalFiles} file(s) finished in ${secondsSince(totalStart)} (${batchCount} batch(es), concurrency ${CONCURRENCY})`);
+    }
+  }
 
+  // ── Private: run tracking ──────────────────────────────────────────────────
+
+  /** Adds files to the progress of the runs in flight. */
+  private _addPlanned(files: number): void {
+    this._progress.total += files;
+    this._postProgress();
+  }
+
+  private _fileFinished(status: 'passed' | 'failed'): void {
+    this._progress.completed++;
+    if (status === 'failed') { this._progress.failed++; }
+    this._postProgress();
+  }
+
+  private _postProgress(): void {
+    const { completed, total, failed } = this._progress;
+    this._updateStatusBar(`Running… ${completed}/${total}`);
+    for (const o of this._observers) { o.onRunProgress?.(completed, total, failed); }
+  }
+
+  /** Called when the last run in flight ends: one "finished" for everything. */
+  private _finishRuns(): void {
     const summary = this._store.getSummary();
+    const totalDuration = this._fullSuiteStartedAt !== undefined ? Date.now() - this._fullSuiteStartedAt : undefined;
+    this._fullSuiteStartedAt = undefined;
     this._notify('onRunFinished', {
       total: summary.total,
       passed: summary.passed,
       failed: summary.failed,
-      totalDuration: isFullSuite ? Date.now() - totalStart : undefined,
+      totalDuration,
       sessionActive: this.isActive(),
     });
-
-    if (numFailed > 0) {
-      this._updateStatusBar(`❌ ${numFailed} failed, ${numPassed} passed`);
-    } else if (numPassed > 0) {
-      this._updateStatusBar(`✅ ${numPassed} passed`);
-    }
-
+    this._updateStatusBar(
+      summary.failed > 0
+        ? `❌ ${summary.failed} failed, ${summary.passed} passed`
+        : `✅ ${summary.passed} passed`,
+    );
     this._discovery.pruneGhostFiles();
+  }
+
+  private _clearSaveTimers(): void {
+    for (const t of this._saveTimers.values()) { clearTimeout(t); }
+    this._saveTimers.clear();
+  }
+
+  // ── Private: which files Jest runs ─────────────────────────────────────────
+
+  /**
+   * `jest --listTests` with the project's own config: the files Jest would
+   * run. Discovery globs every *.test.* / *.spec.* file, including ones the
+   * config excludes (e2e specs, ignored folders, .mjs) — running those only
+   * produced "No tests found" and spinners (BUG-24).
+   */
+  private async _listRunnableFiles(projectRoot: string): Promise<string[] | undefined> {
+    const startedAt = Date.now();
+    try {
+      const files = await this._adapter.discoverTests(projectRoot, (msg) => this._outputChannel.appendLine(msg));
+      if (files.length === 0) { return undefined; }
+      log.debug(`jest --listTests: ${files.length} file(s) in ${secondsSince(startedAt)}`);
+      return files;
+    } catch (err) {
+      log.warn('Could not ask Jest which files it runs (jest --listTests) — running every discovered test file', err);
+      return undefined;
+    }
+  }
+
+  /**
+   * The runnable files for Start: the last session's list when no test file
+   * and no Jest config changed since, otherwise Jest's answer (a full Jest
+   * startup — 20 s on a 200-file project, and nothing runs until it is in).
+   */
+  private async _runnableFiles(projectRoot: string, discovered: string[]): Promise<string[] | undefined> {
+    const key = runnableCacheKey(projectRoot, discovered, this._runnerSettings());
+    const cached = this._runnableCache.read(projectRoot, key);
+    if (cached) {
+      log.debug(`Runnable test files: ${cached.length} remembered from the last session (no test or config file changed)`);
+      // Lists saved by older versions may hold Jest's realpath'd spelling.
+      return cached.map(fromJestPath);
+    }
+    this._updateStatusBar('Asking Jest which files it runs…');
+    return this._askJestForRunnable(projectRoot, key);
+  }
+
+  /** Asks Jest for the runnable files and remembers the answer under `key`. */
+  private async _askJestForRunnable(projectRoot: string, key: string): Promise<string[] | undefined> {
+    const files = await this._listRunnableFiles(projectRoot);
+    if (!files) { return undefined; }
+    try {
+      this._runnableCache.write(projectRoot, key, files);
+    } catch (err) {
+      log.debug(`Could not remember the runnable test files — the next Start asks Jest again (${(err as Error).message})`);
+    }
+    return files;
+  }
+
+  /** Settings that change how Jest is called, and so which files it lists. */
+  private _runnerSettings(): string {
+    const cfg = vscode.workspace.getConfiguration('liveTestRunner');
+    return `${cfg.get<string>('runMode') ?? ''}|${cfg.get<string>('jestCommand') ?? ''}`;
+  }
+
+  private _isRunnable(filePath: string): boolean {
+    return !this._runnable || this._runnable.has(runnableKey(filePath));
+  }
+
+  private _markExcluded(files: string[]): void {
+    if (files.length === 0) { return; }
+    for (const fp of files) {
+      this._store.markFileExcluded(fp, "Not run: this project's Jest config excludes this file (testMatch / testRegex / testPathIgnorePatterns).");
+    }
+    log.info(`${files.length} test file(s) are not run by this project's Jest config and are shown as skipped: ${shortList(files)}`);
   }
 
   // ── Private: helpers ───────────────────────────────────────────────────────
@@ -820,24 +1047,44 @@ export class SessionManager {
     }
   }
 
-  /** Opens a run: allocates "Run #N" and writes a separator into the raw Jest output. */
-  private _beginRun(label: string): { id: number; label: string; startedAt: number } {
+  /**
+   * Opens a run: allocates "Run #N", writes a separator into the raw Jest
+   * output and registers it as in flight. Every _beginRun needs an _endRun.
+   */
+  private _beginRun(label: string, opts: { fullSuite?: boolean } = {}): RunHandle {
     const id = ++this._runSeq;
     this._outputChannel.appendLine('');
     this._outputChannel.appendLine(`──── Run #${id} · ${label} · ${new Date().toLocaleTimeString()} ────`);
     log.debug(`Run #${id} started: ${label}`);
-    return { id, label, startedAt: Date.now() };
+    if (this._activeRuns++ === 0) {
+      this._progress = { completed: 0, total: 0, failed: 0 };
+    }
+    if (opts.fullSuite) { this._fullSuiteStartedAt = Date.now(); }
+    return { id, label, startedAt: Date.now(), token: this._token };
   }
 
   /**
-   * Closes a run with ONE summary line. Counts only the tests that belong to
-   * the run (the given files, or the subtree of `nodeId` for scoped reruns).
+   * Closes a run with ONE summary line (unless `quiet`) and, when it was the
+   * last run in flight, announces that everything finished. Counts only the
+   * tests that belong to the run (the given files, or the subtree of `nodeId`).
    */
   private _endRun(
-    run: { id: number; label: string; startedAt: number },
+    run: RunHandle,
     fileIds: string[],
     nodeId?: string,
+    quiet = false,
   ): void {
+    if (run.token !== this._token) {
+      // Stopped or restarted meanwhile — stop()/start() already reset the run state.
+      log.debug(`Run #${run.id} ${run.label} — stopped after ${secondsSince(run.startedAt)}`);
+      return;
+    }
+    if (!quiet) { this._logRunSummary(run, fileIds, nodeId); }
+    this._activeRuns = Math.max(0, this._activeRuns - 1);
+    if (this._activeRuns === 0) { this._finishRuns(); }
+  }
+
+  private _logRunSummary(run: RunHandle, fileIds: string[], nodeId?: string): void {
     const tests = nodeId
       ? (() => {
           const n = this._store.getNode(nodeId);
@@ -874,6 +1121,12 @@ export class SessionManager {
   }
 
   private _getProjectRoot(): string | undefined {
+    const root = this._configuredProjectRoot();
+    if (root) { registerProjectRoot(root); }
+    return root;
+  }
+
+  private _configuredProjectRoot(): string | undefined {
     const configured = vscode.workspace
       .getConfiguration('liveTestRunner')
       .get<string>('projectRoot');

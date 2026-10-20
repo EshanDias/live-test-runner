@@ -15,13 +15,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toJestPath, fromJestPath, mergeFileResults } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
 import { logger } from '../utils/logger';
+import { ProjectJestConfig, sourceTransformPattern, upperDrive } from './ProjectJestConfig';
 
 const log = logger.scope('Runner');
 const covLog = logger.scope('Coverage');
@@ -44,10 +45,6 @@ const COVERAGE_SETUP_PATH = path.resolve(
   'ltrCoverageSetup.js',
 );
 
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 /** Light-trace record emitted by sessionTraceRuntime.js */
 interface TestHitRecord {
   type: 'T';
@@ -58,6 +55,8 @@ interface TestHitRecord {
 interface HookHitRecord {
   type: 'H';
   tf: string;
+  /** 'file' = module-level code run while the test file loaded; otherwise a hook. */
+  hk?: string;
   fh: { [srcFile: string]: number[] };
 }
 type HitRecord = TestHitRecord | HookHitRecord;
@@ -112,17 +111,27 @@ function toFileRunResult(rec: ReporterRecord): FileRunResult {
 export class SessionTraceRunner {
   /** Batch counter — "b7" in log lines ties a batch's messages together. */
   private static _batchSeq = 0;
-  /** file path → the executor (and its batch id) currently running that file. */
-  private readonly _executors = new Map<string, { executor: Executor; batch: string }>();
+  /** Every Jest process this runner started that is still running — for kill(). */
+  private readonly _running = new Set<Executor>();
+  /**
+   * file path → the batch whose result counts for it: the newest run of the
+   * file. An older batch still running the same file is left alone (killing
+   * it would cancel its other files too) and its result for that file ignored.
+   */
+  private readonly _owner = new Map<string, string>();
   private readonly _binaryResolver = new BinaryResolver();
   private _killed = false;
+  /** Bumped by kill(): records from batches started before it are dropped. */
+  private _generation = 0;
 
   kill(): void {
     this._killed = true;
-    for (const { executor } of this._executors.values()) {
+    this._generation++;
+    for (const executor of this._running) {
       executor.kill();
     }
-    this._executors.clear();
+    this._running.clear();
+    this._owner.clear();
   }
 
   reset(): void {
@@ -130,13 +139,28 @@ export class SessionTraceRunner {
   }
 
   private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
-  private get _manifestDir()  { return path.join(this._tmpDir, 'coverage', 'manifests'); }
-  /** Stable per-session transform cache — shared across all batches so Jest doesn't re-compile every file each run. */
-  private get _transformCacheDir() { return path.join(this._tmpDir, 'ltr-transform-cache'); }
+  /**
+   * Coverage manifests sit next to the persistent transform cache: a cached
+   * transform from an earlier session writes no manifest, so they must outlive
+   * the session (named by file path + content, see sessionTraceTransform).
+   */
+  private _manifestDir(projectRoot: string): string { return path.join(this._transformCacheDir(projectRoot), 'ltr-manifests'); }
+  /**
+   * Transform cache, per project and kept across sessions. It used to live in
+   * the session folder, so every Start re-compiled the whole project — minutes
+   * per file on a large CRA app. Entries are keyed by the transform's own hash
+   * and the config, so a changed extension or config never reuses stale code.
+   */
+  private _transformCacheDir(projectRoot: string): string {
+    let h = 5381;
+    for (let i = 0; i < projectRoot.length; i++) { h = ((h << 5) + h) ^ projectRoot.toLowerCase().charCodeAt(i); }
+    return path.join(LTR_BASE_TMP_DIR, `transform-cache-${(h >>> 0).toString(36)}`);
+  }
 
   constructor(
     private readonly _tmpDir: string,
     private readonly _coverageStore: CoverageStore,
+    private readonly _projectConfig: ProjectJestConfig,
   ) {}
 
   /**
@@ -145,7 +169,12 @@ export class SessionTraceRunner {
    * - Calls applyFileResult for each file as results arrive (streaming).
    * - Calls onFileDone after each file so the UI status bar stays live.
    * - Updates traceStore with the source→test dependency map after the run.
+   * - Calls onFileStart when Jest begins executing a file (files queued in
+   *   the batch are not running yet).
+   * - Calls onFileTimedOut when a file runs longer than hangTimeoutMs; the
+   *   batch is then stopped and its unfinished files come back as missing.
    * - Returns the list of files that produced no result (crashed mid-batch).
+   *   Result paths are always the caller's own keys (`filePaths` entries).
    */
   async runFiles(options: {
     filePaths: string[];
@@ -154,9 +183,19 @@ export class SessionTraceRunner {
     store: ResultStore;
     applyFileResult: (filePath: string, fileResult: FileRunResult) => void;
     onFileDone: (filePath: string, status: 'passed' | 'failed') => void;
+    /**
+     * Another Jest project reported a file already done in this batch; its
+     * merged result was applied. `wasStatus` is what onFileDone reported.
+     */
+    onFileUpdated?: (filePath: string, status: 'passed' | 'failed', wasStatus: 'passed' | 'failed') => void;
+    onFileStart?: (filePath: string) => void;
+    onFileTimedOut?: (filePath: string, seconds: number) => void;
+    /** 0 disables the hang timeout. */
+    hangTimeoutMs?: number;
     log?: (msg: string) => void;
   }): Promise<{ missing: string[] }> {
     const { filePaths, projectRoot, traceStore, store: _store, applyFileResult, onFileDone, log: rawLog } = options;
+    const hangTimeoutMs = options.hangTimeoutMs ?? 0;
     if (filePaths.length === 0) { return { missing: [] }; }
     const emit = rawLog ?? (() => {});
     const batch = `b${++SessionTraceRunner._batchSeq}`;
@@ -172,25 +211,21 @@ export class SessionTraceRunner {
     const covCountersFile = path.join(this._coverageDir, `ltr-cov-${ts}-${rand}.jsonl`);
     const tempConfigPath  = path.join(this._tmpDir, `ltr-cfg-${ts}-${rand}.js`);
 
-    try {
-      fs.mkdirSync(this._manifestDir, { recursive: true });
-    } catch (err) {
-      covLog.error(`Could not create ${this._manifestDir} — coverage will be missing for this run`, err);
+    for (const dir of [this._coverageDir, this._manifestDir(projectRoot)]) {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (err) {
+        covLog.error(`Could not create ${dir} — coverage will be missing for this run`, err);
+      }
     }
 
-    // Normalize to forward slashes: jest normalises all file paths to forward
-    // slashes before checking transform patterns, so the regex must match the
-    // normalised form regardless of the OS separator.
-    // On Windows, the drive letter case is unpredictable — VS Code may give 'c:\'
-    // while Jest's path.resolve returns 'C:\'. Use a character class [cC] so the
-    // pattern matches regardless of which case Jest uses internally.
-    const rootFwd = projectRoot.replace(/\\/g, '/');
-    const driveMatch = rootFwd.match(/^([a-zA-Z]):(.*)/);
-    const escapedRoot = driveMatch
-      ? `[${driveMatch[1].toLowerCase()}${driveMatch[1].toUpperCase()}]:${escapeRegex(driveMatch[2])}`
-      : escapeRegex(rootFwd);
-    const escapedRootSlash = escapedRoot.replace(/\//g, '[/\\\\]');
-    const srcPattern = `^${escapedRootSlash}[/\\\\](?!node_modules[/\\\\]).+\\.[jt]sx?$`;
+    registerProjectRoot(projectRoot);
+    const srcPattern = sourceTransformPattern(projectRoot);
+
+    // The project's config as Jest resolved it (any format) — see ProjectJestConfig.
+    const resolvedConfigPath = await this._projectConfig.get(projectRoot);
+    // Jest's spelling: the real path (symlinks resolved), upper-case drive.
+    const jestRoot = upperDrive(toJestPath(projectRoot));
 
     const configContent = `
 'use strict';
@@ -198,8 +233,21 @@ const _path = require('path');
 const _fs   = require('fs');
 // Temporary Jest config — Live Test Runner combined test+trace run
 let baseConfig = {};
+let _projects = null;
 let _baseConfigLoaded = false;
-try {
+const _resolvedPath = ${JSON.stringify(resolvedConfigPath ?? null)};
+if (_resolvedPath) {
+  // Resolved by Jest itself (jest --showConfig): works for every config format.
+  const r = require(_resolvedPath);
+  if (r.configs.length === 1) {
+    baseConfig = { ...r.global, ...r.configs[0] };
+  } else {
+    baseConfig = { ...r.global };
+    _projects = r.configs;
+  }
+  _baseConfigLoaded = true;
+}
+if (!_baseConfigLoaded) try {
   const e = require(${JSON.stringify(path.join(projectRoot, 'jest.config.js'))});
   baseConfig = (e && e.default) ? e.default : e;
   _baseConfigLoaded = true;
@@ -218,7 +266,7 @@ try {
 
 // CRA fallback: extract the full Jest config from react-scripts if no jest.config was found
 // or if testEnvironment is missing (CRA uses jsdom which must be in the extracted config).
-if (!_baseConfigLoaded || !baseConfig.testEnvironment) {
+if (!_resolvedPath && (!_baseConfigLoaded || !baseConfig.testEnvironment)) {
   const reactScriptsBin = _path.join(${JSON.stringify(projectRoot)}, 'node_modules', 'react-scripts', 'bin', 'react-scripts.js');
   if (_fs.existsSync(reactScriptsBin)) {
     try {
@@ -260,83 +308,136 @@ if (!_baseConfigLoaded || !baseConfig.testEnvironment) {
   }
 }
 
-// We pass explicit file paths via --runTestsByPath so Jest doesn't need
-// to discover tests. Dropping roots avoids Haste scan failures on Windows.
-delete baseConfig.roots;
-delete baseConfig.testMatch;
-delete baseConfig.testRegex;
+// Our transform / setup file on top of one project's config. Test files are
+// passed explicitly (--runTestsByPath, already filtered by jest --listTests),
+// so testMatch / testRegex are dropped.
+function _overlay(cfg) {
+  const c = { ...cfg };
+  delete c.testMatch;
+  delete c.testRegex;
 
-const baseTransformObj = Array.isArray(baseConfig.transform)
-  ? Object.fromEntries(baseConfig.transform.map(([p, t, o]) => o ? [p, [t, o]] : [p, t]))
-  : (baseConfig.transform || {});
+  const baseTransformObj = Array.isArray(c.transform)
+    ? Object.fromEntries(c.transform.map(([p, t, o]) => o ? [p, [t, o]] : [p, t]))
+    : (c.transform || {});
 
-const hasGeneralJsTransform = Object.keys(baseTransformObj).some(pattern => {
-  try { return new RegExp(pattern).test('src/foo.js'); } catch(_) { return false; }
-});
-
-let fallbackTransform = {};
-if (!hasGeneralJsTransform) {
-  const babelJestPath = require.resolve('babel-jest', { paths: [${JSON.stringify(projectRoot)}, __dirname] });
-  let presets;
-  try {
-    const reactAppPreset = require.resolve('babel-preset-react-app', { paths: [${JSON.stringify(projectRoot)}] });
-    presets = [[reactAppPreset, { runtime: 'automatic' }]];
-  } catch(_) {
+  // Jest adds babel-jest for JS/TS when a config has no transform — but only
+  // when transform is unset, and we always set it. Add the same default.
+  const hasGeneralJsTransform = Object.keys(baseTransformObj).some(pattern => {
+    try { return new RegExp(pattern).test('src/foo.js'); } catch(_) { return false; }
+  });
+  let fallbackTransform = {};
+  if (!hasGeneralJsTransform) {
     try {
-      const presetEnv = require.resolve('@babel/preset-env', { paths: [${JSON.stringify(projectRoot)}] });
-      presets = [[presetEnv, { targets: { node: 'current' } }]];
-    } catch(_) { presets = []; }
+      const babelJestPath = require.resolve('babel-jest', { paths: [${JSON.stringify(projectRoot)}, __dirname] });
+      fallbackTransform = { ['\\\\.[jt]sx?$']: babelJestPath };
+    } catch (_) {
+      process.stderr.write('[LTR:warn] babel-jest is not installed — JS/TS files without a transform in the Jest config run untranspiled\\n');
+    }
   }
-  if (presets.length > 0) {
-    fallbackTransform = { ['^.+\\\\.[jt]sx?$']: [babelJestPath, { configFile: false, presets }] };
-  }
+
+  return {
+    ...c,
+    transform: {
+      [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
+      ...baseTransformObj,
+      ...fallbackTransform,
+    },
+    // Ours first: its beforeEach opens the per-test trace context before the
+    // project's own hooks run, so their hits count for the test.
+    setupFilesAfterEnv: [
+      ${JSON.stringify(COVERAGE_SETUP_PATH)},
+      ...((c.setupFilesAfterEnv || [])),
+    ],
+  };
 }
 
-
-module.exports = {
-  ...baseConfig,
-  rootDir: ${JSON.stringify(projectRoot)},
-  roots: [${JSON.stringify(projectRoot)}],
+const _upperDrive = (p) => String(p).replace(/^([a-z]):/, (_, d) => d.toUpperCase() + ':');
+const _shared = {
   // Raise test timeout to account for the instrumentation overhead added by
   // sessionTraceTransform (step() calls before every statement slow React renders).
   // Tests that approach the default 5 s limit will timeout under instrumentation.
   testTimeout: Math.max((baseConfig.testTimeout || 5000), 30000),
-  transform: {
-    [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
-    ...baseTransformObj,
-    ...fallbackTransform,
-  },
-  setupFilesAfterEnv: [
-    ...((baseConfig.setupFilesAfterEnv || [])),
-    ${JSON.stringify(COVERAGE_SETUP_PATH)},
-  ],
   reporters: [
     'default',
     [${JSON.stringify(LIVE_REPORTER_PATH)}, { outputFile: ${JSON.stringify(reporterFile)} }],
   ],
 };
+
+module.exports = _projects
+  ? {
+      ...baseConfig,
+      ..._shared,
+      rootDir: ${JSON.stringify(jestRoot)},
+      projects: _projects.map((p) => ({
+        ..._overlay(p),
+        roots: (p.roots || [p.rootDir]).map(_upperDrive),
+      })),
+    }
+  : {
+      ..._overlay(baseConfig),
+      ..._shared,
+      // Same drive-letter spelling as the --runTestsByPath arguments (upper case,
+      // like Jest's realpath'd rootDir): Jest compares test paths against roots
+      // case-sensitively, so c:\\ vs C:\\ made every file "not found". Dropping
+      // the project's roots also avoids Haste scan failures on Windows.
+      rootDir: ${JSON.stringify(jestRoot)},
+      roots: [${JSON.stringify(jestRoot)}],
+    };
 `;
 
     fs.writeFileSync(tempConfigPath, configContent, 'utf8');
 
     // Track which files received reporter results for missing-file detection.
     const received = new Set<string>();
+    /** Results applied in this batch — a file run by several Jest projects reports once per project. */
+    const applied = new Map<string, FileRunResult>();
     /** File Jest is executing right now (from liveReporter "start" records). */
     let current: { file: string; at: number } | undefined;
+    /** The test running right now (setup-file heartbeats) — what the hang limit measures. */
+    let currentTest: { name?: string; at: number } | undefined;
+    const generation = this._generation;
+
+    // Jest may report a path differently from how we passed it (drive-letter
+    // case, separators, symlinks resolved). Map every reported path back to
+    // the caller's key so results land on the right store entry (BUG-13).
+    const keyByNorm = new Map(filePaths.map((fp) => [pathKey(fp), fp]));
+    const toKey = (p: string) => {
+      const q = fromJestPath(p);
+      return keyByNorm.get(pathKey(q)) ?? path.normalize(q);
+    };
+
+    for (const fp of filePaths) {
+      const prev = this._owner.get(fp);
+      if (prev) {
+        log.debug(`${batch}: ${path.basename(fp)} is also still running in ${prev} — only this newer run's result will be used`);
+      }
+      this._owner.set(fp, batch);
+    }
+    const owns = (fp: string) => this._owner.get(fp) === batch;
 
     const onRecord = (raw: unknown) => {
-      const ev = raw as { ltrEvent?: string; testFilePath?: string; at?: number };
+      // Stopped: results still flushed by a dying Jest must not reach the tree.
+      if (generation !== this._generation) { return; }
+      const ev = raw as { ltrEvent?: string; testFilePath?: string; at?: number; name?: string };
       if (ev?.ltrEvent === 'start') {
         if (ev.testFilePath) {
-          current = { file: path.normalize(ev.testFilePath), at: ev.at ?? Date.now() };
+          current = { file: toKey(ev.testFilePath), at: ev.at ?? Date.now() };
+          currentTest = undefined;
           log.trace(`${batch}: started ${path.basename(current.file)}`);
+          if (owns(current.file)) { options.onFileStart?.(current.file); }
         }
         return;
       }
+      if (ev?.ltrEvent === 'test-start') { currentTest = { name: ev.name, at: ev.at ?? Date.now() }; return; }
+      if (ev?.ltrEvent === 'test-end') { currentTest = undefined; return; }
       const rec = raw as ReporterRecord;
       if (!rec || !rec.testFilePath) { return; }
-      rec.testFilePath = path.normalize(rec.testFilePath);
+      rec.testFilePath = toKey(rec.testFilePath);
       received.add(rec.testFilePath);
+      if (!owns(rec.testFilePath)) {
+        log.debug(`${batch}: ignoring the result for ${path.basename(rec.testFilePath)} — a newer run of it has started`);
+        return;
+      }
       if (rec.failureMessage) {
         // The file itself failed to run (syntax error, missing module, setup
         // crash, or an instrumentation problem) — no test inside it executed.
@@ -344,15 +445,29 @@ module.exports = {
         log.warn(`${batch}: ${path.basename(rec.testFilePath)} failed to run — ${firstLine.trim()}`);
       }
       try {
-        const fileResult = toFileRunResult(rec);
+        const prev = applied.get(rec.testFilePath);
+        const fileResult = prev ? mergeFileResults(prev, toFileRunResult(rec)) : toFileRunResult(rec);
+        applied.set(rec.testFilePath, fileResult);
         applyFileResult(rec.testFilePath, fileResult);
-        onFileDone(rec.testFilePath, rec.status);
+        if (prev) {
+          log.debug(`${batch}: merged another Jest project's result for ${path.basename(rec.testFilePath)}`);
+          options.onFileUpdated?.(rec.testFilePath, fileResult.status, prev.status);
+        } else {
+          onFileDone(rec.testFilePath, fileResult.status);
+        }
       } catch (err) {
         log.error(`${batch}: could not apply results for ${rec.testFilePath}`, err);
       }
     };
 
-    if (this._killed) { return { missing: filePaths }; }
+    const release = () => {
+      for (const fp of filePaths) { if (owns(fp)) { this._owner.delete(fp); } }
+    };
+    if (this._killed) { release(); return { missing: [] }; }
+
+    const executor = new Executor();
+    /** Set when the watchdog stopped the batch because a file hung. */
+    let timedOut: { file: string; seconds: number; test?: string } | undefined;
 
     // Watchdog: a batch with no finished file for a long time is either slow
     // or hung. Say which file it is on so the two can be told apart.
@@ -361,6 +476,19 @@ module.exports = {
     let nextWarnAt = Date.now() + SLOW_BATCH_WARN_MS;
     const watchdog = setInterval(() => {
       const now = Date.now();
+      // The limit applies to ONE test, not the whole file: loading a big file
+      // on a cold transform cache can legitimately take minutes.
+      if (hangTimeoutMs > 0 && !timedOut && current && currentTest && !received.has(current.file) && now - currentTest.at > hangTimeoutMs) {
+        timedOut = { file: current.file, seconds: Math.round((now - currentTest.at) / 1000), test: currentTest.name };
+        log.warn(
+          `${batch}: ${path.basename(current.file)} has run for ${timedOut.seconds}s without finishing` +
+          `${currentTest.name ? ` (test "${currentTest.name}")` : ''} — stopping it ` +
+          '(probably a hanging test: an infinite loop or a promise that never resolves). ' +
+          'The rest of the batch is retried. Change the limit with liveTestRunner.hangTimeoutSeconds.',
+        );
+        executor.kill();
+        return;
+      }
       if (received.size !== lastReceived) {
         lastReceived = received.size;
         lastProgressAt = now;
@@ -392,25 +520,7 @@ module.exports = {
 
       log.debug(`${batch}: running ${filePaths.length} file(s) — ${filePaths.map((p) => path.basename(p)).join(', ')}`);
 
-      // Cancel any in-flight executor already running these files, then create a
-      // fresh one registered under each file path so kill() can reach it.
-      const executor = new Executor();
-      const cancelled = new Set<string>();
-      for (const fp of filePaths) {
-        const prev = this._executors.get(fp);
-        if (prev && !cancelled.has(prev.batch)) {
-          cancelled.add(prev.batch);
-          // The whole previous batch dies, not just this file — its unfinished
-          // files come back as "missing" and are retried (slower) by SessionManager.
-          log.info(
-            `${batch}: ${path.basename(fp)} was still running in ${prev.batch} — cancelling ${prev.batch}; ` +
-            'its unfinished files will be retried',
-          );
-          prev.executor.kill();
-        }
-        this._executors.set(fp, { executor, batch });
-      }
-
+      this._running.add(executor);
       executor.setLogger(emit);
 
       const result = await executor.runWithReporterPolling(
@@ -421,9 +531,9 @@ module.exports = {
             '--forceExit',
             '--no-bail',
             '--runTestsByPath',
-            ...filePaths.map((p) => p.replace(/\\/g, '/')),
+            ...filePaths.map(toJestPathArg),
             '--config', tempConfigPath,
-            '--cacheDirectory', this._transformCacheDir,
+            '--cacheDirectory', this._transformCacheDir(projectRoot),
             '--maxWorkers=1',
             '--testLocationInResults',
             // Jest silently switches to verbose mode when exactly one test file
@@ -437,16 +547,19 @@ module.exports = {
           extraEnv: {
             SESSION_TRACE_FILE:   traceFile,
             COVERAGE_OUTPUT_FILE: covCountersFile,
-            LTR_MANIFEST_DIR:     this._manifestDir,
+            LTR_MANIFEST_DIR:     this._manifestDir(projectRoot),
             LTR_LOG_LEVEL:        logger.level,
+            LTR_REPORTER_FILE:    reporterFile,
           },
         },
         reporterFile,
         onRecord,
       );
 
-      if (this._killed) {
+      if (this._killed || generation !== this._generation) {
         log.debug(`${batch}: stopped by the user after ${secondsSince(startedAt)}`);
+      } else if (timedOut) {
+        log.debug(`${batch}: stopped after ${secondsSince(startedAt)} — ${path.basename(timedOut.file)} hung`);
       } else if (received.size === 0) {
         // Whole batch produced nothing — Jest itself failed (config, transform,
         // environment). SessionManager falls back to plain Jest next; this line
@@ -462,16 +575,22 @@ module.exports = {
       log.error(`${batch}: Jest run failed`, err);
     } finally {
       clearInterval(watchdog);
-      for (const fp of filePaths) {
-        // Only remove our own registration — a newer batch may own this file now.
-        if (this._executors.get(fp)?.batch === batch) { this._executors.delete(fp); }
-      }
+      this._running.delete(executor);
       try { fs.unlinkSync(tempConfigPath); } catch {}
     }
 
+    const stopped = generation !== this._generation;
+    if (timedOut && !stopped && owns(timedOut.file)) {
+      received.add(timedOut.file); // reported as failed below — never retried
+      options.onFileTimedOut?.(timedOut.file, timedOut.seconds);
+    }
+    // Files a newer batch took over are that batch's business, not missing here.
+    const missing = stopped ? [] : filePaths.filter((fp) => owns(fp) && !received.has(fp));
+    release();
+
     // Parse trace hits and update ExecutionTraceStore.
     try {
-      this._parseTrace(traceFile, traceStore, batch);
+      this._parseTrace(traceFile, traceStore, batch, toKey);
     } catch (err) {
       log.error(`${batch}: could not parse the trace file`, err);
     } finally {
@@ -486,7 +605,6 @@ module.exports = {
       covLog.error(`${batch}: could not parse coverage counters`, err);
     }
 
-    const missing = filePaths.filter((fp) => !received.has(fp));
     return { missing };
   }
 
@@ -504,11 +622,10 @@ module.exports = {
    * CRA's bundled binary when it exists, exactly like CRAAdapter.resolveBinary().
    */
   private _resolveBinary(projectRoot: string): string {
-    const craJest = path.join(
-      projectRoot, 'node_modules', 'react-scripts', 'node_modules', '.bin', 'jest',
-    );
-    if (fs.existsSync(craJest + '.cmd')) { return `${craJest}.cmd`; }
-    if (fs.existsSync(craJest))          { return craJest; }
+    if (fs.existsSync(path.join(projectRoot, 'node_modules', 'react-scripts'))) {
+      const entry = BinaryResolver.resolveCraJestEntry(projectRoot);
+      if (entry) { return entry; }
+    }
     return this._binaryResolver.resolve(projectRoot);
   }
 
@@ -570,7 +687,7 @@ module.exports = {
     let manifestReadErrors = 0;
 
     for (const [fileHash, counters] of Object.entries(mergedCov)) {
-      const manifestPath = path.join(this._manifestDir, `${fileHash}.json`);
+      const manifestPath = path.join(this._manifestDir(projectRoot), `${fileHash}.json`);
       if (!fs.existsSync(manifestPath)) {
         missingManifests.push(fileHash);
         continue;
@@ -585,7 +702,7 @@ module.exports = {
         continue;
       }
 
-      const normalizedFilePath = manifest.filePath.replace(/^[A-Z]:/, m => m.toLowerCase());
+      const normalizedFilePath = _normPath(manifest.filePath);
       const relPath = path.relative(projectRoot, normalizedFilePath);
       if (_isExcludedFromCoverage(relPath)) {
         excluded++;
@@ -593,8 +710,9 @@ module.exports = {
       }
 
       const existing = this._coverageStore.getEntry(normalizedFilePath);
+      // Merge only with counters of the same file version (same manifest).
       const merged: LiveCov =
-        existing?.state === 'measured'
+        existing?.state === 'measured' && existing.manifestPath === manifestPath
           ? _mergeCounters(existing.counters, counters)
           : counters;
 
@@ -610,7 +728,7 @@ module.exports = {
       // Counters without a manifest cannot be mapped to lines — those files show no coverage.
       covLog.warn(
         `${batch}: coverage dropped for ${missingManifests.length + manifestReadErrors} file(s) — ` +
-        `${missingManifests.length} manifest(s) missing, ${manifestReadErrors} unreadable (folder: ${this._manifestDir})`,
+        `${missingManifests.length} manifest(s) missing, ${manifestReadErrors} unreadable (folder: ${this._manifestDir(projectRoot)})`,
       );
     }
 
@@ -627,6 +745,8 @@ module.exports = {
     traceFile: string,
     traceStore: ExecutionTraceStore,
     batch: string,
+    /** Maps Jest's spelling of a test-file path to the store's key. */
+    toKey: (p: string) => string,
   ): void {
     if (!fs.existsSync(traceFile)) {
       log.trace(`${batch}: no trace file written`);
@@ -650,6 +770,7 @@ module.exports = {
       let rec: HitRecord;
       try { rec = JSON.parse(line) as HitRecord; } catch { continue; }
       if (!rec || !rec.tf) { continue; }
+      rec.tf = toKey(rec.tf);
       if (rec.type === 'T') {
         const bucket = testsByFile.get(rec.tf) ?? [];
         bucket.push(rec);
@@ -706,8 +827,12 @@ module.exports = {
     for (const [testFilePath, testRecs] of testsByFile) {
       const testNames = testRecs.map((r) => r.tn);
 
+      // Hooks (beforeAll/afterAll) affect every test in the file. Module-level
+      // code run at import does not make every test "use" that module — it
+      // counts for coverage only, or every save would rerun whole files.
       const hookFiles = new Set<string>();
       for (const hookRec of hooksByFile.get(testFilePath) ?? []) {
+        if (hookRec.hk === 'file') { continue; }
         for (const srcFile of Object.keys(hookRec.fh)) {
           if (_normPath(srcFile) !== testFilePath) { hookFiles.add(_normPath(srcFile)); }
         }
@@ -819,6 +944,13 @@ function _isExcludedFromCoverage(filePath: string): boolean {
   return _COVERAGE_EXCLUDE_RE.some((re) => re.test(filePath));
 }
 
+/** A source path from Jest in the editor's spelling (symlinks, drive-letter case). */
 function _normPath(filePath: string): string {
-  return filePath.replace(/^[A-Z]:/, m => m.toLowerCase());
+  return fromJestPath(filePath).replace(/^[A-Z]:/, m => m.toLowerCase());
+}
+
+/** Comparison key for a file path: normalised, and case-insensitive on Windows. */
+function pathKey(filePath: string): string {
+  const p = path.normalize(filePath);
+  return process.platform === 'win32' ? p.toLowerCase() : p;
 }

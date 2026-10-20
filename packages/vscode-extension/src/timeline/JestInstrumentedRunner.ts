@@ -8,8 +8,10 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, toJestPathArg, registerProjectRoot, toJestPath, fromJestPath } from '@live-test-runner/runner';
 import { IInstrumentedRunner } from './IInstrumentedRunner';
+import { ProjectJestConfig, sourceTransformPattern, upperDrive } from '../session/ProjectJestConfig';
+import { nameToPattern } from '../utils/testNames';
 import {
   TimelineStore,
   Step,
@@ -28,16 +30,19 @@ const TRACE_TRANSFORM_PATH = path.resolve(
   'traceTransform.js',
 );
 
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 export class JestInstrumentedRunner implements IInstrumentedRunner {
   private readonly executor: Executor;
   private readonly binaryResolver = new BinaryResolver();
 
-  /** @param rawLog sink for raw Jest output (the "Jest Output" channel). */
-  constructor(private readonly _tmpDir: string, private readonly _rawLog: (msg: string) => void = () => {}) {
+  /**
+   * @param _rawLog        sink for raw Jest output (the "Jest Output" channel).
+   * @param _projectConfig the project's Jest config as Jest resolves it.
+   */
+  constructor(
+    private readonly _tmpDir: string,
+    private readonly _rawLog: (msg: string) => void = () => {},
+    private readonly _projectConfig?: ProjectJestConfig,
+  ) {
     this.executor = new Executor(_rawLog);
   }
 
@@ -67,11 +72,12 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
     // Regex that matches any JS/TS source file under the project root (excluding
     // node_modules, which Jest already skips via transformIgnorePatterns).
     // This ensures imported source files (axiosConfig.js, incidentApi.js, etc.)
-    // are also instrumented — not just the test file itself.
-    // Normalize to forward slashes: jest normalises all file paths to forward
-    // slashes before checking transform patterns.
-    const escapedRoot = escapeRegex(projectRoot.replace(/\\/g, '/'));
-    const srcTransformPattern = `^${escapedRoot}/(?!node_modules/).+\\.[jt]sx?$`;
+    // are also instrumented — not just the test file itself. Windows-safe:
+    // either separator, either drive-letter case.
+    registerProjectRoot(projectRoot);
+    const srcTransformPattern = sourceTransformPattern(projectRoot);
+    // The project's config as Jest resolves it (any format) — see ProjectJestConfig.
+    const resolvedConfigPath = this._projectConfig ? await this._projectConfig.get(projectRoot) : undefined;
 
     const configContent = `
 'use strict';
@@ -79,7 +85,12 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
 // Loads the project's existing config (if any) and overlays the trace transform.
 
 let baseConfig = {};
-try {
+const _resolvedPath = ${JSON.stringify(resolvedConfigPath ?? null)};
+if (_resolvedPath) {
+  const r = require(_resolvedPath);
+  // The timeline runs one test file: use the project that owns it, or the first.
+  baseConfig = { ...r.global, ...r.configs[0] };
+} else try {
   const existing = require(${JSON.stringify(path.join(projectRoot, 'jest.config.js'))});
   baseConfig = (existing && existing.default) ? existing.default : existing;
 } catch (_e1) {
@@ -118,32 +129,41 @@ const hasGeneralJsTransform = Object.keys(baseTransformObj).some(pattern => {
 
 let fallbackTransform = {};
 if (!hasGeneralJsTransform) {
-  const babelJestPath = require.resolve('babel-jest', { paths: [${JSON.stringify(projectRoot)}, __dirname] });
-  // Prefer babel-preset-react-app (CRA) if present, otherwise @babel/preset-env
-  let presets;
   try {
-    const reactAppPreset = require.resolve('babel-preset-react-app', { paths: [${JSON.stringify(projectRoot)}] });
-    presets = [[reactAppPreset, { runtime: 'automatic' }]];
-  } catch(_) {
+    const babelJestPath = require.resolve('babel-jest', { paths: [${JSON.stringify(projectRoot)}, __dirname] });
+    // Prefer babel-preset-react-app (CRA) if present, otherwise @babel/preset-env
+    let presets;
     try {
-      const presetEnv = require.resolve('@babel/preset-env', { paths: [${JSON.stringify(projectRoot)}] });
-      presets = [[presetEnv, { targets: { node: 'current' } }]];
+      const reactAppPreset = require.resolve('babel-preset-react-app', { paths: [${JSON.stringify(projectRoot)}] });
+      presets = [[reactAppPreset, { runtime: 'automatic' }]];
     } catch(_) {
-      presets = [];
+      try {
+        const presetEnv = require.resolve('@babel/preset-env', { paths: [${JSON.stringify(projectRoot)}] });
+        presets = [[presetEnv, { targets: { node: 'current' } }]];
+      } catch(_) {
+        presets = [];
+      }
     }
-  }
-  if (presets.length > 0) {
     fallbackTransform = {
-      '^.+\\\\.[jt]sx?$': [babelJestPath, { configFile: false, presets }],
+      '\\\\.[jt]sx?$': presets.length > 0 ? [babelJestPath, { configFile: false, presets }] : babelJestPath,
     };
-  }
+  } catch (_) { /* babel-jest not installed */ }
 }
+
+// The file is passed explicitly; the project's testMatch/testRegex could reject
+// our spelling of the path.
+delete baseConfig.testMatch;
+delete baseConfig.testRegex;
+delete baseConfig.roots;
 
 module.exports = {
   ...baseConfig,
   // rootDir must be the project root, not the /tmp/ directory where this config
-  // file lives — otherwise Jest cannot find any test files.
-  rootDir: ${JSON.stringify(projectRoot)},
+  // file lives — otherwise Jest cannot find any test files. Upper-case drive
+  // letter and real path to match the --runTestsByPath argument (Jest compares
+  // case-sensitively and resolves symlinks).
+  rootDir: ${JSON.stringify(upperDrive(toJestPath(projectRoot)))},
+  roots: [${JSON.stringify(upperDrive(toJestPath(projectRoot)))}],
   transform: {
     // Our entry first — matches only the exact file being debugged
     [${JSON.stringify(srcTransformPattern)}]: ${JSON.stringify(TRACE_TRANSFORM_PATH)},
@@ -178,18 +198,19 @@ module.exports = {
       log.debug(`Timeline debug dump: ${debugLogPath}`);
     }
 
-    // 3. Set the env var that traceRuntime.js reads to know where to write events
-    process.env.TRACE_OUTPUT_FILE = traceFile;
-
     try {
       let binary: string;
       try {
-        binary = this.binaryResolver.resolve(projectRoot);
+        // CRA projects need the Jest that react-scripts ships with.
+        binary = (fs.existsSync(path.join(projectRoot, 'node_modules', 'react-scripts'))
+          ? BinaryResolver.resolveCraJestEntry(projectRoot)
+          : undefined) ?? this.binaryResolver.resolve(projectRoot);
       } catch (err) {
         log.error(`Could not find a Jest binary for ${projectRoot}`, err);
         throw err;
       }
-      const escapedName = escapeRegex(testFullName);
+      // .each / template names carry %s, $var or <dynamic> placeholders.
+      const namePattern = `^(?:${nameToPattern(testFullName)})$`;
 
       const result = await this.executor.run({
         binary,
@@ -198,14 +219,16 @@ module.exports = {
           '--forceExit',
           '--no-bail',
           '--runTestsByPath',
-          filePath,
+          toJestPathArg(filePath),
           '--testNamePattern',
-          `^${escapedName}$`,
+          namePattern,
           '--config',
           tempConfigPath,
         ],
         cwd: projectRoot,
-        extraEnv: { LTR_LOG_LEVEL: logger.level },
+        // Passed to the Jest process only. Setting it on the extension host's
+        // own process.env leaked into every Jest started meanwhile.
+        extraEnv: { LTR_LOG_LEVEL: logger.level, TRACE_OUTPUT_FILE: traceFile },
       });
 
       // A failing test is normal here (people trace failing tests) — debug only.
@@ -218,8 +241,7 @@ module.exports = {
         );
       }
     } finally {
-      // Clean up env var and temp config regardless of outcome
-      delete process.env.TRACE_OUTPUT_FILE;
+      // Clean up the temp config regardless of outcome
       try {
         fs.unlinkSync(tempConfigPath);
       } catch {
@@ -307,7 +329,7 @@ module.exports = {
           const step: Step = {
             stepId: event.stepId,
             line: event.line,
-            file: event.file,
+            file: event.file ? fromJestPath(event.file) : event.file,
             functionName: event.functionName,
           };
           store.steps.push(step);

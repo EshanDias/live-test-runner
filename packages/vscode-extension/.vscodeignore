@@ -1,0 +1,17 @@
+# Files left out of the published extension (.vsix).
+# Source code is bundled into out/extension.js; instrumentation is copied to out/instrumentation/.
+src/**
+# The webviews load their HTML / JS / CSS from src/webview at runtime — keep them.
+!src/webview/**
+test/**
+out/**/*.map
+esbuild.js
+jest.config.js
+tsconfig.json
+tsconfig.tsbuildinfo
+DEVELOPER_GUIDE.md
+**/.DS_Store
+# README images are served from GitHub (vsce --baseContentUrl); only the marketplace icon is needed.
+resources/gifs/**
+resources/images/**
+!resources/images/live-test-runner.png

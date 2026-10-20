@@ -1,8 +1,13 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import {
   JestRunner,
   FileRunResult,
   ConsoleEntry,
+  BinaryResolver,
+  FrameworkDetector,
+  toJestPathArg,
+  registerProjectRoot,
 } from '@live-test-runner/runner';
 import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
@@ -14,19 +19,18 @@ import {
   ScopedOutput,
   makeNodeId,
 } from '../store/ResultStore';
-import { nameToPattern } from '../session/SessionManager';
+import { nameToPattern } from '../utils/testNames';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Jest');
+
+/** A plain (uninstrumented) single-file run may take this many hang limits in total. */
+export const PLAIN_RUN_HANG_FACTOR = 3;
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
 function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');
-}
-
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
@@ -77,12 +81,14 @@ export class JestAdapter implements IFrameworkAdapter {
   getFileGlob(): string {
     const patterns = vscode.workspace
       .getConfiguration('liveTestRunner')
-      .get<string[]>('testFilePatterns') ?? ['**/*.test.*', '**/*.spec.*'];
+      .get<string[]>('testFilePatterns') ?? ['**/*.test.*', '**/*.spec.*', '**/__tests__/**/*.*'];
     return `{${patterns.join(',')}}`;
   }
 
   isTestFile(filePath: string): boolean {
-    return /\.(test|spec)\.[jt]sx?$/.test(filePath);
+    // Same patterns and extensions as discovery (.mjs / .cjs included — BUG-17).
+    return /\.(test|spec)\.(c|m)?[jt]sx?$/i.test(filePath)
+      || (/[\\/]__tests__[\\/]/.test(filePath) && /\.(c|m)?[jt]sx?$/i.test(filePath));
   }
 
   // ── Run operations ─────────────────────────────────────────────────────────
@@ -121,7 +127,7 @@ export class JestAdapter implements IFrameworkAdapter {
     projectRoot: string,
     rawLog: (msg: string) => void,
     opts?: RerunOptions,
-  ): Promise<void> {
+  ): Promise<boolean> {
     log.debug(`Scoped run in ${filePath} — pattern ${fullName}`);
     const runner = this._createRunner(projectRoot, rawLog);
     // Determine if this is a suite-level rerun (no individual test node)
@@ -133,17 +139,19 @@ export class JestAdapter implements IFrameworkAdapter {
       jsonResult = await runner.runTestCaseJson(filePath, fullName, isSuiteRun);
     } catch (err) {
       log.error(`Could not run pattern ${fullName} in ${filePath}`, err);
-      return;
+      return false;
     }
     const fileResult = jsonResult.fileResults[0];
-    if (fileResult) {
-      try {
-        this._applyFileResult(store, filePath, fileResult, opts);
-      } catch (err) {
-        log.error(`Could not apply scoped results for ${filePath}`, err);
-      }
-    } else {
+    if (!fileResult) {
       log.warn(`Jest returned no result for ${filePath} (pattern ${fullName}) — the test name may no longer match`);
+      return false;
+    }
+    try {
+      this._applyFileResult(store, filePath, fileResult, opts);
+      return true;
+    } catch (err) {
+      log.error(`Could not apply scoped results for ${filePath}`, err);
+      return false;
     }
   }
 
@@ -169,11 +177,15 @@ export class JestAdapter implements IFrameworkAdapter {
     }
     const affectedPaths: string[] = [];
     for (const fileResult of jsonResult.fileResults) {
+      // Jest reports its own spelling of the path (e.g. C:\ vs c:\) — use the
+      // store's key, or the result would create a duplicate file entry.
+      const fileId = store.findFileKey(fileResult.testFilePath) ?? fileResult.testFilePath;
       try {
-        this._applyFileResult(store, fileResult.testFilePath, fileResult);
-        affectedPaths.push(fileResult.testFilePath);
+        store.markFileRunning(fileId);
+        this._applyFileResult(store, fileId, fileResult);
+        affectedPaths.push(fileId);
       } catch (err) {
-        log.error(`Could not apply results for ${fileResult.testFilePath}`, err);
+        log.error(`Could not apply results for ${fileId}`, err);
       }
     }
     return affectedPaths;
@@ -181,24 +193,44 @@ export class JestAdapter implements IFrameworkAdapter {
 
   // ── Debug ──────────────────────────────────────────────────────────────────
 
-  getDebugConfig(
+  async getDebugConfig(
     projectRoot: string,
     filePath: string,
     testFullName?: string,
-  ): vscode.DebugConfiguration {
-    const args: string[] = [filePath];
-    if (testFullName) {
-      args.push('--testNamePattern', escapeRegex(testFullName));
+    isSuite = false,
+  ): Promise<vscode.DebugConfiguration> {
+    // Jest's JS entry point, resolved from the project root (not the workspace
+    // folder) — `.bin/jest` is a shell script on Windows and cannot be a program.
+    registerProjectRoot(projectRoot);
+    const framework = new FrameworkDetector().detect(projectRoot);
+    const isCra = framework.framework === 'cra';
+    const program =
+      (isCra ? BinaryResolver.resolveCraJestEntry(projectRoot) : BinaryResolver.resolveJestEntry(projectRoot))
+      ?? path.join(projectRoot, 'node_modules', 'jest', 'bin', 'jest.js');
+
+    const args: string[] = [];
+    if (isCra) {
+      // CRA keeps its Jest config inside react-scripts — use the extracted copy.
+      const config = await framework.resolveConfig(projectRoot);
+      if (config) { args.push('--config', config); }
     }
-    args.push('--runInBand', '--no-coverage');
+    // --config / --resetMocks … from the project's test script, like npm test.
+    args.push(...framework.getExtraArgs(projectRoot));
+    args.push('--runTestsByPath', toJestPathArg(filePath));
+    if (testFullName) {
+      const p = nameToPattern(testFullName);
+      args.push('--testNamePattern', isSuite ? `^(?:${p})(?: |$)` : `^(?:${p})$`);
+    }
+    args.push('--runInBand', '--no-coverage', '--watchAll=false');
     return {
       type: 'node',
       request: 'launch',
       name: 'Debug Jest test',
-      program: '${workspaceFolder}/node_modules/.bin/jest',
+      program,
       args,
       cwd: projectRoot,
       console: 'integratedTerminal',
+      env: { NODE_ENV: 'test', BABEL_ENV: 'test' },
       skipFiles: ['<node_internals>/**'],
     };
   }
@@ -212,6 +244,11 @@ export class JestAdapter implements IFrameworkAdapter {
     const cmd = this._getCommand();
     const runner = new JestRunner(cmd, rawLog, this._tmpDir);
     runner.setProjectRoot(projectRoot);
+    // Plain runs have no per-test heartbeat, so the limit covers the whole
+    // file (load + all tests) and is wider than the per-test hang limit.
+    runner.setFileTimeout(PLAIN_RUN_HANG_FACTOR * 1000 * (vscode.workspace
+      .getConfiguration('liveTestRunner')
+      .get<number>('hangTimeoutSeconds') ?? 300));
     return runner;
   }
 
@@ -240,7 +277,9 @@ export class JestAdapter implements IFrameworkAdapter {
   ): void {
     // Track which node IDs we've applied so we can scope output correctly.
     let lastTouchedTestNodeId: string | undefined;
-    let touchedNodeIds = new Set<string>();
+    const touchedNodeIds = new Set<string>();
+    /** base test id → how many results had it (duplicate full names). */
+    const seenTestIds = new Map<string, number>();
 
     for (const tc of fileResult.testCases) {
       // Build hierarchical suite nodes from ancestorTitles
@@ -324,8 +363,14 @@ export class JestAdapter implements IFrameworkAdapter {
         ancsForId.push(leafTemplate.name);
       }
 
-      // Create/update the test node
-      const testNodeId = makeNodeId(filePath, ancsForId, tc.title);
+      // Create/update the test node. Jest allows several tests with the same
+      // full name (e.g. describe.each with a non-interpolated $object); keying
+      // them by name collapsed them into one node where the last result won —
+      // a failure could be hidden by a later pass. Repeats get their own node.
+      const baseTestId = makeNodeId(filePath, ancsForId, tc.title);
+      const occurrence = (seenTestIds.get(baseTestId) ?? 0) + 1;
+      seenTestIds.set(baseTestId, occurrence);
+      const testNodeId = occurrence === 1 ? baseTestId : `${baseTestId}::#${occurrence}`;
 
       // If we are in a scoped run, only update the store for nodes within that scope.
       // This ensures that non-matching tests reported by Jest ('pending' or 'skipped')
@@ -339,6 +384,10 @@ export class JestAdapter implements IFrameworkAdapter {
         }
       }
 
+      // Generated .each tests have no line of their own in discovery — without
+      // a location from Jest, use the template's so "go to file" finds the
+      // test.each(...) call.
+      const line = tc.location?.line ?? (leafTemplate ? store.getNode(leafTemplate.id)?.line : undefined);
       store.nodeStarted(
         filePath,
         testNodeId,
@@ -346,17 +395,18 @@ export class JestAdapter implements IFrameworkAdapter {
         'test',
         tc.title,
         tc.fullName || tc.title,
-        tc.location?.line,
+        line,
       );
 
+      // Jest reports test.skip / xit / tests skipped by .only as "pending" and
+      // test.todo as "todo". Both ran (as skipped) — never show them as ○
+      // "not run yet" (BUG-24).
       const status: TestStatus =
         tc.status === 'passed'
           ? 'passed'
           : tc.status === 'failed'
             ? 'failed'
-            : tc.status === 'skipped'
-              ? 'skipped'
-              : 'pending';
+            : 'skipped';
 
       store.nodeResult(
         testNodeId,
@@ -392,8 +442,21 @@ export class JestAdapter implements IFrameworkAdapter {
       } else {
         store.setFileOutput(filePath, output);
       }
+    } else if (opts?.fullNames) {
+      // Pattern rerun of a few tests (smart rerun on save). Jest attributes
+      // console output to the file only, so this is the output of just those
+      // tests: it must not replace the file's full output (BUG-10). It belongs
+      // to a test only when exactly one ran; otherwise it cannot be attributed.
+      const ranTests = [...touchedNodeIds].filter((id) => store.getNode(id)?.type === 'test');
+      if (ranTests.length === 1) { store.setNodeOutput(ranTests[0], output); }
     } else {
       store.setFileOutput(filePath, output);
+    }
+
+    // The file's total time, only from a run of the whole file: a scoped rerun
+    // times just the tests it ran, so the last full time stays.
+    if (!opts?.nodeId && !opts?.fullNames && fileResult.duration != null && fileResult.duration > 0) {
+      store.setFileDuration(filePath, fileResult.duration);
     }
 
     // We no longer set file-level status directly from Jest's file result because

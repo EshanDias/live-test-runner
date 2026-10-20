@@ -52,8 +52,14 @@ function getRuntimeHash() {
   return _runtimeHash;
 }
 
-function _fileHash(filePath) {
-  return crypto.createHash('sha256').update(filePath).digest('hex').slice(0, 16);
+/**
+ * Coverage id of one version of a file: path + content. Jest's persistent
+ * transform cache can serve this file's instrumented code in a later session
+ * without calling process() again, so the manifest it needs must already be on
+ * disk under the same id — never overwritten by another version of the file.
+ */
+function _fileHash(filePath, code) {
+  return crypto.createHash('sha256').update(filePath).update('\0').update(code).digest('hex').slice(0, 16);
 }
 
 // ── Lazy Babel loader ────────────────────────────────────────────────────────
@@ -180,33 +186,32 @@ function chainTransform(sourceCode, sourcePath, options) {
     break;
   }
 
-  // babel-jest fallback for CRA / projects with no matching transform entry
+  // babel-jest fallback for CRA / projects with no matching transform entry.
+  // Resolved through Node's module lookup — a fixed node_modules/ path breaks
+  // under pnpm / Yarn PnP, and presets that are not installed are skipped.
   const rootDir = options && options.config && options.config.rootDir;
   if (rootDir) {
-    const babelJestPath = path.join(rootDir, 'node_modules', 'babel-jest');
+    const tryResolve = (id) => { try { return require.resolve(id, { paths: [rootDir] }); } catch (_) { return null; } };
     try {
-      const babelJest = require(babelJestPath);
+      const babelJest = require(tryResolve('babel-jest') || 'babel-jest');
       const createTransformer = babelJest.createTransformer
         || (babelJest.default && babelJest.default.createTransformer);
       if (createTransformer) {
+        const reactApp = tryResolve('babel-preset-react-app');
         let presets;
-        const reactAppPreset   = path.join(rootDir, 'node_modules', 'babel-preset-react-app');
-        const presetEnv        = path.join(rootDir, 'node_modules', '@babel', 'preset-env');
-        const presetReact      = path.join(rootDir, 'node_modules', '@babel', 'preset-react');
-        const presetTypescript = path.join(rootDir, 'node_modules', '@babel', 'preset-typescript');
-        const isTs = /\.(ts|tsx)$/.test(sourcePath);
-        try {
-          require(reactAppPreset);
-          presets = [[reactAppPreset, { runtime: 'automatic' }]];
-        } catch (_) {
-          const ps = [[presetEnv, { targets: { node: 'current' } }]];
-          try { require(presetReact); ps.push([presetReact, {}]); } catch (_) {}
-          if (isTs) {
-            try { require(presetTypescript); ps.push([presetTypescript, { allExtensions: true, isTSX: /\.tsx$/.test(sourcePath) }]); } catch (_) {}
-          }
-          presets = ps;
+        if (reactApp) {
+          presets = [[reactApp, { runtime: 'automatic' }]];
+        } else {
+          presets = [];
+          const env = tryResolve('@babel/preset-env');
+          const react = tryResolve('@babel/preset-react');
+          const ts = /\.(ts|tsx)$/.test(sourcePath) ? tryResolve('@babel/preset-typescript') : null;
+          if (env) { presets.push([env, { targets: { node: 'current' } }]); }
+          if (react) { presets.push([react, {}]); }
+          if (ts) { presets.push([ts, { allExtensions: true, isTSX: /\.tsx$/.test(sourcePath) }]); }
         }
-        const transformer = createTransformer({ configFile: false, presets });
+        // No presets installed: babel-jest with the project's own Babel config (Jest's default).
+        const transformer = createTransformer(presets.length ? { configFile: false, presets } : {});
         const result = transformer.process(sourceCode, sourcePath, options);
         if (result && typeof result.code === 'string') { return result.code; }
         if (typeof result === 'string') { return result; }
@@ -579,7 +584,7 @@ function instrumentAST(code, sourcePath) {
   }
 
   // Coverage manifest — built during the walk below
-  const fileHash = _fileHash(sourcePath);
+  const fileHash = _fileHash(sourcePath, code);
   const manifest = {
     filePath: sourcePath,
     statements: /** @type {Record<string, {start:{line:number,col:number},end:{line:number,col:number}}>} */ ({}),
@@ -594,6 +599,24 @@ function instrumentAST(code, sourcePath) {
   const tempVarNames = [];
   // Guards against double-registration when replaceWith() triggers re-traversal.
   const registeredFunctions = new WeakSet();
+
+  // Some chain segments end up detached by earlier in-place rewrites (their
+  // path has no container any more) and Babel throws "Container is falsy".
+  // That used to fail the whole test file; now that one `?.` is just not
+  // branch-counted.
+  const replaceOptionalChain = (topPath, replacement, bId, node) => {
+    if (!topPath.container) {
+      delete manifest.branches[bId];
+      _ltrLog('debug', `skipped branch counting for an optional chain at ${sourcePath}:${node.loc?.start?.line ?? '?'} (detached node)`);
+      return;
+    }
+    try {
+      topPath.replaceWith(replacement);
+    } catch (e) {
+      delete manifest.branches[bId];
+      _ltrLog('debug', `skipped branch counting for an optional chain at ${sourcePath}:${node.loc?.start?.line ?? '?'}: ${e.message}`);
+    }
+  };
 
   // Pass 1: wrap test/hook callbacks with enter/exit context calls
   const describeStack = [];
@@ -746,7 +769,7 @@ function instrumentAST(code, sourcePath) {
           t.sequenceExpression([makeCovBranchExpr(bId, 0), truthy]),
         );
         generatedCondExprs.add(replacement);
-        topPath.replaceWith(replacement);
+        replaceOptionalChain(topPath, replacement, bId, node);
       },
     },
 
@@ -778,7 +801,7 @@ function instrumentAST(code, sourcePath) {
           t.sequenceExpression([makeCovBranchExpr(bId, 0), truthy]),
         );
         generatedCondExprs.add(replacement);
-        topPath.replaceWith(replacement);
+        replaceOptionalChain(topPath, replacement, bId, node);
       },
     },
 
@@ -962,6 +985,19 @@ function instrumentAST(code, sourcePath) {
 
 const IS_TEST_FILE_RE = /\.(test|spec)\.[jt]sx?$/;
 
+/**
+ * instrumentAST, but never throws: an instrumentation bug must cost coverage
+ * for one file, not make every test file that imports it fail to run.
+ */
+function safeInstrument(code, sourcePath) {
+  try {
+    return instrumentAST(code, sourcePath);
+  } catch (e) {
+    _ltrLog('warn', `could not instrument ${sourcePath} (${e.message}) — it runs without coverage/trace`);
+    return null;
+  }
+}
+
 module.exports = {
   process(sourceCode, sourcePath, options) {
     const rootDir = options && options.config && options.config.rootDir;
@@ -996,7 +1032,7 @@ module.exports = {
       if (strict) {
         // Transpile first with the project's own transformer, then instrument the JS output.
         const transpiledCode = chainTransform(sourceCode, sourcePath, options);
-        const instrumented = instrumentAST(transpiledCode, sourcePath);
+        const instrumented = safeInstrument(transpiledCode, sourcePath);
         if (instrumented) {
           const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${instrumented}`;
           return { code: finalCode };
@@ -1007,7 +1043,7 @@ module.exports = {
       }
 
       // Lenient path: instrument first, then transpile (original behaviour)
-      const instrumented = instrumentAST(sourceCode, sourcePath);
+      const instrumented = safeInstrument(sourceCode, sourcePath);
       if (instrumented) {
         const transpiledCode = chainTransform(instrumented, sourcePath, options);
         const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${transpiledCode}`;

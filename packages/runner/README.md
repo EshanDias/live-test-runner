@@ -35,8 +35,8 @@ The extension depends only on the `TestRunner` interface — never on `JestRunne
 JestRunner (orchestrator)
   ├── FrameworkDetector     reads package.json → picks adapter from ADAPTER_PRIORITY
   ├── FrameworkAdapter      resolves binary + config for this project type
-  ├── BinaryResolver        finds jest in node_modules/.bin
-  ├── Executor              spawns Jest child process, reads --outputFile on exit
+  ├── BinaryResolver        resolves Jest's JS entry point (jest/bin/jest.js) from the project
+  ├── Executor              runs it with node (no shell), reads --outputFile on exit
   └── ResultParser          normalises JSON → JestJsonResult
 ```
 
@@ -55,8 +55,10 @@ Current adapters:
 
 | Adapter | Handles | Notes |
 |---------|---------|-------|
-| `JestAdapter` | Jest, Next.js + Jest | Reads `jest.config.*` or `package.json#jest` directly |
-| `CRAAdapter` | Create React App | Runs `--showConfig` once per session to extract the hidden config; caches in memory |
+| `JestAdapter` | Jest, Next.js + Jest | Jest finds its own config; config-relevant flags of the `test` script (`--config`, `--env`, `--resetMocks`, …) are passed on |
+| `CRAAdapter` | Create React App | Runs `--showConfig` once per session to extract the hidden config (transformer options kept); caches in memory; uses react-scripts' own Jest |
+
+Config helpers (`framework/jestConfig.ts`): `toInputConfig()` turns a normalized `--showConfig` project config back into `--config` input form, `pickGlobalConfig()` keeps run-relevant global options, `testScriptJestArgs()` reads the project's `test` script.
 | `ViteAdapter` | Vitest | Stub — not yet implemented |
 
 ### Execution
@@ -69,6 +71,12 @@ jest --config <resolved> --watchAll=false --forceExit --no-bail --json \
 ```
 
 `--outputFile` is required. Jest's stdout is never parsed — on Windows, large JSON payloads are silently truncated through pipes.
+
+How Jest is started:
+- `BinaryResolver.resolveJestEntry(dir)` / `resolveCraJestEntry(projectRoot)` find Jest's JS entry point through `jest/package.json` (Jest's `exports` hides `bin/jest.js`). `.bin` shims and `npx` are fallbacks only.
+- `Executor` runs `.js` entry points with `nodeRuntime()` — `node` from PATH, else the editor's runtime with `ELECTRON_RUN_AS_NODE=1` — and **no shell**, so paths with spaces, `^…$` patterns and `a|b` arrive verbatim. Commands that need a shell (a user `jestCommand`, npx) get every argument quoted.
+- `kill()` ends the whole process tree (`taskkill /T` on Windows, process group elsewhere). `ExecutorCommand.timeoutMs` stops a run that never finishes; `JestRunner.setFileTimeout()` sets it for single-file runs.
+- File arguments go through `toJestPathArg()`: forward slashes, upper-case drive letter (Jest compares against its realpath'd `rootDir`).
 
 `Executor` output handling:
 - Pipes use `setEncoding('utf8')`, so multi-byte characters split across chunks stay intact.

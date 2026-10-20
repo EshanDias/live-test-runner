@@ -50,12 +50,12 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
         }),
       );
 
-      // ▷ Debug
+      // ▷ Debug — the command takes (filePath, line) and resolves the node itself
       lenses.push(
         new vscode.CodeLens(range, {
           title: '▷ Debug',
           command: 'liveTestRunner.debugFromEditor',
-          arguments: [filePath, node.fullName],
+          arguments: [filePath, line],
         }),
       );
 

@@ -22,6 +22,7 @@ import { DecorationManager } from './editor/DecorationManager';
 import { ExplorerView } from './views/ExplorerView';
 import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
+import { ProjectJestConfig } from './session/ProjectJestConfig';
 import { TestDiscoveryService } from './session/TestDiscoveryService';
 import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
@@ -52,6 +53,13 @@ export function activate(context: vscode.ExtensionContext) {
   const logChannel    = vscode.window.createOutputChannel('Live Test Runner', { log: true });
   const outputChannel = vscode.window.createOutputChannel('Live Test Runner: Jest Output');
   logger.init(logChannel);
+
+  // End-to-end tests (e2e/ at the repo root) read the raw Jest output.
+  const e2eRawOutput: string[] | undefined = process.env.LTR_E2E ? [] : undefined;
+  if (e2eRawOutput) {
+    const appendLine = outputChannel.appendLine.bind(outputChannel);
+    outputChannel.appendLine = (line: string) => { e2eRawOutput.push(line); appendLine(line); };
+  }
 
   const extVersion = (context.extension?.packageJSON as { version?: string } | undefined)?.version ?? '?';
   log.info(
@@ -127,7 +135,8 @@ export function activate(context: vscode.ExtensionContext) {
   // discovery populates the line map — no need to click Start Testing first.
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
-      { scheme: 'file', pattern: '**/*.{test,spec}.{js,ts,jsx,tsx}' },
+      // Any file can carry lenses — they only appear where discovery mapped tests.
+      { scheme: 'file', pattern: '**/*.{js,ts,jsx,tsx,mjs,cjs,mts,cts}' },
       codeLensProvider,
     ),
   );
@@ -139,11 +148,15 @@ export function activate(context: vscode.ExtensionContext) {
     resultsView.sendScopedData(sel.fileId, sel.nodeId);
   };
 
+  // The project's Jest config as Jest resolves it — shared by session runs and the timeline.
+  const projectConfig = new ProjectJestConfig(LTR_SESSION_TMP_DIR, (msg) => outputChannel.appendLine(msg));
+
   // ── Timeline debugger ──────────────────────────────────────────────────────
   // Reference typed as the interface — never as the concrete class.
   const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner(
     LTR_SESSION_TMP_DIR,
     (msg) => outputChannel.appendLine(msg),
+    projectConfig,
   );
   const timelineDecorations = new TimelineDecorationManager();
 
@@ -304,6 +317,7 @@ export function activate(context: vscode.ExtensionContext) {
     statusBar,
     discovery,
     LTR_SESSION_TMP_DIR,
+    projectConfig,
   );
 
   // Expose cleanup so deactivate() can delete trace files on extension shutdown
@@ -500,6 +514,15 @@ export function activate(context: vscode.ExtensionContext) {
     { dispose: () => logger.dispose() },
     logChannel,
   );
+
+  // Internals for the end-to-end tests only — never returned in normal use.
+  if (e2eRawOutput) {
+    return {
+      store, session, traceStore, coverageStore, discovery, observers, statusBar,
+      instrumentedRunner, logger, rawOutput: e2eRawOutput, sessionDir: LTR_SESSION_TMP_DIR,
+    };
+  }
+  return undefined;
 }
 
 let _cleanTraceDir: (() => void) | undefined;
@@ -551,20 +574,16 @@ async function debugFromEditor(
   line: number,
   store: ResultStore,
   session: SessionManager,
-): Promise<void> {
+): Promise<vscode.DebugConfiguration | undefined> {
   try {
     const entry = store.getLineMap(filePath).get(line);
-    if (entry) {
-      const node = store.getNode(entry.nodeId);
-      await session.debugFromEditor(filePath, node?.fullName);
-      return;
-    }
-    // describe block — use node fullName as testNamePattern so Jest runs all tests within it
-    const nodeId = await _resolveNodeAtLine(filePath, line, store);
-    const fullName = nodeId ? store.getNode(nodeId)?.fullName : undefined;
-    await session.debugFromEditor(filePath, fullName);
+    const nodeId = entry?.nodeId ?? await _resolveNodeAtLine(filePath, line, store);
+    const node = nodeId ? store.getNode(nodeId) : undefined;
+    // A suite (describe block or .each template) runs every test inside it.
+    return await session.debugFromEditor(filePath, node?.fullName, node ? node.type === 'suite' : false);
   } catch (err) {
     log.error(`Debug from editor failed for ${filePath}:${line}`, err);
+    return undefined;
   }
 }
 
@@ -577,7 +596,7 @@ async function _resolveNodeAtLine(
   try {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
     const lineText = doc.lineAt(line - 1).text;
-    const m = lineText.match(/describe\s*[\.(]\s*['"`]([^'"`]+)['"`]/);
+    const m = lineText.match(/describe\s*[.(]\s*['"`]([^'"`]+)['"`]/);
     if (!m) { return undefined; }
     // Search all nodes in this file for one matching the describe name
     const allNodes = store.getFileNodes(filePath);

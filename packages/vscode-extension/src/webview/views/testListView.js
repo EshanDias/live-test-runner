@@ -716,6 +716,7 @@
 
         case 'run-finished':
           _q('runProgress').classList.remove('visible');
+          _runStartTime = 0;
           applySessionState(msg.sessionActive !== false ? 'watching' : 'idle');
           updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
           if (msg.failed > 0 && !_isPartialRerun) { _list.scrollToFirstFailure(); }
@@ -733,27 +734,29 @@
           break;
 
         case 'full-file-result': {
-          _completedFiles++;
-          if (msg.file.status === 'failed') { _failedDuringRun++; }
-          const elapsed1 = (Date.now() - _runStartTime).toFixed(1);
-          const fl1 = _failedDuringRun > 0 ? ` • <span class="progress-failed">${_failedDuringRun} failed</span>` : '';
-          _q('runProgress').innerHTML = `Running — ${_completedFiles} / ${_totalFiles} files • ${durationLabel(elapsed1)}${fl1}`;
           _list.updateFile(msg.file);
           updateSummary(msg.total, msg.passed, msg.failed, null);
           break;
         }
 
         case 'batch-file-results': {
-          const batchFiles = msg.files ?? [];
-          _completedFiles += batchFiles.length;
-          for (const file of batchFiles) {
-            if (file.status === 'failed') { _failedDuringRun++; }
-            _list.updateFile(file);
-          }
-          const elapsed2 = (Date.now() - _runStartTime).toFixed(1);
-          const fl2 = _failedDuringRun > 0 ? ` • <span class="progress-failed">${_failedDuringRun} failed</span>` : '';
-          _q('runProgress').innerHTML = `Running — ${_completedFiles} / ${_totalFiles} files • ${durationLabel(elapsed2)}${fl2}`;
+          // Progress is NOT counted here: the extension sends 'run-progress'
+          // with totals across every run in flight (a save during the full
+          // suite used to push this past 100%, e.g. "61 / 58").
+          for (const file of msg.files ?? []) { _list.updateFile(file); }
           updateSummary(msg.total, msg.passed, msg.failed, null);
+          break;
+        }
+
+        case 'run-progress': {
+          _totalFiles     = msg.total ?? 0;
+          _completedFiles = msg.completed ?? 0;
+          _failedDuringRun = msg.failed ?? 0;
+          if (!_runStartTime) { _runStartTime = Date.now(); }
+          const elapsed = (Date.now() - _runStartTime).toFixed(1);
+          const fl = _failedDuringRun > 0 ? ` • <span class="progress-failed">${_failedDuringRun} failed</span>` : '';
+          _q('runProgress').innerHTML = `Running — ${_completedFiles} / ${_totalFiles} files • ${durationLabel(elapsed)}${fl}`;
+          _q('runProgress').classList.add('visible');
           break;
         }
 

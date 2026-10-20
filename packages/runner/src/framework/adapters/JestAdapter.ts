@@ -3,6 +3,13 @@ import * as path from 'path';
 import { Framework } from '../../types';
 import { FrameworkAdapter } from './FrameworkAdapter';
 import { BinaryResolver } from '../../resolution/BinaryResolver';
+import { testScriptJestArgs } from '../jestConfig';
+
+/** Config files Jest picks up from the project root. */
+const JEST_CONFIG_FILES = [
+  'jest.config.js', 'jest.config.ts', 'jest.config.cjs', 'jest.config.mjs',
+  'jest.config.cts', 'jest.config.mts', 'jest.config.json',
+];
 
 /**
  * Handles standard Jest projects (plain Jest, Next.js with jest config, etc.).
@@ -29,10 +36,7 @@ export class JestAdapter implements FrameworkAdapter {
     const hasJest = 'jest' in deps;
 
     const hasJestConfig =
-      fs.existsSync(path.join(projectRoot, 'jest.config.js')) ||
-      fs.existsSync(path.join(projectRoot, 'jest.config.ts')) ||
-      fs.existsSync(path.join(projectRoot, 'jest.config.cjs')) ||
-      fs.existsSync(path.join(projectRoot, 'jest.config.mjs')) ||
+      JEST_CONFIG_FILES.some((f) => fs.existsSync(path.join(projectRoot, f))) ||
       pkg.jest !== undefined;
 
     return hasJest || hasJestConfig;
@@ -47,8 +51,12 @@ export class JestAdapter implements FrameworkAdapter {
     return undefined;
   }
 
-  getExtraArgs(_projectRoot: string): string[] {
-    return [];
+  /**
+   * Config-relevant flags from the project's `test` script (e.g.
+   * `jest --config jest.unit.config.js --resetMocks`), so runs match `npm test`.
+   */
+  getExtraArgs(projectRoot: string): string[] {
+    return testScriptJestArgs(projectRoot);
   }
 }
 
