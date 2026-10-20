@@ -439,7 +439,8 @@ export class SessionManager {
         return;
       }
 
-      const isTestFile = this._adapter.isTestFile(filePath);
+      // Jest's own list also knows tests named by a custom testRegex/testMatch.
+      const isTestFile = this._adapter.isTestFile(filePath) || !!this._runnable?.has(runnableKey(filePath));
       if (isTestFile && !this._isRunnable(filePath)) {
         log.debug(`Saved ${path.basename(filePath)} — not run by this project's Jest config, ignoring`);
         return;

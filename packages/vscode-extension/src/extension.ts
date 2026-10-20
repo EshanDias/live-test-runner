@@ -135,7 +135,8 @@ export function activate(context: vscode.ExtensionContext) {
   // discovery populates the line map — no need to click Start Testing first.
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
-      { scheme: 'file', pattern: '**/*.{test,spec}.{js,ts,jsx,tsx}' },
+      // Any file can carry lenses — they only appear where discovery mapped tests.
+      { scheme: 'file', pattern: '**/*.{js,ts,jsx,tsx,mjs,cjs,mts,cts}' },
       codeLensProvider,
     ),
   );

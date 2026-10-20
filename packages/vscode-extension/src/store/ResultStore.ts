@@ -135,6 +135,8 @@ export class ResultStore {
   clear(): void {
     this.files.clear();
     this.nodes.clear();
+    // Stale line maps kept gutter icons / CodeLens alive after a clear (BUG-11).
+    this._lineMap.clear();
     this._summary = { total: 0, passed: 0, failed: 0, running: 0, totalDuration: 0 };
   }
 
@@ -150,6 +152,7 @@ export class ResultStore {
         if (node.fileId === fileId) {
           if (node.type === 'test') {
             this._adjustSummary(node.status, -1);
+            this._summary.total--; // BUG-11: the total used to drift up
           }
           this.nodes.delete(nodeId);
         }

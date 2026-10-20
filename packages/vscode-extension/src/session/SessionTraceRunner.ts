@@ -55,6 +55,8 @@ interface TestHitRecord {
 interface HookHitRecord {
   type: 'H';
   tf: string;
+  /** 'file' = module-level code run while the test file loaded; otherwise a hook. */
+  hk?: string;
   fh: { [srcFile: string]: number[] };
 }
 type HitRecord = TestHitRecord | HookHitRecord;
@@ -542,7 +544,7 @@ module.exports = _projects
 
     // Parse trace hits and update ExecutionTraceStore.
     try {
-      this._parseTrace(traceFile, traceStore, batch);
+      this._parseTrace(traceFile, traceStore, batch, toKey);
     } catch (err) {
       log.error(`${batch}: could not parse the trace file`, err);
     } finally {
@@ -696,6 +698,8 @@ module.exports = _projects
     traceFile: string,
     traceStore: ExecutionTraceStore,
     batch: string,
+    /** Maps Jest's spelling of a test-file path to the store's key. */
+    toKey: (p: string) => string,
   ): void {
     if (!fs.existsSync(traceFile)) {
       log.trace(`${batch}: no trace file written`);
@@ -719,6 +723,7 @@ module.exports = _projects
       let rec: HitRecord;
       try { rec = JSON.parse(line) as HitRecord; } catch { continue; }
       if (!rec || !rec.tf) { continue; }
+      rec.tf = toKey(rec.tf);
       if (rec.type === 'T') {
         const bucket = testsByFile.get(rec.tf) ?? [];
         bucket.push(rec);
@@ -775,8 +780,12 @@ module.exports = _projects
     for (const [testFilePath, testRecs] of testsByFile) {
       const testNames = testRecs.map((r) => r.tn);
 
+      // Hooks (beforeAll/afterAll) affect every test in the file. Module-level
+      // code run at import does not make every test "use" that module — it
+      // counts for coverage only, or every save would rerun whole files.
       const hookFiles = new Set<string>();
       for (const hookRec of hooksByFile.get(testFilePath) ?? []) {
+        if (hookRec.hk === 'file') { continue; }
         for (const srcFile of Object.keys(hookRec.fh)) {
           if (_normPath(srcFile) !== testFilePath) { hookFiles.add(_normPath(srcFile)); }
         }

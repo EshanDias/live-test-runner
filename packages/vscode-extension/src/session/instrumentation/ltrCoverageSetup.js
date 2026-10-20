@@ -36,7 +36,39 @@ try {
   }
 } catch (_) { /* RTL not present in this project */ }
 
+// ── Per-test trace context ──────────────────────────────────────────────────
+// Test files are deliberately not instrumented (jest.mock hoisting), so the
+// enterTest()/exitTest() calls that tell the trace runtime which test a source
+// line ran for are made here instead. Without them no hit was ever recorded
+// and smart reruns / "covering tests" never worked (BUG-04).
+//
+//   setup → first test : 'H' context — module-level code of imported files
+//   beforeEach…afterEach: 'T' context — that test (and its beforeEach hooks)
+//   between tests       : 'H' context — beforeAll / afterAll hooks
+// 'H' hits count for every test in the file.
+require(require('path').join(__dirname, 'sessionTraceRuntime.js'));
+const _ltrTestPath = (() => {
+  try { return expect.getState().testPath; } catch (_) { return undefined; }
+})();
+const _strace = global.__strace;
+if (_strace && _ltrTestPath) {
+  _strace.enterHook('file', _ltrTestPath);
+  beforeEach(() => {
+    _strace.exitHook();
+    let name;
+    try { name = expect.getState().currentTestName; } catch (_) { name = undefined; }
+    _strace.enterTest(name || '<unknown>', _ltrTestPath);
+  });
+  afterEach(() => {
+    _strace.exitTest();
+    _strace.enterHook('hook', _ltrTestPath);
+  });
+} else {
+  _ltrLog('debug', 'trace: no test path in expect.getState() — per-test trace disabled for this file');
+}
+
 afterAll(() => {
+  if (_strace) { _strace.exitHook(); }
   const covOutputFile = process.env.COVERAGE_OUTPUT_FILE;
   if (!covOutputFile) {
     _ltrLog('warn', 'coverage: COVERAGE_OUTPUT_FILE is not set — coverage will be missing');

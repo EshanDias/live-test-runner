@@ -48,6 +48,18 @@ export interface DiscoveryCallbacks {
 const BATCH_SIZE_COLD = 5;
 const BATCH_SIZE_WARM = 25;
 
+const DEFAULT_TEST_PATTERNS = ['**/*.test.*', '**/*.spec.*'];
+/** Only JS/TS sources can be Jest tests (a pattern like *.test.* also matches .snap files). */
+const JS_TS_RE = /\.(c|m)?[jt]sx?$/i;
+
+/** The liveTestRunner.testFilePatterns setting (BUG-17: it used to be ignored). */
+function testFilePatterns(): string[] {
+  const patterns = vscode.workspace
+    .getConfiguration('liveTestRunner')
+    .get<string[]>('testFilePatterns');
+  return patterns && patterns.length > 0 ? patterns : DEFAULT_TEST_PATTERNS;
+}
+
 /** Yields to the event loop so VS Code can process messages between batches. */
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
@@ -70,7 +82,7 @@ function yieldToEventLoop(): Promise<void> {
  *     (only while no session is active, so live results are never clobbered).
  */
 export class TestDiscoveryService {
-  private _watcher: vscode.FileSystemWatcher | undefined;
+  private _watchers: vscode.FileSystemWatcher[] = [];
   private _discoveryPromise: Promise<void> = Promise.resolve();
   private _isDiscovering = false;
   private _hasCompleted = false;
@@ -105,7 +117,7 @@ export class TestDiscoveryService {
     callbacks: DiscoveryCallbacks,
     cache?: DiscoveryCache,
   ): void {
-    this._watcher?.dispose();
+    this._disposeWatchers();
     this._isDiscovering = true;
     this._projectRoot = projectRoot;
     this._store = store;
@@ -171,8 +183,12 @@ export class TestDiscoveryService {
   }
 
   dispose(): void {
-    this._watcher?.dispose();
-    this._watcher = undefined;
+    this._disposeWatchers();
+  }
+
+  private _disposeWatchers(): void {
+    for (const w of this._watchers) { w.dispose(); }
+    this._watchers = [];
   }
 
   // ── Private: discovery run ─────────────────────────────────────────────────
@@ -185,12 +201,13 @@ export class TestDiscoveryService {
     cache?: DiscoveryCache,
   ): Promise<number> {
     // ── Step 1: find all test files (fast — native VS Code glob) ─────────────
-    const pattern = new vscode.RelativePattern(
-      projectRoot,
-      '**/*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}',
-    );
-    const uris  = await vscode.workspace.findFiles(pattern, '**/node_modules/**');
-    const paths = uris.map((u) => u.fsPath).sort();
+    // One search per pattern: VS Code globs don't nest braces reliably.
+    const found = new Set<string>();
+    for (const glob of testFilePatterns()) {
+      const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(projectRoot, glob), '**/node_modules/**');
+      for (const u of uris) { if (JS_TS_RE.test(u.fsPath)) { found.add(u.fsPath); } }
+    }
+    const paths = [...found].sort();
 
     log.debug(`Found ${paths.length} candidate test file(s) under ${projectRoot}`);
     callbacks.onFilesFound(paths.length);
@@ -232,13 +249,8 @@ export class TestDiscoveryService {
     store: ResultStore,
     callbacks: DiscoveryCallbacks,
   ): void {
-    const pattern = new vscode.RelativePattern(
-      projectRoot,
-      '**/*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}',
-    );
-    this._watcher = vscode.workspace.createFileSystemWatcher(pattern);
-
     const handleChange = (uri: vscode.Uri) => {
+      if (!JS_TS_RE.test(uri.fsPath) || /[\\/]node_modules[\\/]/.test(uri.fsPath)) { return; }
       const existing = store.getFile(uri.fsPath);
       if (existing?.status === 'running') { return; }
 
@@ -267,12 +279,17 @@ export class TestDiscoveryService {
       }
     };
 
-    this._watcher.onDidChange(handleChange);
-    this._watcher.onDidCreate(handleChange);
-    this._watcher.onDidDelete((uri) => {
-      store.removeFile(uri.fsPath);
-      callbacks.onFileRemoved?.(uri.fsPath);
-    });
+    for (const glob of testFilePatterns()) {
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(projectRoot, glob));
+      watcher.onDidChange(handleChange);
+      watcher.onDidCreate(handleChange);
+      watcher.onDidDelete((uri) => {
+        if (!store.getFile(uri.fsPath)) { return; }
+        store.removeFile(uri.fsPath);
+        callbacks.onFileRemoved?.(uri.fsPath);
+      });
+      this._watchers.push(watcher);
+    }
   }
 
   // ── Private: per-file AST parse + store populate ──────────────────────────

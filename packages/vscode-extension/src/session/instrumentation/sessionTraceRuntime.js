@@ -7,14 +7,13 @@
  * capture, no console patching, no per-step streaming.
  *
  * Record formats:
- *   {"type":"T","tf":"/abs/test.ts","tn":"Suite > name","fh":{"/abs/src.ts":[12,13]}}
- *   {"type":"H","tf":"/abs/test.ts","fh":{"/abs/src.ts":[1,2]}}
+ *   {"type":"T","tf":"/abs/test.ts","tn":"Suite name","fh":{"/abs/src.ts":[12,13]}}
+ *   {"type":"H","tf":"/abs/test.ts","hk":"hook","fh":{"/abs/src.ts":[1,2]}}
  */
 
 const fs = require('fs');
 
 const outputFile    = process.env.SESSION_TRACE_FILE;
-const covOutputFile = process.env.COVERAGE_OUTPUT_FILE;
 
 let _currentTestName = null;
 let _currentTestFile = null;
@@ -27,9 +26,11 @@ function flushRecord(type) {
   for (const [file, lines] of _hits) {
     fh[file] = Array.from(lines);
   }
+  // hk = hook kind: 'file' (module-level code run while the test file loads),
+  // 'hook' (beforeAll/afterAll between tests) or a hook name.
   const rec = type === 'T'
     ? { type: 'T', tf: _currentTestFile, tn: _currentTestName, fh }
-    : { type: 'H', tf: _currentTestFile, fh };
+    : { type: 'H', tf: _currentTestFile, hk: _currentContext, fh };
   try {
     fs.appendFileSync(outputFile, JSON.stringify(rec) + '\n', 'utf8');
   } catch (_e) {
@@ -77,17 +78,8 @@ if (!global.__strace) {
   };
 }
 
-// Flush coverage counters to COVERAGE_OUTPUT_FILE on process exit.
-// appendFileSync is intentional — multiple Jest workers write to the same file.
-process.on('exit', () => {
-  if (!covOutputFile || !globalThis.__cov) { return; }
-  try {
-    fs.appendFileSync(
-      covOutputFile,
-      JSON.stringify({ workerPid: process.pid, cov: globalThis.__cov }) + '\n',
-      'utf8',
-    );
-  } catch (_e) {
-    process.stderr.write(`[LTR:error] coverage: could not write ${covOutputFile} on exit — ${_e.message}\n`);
-  }
-});
+// Coverage counters are flushed by ltrCoverageSetup.js in afterAll. There is
+// deliberately no process.on('exit') handler here: this module is loaded once
+// per test file (fresh module registry), so each load added another listener
+// (MaxListenersExceededWarning, N duplicate flushes — BUG-19), and Jest's
+// --forceExit kills workers before 'exit' handlers run anyway.

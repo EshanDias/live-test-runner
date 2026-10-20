@@ -82,7 +82,8 @@ export class JestAdapter implements IFrameworkAdapter {
   }
 
   isTestFile(filePath: string): boolean {
-    return /\.(test|spec)\.[jt]sx?$/.test(filePath);
+    // Same extensions as discovery (.mjs / .cjs included — BUG-17).
+    return /\.(test|spec)\.(c|m)?[jt]sx?$/i.test(filePath);
   }
 
   // ── Run operations ─────────────────────────────────────────────────────────
@@ -421,6 +422,13 @@ export class JestAdapter implements IFrameworkAdapter {
       } else {
         store.setFileOutput(filePath, output);
       }
+    } else if (opts?.fullNames) {
+      // Pattern rerun of a few tests (smart rerun on save). Jest attributes
+      // console output to the file only, so this is the output of just those
+      // tests: it must not replace the file's full output (BUG-10). It belongs
+      // to a test only when exactly one ran; otherwise it cannot be attributed.
+      const ranTests = [...touchedNodeIds].filter((id) => store.getNode(id)?.type === 'test');
+      if (ranTests.length === 1) { store.setNodeOutput(ranTests[0], output); }
     } else {
       store.setFileOutput(filePath, output);
     }
