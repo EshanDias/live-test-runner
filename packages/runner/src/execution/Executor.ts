@@ -82,7 +82,7 @@ export class Executor {
   private logger: (msg: string) => void;
   private readonly tmpDir: string;
 
-  /** @param logger Sink for raw Jest output lines (the "Jest Output" channel). */
+  /** @param logger Sink for raw test-runner output lines (the "Test Output" channel). */
   constructor(logger: (msg: string) => void = () => {}, tmpDir?: string) {
     this.logger = logger;
     this.tmpDir = tmpDir ?? os.tmpdir();
@@ -93,13 +93,17 @@ export class Executor {
   }
 
   /**
-   * Run Jest with JSON capture.
+   * Run the test runner with JSON capture.
    *
-   * Appends `--outputFile=<tmpfile>` to the args automatically.
+   * Appends `outputFileArg(<tmpfile>)` to the args — the framework's own flag
+   * for writing its JSON result to a file (Jest: `--outputFile=<file>`).
    * Returns the raw JSON string (from the output file or stdout fallback)
    * plus the pass/fail status and any stderr.
    */
-  async runWithJsonCapture(command: ExecutorCommand): Promise<ExecutionResult & { jsonOutput: string }> {
+  async runWithJsonCapture(
+    command: ExecutorCommand,
+    outputFileArg: (file: string) => string[],
+  ): Promise<ExecutionResult & { jsonOutput: string }> {
     if (!fs.existsSync(command.cwd)) {
       log.error(`Project root does not exist: ${command.cwd}`);
       return {
@@ -112,10 +116,10 @@ export class Executor {
 
     const tmpFile = path.join(
       this.tmpDir,
-      `ltr-jest-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+      `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
 
-    const args = [...command.args, `--outputFile=${tmpFile}`];
+    const args = [...command.args, ...outputFileArg(tmpFile)];
     const inv = this.buildInvocation(command.binary, args);
 
     this.kill();
@@ -128,16 +132,16 @@ export class Executor {
       if (fs.existsSync(tmpFile)) {
         jsonOutput = fs.readFileSync(tmpFile, 'utf8');
         if (!jsonOutput.trim()) {
-          log.debug('Jest wrote an empty --outputFile — using stdout instead');
+          log.debug('The test runner wrote an empty output file — using stdout instead');
           jsonOutput = result.stdout;
         }
       } else {
-        log.debug('Jest did not write --outputFile — using stdout instead');
+        log.debug('The test runner did not write its output file — using stdout instead');
         jsonOutput = result.stdout;
       }
       if (!jsonOutput.trim()) {
         log.error(
-          `Jest produced no JSON result (cwd: ${command.cwd}). Last stderr lines:\n${tail(result.stderr)}`,
+          `The test runner produced no JSON result (cwd: ${command.cwd}). Last stderr lines:\n${tail(result.stderr)}`,
         );
       }
     } finally {
@@ -383,7 +387,7 @@ function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Argument as shown in the "> command" line of the Jest Output channel. */
+/** Argument as shown in the "> command" line of the Test Output channel. */
 function displayArg(arg: string): string {
   return /[\s"|&^<>]/.test(arg) ? JSON.stringify(arg) : arg;
 }

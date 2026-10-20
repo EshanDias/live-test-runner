@@ -322,13 +322,29 @@ export class VitestAdapter implements FrameworkAdapter {
   getExtraArgs(projectRoot: string): string[] {
     return []
   }
+
+  outputFileArg(file: string): string[] {
+    return [`--outputFile=${file}`]   // the runner's own "write JSON here" flag
+  }
+
+  parseResult(passed: boolean, raw: string, stderr: string): RunResult {
+    return parseVitestJson(passed, raw, stderr)
+  }
+
+  createRunner(options?: RunnerOptions): TestRunner {
+    return new VitestRunner(options?.command, options?.logger, options?.tmpDir)
+  }
 }
+
+// VitestRunner extends CommandRunner and only builds Vitest's args:
+//   detectAdapter(root), buildArgs({ kind: 'list' | 'full' | 'files' | 'testCase' | 'related' }),
+//   parseTestList(result, root), coverageFile(root)
 ```
 
 Register it in `FrameworkDetector.ts`:
 
 ```typescript
-const ADAPTER_PRIORITY: FrameworkAdapter[] = [
+return adapters ??= [
   new CRAAdapter(),
   new VitestAdapter(),  // add before JestAdapter
   new JestAdapter(),

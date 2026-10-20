@@ -188,6 +188,7 @@ Done (2026-10-20): `FrameworkId` + `FRAMEWORK_IDS` (`jest`, `cra`, `vite`, `unkn
 **1.2 Generic runner layer (2 d)** (C2)
 Sketch: `Executor` takes `outputFileArg(path)` from the adapter (Jest/Vitest both `--outputFile=`, but not assumed); `ResultParser` becomes `adapter.parseResult(raw)` (Jest parser stays, behind the interface); extract `CommandRunner` (run file / files / test case / related / full suite / kill / path normalisation) with abstract `buildArgs(kind, …)`; `JestRunner extends CommandRunner`. `FrameworkAdapter.createRunner(opts)`.
 Unit tests: arg-building snapshots for Jest must equal today's args exactly.
+Done (2026-10-20): `runner/src/CommandRunner.ts` (abstract: `detectAdapter`, `buildArgs(RunRequest)`, `parseTestList`, `coverageFile`); `JestRunner extends CommandRunner`. `FrameworkAdapter` + `outputFileArg` / `parseResult` / `createRunner(RunnerOptions)`; Jest + CRA share `jestOutputFileArg` / `parseJestResult` / `createJestRunner`; Vite stub throws. `Executor.runWithJsonCapture(cmd, outputFileArg)`. `parsing/runResults.ts` (`emptyRunResult`, `mergeRunResults`). Snapshot test `test/jestRunnerArgs.test.ts` was committed **before** the refactor and passes unchanged; `test/adapterRunContract.test.ts` covers the new adapter methods. Notes: (1) detection moved out of `CommandRunner` into `JestRunner.detectAdapter`, and `FrameworkDetector` builds its adapter list lazily — adapters → runners → detector → adapters is a cycle, and `class … extends CommandRunner` crashed while `CommandRunner` was half-loaded; (2) `SessionManager`'s bootstrap and the extension `JestAdapter` still construct `JestRunner` directly — switching them to `adapter.createRunner()` is task 1.4 (doing it now would make an unsupported Vite project fail at Start instead of at run).
 
 **1.3 `FrameworkRegistry` + detector (0.5 d)** (C7)
 Sketch: `ADAPTER_PRIORITY` becomes a registry (`register(adapter, priority)`); detector returns `{adapter, reason}`; unknown project → explicit `unknown` result with the existing Jest fallback kept (logged at WARN), so behaviour is unchanged.
@@ -364,15 +365,16 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 **Branches**
 - `release/3.0.0` — includes PR #34 (`feat/vitest-housekeeping`: 0.2 workflows + 0.3 harness), so CI on `pnpm/setup@v3` ran green on all three OSes.
-- `feat/vitest-decouple` (from `release/3.0.0` @ `e2ba4ae`, **local, not pushed**) — commit 1: 0.3 follow-ups; commit 2: task 1.1. Phase 1 continues on this branch; PR into `release/3.0.0` when phase 1 is done (or earlier, if the owner prefers smaller PRs).
+- `feat/vitest-decouple` (from `release/3.0.0` @ `e2ba4ae`, pushed to origin) — 0.3 follow-ups, task 1.1, CHANGELOG clean-up (entries that shipped in 2.0.4 moved out of Unreleased; `[3.0.0] - Unreleased` header), task 1.2. Phase 1 continues on this branch; one PR into `release/3.0.0` at the end of phase 1.
 
 **Done in this session**
 - 0.3 finished: `e2e/real-repos.js` records each repo's plain-runner per-file counts + extension match in `docs/temp_plans/vitest-baseline.json` (CRA gets a baseline too). Fixed `repo-cra`'s plain run for workspaces under macOS's `/var` symlink (it passed `/var/…` to `--runTestsByPath`; Jest only accepts `/private/var/…`). Baseline green: `jest-dom` 31 files, `vscode-jest` 49 files / 2012 tests, `sample-react-project` 14 files. The heavy `jest` monorepo has **not** been run yet (`node e2e/real-repos.js jest`).
-- 1.1 done — see the task notes below.
+- 1.1 and 1.2 done — see the task notes below.
+- Gate after 1.2: `pnpm build`, `pnpm lint`, `pnpm test` (47 runner incl. 4 command-line snapshots + 17 extension), `node e2e/run.js --all` (11 pass, 2 skipped), `node e2e/real-repos.js` (3/3 PASS).
 - Gate after 1.1: `pnpm build`, `pnpm lint`, `pnpm test` (35 runner + 17 extension), `node e2e/run.js --all` (11 pass, 2 repo scenarios skipped — covered by `real-repos.js`), `node e2e/real-repos.js` (3/3 PASS, originals untouched).
 
 **Next**
-1. Task 1.2 (generic runner layer) on `feat/vitest-decouple`.
+1. Task 1.3 (`FrameworkRegistry` + detector) on `feat/vitest-decouple` — replaces the lazy `adapterPriority()` list from 1.2.
 2. Optional: one run of `node e2e/real-repos.js jest` for the monorepo baseline.
 
 ## Progress tracker
@@ -381,7 +383,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 0.2 Workflows → pnpm/setup@v3 (CI green on PR #34)
 - [x] 0.3 Baseline + real-repo harness (`e2e/real-repos.js`; baseline in `vitest-baseline.json`; 3 light Jest repos green, `jest` monorepo still to run)
 - [x] 1.1 Neutral naming & open types
-- [ ] 1.2 Generic runner layer
+- [x] 1.2 Generic runner layer
 - [ ] 1.3 FrameworkRegistry + detector
 - [ ] 1.4 IBatchRunner + services bundle
 - [ ] 1.5 Split instrumentation

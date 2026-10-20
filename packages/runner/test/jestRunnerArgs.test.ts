@@ -13,6 +13,7 @@ import { _resetProjectRoots } from '../src/resolution/RunnerPaths';
 
 let root: string;
 let calls: ExecutorCommand[];
+let outputFileArgs: ((file: string) => string[])[];
 
 /** A command with the machine-specific parts replaced, so snapshots are stable. */
 function stable(cmd: ExecutorCommand) {
@@ -32,8 +33,10 @@ beforeEach(() => {
   _resetProjectRoots();
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-args-')));
   calls = [];
-  jest.spyOn(Executor.prototype, 'runWithJsonCapture').mockImplementation(async (cmd) => {
+  outputFileArgs = [];
+  jest.spyOn(Executor.prototype, 'runWithJsonCapture').mockImplementation(async (cmd, outputFileArg) => {
     calls.push(cmd);
+    outputFileArgs.push(outputFileArg);
     return { passed: true, stdout: '', stderr: '', jsonOutput: '{"testResults":[]}' };
   });
   jest.spyOn(Executor.prototype, 'run').mockImplementation(async (cmd) => {
@@ -62,6 +65,8 @@ describe('JestRunner command lines (plain Jest)', () => {
     await runner.runTestCaseJson(path.join(root, 'src', 'a.test.js'), 'Suite', true);
     await runner.runRelatedTestsJson(path.join(root, 'src', 'util.js'));
     expect(calls.map(stable)).toMatchSnapshot();
+    // Appended by the Executor after these args — the adapter names the flag.
+    expect(outputFileArgs.map((f) => f('/tmp/out.json'))).toEqual(Array(7).fill(['--outputFile=/tmp/out.json']));
   });
 
   it('puts the user command first and its extra words before the Jest args', async () => {

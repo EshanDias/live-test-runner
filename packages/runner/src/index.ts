@@ -3,7 +3,7 @@
 export { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
 
 // Core interface — the extension layer depends only on this
-export { TestRunner } from './TestRunner';
+export { TestRunner, RunnerOptions } from './TestRunner';
 
 // Shared result types (canonical names)
 export {
@@ -26,7 +26,8 @@ export {
   JestConsoleEntry,
 } from './types';
 
-// Concrete runner
+// Runners: the generic command-line runner and the Jest one built on it
+export { CommandRunner, RunRequest } from './CommandRunner';
 export { JestRunner, toJestPathArg } from './JestRunner';
 
 // Framework layer — exposed so callers can detect framework without running
@@ -53,4 +54,5 @@ export {
   ScopedLogger,
 } from './utils/logger';
 export { ResultParser } from './parsing/ResultParser';
+export { emptyRunResult, mergeRunResults } from './parsing/runResults';
 export { mergeFileResults, mergeByFile } from './parsing/mergeFileResults';

@@ -32,13 +32,16 @@ The extension depends only on the `TestRunner` interface — never on `JestRunne
 ## Architecture
 
 ```
-JestRunner (orchestrator)
-  ├── FrameworkDetector     reads package.json → picks adapter from ADAPTER_PRIORITY
-  ├── FrameworkAdapter      resolves binary + config for this project type
-  ├── BinaryResolver        resolves Jest's JS entry point (jest/bin/jest.js) from the project
-  ├── Executor              runs it with node (no shell), reads --outputFile on exit
-  └── ResultParser          normalises JSON → JestJsonResult
+CommandRunner (generic orchestrator)    detection hook, binary/config, chunking, kill, coverage
+  └── JestRunner                        Jest flags only (buildArgs per run kind, --listTests parsing)
+        ├── FrameworkDetector           reads package.json → picks adapter (CRA before Jest)
+        ├── FrameworkAdapter            binary + config + result-file flag + JSON parser + createRunner
+        ├── BinaryResolver              resolves Jest's JS entry point (jest/bin/jest.js) from the project
+        ├── Executor                    runs it with node (no shell), reads the result file on exit
+        └── ResultParser                Jest JSON → RunResult (behind adapter.parseResult)
 ```
+
+Each command is `[user-command words] [--config …] [adapter extra args] [framework args] [adapter.outputFileArg(tmp)]`; only the framework args come from the runner subclass (`buildArgs({ kind: 'list' | 'full' | 'files' | 'testCase' | 'related' })`). Snapshot tests (`test/jestRunnerArgs.test.ts`) pin the Jest command lines.
 
 ### Framework Adapters
 
@@ -47,9 +50,12 @@ Each adapter implements `FrameworkAdapter`. Its `framework` is a `FrameworkId` �
 | Method | Purpose |
 |--------|---------|
 | `detect(projectRoot)` | Return true if this adapter handles the project |
-| `resolveJestBinary(projectRoot)` | Return absolute path to the Jest executable |
-| `resolveJestConfig(projectRoot)` | Return path to a resolved config file, or undefined |
+| `resolveBinary(projectRoot)` | Return absolute path to the test runner's entry point / executable |
+| `resolveConfig(projectRoot)` | Return path to a resolved config file, or undefined |
 | `getExtraArgs(projectRoot)` | Any extra CLI flags needed |
+| `outputFileArg(file)` | Flag(s) that make the runner write its JSON result to `file` (Jest: `--outputFile=<file>`) |
+| `parseResult(passed, raw, stderr)` | The runner's JSON result → `RunResult` |
+| `createRunner(options)` | The `TestRunner` for this framework (Jest, CRA → `JestRunner`) |
 
 Current adapters:
 
@@ -150,7 +156,8 @@ The extracted config is cached in memory. It is invalidated if `package.json` ch
 ## Adding a new framework
 
 1. Create `src/framework/adapters/YourAdapter.ts` implementing `FrameworkAdapter`
-2. Add an instance to `ADAPTER_PRIORITY` in `FrameworkDetector.ts`
-3. Export from `src/index.ts`
+2. Create `src/YourRunner.ts` extending `CommandRunner` (`detectAdapter`, `buildArgs`, `parseTestList`, `coverageFile`) and return it from the adapter's `createRunner`
+3. Add an instance to `adapterPriority()` in `FrameworkDetector.ts`
+4. Export from `src/index.ts`
 
 No other files need to change.

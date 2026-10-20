@@ -36,12 +36,13 @@ Framework-agnostic execution engine. VS Code layer depends only on the `TestRunn
 ```
 src/
 ├── types.ts                          Framework enum, Status enum, result types
-├── TestRunner.ts                     Interface the extension uses
-├── JestRunner.ts                     Thin orchestrator — wires the layers
+├── TestRunner.ts                     Interface the extension uses (+ RunnerOptions)
+├── CommandRunner.ts                  Generic CLI runner: binary/config/extra args, chunking, kill, coverage; abstract buildArgs(RunRequest)
+├── JestRunner.ts                     extends CommandRunner — Jest flags only
 ├── framework/
-│   ├── FrameworkDetector.ts          Reads package.json → picks adapter from ADAPTER_PRIORITY
+│   ├── FrameworkDetector.ts          Reads package.json → picks adapter from adapterPriority() (built lazily)
 │   └── adapters/
-│       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs
+│       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs, outputFileArg, parseResult, createRunner
 │       ├── JestAdapter.ts            Plain Jest + Next.js + Jest
 │       ├── CRAAdapter.ts             Create React App
 │       └── ViteAdapter.ts            Vitest stub — only when the project has no Jest dep/config
@@ -49,9 +50,10 @@ src/
 │   ├── BinaryResolver.ts             Finds jest binary in project node_modules
 │   └── RunnerPaths.ts                Symlinked roots: editor path ↔ the test runner's realpath
 ├── execution/
-│   └── Executor.ts                   Spawns Jest, reads --outputFile JSON on exit
+│   └── Executor.ts                   Spawns the runner, reads its result file (flag from adapter.outputFileArg) on exit
 └── parsing/
-    ├── ResultParser.ts               Parses runner JSON output → RunResult
+    ├── ResultParser.ts               Parses Jest JSON output → RunResult (adapter.parseResult for Jest/CRA)
+    ├── runResults.ts                 emptyRunResult / mergeRunResults — any framework
     └── mergeFileResults.ts           Merges reports of one file run by several Jest projects
 ```
 

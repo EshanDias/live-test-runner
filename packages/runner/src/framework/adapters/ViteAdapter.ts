@@ -1,4 +1,5 @@
-import { FRAMEWORK_IDS, FrameworkId } from '../../types';
+import { FRAMEWORK_IDS, FrameworkId, RunResult } from '../../types';
+import { RunnerOptions, TestRunner } from '../../TestRunner';
 import { FrameworkAdapter } from './FrameworkAdapter';
 import { JestAdapter, readPackageJson } from './JestAdapter';
 
@@ -34,6 +35,18 @@ export class ViteAdapter implements FrameworkAdapter {
   }
 
   getExtraArgs(_projectRoot: string): string[] {
+    throw new UnsupportedFrameworkError('vite');
+  }
+
+  outputFileArg(_file: string): string[] {
+    throw new UnsupportedFrameworkError('vite');
+  }
+
+  parseResult(_passed: boolean, _raw: string, _stderr: string): RunResult {
+    throw new UnsupportedFrameworkError('vite');
+  }
+
+  createRunner(_options?: RunnerOptions): TestRunner {
     throw new UnsupportedFrameworkError('vite');
   }
 }

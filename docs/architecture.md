@@ -105,7 +105,9 @@ Current adapters:
 | `CRAAdapter` | Create React App | Runs `--showConfig` once per session to extract the hidden config; cached in memory |
 | `ViteAdapter` | Vitest | Stub — not yet implemented |
 
-`FrameworkDetector` tries adapters in `ADAPTER_PRIORITY` order and returns the first match. `ViteAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest.
+Adapters also own how a run is read: `outputFileArg(file)` (the result-file flag the `Executor` appends), `parseResult(...)` (raw JSON → `RunResult`; Jest and CRA use `ResultParser`) and `createRunner(...)`. The runner layer is `CommandRunner` (generic: binary/config/extra-arg assembly, chunking, kill, coverage) with one subclass per framework that only builds that framework's args per run kind (`JestRunner`).
+
+`FrameworkDetector` tries adapters in `adapterPriority()` order and returns the first match. `ViteAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest.
 
 ### Jest invocation
 

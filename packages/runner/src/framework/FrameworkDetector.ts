@@ -15,14 +15,22 @@ const log = createLogger('FrameworkDetector');
  *
  * Adding a new framework:
  *  1. Implement FrameworkAdapter
- *  2. Add an instance to ADAPTER_PRIORITY below (at the correct priority position)
+ *  2. Add an instance to adapterPriority below (at the correct priority position)
  */
 
-const ADAPTER_PRIORITY: FrameworkAdapter[] = [
-  new CRAAdapter(),   // Must precede JestAdapter — CRA projects also have jest in deps
-  new ViteAdapter(),  // Vitest projects
-  new JestAdapter(),  // Plain Jest (and Next.js + Jest, etc.)
-];
+let adapters: FrameworkAdapter[] | undefined;
+
+/**
+ * Built on first use, not at module load: adapters import their runners,
+ * which import this detector — an eager list would meet a half-loaded module.
+ */
+function adapterPriority(): FrameworkAdapter[] {
+  return adapters ??= [
+    new CRAAdapter(),   // Must precede JestAdapter — CRA projects also have jest in deps
+    new ViteAdapter(),  // Vitest projects
+    new JestAdapter(),  // Plain Jest (and Next.js + Jest, etc.)
+  ];
+}
 
 export class FrameworkDetector {
   /**
@@ -31,7 +39,7 @@ export class FrameworkDetector {
    * for any project that might have jest installed.
    */
   detect(projectRoot: string): FrameworkAdapter {
-    for (const adapter of ADAPTER_PRIORITY) {
+    for (const adapter of adapterPriority()) {
       try {
         if (adapter.detect(projectRoot)) {
           // Runs on every JestRunner creation (i.e. every run) — keep it at trace.

@@ -176,12 +176,13 @@ Solution: fully custom webview UI. Gives cross-platform control and enables Wall
 Layered architecture:
 
 ```
-JestRunner (orchestrator)
-  ├── FrameworkDetector     inspects package.json → picks adapter
-  ├── FrameworkAdapter      binary + config resolution
-  ├── BinaryResolver        finds jest in node_modules
-  ├── Executor              spawns Jest, reads --outputFile JSON on exit
-  └── ResultParser          normalises JSON → RunResult
+CommandRunner (generic orchestrator: binary/config/extra args, chunking, kill, coverage)
+  └── JestRunner            Jest flags only — buildArgs(RunRequest)
+        ├── FrameworkDetector     inspects package.json → picks adapter
+        ├── FrameworkAdapter      binary + config resolution, result-file flag, JSON parser
+        ├── BinaryResolver        finds jest in node_modules
+        ├── Executor              spawns the runner, reads its result file on exit
+        └── ResultParser          normalises Jest JSON → RunResult
 ```
 
 Each `FrameworkAdapter` implements:
@@ -189,6 +190,8 @@ Each `FrameworkAdapter` implements:
 - `resolveBinary(projectRoot)` — absolute path to test binary
 - `resolveConfig(projectRoot)` — path to config or undefined
 - `getExtraArgs(projectRoot)` — extra CLI flags
+- `outputFileArg(file)` / `parseResult(passed, raw, stderr)` — where the JSON result goes and how it is read
+- `createRunner(options)` — the framework's `TestRunner`
 
 Current adapters: Jest, Create React App.
 
