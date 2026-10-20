@@ -173,6 +173,11 @@ function isoNow() { return new Date().toISOString(); }
  * Map<path, { passed, failed, skipped }> (see jestJsonCounts).
  */
 function plainJestCounts(workspace) {
+  return jestJsonCounts(plainJestJson(workspace), workspace);
+}
+
+/** The raw `jest --json` result of a plain run of the project's own Jest (see plainJestCounts). */
+function plainJestJson(workspace) {
   const { spawnSync } = require('child_process');
   const fs = require('fs');
   const os = require('os');
@@ -196,7 +201,7 @@ function plainJestCounts(workspace) {
   }
   const json = JSON.parse(fs.readFileSync(out, 'utf8'));
   fs.unlinkSync(out);
-  return jestJsonCounts(json, workspace);
+  return json;
 }
 
 /**
@@ -289,5 +294,5 @@ function checkMatchesPlainJest(api, t, workspace, label = 'results match plain J
 module.exports = {
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
-  statusCounts, isoNow, plainJestCounts, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,
+  statusCounts, isoNow, plainJestCounts, plainJestJson, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,
 };
