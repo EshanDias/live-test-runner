@@ -70,7 +70,10 @@ function plainJest(workspace, files) {
 
 module.exports = {
   workspace: 'env:LTR_E2E_CRA_REPO',
-  timeoutMs: FULL ? 90 * 60_000 : 25 * 60_000,
+  // A full run of a big CRA app takes hours: only cpus/4 instrumented Jest
+  // processes run at once, by design (copy-requisition: ~32 min in plain Jest
+  // with 11 workers).
+  timeoutMs: FULL ? 180 * 60_000 : 25 * 60_000,
 
   async run({ api, t, vscode, workspace }) {
     await h.waitForDiscovery(api);
