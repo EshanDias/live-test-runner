@@ -359,11 +359,30 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - **Q5** — HTML guide (`docs/live-test-runner-guide.html`): my suggestion is to publish it with GitHub Pages as the project’s docs site, link it from the marketplace README, and add a “Open Guide” command that opens it in a webview — it is clearer than a long README. Want that as a task?
 
+## Handoff — where work stopped (2025-10-20)
+
+**Branches (all local, nothing pushed):**
+- `release/3.0.0` (from `origin/main` @ 2.0.4) — 1 commit: version bump to 3.0.0 + this plan.
+- `feat/vitest-housekeeping` (from `release/3.0.0`) — commits: `pnpm/setup@v3` workflows; **uncommitted at hand-off time:** `e2e/real-repos.js`, `plainJestJson` in `e2e/lib/harness.js`, this doc update (committed right after this note was written — check `git log`).
+- Per CLAUDE.md, never push/merge `release/*` from a local checkout: the owner must push `release/3.0.0` and open the PR `feat/vitest-housekeeping → release/3.0.0`.
+
+**Done**
+- 0.1 release branch + version.
+- 0.2 `.github/workflows/pr-checks.yml` (2 jobs) and `release.yml` now use `pnpm/setup@v3` (`runtime: node@24`, `cache: true`; release uses `install: false`). YAML validated. Verified locally that `pnpm runtime` installs **only `node`** (no npm/npx): e2e `npm install` and release `npx vsce/ovsx` rely on the runner image's npm — **must be confirmed on the first CI run**; fallback = keep `actions/setup-node` in those two jobs.
+- 0.3 `node e2e/real-repos.js [repo… | --all | --fresh]` clones each real repo (APFS `cp -c`), computes a plain-Jest baseline, runs the existing `repo-tsjest` / `repo-cra` scenario on the clone, and fails if the original repo's `git status`/HEAD/newest-mtime changed. Vitest repos (`unplugin`, `slidev`, `vueuse`) are registered and auto-run once a `repo-vitest` scenario exists (env `LTR_E2E_VITEST_REPO`).
+- Regression status on this branch: `pnpm build`, `pnpm lint`, `pnpm test` (34 runner + 17 extension tests) pass; `node e2e/run.js basic-full-run` passes; `real-repos.js jest-dom` PASS (31 files match plain Jest; originals untouched).
+
+**Not done / next**
+1. Run `node e2e/real-repos.js vscode-jest sample-react-project` (and `jest` monorepo, heavy) once to record that the baseline is green; run `node e2e/run.js --all`.
+2. Confirm the workflows on a real PR (3 OSes).
+3. Add CHANGELOG entry for the CI change (root CHANGELOG only; not user-facing).
+4. Then **Phase 1 (Decouple from Jest)** — start at task 1.1 on a new branch `feat/vitest-decouple` cut from `release/3.0.0` (after housekeeping is merged).
+
 ## Progress tracker
 
-- [ ] 0.1 Release branch + version
-- [ ] 0.2 Workflows → pnpm/setup@v3
-- [ ] 0.3 Baseline + real-repo harness
+- [x] 0.1 Release branch + version (done: `release/3.0.0` cut from main@2.0.4, version 3.0.0 in root + extension)
+- [x] 0.2 Workflows → pnpm/setup@v3 (done in YAML; **CI not yet run** — see Handoff)
+- [~] 0.3 Baseline + real-repo harness (harness `e2e/real-repos.js` done; verified on `jest-dom` only — see Handoff)
 - [ ] 1.1 Neutral naming & open types
 - [ ] 1.2 Generic runner layer
 - [ ] 1.3 FrameworkRegistry + detector
