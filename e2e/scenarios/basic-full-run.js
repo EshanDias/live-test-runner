@@ -36,6 +36,13 @@ module.exports = {
     t.eq('strings.test.js results', h.statusCounts(api, 'src/strings.test.js'), { passed: 4 });
     // Nested optional chains used to crash instrumentation of invoice.js.
     t.eq('invoice.test.js results (nested ?. instrumented)', h.statusCounts(api, 'src/invoice.test.js'), { passed: 2 });
+    // Real-project lessons (see the comments in each fixture file).
+    t.eq('BUG-25/26 it.each $var table + duplicate names: all 4 results kept', h.statusCounts(api, 'src/table.test.js'), { passed: 4 });
+    t.eq('BUG-07 --resetMocks from the test script is honoured', h.statusCounts(api, 'src/mocks.test.js'), { passed: 2 });
+    t.eq('BUG-27 a test that mocks fs passes', h.statusCounts(api, 'src/fsmock.test.js'), { passed: 1 });
+    const fsErrors = logs.filter((l) => /could not write|is not a function/.test(l));
+    t.check('BUG-27 coverage / trace writing unaffected by jest.mock(\'fs\')', fsErrors.length === 0, fsErrors.join('\n'));
+    h.checkMatchesPlainJest(api, t, workspace);
 
     // BUG-24 #1: skipped / todo are "skipped", not "pending" (= never ran).
     t.eq('BUG-24 test.skip is shown as skipped', h.nodeByName(api, 'src/math.test.js', 'Math utils skipped test').status, 'skipped');
@@ -74,7 +81,8 @@ module.exports = {
     t.check('BUG-04 trace maps src/math.js → math.test.js', affected.some((f) => f.endsWith('math.test.js')),
       `sourceToTests for math.js: ${JSON.stringify(affected)}\n${api.traceStore.dump().slice(0, 1500)}`);
     const lineTests = api.traceStore.getTestsForLine(mathSrc.replace(/^[A-Z]:/, (m) => m.toLowerCase()), 2);
-    t.check('BUG-04 covering tests known for math.js line 2 (add)', lineTests.length >= 2,
+    // With project beforeEach/afterEach hooks in setupTests.js (BUG-28).
+    t.check('BUG-04/28 covering tests known for math.js line 2 (add)', lineTests.length >= 2,
       JSON.stringify(lineTests));
 
     // BUG-09: coverage measured for files the tests used.

@@ -129,7 +129,8 @@ function jestProcesses(marker) {
       const m = norm(marker);
       return out.split(/\r?\n/).filter((l) => norm(l).includes(m) && isJest(l));
     }
-    const out = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    // -A / -o args= work with both BSD (macOS) and procps (Linux) ps.
+    const out = execFileSync('ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
     return out.split('\n').filter((l) => l.includes(marker) && isJest(l));
   } catch {
     return [];
@@ -166,8 +167,70 @@ function statusCounts(api, fileSuffix) {
 
 function isoNow() { return new Date().toISOString(); }
 
+/**
+ * Runs the project's tests with plain Jest — the way `npm test` would, honouring
+ * the config flags of its test script — and returns per-file counts:
+ * Map<lower-cased path, { passed, failed, skipped }>.
+ */
+function plainJestCounts(workspace) {
+  const { spawnSync } = require('child_process');
+  const fs = require('fs');
+  const os = require('os');
+  // The runner's own parser for the test script (built by `pnpm build`).
+  const { testScriptJestArgs } = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'framework', 'jestConfig.js'));
+  const scriptArgs = testScriptJestArgs(workspace);
+  const pkg = JSON.parse(fs.readFileSync(path.join(workspace, 'package.json'), 'utf8'));
+  const cra = /react-scripts/.test(pkg.scripts?.test || '');
+  const resolveFrom = (id) => require.resolve(id, { paths: [workspace] });
+  const entry = cra
+    ? path.join(path.dirname(resolveFrom('react-scripts/package.json')), 'bin', 'react-scripts.js')
+    : path.join(path.dirname(resolveFrom('jest/package.json')), 'bin', 'jest.js');
+  const out = path.join(os.tmpdir(), `ltr-e2e-plain-${process.pid}-${Date.now()}.json`);
+  const env = { ...process.env, CI: 'true' };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const node = process.platform === 'win32' ? 'node.exe' : 'node';
+  const r = spawnSync(node, [entry, ...(cra ? ['test'] : []), ...scriptArgs, '--watchAll=false', '--json', `--outputFile=${out}`],
+    { cwd: workspace, env, encoding: 'utf8', timeout: 20 * 60_000 });
+  if (!fs.existsSync(out)) {
+    throw new Error(`plain Jest wrote no results (exit ${r.status}): ${(r.stderr || '').slice(-1500)}`);
+  }
+  const json = JSON.parse(fs.readFileSync(out, 'utf8'));
+  fs.unlinkSync(out);
+  const counts = new Map();
+  for (const tr of json.testResults) {
+    const c = { passed: 0, failed: 0, skipped: 0 };
+    for (const a of tr.assertionResults) {
+      if (a.status === 'passed') { c.passed++; } else if (a.status === 'failed') { c.failed++; } else { c.skipped++; }
+    }
+    counts.set(tr.name.toLowerCase(), c);
+  }
+  return counts;
+}
+
+/**
+ * The strongest end-to-end check: every file's pass / fail / skip counts in
+ * the extension equal what plain Jest reports for the same project.
+ */
+function checkMatchesPlainJest(api, t, workspace, label = 'results match plain Jest') {
+  const want = plainJestCounts(workspace);
+  const diffs = [];
+  for (const [file, c] of want) {
+    const key = api.store.findFileKey(file);
+    if (!key) { diffs.push(`${path.basename(file)}: not in the tree`); continue; }
+    const got = { passed: 0, failed: 0, skipped: 0, other: 0 };
+    for (const n of api.store.getFileNodes(key)) {
+      if (n.type !== 'test') { continue; }
+      if (n.status in got) { got[n.status]++; } else { got.other++; }
+    }
+    if (got.passed !== c.passed || got.failed !== c.failed || got.skipped !== c.skipped || got.other) {
+      diffs.push(`${path.basename(file)}: jest ${JSON.stringify(c)} vs extension ${JSON.stringify(got)}`);
+    }
+  }
+  t.check(`${label} (${want.size} files)`, want.size > 0 && diffs.length === 0, diffs.slice(0, 20).join('\n') || 'no files');
+}
+
 module.exports = {
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
-  statusCounts, isoNow,
+  statusCounts, isoNow, plainJestCounts, checkMatchesPlainJest,
 };

@@ -52,6 +52,59 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
 
+  # Real VS Code + real Jest against the fixture projects in e2e/fixtures
+  # (plain Jest, jest.config.ts / ts-jest, async .mjs config, Create React App).
+  # Every fixture's results are also compared with a plain Jest run.
+  e2e:
+    name: E2E (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      LTR_E2E_VSCODE: stable
+      LTR_E2E_RUNS_DIR: ${{ runner.temp }}/e2e
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm install -g pnpm@9
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'pnpm'
+      - run: pnpm install
+      - run: pnpm run build
+      # npm cache for the fixtures' own installs (react-scripts is large)
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: e2e-npm-${{ runner.os }}-${{ hashFiles('e2e/fixtures/*/package.json') }}
+      - uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: e2e-vscode-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: e2e-vscode-${{ runner.os }}-
+      - name: Run e2e (Linux, virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node e2e/run.js --all
+      - name: Run e2e
+        if: runner.os != 'Linux'
+        run: node e2e/run.js --all
+      - name: Upload e2e logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/e2e/*/report.json
+            ${{ runner.temp }}/e2e/*/extension.log
+            ${{ runner.temp }}/e2e/*/jest-output.log
+          if-no-files-found: ignore
+
   version-bump:
     name: Version bump (PRs to main)
     if: github.base_ref == 'main'

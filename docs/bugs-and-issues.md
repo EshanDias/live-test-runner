@@ -189,5 +189,5 @@ VS Code saving its own `settings.json` started `jest --findRelatedTests`. Only J
 
 ## Still to do
 
-- 🍎 Run the e2e suite on macOS: `node e2e/run.js --all` (set `VSCODE_EXE` if VS Code is not in `/Applications`). Process-group kill, PATH `node` lookup and the Electron fallback are the macOS-specific paths.
+- 🍎 The PR checks run the e2e suite on macOS and Linux too (job `E2E`); the 🍎 marks can be cleared once it is green there. Locally: `node e2e/run.js --all`. Process-group kill, PATH `node` lookup and the Electron fallback are the macOS-specific paths.
 - `test.todo` shares the skipped icon; a distinct todo icon was not added.

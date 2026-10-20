@@ -32,8 +32,22 @@ const EXT_DIR = path.join(ROOT, 'packages', 'vscode-extension');
 const SCENARIO_DIR = path.join(__dirname, 'scenarios');
 const WORK_ROOT = path.join(os.tmpdir(), 'ltr e2e'); // the space is deliberate
 
-function vscodeExe() {
+/**
+ * VS Code to launch: VSCODE_EXE, a downloaded build (LTR_E2E_VSCODE=download
+ * or `stable` / `insiders` / a version — as CI does), or the local install.
+ */
+async function resolveVscode() {
+  const want = process.env.LTR_E2E_VSCODE;
   if (process.env.VSCODE_EXE) { return process.env.VSCODE_EXE; }
+  const local = localVscodeExe();
+  if (!want && fs.existsSync(local)) { return local; }
+  const { downloadAndUnzipVSCode } = require('@vscode/test-electron');
+  const version = !want || want === 'download' ? 'stable' : want;
+  console.log(`[e2e] using downloaded VS Code (${version})`);
+  return downloadAndUnzipVSCode({ version, cachePath: path.join(ROOT, '.vscode-test') });
+}
+
+function localVscodeExe() {
   if (process.platform === 'win32') {
     return path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Microsoft VS Code', 'Code.exe');
   }
@@ -94,7 +108,15 @@ function childEnv(extra) {
   return { ...env, ...extra };
 }
 
-function runScenario(name) {
+/**
+ * Per-scenario folders (user data, logs, report). Short on macOS / Linux:
+ * VS Code puts an IPC socket in the user-data dir, and socket paths are
+ * limited to ~103 characters there.
+ */
+const RUNS_ROOT = process.env.LTR_E2E_RUNS_DIR
+  || (process.platform === 'win32' ? path.join(os.tmpdir(), 'ltr-e2e-runs') : '/tmp/ltr-e2e');
+
+function runScenario(name, exe) {
   const file = path.join(SCENARIO_DIR, `${name}.js`);
   if (!fs.existsSync(file)) { throw new Error(`No scenario ${file}`); }
   const scenario = require(file);
@@ -104,10 +126,10 @@ function runScenario(name) {
     return Promise.resolve({ name, skipped: true });
   }
 
-  const runDir = path.join(os.tmpdir(), 'ltr-e2e-runs', name);
+  const runDir = path.join(RUNS_ROOT, name);
   fs.rmSync(runDir, { recursive: true, force: true });
-  const userData = path.join(runDir, 'user-data');
-  const extensions = path.join(runDir, 'extensions');
+  const userData = path.join(runDir, 'ud');
+  const extensions = path.join(runDir, 'ext');
   fs.mkdirSync(path.join(userData, 'User'), { recursive: true });
   fs.mkdirSync(extensions, { recursive: true });
   fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify({
@@ -132,6 +154,9 @@ function runScenario(name) {
     '--skip-welcome',
     '--skip-release-notes',
     '--new-window',
+    '--disable-updates',
+    // Linux CI containers: no setuid sandbox / GPU.
+    ...(process.platform === 'linux' ? ['--no-sandbox', '--disable-gpu-sandbox', '--disable-gpu'] : []),
     // LTR_E2E_DEBUG=1: debug-level logs (also inside Jest via LTR_LOG_LEVEL).
     ...(process.env.LTR_E2E_DEBUG ? ['--log', 'debug'] : []),
   ];
@@ -141,7 +166,7 @@ function runScenario(name) {
   console.log(`[e2e] RUN  ${name} — workspace: ${workspace}`);
 
   return new Promise((resolve) => {
-    const child = spawn(vscodeExe(), args, {
+    const child = spawn(exe, args, {
       env: childEnv({
         LTR_E2E: '1',
         LTR_E2E_SCENARIO: file,
@@ -192,7 +217,8 @@ function runScenario(name) {
 async function main() {
   const argv = process.argv.slice(2);
   const names = argv.includes('--all')
-    ? fs.readdirSync(SCENARIO_DIR).filter((f) => f.endsWith('.js')).map((f) => f.slice(0, -3)).sort()
+    // diag-* scenarios are investigation tools, run them by name.
+    ? fs.readdirSync(SCENARIO_DIR).filter((f) => f.endsWith('.js') && !f.startsWith('diag-')).map((f) => f.slice(0, -3)).sort()
     : argv;
   if (names.length === 0) {
     console.log('Usage: node e2e/run.js <scenario…> | --all');
@@ -202,8 +228,9 @@ async function main() {
     console.log('Build the extension first: pnpm build');
     process.exit(2);
   }
+  const exe = await resolveVscode();
   const results = [];
-  for (const n of names) { results.push(await runScenario(n)); }
+  for (const n of names) { results.push(await runScenario(n, exe)); }
   const failed = results.filter((r) => !r.skipped && !r.passed);
   console.log(`[e2e] ${results.length - failed.length}/${results.length} scenario(s) passed or skipped` +
     (failed.length ? ` — failed: ${failed.map((r) => r.name).join(', ')}` : ''));

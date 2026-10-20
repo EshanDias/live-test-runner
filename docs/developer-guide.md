@@ -514,7 +514,18 @@ node e2e/run.js basic-stop basic-hang        # selected scenarios
 LTR_E2E_DEBUG=1 node e2e/run.js basic-hang   # debug-level logs (also inside Jest)
 ```
 
-- **Launcher** (`e2e/run.js`) starts VS Code (`VSCODE_EXE`, default: the usual install path) with `--extensionDevelopmentPath`, an isolated user-data dir and `--extensionTestsPath=e2e/lib/hostEntry.js`, and prints the report. Full logs land in `%TEMP%/ltr-e2e-runs/<scenario>/` (`extension.log`, `jest-output.log`, `report.json`).
+- **Launcher** (`e2e/run.js`) starts VS Code with `--extensionDevelopmentPath`, an isolated user-data dir and `--extensionTestsPath=e2e/lib/hostEntry.js`, and prints the report. VS Code: `VSCODE_EXE`, else the local install, else (or with `LTR_E2E_VSCODE=download|stable|<version>`) a build downloaded into `.vscode-test/` by `@vscode/test-electron`. Full logs land in `LTR_E2E_RUNS_DIR` (default `%TEMP%\ltr-e2e-runs` on Windows, `/tmp/ltr-e2e` elsewhere — short, because VS Code's IPC socket path must stay under ~103 characters): `<scenario>/extension.log`, `jest-output.log`, `report.json`. `diag-*` scenarios are investigation tools and are not part of `--all`.
+- **CI:** the `E2E` job in `.github/workflows/pr-checks.yml` runs `--all` on Windows, Linux (under `xvfb-run`) and macOS with a downloaded stable VS Code, and uploads the logs when it fails.
+- **What the fixtures cover** — each one encodes problems found on real projects:
+
+  | Fixture | Covers |
+  |---|---|
+  | `basic` | plain Jest 29 in a path with spaces; `verbose: true`; names with `^ \| &`; skip / todo; `.each` (`%s` and `$var` tables); duplicate test names; `jest.mock('fs')`; a `setupTests.js` with hooks; `--resetMocks` in the test script; nested `?.`; files Jest's config excludes (`e2e/`, `.mjs`) |
+  | `ts-config` | `jest.config.ts` + ts-jest + a path alias only that config defines |
+  | `esm-fn-config` | `jest.config.mjs` exporting an async function |
+  | `cra` | Create React App: react-scripts' own Jest 27, jsdom, `setupTests.js` with hooks, `react-scripts test --resetMocks` |
+
+  Every fixture's full run is compared file by file with plain Jest (`checkMatchesPlainJest`). When a real project shows a new problem, reproduce it in a fixture (or a new one) so CI keeps catching it.
 - **Fixtures** (`e2e/fixtures/<name>`) are copied to `%TEMP%/ltr e2e/<name> project` — a path with spaces on purpose — and `npm install`ed once (again when `package.json` changes).
 - **Scenarios** (`e2e/scenarios/*.js`) export `{ workspace, timeoutMs, settings?, run({ api, t, vscode, workspace }) }`. `workspace` is `fixture:<name>`, `env:<VAR>` or a path. With `LTR_E2E=1` the extension's `activate()` returns its internals (`store`, `session`, `traceStore`, `coverageStore`, `observers`, `rawOutput`, …) — never in normal use. Helpers are in `e2e/lib/harness.js` (wait for discovery, record observer events, Jest summaries from raw output, Jest processes still alive, edit + save through VS Code).
 - **Real projects:** `LTR_E2E_TSJEST_REPO` (+ `LTR_E2E_TSJEST_BASELINE`, a `jest --json` result to compare every file with) for `repo-tsjest`; `LTR_E2E_CRA_REPO` for `repo-cra` (quick by default; `LTR_E2E_CRA_FULL=1` + `LTR_E2E_CRA_BASELINE` for the whole project). `repo-tsjest` edits one source file and restores it byte-for-byte; `repo-cra` never writes to the project.

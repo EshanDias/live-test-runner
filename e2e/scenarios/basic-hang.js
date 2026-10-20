@@ -18,8 +18,14 @@ module.exports = {
       "test('spins forever', () => { while (true) { /* hang */ } });\n");
     fs.writeFileSync(path.join(workspace, 'src', 'never.test.js'),
       "test('never resolves', () => new Promise(() => {}));\n");
+    // Learnt from copy-requisition: a file that is merely slow to LOAD (App.test.js
+    // took 229 s on a cold cache) must not be stopped as hung — only a test may.
+    fs.writeFileSync(path.join(workspace, 'src', 'slowload.js'),
+      'const end = Date.now() + 20000;\nwhile (Date.now() < end) { /* slow import */ }\nmodule.exports = { ready: true };\n');
+    fs.writeFileSync(path.join(workspace, 'src', 'slowload.test.js'),
+      "const { ready } = require('./slowload');\ntest('loads slowly, runs fast', () => { expect(ready).toBe(true); });\n");
     await h.waitForDiscovery(api);
-    await h.waitFor(() => ['loop.test.js', 'never.test.js'].every((n) => api.store.getAllFiles().some((f) => f.filePath.endsWith(n))),
+    await h.waitFor(() => ['loop.test.js', 'never.test.js', 'slowload.test.js'].every((n) => api.store.getAllFiles().some((f) => f.filePath.endsWith(n))),
       { what: 'the new test files to be discovered', timeout: 30_000 });
 
     const since = h.isoNow();
@@ -37,6 +43,8 @@ module.exports = {
     const never = h.nodeByName(api, 'src/never.test.js', 'never resolves');
     t.eq('never-resolving promise fails on the test timeout', never.status, 'failed');
 
+    t.eq('a file slow to load (20 s > 15 s limit) is not stopped as hung', h.statusCounts(api, 'src/slowload.test.js'), { passed: 1 });
+    t.check('the slow-loading file is not named as hanging', !logs.some((l) => /slowload\.test\.js has run for/.test(l)));
     t.eq('other files still ran: math', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });
     t.eq('other files still ran: strings', h.statusCounts(api, 'src/strings.test.js'), { passed: 4 });
     t.eq('nothing left running', h.nodesWithStatus(api, 'running').map((n) => n.id), []);

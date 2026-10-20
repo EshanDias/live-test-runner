@@ -22,6 +22,8 @@ module.exports = {
     const bad = logs.filter((l) => /returned no results|falling back to plain Jest|failed to run/.test(l));
     t.check('BUG-07 instrumented run used the TS config (no fallback)', bad.length === 0, bad.join('\n'));
 
+    h.checkMatchesPlainJest(api, t, workspace);
+
     const calc = path.join(workspace, 'src', 'lib', 'calc.ts').replace(/^[A-Z]:/, (m) => m.toLowerCase());
     const cov = api.coverageStore.getEntry(calc);
     t.check('BUG-07 coverage measured for src/lib/calc.ts', cov && cov.state === 'measured', JSON.stringify(cov));

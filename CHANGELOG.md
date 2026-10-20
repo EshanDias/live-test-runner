@@ -39,6 +39,7 @@ All notable changes to Live Test Runner are documented here.
 
 - **End-to-end suite** (`e2e/`): launches a real VS Code with the extension and drives real commands against fixture projects (in a path with spaces) and real repositories, including a test-for-test comparison with plain Jest. `node e2e/run.js --all`.
 - **Unit tests** (`packages/*/test`, esbuild transformer) and a root ESLint config; `pnpm lint` added to PR checks (BUG-14).
+- **E2E in CI** — a PR-check job runs the e2e suite on Windows, Linux and macOS with a downloaded VS Code. Fixtures encode what the real projects taught: `it.each` `$var` tables, duplicate names, `jest.mock('fs')`, `setupTests.js` hooks, `--resetMocks` in the test script, slow-loading files, nested `?.`, and a Create React App fixture. Every fixture's results are compared with plain Jest.
 
 ### Docs
 
