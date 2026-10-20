@@ -368,20 +368,20 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - `feat/vitest-decouple` (from `release/3.0.0` @ `e2ba4ae`, pushed to origin) — 0.3 follow-ups, task 1.1, CHANGELOG clean-up (entries that shipped in 2.0.4 moved out of Unreleased; `[3.0.0] - Unreleased` header), task 1.2. Phase 1 continues on this branch; one PR into `release/3.0.0` at the end of phase 1.
 
 **Done in this session**
-- 0.3 finished: `e2e/real-repos.js` records each repo's plain-runner per-file counts + extension match in `docs/temp_plans/vitest-baseline.json` (CRA gets a baseline too). Fixed `repo-cra`'s plain run for workspaces under macOS's `/var` symlink (it passed `/var/…` to `--runTestsByPath`; Jest only accepts `/private/var/…`). Baseline green: `jest-dom` 31 files, `vscode-jest` 49 files / 2012 tests, `sample-react-project` 14 files. The heavy `jest` monorepo has **not** been run yet (`node e2e/real-repos.js jest`).
+- 0.3 finished: `e2e/real-repos.js` records each repo's plain-runner per-file counts + extension match in `docs/temp_plans/vitest-baseline.json` (CRA gets a baseline too). Fixed `repo-cra`'s plain run for workspaces under macOS's `/var` symlink (it passed `/var/…` to `--runTestsByPath`; Jest only accepts `/private/var/…`). Baseline green: `jest-dom` 31 files, `vscode-jest` 49 files / 2012 tests, `sample-react-project` 14 files. The heavy `jest` monorepo: see below.
 - 1.1 and 1.2 done — see the task notes below.
+- `jest` monorepo (`node e2e/real-repos.js jest`, after 1.2): harness fixed (spawnSync 1 MB buffer killed the plain-Jest baseline; save-test source picked from `packages/*`). 470/484 files match plain Jest; the rest are **BUG-43** (jest-runtime tests fail under the session run, `docs/bugs-and-issues.md`). The pre-refactor build (`e2ba4ae`) gives identical totals (6194 tests · 4141 passed · 1122 failed), so 1.1/1.2 changed nothing; BUG-43 is a 2.0.4 issue, open. Every other check passes on the monorepo.
 - Gate after 1.2: `pnpm build`, `pnpm lint`, `pnpm test` (47 runner incl. 4 command-line snapshots + 17 extension), `node e2e/run.js --all` (11 pass, 2 skipped), `node e2e/real-repos.js` (3/3 PASS).
 - Gate after 1.1: `pnpm build`, `pnpm lint`, `pnpm test` (35 runner + 17 extension), `node e2e/run.js --all` (11 pass, 2 repo scenarios skipped — covered by `real-repos.js`), `node e2e/real-repos.js` (3/3 PASS, originals untouched).
 
 **Next**
 1. Task 1.3 (`FrameworkRegistry` + detector) on `feat/vitest-decouple` — replaces the lazy `adapterPriority()` list from 1.2.
-2. Optional: one run of `node e2e/real-repos.js jest` for the monorepo baseline.
 
 ## Progress tracker
 
 - [x] 0.1 Release branch + version (done: `release/3.0.0` cut from main@2.0.4, version 3.0.0 in root + extension)
 - [x] 0.2 Workflows → pnpm/setup@v3 (CI green on PR #34)
-- [x] 0.3 Baseline + real-repo harness (`e2e/real-repos.js`; baseline in `vitest-baseline.json`; 3 light Jest repos green, `jest` monorepo still to run)
+- [x] 0.3 Baseline + real-repo harness (`e2e/real-repos.js`; baseline in `vitest-baseline.json`; 3 light Jest repos green; `jest` monorepo green except pre-existing BUG-43)
 - [x] 1.1 Neutral naming & open types
 - [x] 1.2 Generic runner layer
 - [ ] 1.3 FrameworkRegistry + detector

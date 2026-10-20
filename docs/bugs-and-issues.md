@@ -61,6 +61,7 @@ Run them with `node e2e/run.js --all` (see [developer-guide.md](developer-guide.
 | [BUG-39](#bug-39) | 🔴 | ✅ | **New:** a file run by several Jest projects kept only the last project's result |
 | [BUG-40](#bug-40) | 🔴 | ✅ | **New:** coverage dropped on every Start after the first (cached transforms) |
 | [BUG-42](#bug-42) | 🔴 | ✅ | **New (Windows):** 8.3 short paths (`RUNNER~1`) — nothing ran on GitHub's Windows runners |
+| [BUG-43](#bug-43) | 🔴 | 🔲 | jest-runtime tests fail under the session run (jest monorepo) |
 | [BUG-41](#bug-41) | 🟠 | ✅ | **New:** tooling — pnpm 10+ could not install or test; e2e could not start VS Code ≥ 1.142 on macOS |
 
 ---
@@ -245,9 +246,13 @@ The file row of both test lists shows a duration when the store has one, but not
 ### BUG-42 🔴 ✅ Windows 8.3 short paths: nothing ran (new)
 **Found by:** the first real CI run of the e2e suite on `windows-latest` — every scenario failed with Jest's "No files found". **Cause:** the runner's temp folder is `C:\Users\RUNNER~1\…`, an 8.3 short name for `C:\Users\runneradmin\…`. VS Code opened the project by the short name; Jest resolves its rootDir with `realpathSync.native`, which expands it — the same mismatch as BUG-36, which had left Windows out. Users hit it when a project is opened through a short path (e.g. under `%TEMP%` with a long user name), a junction or a `subst` drive. **Fix:** `JestPaths` now applies on Windows too, resolves roots with `realpathSync.native` like Jest, and compares paths case- and slash-insensitively there. The e2e harness maps plain-Jest paths the same way. **Verified:** unit tests simulating the runner's paths; all e2e scenarios still pass on macOS; Windows CI.
 
+<a id="bug-43"></a>
+### BUG-43 🔴 🔲 jest-runtime tests fail under the session run (new, open)
+**Found by:** the first full `repo-tsjest` run on the Jest monorepo (`node e2e/real-repos.js jest`, 2026-10-20). 470 of 484 files match plain Jest test-for-test; the rest do not, nearly all in `packages/jest-runtime/src/__tests__/` (`runtime_require_module`, `runtime_mock`, `runtime_jest_fn`, `runtime_environment`, `runtime_node_path`, `runtime_require_cache`, `runtime_jest_spy_on`, … — every test fails in the extension, passes in plain Jest), plus `intro.test.js` (4 tests with an unexpected status) and one test in `watch.test.js`. A full session reports 4141 passed / 1122 failed vs plain Jest's 4269 / 1006. **Not a regression:** the 2.0.4-equivalent build (`release/3.0.0` @ `e2ba4ae`) gives the identical totals. **Suspected cause (unverified):** these tests create their own Jest `Runtime` over fixture folders; the session run's injected transform / `setupFilesAfterEnv` (trace + coverage instrumentation) is applied to the whole project root and so also reaches the code those inner runtimes load. **Next step:** run one such file through the session config and compare the failure message with plain Jest. The rest of the scenario passes on the monorepo (▶ Run, ▷ Debug, trace-based save rerun, timeline, Stop).
+
 ---
 
 ## Still to do
 
 - `test.todo` shares the skipped icon; a distinct todo icon was not added.
-- The Jest monorepo (`jest-test-projects/jest`) was not run through the e2e suite.
+- The Jest monorepo (`jest-test-projects/jest`) now runs through the e2e suite (`node e2e/real-repos.js jest`); it fails only on BUG-43.

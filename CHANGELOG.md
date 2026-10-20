@@ -13,6 +13,7 @@ All notable changes to Live Test Runner are documented here.
 ### Tests
 
 - **Real-repository matrix** — `node e2e/real-repos.js [repo… | --all | --fresh]` copies each real Jest project (APFS copy-on-write on macOS), runs the repo scenarios on the copy, and fails if the original repository changed (HEAD, `git status`, newest mtime). Plain-Jest per-file counts and the match result are recorded in `docs/temp_plans/vitest-baseline.json`. Vitest repos are registered for when Vitest support lands.
+- **Jest monorepo in the matrix** — `node e2e/real-repos.js jest` now works end to end: the plain-Jest reference runs used spawnSync's 1 MB default buffer, which killed Jest on big projects (exit null, no baseline); `repo-tsjest` picks the source file for the save test from `packages/*` when there is no top-level `src/`, and reports how many files differ. Found BUG-43 (jest-runtime tests fail under the session run — present in 2.0.4 too, open).
 
 ### CI
 

@@ -51,7 +51,7 @@ function plainJest(workspace, files) {
     // Jest matches paths case-sensitively against its realpath'd rootDir (C:\…,
     // and /private/var/… for a workspace under macOS's /var symlink).
     ...files.map((f) => fs.realpathSync.native(f).replace(/\\/g, '/').replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`)),
-  ], { cwd: workspace, env, encoding: 'utf8', timeout: 20 * 60_000 });
+  ], { cwd: workspace, env, encoding: 'utf8', timeout: 20 * 60_000, maxBuffer: 1 << 30 });
   if (!fs.existsSync(out)) {
     throw new Error(`plain react-scripts wrote no results (exit ${r.status}${r.error ? `, ${r.error.message}` : ''}): ${(r.stderr || '').slice(-1500)}`);
   }
