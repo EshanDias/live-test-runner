@@ -175,10 +175,13 @@
           "minimum": 0,
           "description": "Stop a single test that runs longer than this many seconds (e.g. an infinite loop, which blocks Jest's own testTimeout) and mark its file failed, so the rest of the run continues. Loading a file does not count. 0 disables the limit."
         },
-        "liveTestRunner.showOutputOnFailure": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show raw output channel when tests fail"
+        "liveTestRunner.coverageExclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra glob patterns of source files to leave out of the coverage totals (node_modules, test files, configs and build folders are always excluded), e.g. [\"**/stories/**\"]."
         },
         "liveTestRunner.testFilePatterns": {
           "type": "array",

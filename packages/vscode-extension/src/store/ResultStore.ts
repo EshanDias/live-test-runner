@@ -113,11 +113,53 @@ function simpleHash(s: string): number {
   return Math.abs(h);
 }
 
+// ── Node pool ──────────────────────────────────────────────────────────────────
+
+/**
+ * The flat node pool, plus an index of each file's nodes. Per-file lookups
+ * used to scan every node in the store — O(tests × nodes) while applying a
+ * file's results on large projects (BUG-16).
+ */
+class NodePool extends Map<string, TestNode> {
+  private readonly _byFile = new Map<string, Map<string, TestNode>>();
+
+  set(id: string, node: TestNode): this {
+    const prev = super.get(id);
+    if (prev && prev.fileId !== node.fileId) { this._byFile.get(prev.fileId)?.delete(id); }
+    super.set(id, node);
+    let ofFile = this._byFile.get(node.fileId);
+    if (!ofFile) { ofFile = new Map(); this._byFile.set(node.fileId, ofFile); }
+    ofFile.set(id, node);
+    return this;
+  }
+
+  delete(id: string): boolean {
+    const node = super.get(id);
+    if (node) {
+      const ofFile = this._byFile.get(node.fileId);
+      ofFile?.delete(id);
+      if (ofFile && ofFile.size === 0) { this._byFile.delete(node.fileId); }
+    }
+    return super.delete(id);
+  }
+
+  clear(): void {
+    super.clear();
+    this._byFile?.clear();
+  }
+
+  /** A snapshot of one file's nodes (safe to mutate the pool while iterating). */
+  ofFile(fileId: string): TestNode[] {
+    const ofFile = this._byFile.get(fileId);
+    return ofFile ? Array.from(ofFile.values()) : [];
+  }
+}
+
 // ── Store ──────────────────────────────────────────────────────────────────────
 
 export class ResultStore {
   private files: Map<string, FileResult> = new Map();
-  private nodes: Map<string, TestNode> = new Map();
+  private nodes = new NodePool();
   // key: absolute filePath → Map<1-based lineNumber, LineEntry>
   private _lineMap: Map<string, Map<number, LineEntry>> = new Map();
 
@@ -148,14 +190,12 @@ export class ResultStore {
     const file = this.files.get(fileId);
     if (file) {
       // Remove all nodes belonging to this file
-      for (const [nodeId, node] of this.nodes) {
-        if (node.fileId === fileId) {
-          if (node.type === 'test') {
-            this._adjustSummary(node.status, -1);
-            this._summary.total--; // BUG-11: the total used to drift up
-          }
-          this.nodes.delete(nodeId);
+      for (const node of this.nodes.ofFile(fileId)) {
+        if (node.type === 'test') {
+          this._adjustSummary(node.status, -1);
+          this._summary.total--; // BUG-11: the total used to drift up
         }
+        this.nodes.delete(node.id);
       }
       this.files.delete(fileId);
     }
@@ -418,7 +458,7 @@ export class ResultStore {
     const file = this.files.get(fileId);
     if (!file) { return; }
     file.excluded = reason;
-    for (const node of this.nodes.values()) {
+    for (const node of this.nodes.ofFile(fileId)) {
       if (node.fileId !== fileId || node.isDynamicTemplate) { continue; }
       if (node.type === 'test') {
         this._adjustSummary(node.status, -1);
@@ -436,7 +476,7 @@ export class ResultStore {
   failFile(fileId: string, message: string): void {
     const file = this.files.get(fileId);
     if (!file) { return; }
-    for (const node of this.nodes.values()) {
+    for (const node of this.nodes.ofFile(fileId)) {
       if (node.fileId !== fileId) { continue; }
       if (node.isDynamicTemplate) { node.status = 'template'; continue; }
       if (node.type === 'test') {
@@ -573,7 +613,7 @@ export class ResultStore {
     const nodesToRemove: string[] = [];
     /** Stale suites — recomputed from their children, never removed directly. */
     const staleSuites: string[] = [];
-    for (const [nodeId, node] of this.nodes) {
+    for (const node of this.nodes.ofFile(fileId)) { const nodeId = node.id;
       if (node.fileId !== fileId || node.status !== 'running') {
         continue;
       }
@@ -695,7 +735,7 @@ export class ResultStore {
     while (sweeping) {
       sweeping = false;
       const suitesToRemove: string[] = [];
-      for (const [nodeId, node] of this.nodes) {
+      for (const node of this.nodes.ofFile(fileId)) { const nodeId = node.id;
         if (node.fileId === fileId && node.type === 'suite' && node.children.length === 0) {
           if (node.isDynamicTemplate) {
             node.status = 'template';
@@ -838,7 +878,7 @@ export class ResultStore {
    * never from hot paths.
    */
   findNodeByFullName(fileId: string, fullName: string): TestNode | undefined {
-    for (const node of this.nodes.values()) {
+    for (const node of this.nodes.ofFile(fileId)) {
       if (node.fileId === fileId && node.fullName === fullName) {
         return node;
       }
@@ -860,7 +900,7 @@ export class ResultStore {
 
   getFileNodes(fileId: string): TestNode[] {
     const result: TestNode[] = [];
-    for (const node of this.nodes.values()) {
+    for (const node of this.nodes.ofFile(fileId)) {
       if (node.fileId === fileId) {
         result.push(node);
       }
@@ -944,7 +984,7 @@ export class ResultStore {
   /** Serialise all nodes for a given file as a flat array. */
   private _serialiseNodes(fileId: string): object[] {
     const result: object[] = [];
-    for (const node of this.nodes.values()) {
+    for (const node of this.nodes.ofFile(fileId)) {
       if (node.fileId !== fileId) continue;
       result.push({
         id: node.id,
