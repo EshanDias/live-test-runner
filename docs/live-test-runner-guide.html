@@ -286,6 +286,7 @@
     <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code> (Jest only).</td></tr>
     <tr><td><code>jestCommand</code></td><td><code>""</code></td><td>Override the Jest binary or command.</td></tr>
     <tr><td><code>vitestCommand</code></td><td><code>""</code></td><td>Override the Vitest command (e.g. <code>npx vitest</code>). Empty = the project's own Vitest.</td></tr>
+    <tr><td><code>vitestIncludeBrowserProjects</code></td><td><code>false</code></td><td>Also run Vitest browser-mode projects. They need real browsers, so they are left out by default (unless the test script picks projects itself).</td></tr>
     <tr><td><code>onSaveDebounceMs</code></td><td><code>300</code></td><td>Wait after a save before running.</td></tr>
     <tr><td><code>durationThresholds.*</code></td><td>100 / 500 ms …</td><td>When test, suite and file durations turn amber or red.</td></tr>
     <tr><td><code>coverageThresholds.red / amber</code></td><td>50 / 80</td><td>Coverage % colour bands.</td></tr>

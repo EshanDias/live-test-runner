@@ -50,7 +50,8 @@ src/
 │       └── VitestAdapter.ts          Vitest: detect (no Jest marker), vitest.mjs, config, version → capabilities, Node check; runner = VitestRunner
 │   ├── UnsupportedFrameworkError.ts
 │   ├── refusingAdapter.ts            stand-in adapter a runner keeps for another framework's project
-│   └── vitestConfig.ts               testScriptVitestArgs: config-relevant flags of the test script (follows nr/npm run/pnpm)
+│   ├── vitestConfig.ts               testScriptVitestArgs: config-relevant flags of the test script (follows nr/npm run/pnpm)
+│   └── vitestProjects.ts             vitestProjects(): projects + browser flag via the project's own Vitest node API (browser-mode guard)
 ├── resolution/
 │   ├── BinaryResolver.ts             Finds jest binary in project node_modules
 │   └── RunnerPaths.ts                Symlinked roots: editor path ↔ the test runner's realpath

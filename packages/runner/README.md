@@ -98,6 +98,7 @@ node vitest.mjs related <abs file> … --run …                                
 - Absolute file paths select exactly that file (Vitest resolves filters against its cwd).
 - `--includeTaskLocation` (test line numbers) only for Vitest ≥ 3, where the CLI flag exists.
 - Results: `parseVitestResult()` reads the json reporter (Jest's shape) for Vitest 1–5 — drops Vitest 1's empty file-level ancestor, counts from the tests (Vitest 1's counts are wrong), takes a load error from `message`, names a failing beforeAll/afterAll (whose error the report leaves out) and an unhandled error (exit 1, all passed) in plain words, drops Vitest 1's assertion positions posing as `location`, rounds durations. Real reports per major are in `test/fixtures/vitest/`.
+- Browser-mode guard: `framework/vitestProjects.ts` reads the config's projects with the project's own Vitest (`createVitest`, a probe script, cached per config / package.json mtime). If some use browser mode, the test script picks no `--project`, and `RunnerOptions.includeBrowserProjects` is false, `VitestRunner.prepare()` adds `--project=<name>` for every other project and logs which were left out.
 - Output lines are tagged `[vitest#N]` (Jest keeps `[jest#N]`): `ExecutorCommand.label`, from `CommandRunner.processLabel`.
 
 How Jest is started:

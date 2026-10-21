@@ -167,7 +167,7 @@ export class VitestAdapter implements FrameworkAdapter {
   }
 
   createRunner(options: RunnerOptions = {}): TestRunner {
-    return new VitestRunner(options.command ?? '', options.logger, options.tmpDir);
+    return new VitestRunner(options.command ?? '', options.logger, options.tmpDir, options.includeBrowserProjects ?? false);
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

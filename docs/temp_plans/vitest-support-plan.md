@@ -242,6 +242,8 @@ Done (2026-10-21): confirmed through e2e in real VS Code — new scenarios `vite
 **2.8 Vitest `projects` & browser-mode guard (1.5 d)**
 Sketch: run from the root config once — Vitest fans out over `test.projects` itself (slidev, vueuse). Browser-mode projects (Playwright/WebdriverIO, e.g. vueuse `browser`) are excluded by default (`--project '!<name>'` resolved from `vitest list`/config; setting `liveTestRunner.vitestIncludeBrowserProjects`), with an INFO line explaining. Test results carry the project name for later display (phase 7). Honour `--project` in the user's `test` script when present.
 
+Done (2026-10-21): `runner/src/framework/vitestProjects.ts` — a probe script (written to the session dir, run with node through the Executor, tagged `[vitest#N]`) calls the project's own `vitest/node` `createVitest('test', { config })` and prints `[{ name, browser: config.browser.enabled }]`; cached per root by config path + mtime + package.json mtime; ~0.1–0.8 s (checked on Vitest 1.6, 2.1, 3.2, 4.1 vueuse, 5.0 slidev/unplugin; 1.x/2.x use `workspace` files so they report one project — fine for the guard). `VitestRunner.prepare()` (new `CommandRunner.prepare(root, config)` hook, awaited before each command) — no guard when the test script has `--project` (vueuse's `npm test`) or `includeBrowserProjects`; otherwise, with browser projects present, `--project=<name>` for every non-browser project (positive list: `--project '!name'` negation is newer than the v3 baseline) on every command (list / run / related) + one INFO per root; all-browser config → run them with a WARN. Setting `liveTestRunner.vitestIncludeBrowserProjects` (default false; in the Vitest settings fingerprint) → `RunnerOptions.includeBrowserProjects`. Unit tests `test/vitestBrowserGuard.test.ts` (5; seam `_setVitestProjectsReader` — the esbuild jest transform does not hoist `jest.mock`). Real check on a vueuse clone with `test: "vitest run"`: browser (chromium/webkit) left out, results = plain `vitest run --project=server --project=unit --project=exports` (136 files, 942 / 63 failed — 62 in `test/exports.test.ts`, which needs a build). Not done: per-file project name in results — the json reporter does not report it (`vitest list --json` does) → phase 7 / live reporter (4.1). Running from the root config once (slidev, vueuse) needed no code — verified in 2.2.
+
 **2.7 Tests (3 d)**
 - Unit: adapter detect matrix (vitest only / jest only / both / neither / `jest-dom` shape), arg builders, parser fixtures per version, registry.
 - Fixtures: `e2e/fixtures/vitest-basic` (+ later `vitest-ts`, `vitest-esm`), scenarios `vitest-full-run`, `vitest-scoped-run`, `vitest-stop`, `vitest-hang`, `vitest-on-save`, `vitest-debug`.
@@ -403,8 +405,10 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 2.6 done (2026-10-21) — see the task note. Gate: lint, 157 runner + 29 extension unit tests, `e2e/run.js --all` (15 pass incl. 4 Vitest scenarios, 2 skipped), `e2e/real-repos.js` (3/3 PASS).
 
+- 2.8 done (2026-10-21) — see the task note. Gate: build, lint, 162 runner + 29 extension unit tests, `e2e/run.js --all` (15 pass, 2 skipped), `e2e/real-repos.js` (3/3 PASS).
+
 **Next**
-1. Task 2.8 — Vitest `projects` and the browser-mode guard (vueuse).
+1. Task 2.7 — remaining tests: scoped-run / debug scenarios, Vitest repos (unplugin, slidev, vueuse) in the real-repo matrix → milestone M1.
 
 ## Progress tracker
 
@@ -423,7 +427,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 2.4 Extension VitestAdapter
 - [x] 2.5 Static discovery syntax
 - [x] 2.6 Session behaviour parity
-- [ ] 2.8 Projects & browser-mode guard
+- [x] 2.8 Projects & browser-mode guard
 - [ ] 2.7 Tests (M1)
 - [ ] 3.1 Output capture
 - [ ] 3.2 Failure details & diagnostics

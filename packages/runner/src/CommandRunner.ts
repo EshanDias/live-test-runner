@@ -59,7 +59,13 @@ export abstract class CommandRunner implements TestRunner {
   ) {
     this.userCommand = command;
     this.executor = new Executor(logger, tmpDir);
+    this.logger = logger;
+    this.tmpDir = tmpDir;
   }
+
+  /** Raw-output sink and temp dir, for subclasses that start helper processes. */
+  protected readonly logger: (msg: string) => void;
+  protected readonly tmpDir: string | undefined;
 
   // ── Framework-specific ──────────────────────────────────────────────────────
 
@@ -68,6 +74,14 @@ export abstract class CommandRunner implements TestRunner {
 
   /** The framework's own args for a run (everything after the adapter's extra args). */
   protected abstract buildArgs(request: RunRequest): string[];
+
+  /**
+   * Async work before a command is built (e.g. Vitest reading its projects).
+   * Called for every command; implementations cache.
+   */
+  protected async prepare(_projectRoot: string, _configPath: string | undefined): Promise<void> {
+    // nothing by default
+  }
 
   /**
    * Args that must come first, before the config and the adapter's extra args:
@@ -187,6 +201,7 @@ export abstract class CommandRunner implements TestRunner {
     const adapter = this.requireAdapter();
     const projectRoot = this.requireProjectRoot();
     const configPath = await adapter.resolveConfig(projectRoot);
+    await this.prepare(projectRoot, configPath);
     return [
       ...this.resolvePrefixArgs(),
       ...this.leadingArgs(request),

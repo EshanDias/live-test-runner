@@ -65,8 +65,18 @@ export class VitestAdapter extends RunnerBackedAdapter {
   }
 
   protected createRunner(rawLog: (msg: string) => void): VitestRunner {
-    return this._runnerAdapter.createRunner({ command: vitestCommandSetting(), logger: rawLog, tmpDir: this._tmpDir }) as VitestRunner;
+    return this._runnerAdapter.createRunner({
+      command: vitestCommandSetting(),
+      logger: rawLog,
+      tmpDir: this._tmpDir,
+      includeBrowserProjects: vitestIncludeBrowserProjects(),
+    }) as VitestRunner;
   }
+}
+
+/** `liveTestRunner.vitestIncludeBrowserProjects`: run Vitest browser-mode projects too. */
+export function vitestIncludeBrowserProjects(): boolean {
+  return vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('vitestIncludeBrowserProjects') ?? false;
 }
 
 let _warnedNpmMode = false;

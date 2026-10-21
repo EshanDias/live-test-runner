@@ -5,6 +5,8 @@ import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { refusingAdapter } from './framework/refusingAdapter';
 import type { VitestAdapter } from './framework/adapters/VitestAdapter';
+import { vitestProjects } from './framework/vitestProjects';
+import * as os from 'os';
 import { FRAMEWORK_IDS } from './types';
 import { createLogger } from './utils/logger';
 import { fromRunnerPath, toRunnerPath } from './resolution/RunnerPaths';
@@ -49,9 +51,30 @@ export function toVitestPathArg(filePath: string): string {
  * would otherwise leave no JSON to read. No `--root`: the project root is the
  * cwd, and a config's own `root` stays in charge.
  */
+/** Reads a config's projects; replaceable in unit tests. */
+let readProjects: typeof vitestProjects = vitestProjects;
+/** For tests only: replace (or with no argument, restore) how projects are read. */
+export function _setVitestProjectsReader(fn?: typeof vitestProjects): void {
+  readProjects = fn ?? vitestProjects;
+}
+
+/** Roots already told which browser projects were left out — once per root. */
+const toldBrowserGuard = new Set<string>();
+
 export class VitestRunner extends CommandRunner {
   protected readonly runnerName = 'VitestRunner';
   private readonly detector = new FrameworkDetector();
+  /** `--project=<name>` for each non-browser project, when browser projects are left out. */
+  private projectArgs: string[] = [];
+
+  constructor(
+    command = '',
+    logger: (msg: string) => void = () => {},
+    tmpDir?: string,
+    private readonly includeBrowserProjects = false,
+  ) {
+    super(command, logger, tmpDir);
+  }
 
   protected override get processLabel(): string { return 'vitest'; }
 
@@ -60,6 +83,37 @@ export class VitestRunner extends CommandRunner {
     if (adapter.framework === FRAMEWORK_IDS.vitest) { return adapter; }
     log.debug(`${projectRoot} is a "${adapter.framework}" project — the Vitest runner will refuse to run it`);
     return refusingAdapter(adapter);
+  }
+
+  /**
+   * Browser-mode projects (Playwright / WebdriverIO) need real browsers and are
+   * left out unless the setting asks for them: every other project is named
+   * with `--project`. Not applied when the test script picks projects itself.
+   */
+  protected override async prepare(projectRoot: string, configPath: string | undefined): Promise<void> {
+    this.projectArgs = [];
+    if (this.includeBrowserProjects) { return; }
+    const scriptArgs = this.requireAdapter().getExtraArgs(projectRoot);
+    if (scriptArgs.some((a) => a.startsWith('--project'))) { return; }
+    const projects = await readProjects(projectRoot, configPath, this.tmpDir ?? os.tmpdir(), this.logger);
+    const browser = (projects ?? []).filter((p) => p.browser);
+    if (!projects || browser.length === 0) { return; }
+    const others = projects.filter((p) => !p.browser);
+    if (others.length === 0) {
+      if (!toldBrowserGuard.has(projectRoot)) {
+        toldBrowserGuard.add(projectRoot);
+        log.warn(`Every Vitest project in ${projectRoot} uses browser mode — running them (they need their browsers installed)`);
+      }
+      return;
+    }
+    this.projectArgs = others.map((p) => `--project=${p.name}`);
+    if (!toldBrowserGuard.has(projectRoot)) {
+      toldBrowserGuard.add(projectRoot);
+      log.info(
+        `Vitest browser-mode projects left out: ${browser.map((p) => p.name).join(', ')} (they need real browsers). ` +
+        'Set liveTestRunner.vitestIncludeBrowserProjects to run them too.',
+      );
+    }
   }
 
   protected override leadingArgs(request: RunRequest): string[] {
@@ -74,6 +128,10 @@ export class VitestRunner extends CommandRunner {
   }
 
   protected buildArgs(request: RunRequest): string[] {
+    return [...this.projectArgs, ...this.kindArgs(request)];
+  }
+
+  private kindArgs(request: RunRequest): string[] {
     switch (request.kind) {
       case 'list':
         // `--json` takes an optional path: it must be last, or it eats the next token.

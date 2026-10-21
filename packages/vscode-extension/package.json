@@ -156,6 +156,11 @@
           "default": "",
           "description": "Override the Vitest command for Vitest projects (e.g. 'npx vitest'). Leave empty to run the project's own Vitest install. Live Test Runner adds its own subcommand and flags (run, --reporter=json, …) after it."
         },
+        "liveTestRunner.vitestIncludeBrowserProjects": {
+          "type": "boolean",
+          "default": false,
+          "description": "Vitest: also run browser-mode projects (Playwright / WebdriverIO). They need real browsers installed, so by default they are left out when the test script does not choose projects itself."
+        },
         "liveTestRunner.runMode": {
           "type": "string",
           "enum": [

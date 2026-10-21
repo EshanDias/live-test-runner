@@ -49,6 +49,7 @@ export {
 export { UnsupportedFrameworkError } from './framework/UnsupportedFrameworkError';
 export { toInputConfig, pickGlobalConfig, testScriptJestArgs } from './framework/jestConfig';
 export { testScriptVitestArgs, VitestScriptArgs } from './framework/vitestConfig';
+export { vitestProjects, VitestProjectInfo } from './framework/vitestProjects';
 export { refusingAdapter } from './framework/refusingAdapter';
 
 // Lower-level layers — exposed for testing and advanced usage

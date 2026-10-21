@@ -5,7 +5,7 @@
 import * as vscode from 'vscode';
 import { CommandRunner, FRAMEWORK_IDS, VitestAdapter as VitestRunnerAdapter } from '@live-test-runner/runner';
 import { FrameworkServices } from './FrameworkServices';
-import { VitestAdapter, vitestCommandSetting } from './VitestAdapter';
+import { VitestAdapter, vitestCommandSetting, vitestIncludeBrowserProjects } from './VitestAdapter';
 import { VitestProjectConfig } from '../session/VitestProjectConfig';
 import { VitestBatchRunner } from '../session/VitestBatchRunner';
 
@@ -18,7 +18,12 @@ export function createVitestServices(options: {
   const { sessionDir, rawLog } = options;
   const runnerAdapter = new VitestRunnerAdapter();
   const newRunner = (logger: (msg: string) => void) =>
-    runnerAdapter.createRunner({ command: vitestCommandSetting(), logger, tmpDir: sessionDir }) as CommandRunner;
+    runnerAdapter.createRunner({
+      command: vitestCommandSetting(),
+      logger,
+      tmpDir: sessionDir,
+      includeBrowserProjects: vitestIncludeBrowserProjects(),
+    }) as CommandRunner;
   return {
     framework: FRAMEWORK_IDS.vitest,
     displayName: 'Vitest',
@@ -43,7 +48,7 @@ export function createVitestServices(options: {
     createSessionRunner: () => newRunner(rawLog),
     settingsFingerprint: () => {
       const cfg = vscode.workspace.getConfiguration('liveTestRunner');
-      return `vitest|${cfg.get<string>('vitestCommand') ?? ''}`;
+      return `vitest|${cfg.get<string>('vitestCommand') ?? ''}|${cfg.get<boolean>('vitestIncludeBrowserProjects') ? 'browser' : ''}`;
     },
   };
 }
