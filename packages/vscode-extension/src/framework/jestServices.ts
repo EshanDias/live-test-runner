@@ -2,6 +2,7 @@
  * The Jest {@link FrameworkServices} bundle (plain Jest and Create React App).
  * The only place outside the Jest classes themselves that builds them.
  */
+import * as vscode from 'vscode';
 import { FRAMEWORK_IDS, JestAdapter as JestRunnerAdapter } from '@live-test-runner/runner';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { FrameworkServices } from './FrameworkServices';
@@ -22,11 +23,16 @@ export function createJestServices(options: {
   const projectConfig = new JestProjectConfig(sessionDir, rawLog);
   return {
     framework: FRAMEWORK_IDS.jest,
+    displayName: 'Jest',
     adapter: new JestAdapter(sessionDir),
     projectConfig,
     batchRunner: new JestBatchRunner(sessionDir, coverageStore, projectConfig),
     instrumentedRunner: new JestInstrumentedRunner(sessionDir, rawLog, projectConfig),
     createSessionRunner: () =>
       new JestRunnerAdapter().createRunner({ command: jestCommandSetting(), logger: rawLog, tmpDir: sessionDir }),
+    settingsFingerprint: () => {
+      const cfg = vscode.workspace.getConfiguration('liveTestRunner');
+      return `${cfg.get<string>('runMode') ?? ''}|${cfg.get<string>('jestCommand') ?? ''}`;
+    },
   };
 }

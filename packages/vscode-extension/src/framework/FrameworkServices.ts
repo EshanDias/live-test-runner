@@ -16,6 +16,8 @@ import { IInstrumentedRunner } from '../timeline/IInstrumentedRunner';
 export interface FrameworkServices {
   /** The framework family this bundle serves (`jest` covers CRA too). */
   readonly framework: FrameworkId;
+  /** Name shown to the user ("Jest"). */
+  readonly displayName: string;
   /** Discovery, single-file / test-case runs, debug configs, result mapping. */
   readonly adapter: IFrameworkAdapter;
   /** The project's resolved config, re-read every session. */
@@ -26,6 +28,11 @@ export interface FrameworkServices {
   readonly instrumentedRunner: IInstrumentedRunner;
   /** A runner for core's TestSession (coverage map, stop). Reads the settings when called. */
   createSessionRunner(): TestRunner;
+  /**
+   * The user settings that change how the framework is called (and so which
+   * files it lists) — part of the runnable-files cache key.
+   */
+  settingsFingerprint(): string;
 }
 
 export interface IFrameworkServicesProvider {

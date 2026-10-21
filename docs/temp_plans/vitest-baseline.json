@@ -1,6 +1,6 @@
 {
   "sample-react-project": {
-    "recorded": "2026-10-21T00:36:18.764Z",
+    "recorded": "2026-10-21T00:43:50.075Z",
     "head": "",
     "extensionMatches": true,
     "files": 14,
@@ -83,7 +83,7 @@
     }
   },
   "jest-dom": {
-    "recorded": "2026-10-21T00:33:41.947Z",
+    "recorded": "2026-10-21T00:41:31.807Z",
     "head": "0ff8904ff4683d676ff70ab68b7f08465c44d0d0",
     "extensionMatches": true,
     "files": 31,
@@ -251,7 +251,7 @@
     }
   },
   "vscode-jest": {
-    "recorded": "2026-10-21T00:35:09.904Z",
+    "recorded": "2026-10-21T00:42:43.802Z",
     "head": "b71edf0b1b80aa22a16222775fbd37dabab3aea0",
     "extensionMatches": true,
     "files": 49,
@@ -509,13 +509,13 @@
     }
   },
   "jest": {
-    "recorded": "2026-10-20T20:51:36.500Z",
+    "recorded": "2026-10-21T00:55:10.338Z",
     "head": "399b831484e372c07e03a634a197f3b9f5a261f7",
     "extensionMatches": false,
     "files": 484,
     "total": {
-      "passed": 4267,
-      "failed": 1008,
+      "passed": 4273,
+      "failed": 1002,
       "skipped": 57
     },
     "perFile": {
@@ -1110,8 +1110,8 @@
         "skipped": 0
       },
       "e2e/__tests__/nonSerializableStructuresInequality.test.ts": {
-        "passed": 6,
-        "failed": 6,
+        "passed": 12,
+        "failed": 0,
         "skipped": 0
       },
       "e2e/__tests__/noTestFound.test.ts": {

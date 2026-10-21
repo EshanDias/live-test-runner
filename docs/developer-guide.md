@@ -394,7 +394,31 @@ export class VitestAdapter implements IFrameworkAdapter {
 }
 ```
 
-Update `extension.ts` to instantiate `VitestAdapter` or add auto-detection logic.
+### Step 3 — Services bundle
+
+Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `FrameworkServices` (see `jestServices.ts`): the adapter above, an `IProjectConfig`, an `IBatchRunner`, an `IInstrumentedRunner`, `createSessionRunner()` (the runner adapter's `createRunner()`), `displayName` and `settingsFingerprint()`. `extension.ts` composes it into the provider; `SessionManager` needs no change.
+
+### Checklist
+
+Runner package (`packages/runner`):
+- [ ] `FrameworkAdapter` implemented — `detect`, `resolveBinary`, `resolveConfig`, `getExtraArgs`, `outputFileArg`, `parseResult`, `createRunner`
+- [ ] A `CommandRunner` subclass — `detectAdapter`, `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`), `parseTestList`, `coverageFile`
+- [ ] Registered in `FrameworkRegistry.default()` at the right priority (a project several adapters claim goes to the higher one)
+- [ ] Exported from `src/index.ts`
+- [ ] **Conformance suite** — one `describeAdapterConformance({ … })` call in `test/adapterConformance.test.ts` (matching / non-matching projects, a canned result with one passing and one failing test); it must pass unchanged
+- [ ] Command-line snapshot tests for the new runner (like `test/jestRunnerArgs.test.ts`)
+
+Extension package (`packages/vscode-extension`):
+- [ ] `IFrameworkAdapter` implemented
+- [ ] `IProjectConfig`, `IBatchRunner` and (or a "not available" stand-in for) `IInstrumentedRunner`
+- [ ] A services bundle, composed in `extension.ts`
+- [ ] Instrumentation that runs inside the test process in `src/session/instrumentation/<framework>/`, keeping the protocol in `docs/architecture.md` → *Session instrumentation protocol* (reuse `shared/`), and copied by `esbuild.js`
+- [ ] `SessionManager`, `ResultStore`, views and observers untouched
+
+Verification:
+- [ ] An e2e fixture + scenarios (`e2e/fixtures/<framework>-basic`, full run / scoped run / stop / hang / on-save / debug)
+- [ ] Real repositories in `e2e/real-repos.js`; the regression gate (build, lint, unit, `e2e/run.js --all`, real repos) green
+- [ ] Docs: framework feature matrix (README + guide), both CHANGELOGs, `docs/architecture.md`, `docs/ai-context.md`
 
 ---
 

@@ -445,7 +445,7 @@ export class SessionManager {
         log.debug(`Saved ${path.basename(filePath)} — not in Jest's file list yet, asking Jest again`);
         const files = this._store.getAllFiles().map((f) => f.filePath);
         if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
-        this._runnable = toRunnableSet(await this._askJestForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings())));
+        this._runnable = toRunnableSet(await this._askForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings(projectRoot))));
         if (token !== this._token) { return; }
         if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
       }
@@ -987,19 +987,19 @@ export class SessionManager {
    * startup — 20 s on a 200-file project, and nothing runs until it is in).
    */
   private async _runnableFiles(projectRoot: string, discovered: string[]): Promise<string[] | undefined> {
-    const key = runnableCacheKey(projectRoot, discovered, this._runnerSettings());
+    const key = runnableCacheKey(projectRoot, discovered, this._runnerSettings(projectRoot));
     const cached = this._runnableCache.read(projectRoot, key);
     if (cached) {
       log.debug(`Runnable test files: ${cached.length} remembered from the last session (no test or config file changed)`);
       // Lists saved by older versions may hold Jest's realpath'd spelling.
       return cached.map(fromRunnerPath);
     }
-    this._updateStatusBar('Asking Jest which files it runs…');
-    return this._askJestForRunnable(projectRoot, key);
+    this._updateStatusBar(`Asking ${this._services.servicesFor(projectRoot).displayName} which files it runs…`);
+    return this._askForRunnable(projectRoot, key);
   }
 
-  /** Asks Jest for the runnable files and remembers the answer under `key`. */
-  private async _askJestForRunnable(projectRoot: string, key: string): Promise<string[] | undefined> {
+  /** Asks the framework for the runnable files and remembers the answer under `key`. */
+  private async _askForRunnable(projectRoot: string, key: string): Promise<string[] | undefined> {
     const files = await this._listRunnableFiles(projectRoot);
     if (!files) { return undefined; }
     try {
@@ -1010,10 +1010,9 @@ export class SessionManager {
     return files;
   }
 
-  /** Settings that change how Jest is called, and so which files it lists. */
-  private _runnerSettings(): string {
-    const cfg = vscode.workspace.getConfiguration('liveTestRunner');
-    return `${cfg.get<string>('runMode') ?? ''}|${cfg.get<string>('jestCommand') ?? ''}`;
+  /** Settings that change how the framework is called, and so which files it lists. */
+  private _runnerSettings(projectRoot: string): string {
+    return this._services.servicesFor(projectRoot).settingsFingerprint();
   }
 
   private _isRunnable(filePath: string): boolean {

@@ -62,6 +62,7 @@ Run them with `node e2e/run.js --all` (see [developer-guide.md](developer-guide.
 | [BUG-40](#bug-40) | 🔴 | ✅ | **New:** coverage dropped on every Start after the first (cached transforms) |
 | [BUG-42](#bug-42) | 🔴 | ✅ | **New (Windows):** 8.3 short paths (`RUNNER~1`) — nothing ran on GitHub's Windows runners |
 | [BUG-43](#bug-43) | 🔴 | 🔲 | jest-runtime tests fail under the session run (jest monorepo) |
+| [BUG-44](#bug-44) | 🟡 | 🔲 | Concurrent batches race with tests that write into the project (jest monorepo) |
 | [BUG-41](#bug-41) | 🟠 | ✅ | **New:** tooling — pnpm 10+ could not install or test; e2e could not start VS Code ≥ 1.142 on macOS |
 
 ---
@@ -249,6 +250,10 @@ The file row of both test lists shows a duration when the store has one, but not
 <a id="bug-43"></a>
 ### BUG-43 🔴 🔲 jest-runtime tests fail under the session run (new, open)
 **Found by:** the first full `repo-tsjest` run on the Jest monorepo (`node e2e/real-repos.js jest`, 2026-10-20). 470 of 484 files match plain Jest test-for-test; the rest do not, nearly all in `packages/jest-runtime/src/__tests__/` (`runtime_require_module`, `runtime_mock`, `runtime_jest_fn`, `runtime_environment`, `runtime_node_path`, `runtime_require_cache`, `runtime_jest_spy_on`, … — every test fails in the extension, passes in plain Jest), plus `intro.test.js` (4 tests with an unexpected status) and one test in `watch.test.js`. A full session reports 4141 passed / 1122 failed vs plain Jest's 4269 / 1006. **Not a regression:** the 2.0.4-equivalent build (`release/3.0.0` @ `e2ba4ae`) gives the identical totals. **Suspected cause (unverified):** these tests create their own Jest `Runtime` over fixture folders; the session run's injected transform / `setupFilesAfterEnv` (trace + coverage instrumentation) is applied to the whole project root and so also reaches the code those inner runtimes load. **Next step:** run one such file through the session config and compare the failure message with plain Jest. The rest of the scenario passes on the monorepo (▶ Run, ▷ Debug, trace-based save rerun, timeline, Stop).
+
+<a id="bug-44"></a>
+### BUG-44 🟡 🔲 Concurrent batches race with tests that write into the project (new, open)
+**Found by:** the phase-1 gate on the Jest monorepo (2026-10-21): "instrumented Jest run returned no results for 50 file(s)" — `jest-haste-map` failed with `ENOENT … e2e/timeouts/package.json`. **Cause:** the repo's own `e2e/__tests__/timeouts.test.ts` writes `e2e/timeouts/` into the project and deletes it again; the session runs several Jest processes at once (CONCURRENCY), and a batch whose haste-map crawl starts in that window sees the file listed and then gone. Plain Jest builds its haste map once, before any test runs, so it never hits this. **Effect:** the batch falls back to plain Jest one file at a time (BUG-07 path) — results are recovered, but slower, and the `repo-tsjest` check "no fallback to plain Jest" fails. Timing-dependent: earlier runs on the same code passed that check. Not caused by phase-1 changes (no scheduling / concurrency / crawl code changed). **Possible fix:** retry a batch once when Jest fails before running any test with a haste-map `ENOENT`, before falling back.
 
 ---
 

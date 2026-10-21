@@ -206,6 +206,7 @@ Done (2026-10-21): `shared/` = `sessionTraceRuntime.js` + `testDiscovery.js` (di
 **1.6 Conformance suite + gate (1.5 d)**
 Sketch: `packages/runner/test/adapterConformance.ts` — a reusable suite every adapter must pass (detect true/false cases, arg shape, parse a canned result, kill behaviour); apply to Jest and CRA. Run the full regression gate. Add a "Adding a framework" checklist to `docs/developer-guide.md`.
 Done when: gate green, `git grep -i jest` in `SessionManager`, `extension.ts`, `core/` shows only the Jest bundle wiring.
+Done (2026-10-21): `packages/runner/test/adapterConformance.ts` (`describeAdapterConformance(case)`: registered id; claims its projects, not others, not a folder without package.json; result-file flag contains the path; canned result with one passing + one failing test; unreadable output → failed result, no throw; created runner passes the file + the adapter's result-file flag through the Executor; kill safe when idle) applied to Jest and CRA in `adapterConformance.test.ts` (16 checks). `FrameworkServices` + `displayName`, `settingsFingerprint()`; `SessionManager` no longer reads `jestCommand` (runnable-files cache key unchanged) and `_askJestForRunnable` → `_askForRunnable`; `core/CoverageMap` comment says istanbul format. "Adding a framework" checklist in `docs/developer-guide.md`. **Grep result:** code coupling left = `createJestServices` in `extension.ts` only; what remains in `SessionManager` is log / message **wording** ("Jest config (testMatch / testPathIgnorePatterns)", "falling back to plain Jest", `jest --listTests` …). Kept deliberately: e2e checks match some of these strings, and the right Vitest wording is decided with the Vitest bundle → **task 2.6** makes these messages framework-aware (`displayName` + per-framework detail).
 
 ### Phase 2 — Vitest: run & pass/fail (15 d) — *Feature V1*
 
@@ -225,7 +226,7 @@ Sketch: implements `IFrameworkAdapter`: `discoverTests` (`vitest list --filesOnl
 Sketch: check `TestDiscoveryService`'s parser covers `test/it/describe` + `.skip/.only/.todo/.concurrent/.each/.for/.skipIf/.runIf`, `test.extend` fixtures, `import { test } from 'vitest'`; add missing forms and unit tests.
 
 **2.6 Session behaviour parity (1 d)**
-Sketch: confirm Start/Stop/hang detection/on-save-without-trace/session guard work through the plain-run path (`SessionManager` ~line 802) with Vitest; `Stop` is final; capability `trace=false` → timeline/“Covering tests” show “not available for Vitest yet”.
+Sketch: confirm Start/Stop/hang detection/on-save-without-trace/session guard work through the plain-run path (`SessionManager` ~line 802) with Vitest; `Stop` is final; capability `trace=false` → timeline/“Covering tests” show “not available for Vitest yet”. Also (from 1.6): make `SessionManager`'s log / status messages framework-aware — today they name Jest and Jest options (`testMatch / testPathIgnorePatterns`, `jest --listTests`, "plain Jest"); use the bundle's `displayName` plus a per-framework detail, and update the e2e checks that match those strings. `instrumentedRunner` becomes optional in `FrameworkServices` here.
 
 **2.8 Vitest `projects` & browser-mode guard (1.5 d)**
 Sketch: run from the root config once — Vitest fans out over `test.projects` itself (slidev, vueuse). Browser-mode projects (Playwright/WebdriverIO, e.g. vueuse `browser`) are excluded by default (`--project '!<name>'` resolved from `vitest list`/config; setting `liveTestRunner.vitestIncludeBrowserProjects`), with an INFO line explaining. Test results carry the project name for later display (phase 7). Honour `--project` in the user's `test` script when present.
@@ -378,7 +379,8 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - Gate after 1.1: `pnpm build`, `pnpm lint`, `pnpm test` (35 runner + 17 extension), `node e2e/run.js --all` (11 pass, 2 repo scenarios skipped — covered by `real-repos.js`), `node e2e/real-repos.js` (3/3 PASS, originals untouched).
 
 **Next**
-1. Task 1.6 (conformance suite + gate) on `feat/vitest-decouple`.
+1. **Phase 1 is complete** — open the PR `feat/vitest-decouple → release/3.0.0` (owner), confirm CI on 3 OSes.
+2. Phase 2 starts at task 2.1 (runner `VitestAdapter`) on a new branch `feat/vitest-run` from `release/3.0.0` after the PR merges (or from `feat/vitest-decouple`).
 
 ## Progress tracker
 
@@ -390,7 +392,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 1.3 FrameworkRegistry + detector
 - [x] 1.4 IBatchRunner + services bundle
 - [x] 1.5 Split instrumentation
-- [ ] 1.6 Conformance suite + gate
+- [x] 1.6 Conformance suite + gate
 - [ ] 2.1 Runner VitestAdapter
 - [ ] 2.2 VitestRunner
 - [ ] 2.3 Result parsing
