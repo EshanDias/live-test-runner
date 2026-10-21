@@ -137,6 +137,7 @@ describe('vitest list output', () => {
       // The live batch command too.
       const live = await runner.liveCommand([path.join(link, 'src', 'a.test.ts')]);
       expect(live.command.cwd).toBe(root);
+      expect(live.command.binary).toBe(path.join(root, 'node_modules', 'vitest', 'vitest.mjs'));
       expect(live.command.args.join(' ')).not.toContain(link);
     } finally {
       fs.rmSync(link, { recursive: true, force: true });

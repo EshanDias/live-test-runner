@@ -117,7 +117,7 @@ export class VitestRunner extends CommandRunner {
     const env = this.runEnv(request) ?? {};
     const args = [...await this.commandArgs(request), ...this.requireAdapter().outputFileArg(resultFile)];
     return {
-      command: { binary: this.resolveBinary(), args, cwd: this.spawnPath(root), extraEnv: env, label: this.processLabel, forwardStdout: true },
+      command: { binary: this.spawnPath(this.resolveBinary()), args, cwd: this.spawnPath(root), extraEnv: env, label: this.processLabel, forwardStdout: true },
       eventsFile: env[VITEST_EVENTS_ENV],
       resultFile,
     };
