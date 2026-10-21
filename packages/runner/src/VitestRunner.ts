@@ -1,15 +1,12 @@
 import * as path from 'path';
 import { CommandRunner, RunRequest } from './CommandRunner';
-import { ExecutionResult, tail } from './execution/Executor';
+import { ExecutionResult, ExecutorCommand, tail } from './execution/Executor';
 import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { refusingAdapter } from './framework/refusingAdapter';
 import type { VitestAdapter } from './framework/adapters/VitestAdapter';
 import { vitestProjects } from './framework/vitestProjects';
-import {
-  VITEST_EVENTS_ENV, VitestErrorEvent, fileKey, formatVitestError, readVitestEvents, toConsoleEntry, vitestReporterFile,
-} from './framework/vitestReporter';
-import { VITEST_FILE_FAILURE, VITEST_HOOK_FAILURE } from './parsing/VitestResultParser';
+import { VITEST_EVENTS_ENV, applyVitestEvents, readVitestEvents, vitestReporterFile } from './framework/vitestReporter';
 import { RunResult } from './types';
 import * as os from 'os';
 import { FRAMEWORK_IDS } from './types';
@@ -105,50 +102,25 @@ export class VitestRunner extends CommandRunner {
   protected override afterRun(request: RunRequest, result: RunResult): RunResult {
     const file = this.eventFiles.get(request);
     if (!file) { return result; }
-    const logs = new Map<string, ReturnType<typeof toConsoleEntry>[]>();
-    const errors = new Map<string, VitestErrorEvent[]>();
-    for (const e of readVitestEvents(file)) {
-      if (!e.file) { continue; }
-      const key = fileKey(e.file);
-      if (e.ev === 'log') {
-        const list = logs.get(key) ?? [];
-        list.push(toConsoleEntry(e));
-        logs.set(key, list);
-      } else if (e.ev === 'error') {
-        const list = errors.get(key) ?? [];
-        list.push(e);
-        errors.set(key, list);
-      }
-    }
-    const root = this.requireProjectRoot();
-    for (const fr of result.fileResults) {
-      const key = fileKey(fr.testFilePath);
-      const entries = logs.get(key);
-      if (entries) { fr.consoleOutput = [...fr.consoleOutput, ...entries]; }
+    return applyVitestEvents(result, readVitestEvents(file), this.requireProjectRoot());
+  }
 
-      const outside: string[] = [];
-      for (const ev of errors.get(key) ?? []) {
-        const messages = ev.errors.map((err) => formatVitestError(err, root));
-        if (ev.scope === 'test') {
-          const name = ev.names.join(' ');
-          const tc = fr.testCases.find((c) => c.fullName === name && c.status === 'failed');
-          if (tc) { tc.failureMessages = messages; }
-        } else {
-          const where = ev.scope === 'suite' ? `In "${ev.names.join(' > ')}" (a beforeAll / afterAll hook or the suite itself):
-` : '';
-          outside.push(...messages.map((m) => where + m));
-        }
-      }
-      if (outside.length) {
-        const known = fr.failureMessage && fr.failureMessage !== VITEST_HOOK_FAILURE && fr.failureMessage !== VITEST_FILE_FAILURE;
-        // A load error is already in the json report's message; the reporter adds its location.
-        fr.failureMessage = known && !outside.some((m) => m.startsWith(fr.failureMessage!.split('\n')[0]))
-          ? [fr.failureMessage!, ...outside].join('\n\n')
-          : outside.join('\n\n');
-        fr.status = 'failed';
-      }
-    }
-    return result;
+  /**
+   * The command for a batch whose results are read live from the reporter's
+   * events (see VitestBatchRunner in the extension): the same command as
+   * runTestFilesJson, plus the events file and the json result file.
+   */
+  async liveCommand(files: string[]): Promise<{ command: ExecutorCommand; eventsFile: string; resultFile: string }> {
+    const request: RunRequest = { kind: 'files', files };
+    const root = this.requireProjectRoot();
+    const resultFile = path.join(this.tmpDir ?? os.tmpdir(), `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    const env = this.runEnv(request) ?? {};
+    const args = [...await this.commandArgs(request), ...this.requireAdapter().outputFileArg(resultFile)];
+    return {
+      command: { binary: this.resolveBinary(), args, cwd: root, extraEnv: env, label: this.processLabel, forwardStdout: true },
+      eventsFile: env[VITEST_EVENTS_ENV],
+      resultFile,
+    };
   }
 
   protected detectAdapter(projectRoot: string): FrameworkAdapter {

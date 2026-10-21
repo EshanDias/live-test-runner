@@ -266,6 +266,8 @@ Done (2026-10-21) → **M2a reached** (Vitest logs & output). Written with 3.1 /
 ### Phase 4 — Live per-file streaming & batch (6.5 d) — *Feature V3*
 
 **4.1 Live reporter (3 d)** — ESM reporter module (`instrumentation/vitest/liveReporter.mjs`) appending `FileRunResult` JSON lines to `LTR_REPORTER_FILE` on `onTestModuleEnd`, start records on `onTestModuleStart`; compatibility shim for the older `onFinished/onTaskUpdate` API if cheap (D2). Loaded with `--reporter=<abs path>`.
+Done (2026-10-21, branch `feat/vitest-live`): spike — new reporter API events arrive live on 3.2 / 4.1 / 5.0; `onTaskUpdate` works live on 1.6 **and 2.1** (2.1 has `getReportedEntity` but no `onTestModuleStart/End`, so "modern" = `parseInt(ctx.version) >= 3`, not feature detection). The existing runner-owned reporter (no separate `.mjs` in the extension — the runner writes it to the session dir, like the project probe) now also writes `file-start`, `test-start` / `test-end`, and `file-end` with a json-reporter-shaped result built from the finished task tree (`STATUS` map = the json reporter's; empty suite names skipped); failures are written per file at its end (deduplicated, run end catches crashed files). Legacy file detection = `typeof task.filepath === 'string'` (Vitest 2 suites have no parent link). Runner: `liveFileResult()`, `applyVitestEvents()` (moved out of `afterRun`, shared), `VitestRunner.liveCommand(files)` → `{ command, eventsFile, resultFile }` (`commandArgs` / `resolveBinary` now protected). Verified with a polling driver on 1.6 / 2.1 / 5.0: fast files' results at 0.6–1 s, the 2.5 s file's at ~3 s.
+
 **4.2 `VitestBatchRunner` (2 d)** — implements `IBatchRunner` without trace: one process per batch, hang detection from start records, kill process tree, `--no-file-parallelism` never forced.
 **4.3 Tests (1.5 d)** — `vitest-batch`, `vitest-save-during-run`, reporter unit tests with synthetic events.
 Gate → **M2b**.
@@ -424,8 +426,10 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 **Phase 4 (branch `feat/vitest-live`, from `feat/vitest-logs`)** — live per-file streaming (3.0.x scope, done now at the owner's request), then phase 5 (coverage) on `feat/vitest-coverage`.
 
+- 4.1 done (2026-10-21) — see the task note. Gate: build, lint, 169 runner + 29 extension unit tests, `e2e/run.js --all` (18 pass, 3 skipped), `e2e/real-repos.js` (6/6 PASS).
+
 **Next**
-1. Task 4.1 — live reporter: per-file results and start / test heartbeats from the runner's Vitest reporter.
+1. Task 4.2 — `VitestBatchRunner` on the live events (files running only when started, results per file, per-test hang limit).
 
 ## Progress tracker
 
@@ -455,7 +459,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [ ] 11.1 Feature matrix + guide
 - [ ] 11.2 Real-repo validation
 - [ ] 11.3 Release prep → **3.0.0**
-- [ ] 4.1–4.3 Live streaming (3.0.x)
+- [ ] 4.1–4.3 Live streaming (3.0.x) — 4.1 done
 - [ ] 6.1–6.3 Related/on-save (3.0.x)
 - [ ] 7.1–7.7 Monorepos (3.1)
 - [ ] 8.1–8.6 Mixed (3.2)

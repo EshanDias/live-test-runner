@@ -210,7 +210,7 @@ export abstract class CommandRunner implements TestRunner {
   }
 
   /** [user-command words] [leading args] [config args] [adapter extra args] [framework args] */
-  private async commandArgs(request: RunRequest): Promise<string[]> {
+  protected async commandArgs(request: RunRequest): Promise<string[]> {
     const adapter = this.requireAdapter();
     const projectRoot = this.requireProjectRoot();
     const configPath = await adapter.resolveConfig(projectRoot);
@@ -255,7 +255,7 @@ export abstract class CommandRunner implements TestRunner {
    * If the user provided a custom command override, use that binary directly.
    * Otherwise delegate to the adapter's binary resolution.
    */
-  private resolveBinary(): string {
+  protected resolveBinary(): string {
     if (this.userCommand.trim()) {
       return this.userCommand.trim().split(/\s+/)[0];
     }
