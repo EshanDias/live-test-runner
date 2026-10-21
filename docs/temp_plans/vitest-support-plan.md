@@ -261,6 +261,7 @@ Done (2026-10-21): spike first — on every version the finished task tree carri
 
 **3.3 Tests (1 d)** — scoped output rerun e2e (`vitest-output`), unit tests for stack parsing.
 Gate → **M2a**.
+Done (2026-10-21) → **M2a reached** (Vitest logs & output). Written with 3.1 / 3.2: e2e `vitest-output` (15 checks: per-test / suite / file output, quiet test, Vitest's own output in Test Output, output kept across a scoped rerun, diff, source-mapped location, hook failure, load-error location); unit `vitestConsole.test.ts` (2), `vitestErrors.test.ts` (4). Gate after 3.2 is the phase gate (6/6 real repos).
 
 ### Phase 4 — Live per-file streaming & batch (6.5 d) — *Feature V3*
 
@@ -419,8 +420,12 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 3.2 done (2026-10-21) — see the task note. Gate: build, lint, 168 runner + 29 extension unit tests, `e2e/run.js --all` (18 pass, 3 skipped), `e2e/real-repos.js` (6/6 PASS).
 
+- 3.3 done → **M2a**. Phase 3 complete on `feat/vitest-logs`.
+
+**Phase 4 (branch `feat/vitest-live`, from `feat/vitest-logs`)** — live per-file streaming (3.0.x scope, done now at the owner's request), then phase 5 (coverage) on `feat/vitest-coverage`.
+
 **Next**
-1. Task 3.3 — tests for phase 3 (mostly written with 3.1/3.2) → milestone M2a.
+1. Task 4.1 — live reporter: per-file results and start / test heartbeats from the runner's Vitest reporter.
 
 ## Progress tracker
 
@@ -443,7 +448,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 2.7 Tests (M1)
 - [x] 3.1 Output capture
 - [x] 3.2 Failure details & diagnostics
-- [ ] 3.3 Tests
+- [x] 3.3 Tests
 - [ ] 5.1 Coverage run
 - [ ] 5.2 Coverage mapping
 - [ ] 5.3 Tests
