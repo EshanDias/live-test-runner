@@ -2,14 +2,14 @@ import { FrameworkId } from '../types';
 import { FrameworkAdapter } from './adapters/FrameworkAdapter';
 import { CRAAdapter } from './adapters/CRAAdapter';
 import { JestAdapter } from './adapters/JestAdapter';
-import { ViteAdapter } from './adapters/ViteAdapter';
+import { VitestAdapter } from './adapters/VitestAdapter';
 
 /** Priorities of the shipped adapters — higher is checked first. */
 export const ADAPTER_PRIORITIES = {
   /** Must precede Jest — CRA projects also have jest in their deps. */
   cra: 300,
   /** Vitest only when nothing marks the project as Jest (BUG-37). */
-  vite: 200,
+  vitest: 200,
   /** Plain Jest (and Next.js + Jest, etc.). */
   jest: 100,
 } as const;
@@ -61,7 +61,7 @@ export class FrameworkRegistry {
   static default(): FrameworkRegistry {
     return FrameworkRegistry._default ??= new FrameworkRegistry()
       .register(new CRAAdapter(), ADAPTER_PRIORITIES.cra)
-      .register(new ViteAdapter(), ADAPTER_PRIORITIES.vite)
+      .register(new VitestAdapter(), ADAPTER_PRIORITIES.vitest)
       .register(new JestAdapter(), ADAPTER_PRIORITIES.jest);
   }
 }

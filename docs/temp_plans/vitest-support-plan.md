@@ -212,6 +212,7 @@ Done (2026-10-21): `packages/runner/test/adapterConformance.ts` (`describeAdapte
 
 **2.1 Runner `VitestAdapter` (1.5 d)** (replaces the `ViteAdapter` stub)
 Sketch: `detect` keeps BUG-37 rule (Vitest only when nothing marks the project as Jest — until mixed support, task 7.x relaxes this); resolve binary from `node_modules/vitest/package.json#bin` → `vitest.mjs` (no `.bin` shim → works on Windows); read the installed Vitest version → capability flags per version (baseline ≥ 3; < 3 best-effort: JSON run/parse works, `vitest list`/`related` fall back to glob scan / `--changed`, live reporter needs the legacy shim in 4.1); `resolveConfig`: `vitest.config.*` > `vite.config.*`, else undefined; Node-version check with a friendly error for v5 (Node ≥ 22.12) when only the Electron fallback runtime exists.
+Done (2026-10-21, branch `feat/vitest-run` from `release/3.0.0` after PR #35): `framework/adapters/VitestAdapter.ts` replaces `ViteAdapter.ts`; id renamed `vite` → **`vitest`** (`FRAMEWORK_IDS.vitest`, `ADAPTER_PRIORITIES.vitest`; nothing outside the runner used `vite`). Detect = `vitest` dep **or** `vitest.config.*` / `vitest.workspace.*` (hoisted installs) — and no Jest marker; `vite.config.*` alone is not Vitest. Binary = `vitest/package.json#bin` via `require.resolve` (local / hoisted / pnpm), run with node; no npx fallback (a missing install throws an actionable error). `findInstall()` → `{ version, major, entry, nodeRange }`. New `FrameworkAdapter.capabilities(root)` → `FrameworkCapabilities` (`results · nameFilter · listTests · related · liveStream · coverage` — the runner-level subset of §5; `debug/trace/timeline` stay extension-side for 2.6); Jest/CRA all true, Vitest ≥ 3 all true, < 3 `listTests/related/liveStream` false + one WARN. Node check reads Vitest's own `engines.node` (not a hard-coded 22.12) with a small `utils/semver.ts`: editor fallback runtime outside the range → error with a fix; PATH node outside → WARN only (npm test uses the same node); unreadable range → no check. `resolveConfig`: `vitest.config.*` > `vite.config.*` > undefined. `outputFileArg` = `--outputFile=`; `parseResult` = Jest parser until 2.3; `createRunner` throws `UnsupportedFrameworkError` until 2.2; `getExtraArgs` = [] until 2.2. **Guard:** `JestRunner.detectAdapter` returns a refusing stand-in for non-Jest-family adapters, so a working `resolveBinary` can never launch `vitest` with Jest flags; it throws at run time (as the stub did), not at `setProjectRoot`. Tests: `vitestAdapter.test.ts` (detect matrix incl. jest-dom shape, bin/hoisted/missing, capabilities, Node check, config order, read-only check on the 3 real repos), `semver.test.ts`, refusal test in `adapterRunContract.test.ts`, conformance gains a `capabilities` check. Vitest joins the conformance suite in 2.2 (it needs `createRunner`). Note for 2.3: Vitest's JSON has `location` only with `includeTaskLocation` (CLI `--includeTaskLocation`, v3+).
 
 **2.2 `VitestRunner` (2 d)**
 Sketch: command shapes — full: `vitest run --reporter=json --outputFile=<tmp> --root <root> [--config c] --passWithNoTests`; file(s): positional paths; test case: `-t '<escaped>'`; `CI=1` + `--watch=false`; never `--ui`. Reuse `CommandRunner`; spawn with `node vitest.mjs` (no shell), same path normalisation rules as Jest where relevant. User override `liveTestRunner.vitestCommand` (shell-quoted like `jestCommand`). Always pass `--reporter` explicitly so a config `reporters: 'dot'` (vueuse) cannot swallow our JSON; honour config-affecting flags from the project's `test` script (`--config`, `--project`, `--root`) like `testScriptJestArgs` does for Jest.
@@ -379,9 +380,11 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - Gate after 1.2: `pnpm build`, `pnpm lint`, `pnpm test` (47 runner incl. 4 command-line snapshots + 17 extension), `node e2e/run.js --all` (11 pass, 2 skipped), `node e2e/real-repos.js` (3/3 PASS).
 - Gate after 1.1: `pnpm build`, `pnpm lint`, `pnpm test` (35 runner + 17 extension), `node e2e/run.js --all` (11 pass, 2 repo scenarios skipped — covered by `real-repos.js`), `node e2e/real-repos.js` (3/3 PASS, originals untouched).
 
+**Phase 2 (branch `feat/vitest-run`, from `release/3.0.0` after PR #35 merged)**
+- 2.1 done (2026-10-21) — see the task note. Gate: build, lint, 88 runner + 17 extension unit tests, `e2e/run.js --all` (11 pass, 2 repo scenarios skipped), `e2e/real-repos.js` (jest-dom, vscode-jest, sample-react-project PASS; Vitest repos skip until the `repo-vitest` scenario lands in 2.7). The heavy `jest` monorepo was not rerun — 2.1 only changes Vitest detection and adds a guard Jest projects never reach.
+
 **Next**
-1. **Phase 1 is complete** — open the PR `feat/vitest-decouple → release/3.0.0` (owner), confirm CI on 3 OSes.
-2. Phase 2 starts at task 2.1 (runner `VitestAdapter`) on a new branch `feat/vitest-run` from `release/3.0.0` after the PR merges (or from `feat/vitest-decouple`).
+1. Task 2.2 — `VitestRunner extends CommandRunner` on `feat/vitest-run`; `VitestAdapter.createRunner` returns it, `getExtraArgs` reads the `test` script, Vitest joins the conformance suite, `liveTestRunner.vitestCommand`.
 
 ## Progress tracker
 
@@ -394,7 +397,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 1.4 IBatchRunner + services bundle
 - [x] 1.5 Split instrumentation
 - [x] 1.6 Conformance suite + gate
-- [ ] 2.1 Runner VitestAdapter
+- [x] 2.1 Runner VitestAdapter
 - [ ] 2.2 VitestRunner
 - [ ] 2.3 Result parsing
 - [ ] 2.4 Extension VitestAdapter

@@ -9,6 +9,7 @@ export { TestRunner, RunnerOptions } from './TestRunner';
 export {
   Framework,
   FrameworkId,
+  FrameworkCapabilities,
   FRAMEWORK_IDS,
   PackageManager,
   TestResult,
@@ -34,13 +35,22 @@ export { JestRunner, toJestPathArg } from './JestRunner';
 export { FrameworkDetector, DetectionResult } from './framework/FrameworkDetector';
 export { FrameworkRegistry, ADAPTER_PRIORITIES } from './framework/FrameworkRegistry';
 export { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
-export { JestAdapter } from './framework/adapters/JestAdapter';
+export { JestAdapter, JEST_CAPABILITIES } from './framework/adapters/JestAdapter';
 export { CRAAdapter } from './framework/adapters/CRAAdapter';
-export { ViteAdapter, UnsupportedFrameworkError } from './framework/adapters/ViteAdapter';
+export {
+  VitestAdapter,
+  VitestInstall,
+  vitestCapabilities,
+  VITEST_BASELINE_MAJOR,
+  VITEST_CONFIG_FILES,
+  VITE_CONFIG_FILES,
+} from './framework/adapters/VitestAdapter';
+export { UnsupportedFrameworkError } from './framework/UnsupportedFrameworkError';
 export { toInputConfig, pickGlobalConfig, testScriptJestArgs } from './framework/jestConfig';
 
 // Lower-level layers — exposed for testing and advanced usage
-export { BinaryResolver, nodeRuntime, NodeRuntime } from './resolution/BinaryResolver';
+export { BinaryResolver, nodeRuntime, nodeRuntimeVersion, NodeRuntime } from './resolution/BinaryResolver';
+export { parseVersion, compareVersions, satisfies } from './utils/semver';
 export { registerProjectRoot, toRunnerPath, fromRunnerPath, toJestPath, fromJestPath } from './resolution/RunnerPaths';
 export { Executor, tail } from './execution/Executor';
 

@@ -2,9 +2,9 @@ import * as fs from "fs";
 import * as path from "path";
 import { execFileSync } from "child_process";
 import { LTR_BASE_CACHE_DIR } from '../../constants';
-import { FRAMEWORK_IDS, FrameworkId, RunResult } from "../../types";
+import { FRAMEWORK_IDS, FrameworkCapabilities, FrameworkId, RunResult } from "../../types";
 import { FrameworkAdapter } from "./FrameworkAdapter";
-import { createJestRunner, jestOutputFileArg, parseJestResult, readPackageJson } from "./JestAdapter";
+import { createJestRunner, JEST_CAPABILITIES, jestOutputFileArg, parseJestResult, readPackageJson } from "./JestAdapter";
 import { RunnerOptions, TestRunner } from "../../TestRunner";
 import { BinaryResolver } from "../../resolution/BinaryResolver";
 import { testScriptJestArgs, toInputConfig } from "../jestConfig";
@@ -140,6 +140,10 @@ export class CRAAdapter implements FrameworkAdapter {
 
   parseResult(passed: boolean, raw: string, stderr: string): RunResult {
     return parseJestResult(passed, raw, stderr);
+  }
+
+  capabilities(_projectRoot: string): FrameworkCapabilities {
+    return { ...JEST_CAPABILITIES };
   }
 
   createRunner(options?: RunnerOptions): TestRunner {

@@ -88,7 +88,7 @@ JestRunner (orchestrator)
 
 ### Framework adapters
 
-Each adapter implements `FrameworkAdapter` and names itself with a `FrameworkId` — an open string id (`FRAMEWORK_IDS` lists the shipped ones: `jest`, `cra`, `vite`, `unknown`).
+Each adapter implements `FrameworkAdapter` and names itself with a `FrameworkId` — an open string id (`FRAMEWORK_IDS` lists the shipped ones: `jest`, `cra`, `vitest`, `unknown`).
 
 | Method | Purpose |
 |--------|---------|
@@ -96,6 +96,7 @@ Each adapter implements `FrameworkAdapter` and names itself with a `FrameworkId`
 | `resolveBinary(projectRoot)` | Returns absolute path to the test runner binary |
 | `resolveConfig(projectRoot)` | Returns path to a resolved config file, or undefined |
 | `getExtraArgs(projectRoot)` | Any extra CLI flags the framework needs |
+| `capabilities(projectRoot)` | `FrameworkCapabilities` at the installed version — callers check these, not the framework id |
 
 Current adapters:
 
@@ -103,11 +104,11 @@ Current adapters:
 |---------|---------|-------|
 | `JestAdapter` | Jest, Next.js + Jest | Reads `jest.config.*` or `package.json#jest` directly |
 | `CRAAdapter` | Create React App | Runs `--showConfig` once per session to extract the hidden config; cached in memory |
-| `ViteAdapter` | Vitest | Stub — not yet implemented |
+| `VitestAdapter` | Vitest ≥ 3 (older best-effort) | A `vitest` dependency or Vitest config/workspace file, and no Jest dependency/config (BUG-37). Runs `vitest/package.json#bin` (`vitest.mjs`) with node — no `.bin` shim, no npx. Config: `vitest.config.*` > `vite.config.*`. Capabilities per installed major; refuses the editor's built-in Node when it fails Vitest's `engines.node`. **No runner yet** — `createRunner` throws until task 2.2; the Jest runner refuses Vitest projects at run time |
 
 Adapters also own how a run is read: `outputFileArg(file)` (the result-file flag the `Executor` appends), `parseResult(...)` (raw JSON → `RunResult`; Jest and CRA use `ResultParser`) and `createRunner(...)`. The runner layer is `CommandRunner` (generic: binary/config/extra-arg assembly, chunking, kill, coverage) with one subclass per framework that only builds that framework's args per run kind (`JestRunner`).
 
-`FrameworkDetector` tries the adapters of a `FrameworkRegistry` (default: CRA 300 → Vite 200 → Jest 100, highest priority first) and returns the first match; `detectWithReason()` also says why. A project nothing matches falls back to plain Jest with one WARN per project root (`matched: 'unknown'`). `ViteAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest.
+`FrameworkDetector` tries the adapters of a `FrameworkRegistry` (default: CRA 300 → Vitest 200 → Jest 100, highest priority first) and returns the first match; `detectWithReason()` also says why. A project nothing matches falls back to plain Jest with one WARN per project root (`matched: 'unknown'`). `VitestAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest. `JestRunner` only runs Jest-family adapters (`jest`, `cra`); for any other project it keeps a stand-in adapter that throws `UnsupportedFrameworkError` when a run starts — setting the project root never fails.
 
 ### Jest invocation
 

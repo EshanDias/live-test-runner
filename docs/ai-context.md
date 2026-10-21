@@ -40,13 +40,14 @@ src/
 ├── CommandRunner.ts                  Generic CLI runner: binary/config/extra args, chunking, kill, coverage; abstract buildArgs(RunRequest)
 ├── JestRunner.ts                     extends CommandRunner — Jest flags only
 ├── framework/
-│   ├── FrameworkRegistry.ts          register(adapter, priority); default(): CRA 300 → Vite 200 → Jest 100 (built lazily)
+│   ├── FrameworkRegistry.ts          register(adapter, priority); default(): CRA 300 → Vitest 200 → Jest 100 (built lazily)
 │   ├── FrameworkDetector.ts          First matching registry adapter; detectWithReason(); unknown → plain Jest + one WARN
 │   └── adapters/
-│       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs, outputFileArg, parseResult, createRunner
+│       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs, outputFileArg, parseResult, capabilities, createRunner
 │       ├── JestAdapter.ts            Plain Jest + Next.js + Jest
 │       ├── CRAAdapter.ts             Create React App
-│       └── ViteAdapter.ts            Vitest stub — only when the project has no Jest dep/config
+│       └── VitestAdapter.ts          Vitest: detect (no Jest marker), vitest.mjs, config, version → capabilities, Node check; no runner until 2.2
+│   └── UnsupportedFrameworkError.ts
 ├── resolution/
 │   ├── BinaryResolver.ts             Finds jest binary in project node_modules
 │   └── RunnerPaths.ts                Symlinked roots: editor path ↔ the test runner's realpath
@@ -525,7 +526,7 @@ All in `packages/vscode-extension/package.json`:
 |-----------|--------|
 | Jest | Fully supported |
 | Create React App | Fully supported (via `--showConfig` + direct Jest invocation) |
-| Vitest | Planned — `ViteAdapter` stub in `packages/runner` |
+| Vitest | In progress (3.0.0) — runner `VitestAdapter` detects, resolves the binary/config and capabilities; runner, parsing and extension wiring follow (plan tasks 2.2–2.8) |
 
 ---
 

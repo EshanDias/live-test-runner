@@ -297,11 +297,11 @@ Supporting Vitest, Mocha, or any other framework requires one class in each of t
 
 ### Step 1 — Runner package
 
-Create `packages/runner/src/framework/adapters/VitestAdapter.ts`:
+Create `packages/runner/src/framework/adapters/YourAdapter.ts` (the sketch below uses Vitest; the shipped `VitestAdapter.ts` is the real reference — it resolves `package.json#bin` with node instead of a `.bin` shim, gates `capabilities()` on the installed version, and checks the Node runtime):
 
 ```typescript
 import { FrameworkAdapter } from './FrameworkAdapter'
-import { FrameworkId } from '../../types'
+import { FrameworkCapabilities, FrameworkId } from '../../types'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -323,6 +323,10 @@ export class VitestAdapter implements FrameworkAdapter {
 
   getExtraArgs(projectRoot: string): string[] {
     return []
+  }
+
+  capabilities(projectRoot: string): FrameworkCapabilities {
+    return { results: true, nameFilter: true, listTests: true, related: true, liveStream: false, coverage: true }
   }
 
   outputFileArg(file: string): string[] {
@@ -348,7 +352,7 @@ Register it in `FrameworkRegistry.default()` (`packages/runner/src/framework/Fra
 ```typescript
 new FrameworkRegistry()
   .register(new CRAAdapter(), ADAPTER_PRIORITIES.cra)      // 300
-  .register(new VitestAdapter(), ADAPTER_PRIORITIES.vite)  // 200 — before Jest
+  .register(new VitestAdapter(), ADAPTER_PRIORITIES.vitest) // 200 — before Jest
   .register(new JestAdapter(), ADAPTER_PRIORITIES.jest)    // 100
 ```
 
@@ -401,7 +405,7 @@ Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `F
 ### Checklist
 
 Runner package (`packages/runner`):
-- [ ] `FrameworkAdapter` implemented — `detect`, `resolveBinary`, `resolveConfig`, `getExtraArgs`, `outputFileArg`, `parseResult`, `createRunner`
+- [ ] `FrameworkAdapter` implemented — `detect`, `resolveBinary`, `resolveConfig`, `getExtraArgs`, `outputFileArg`, `parseResult`, `capabilities` (per installed version, never throws), `createRunner`
 - [ ] A `CommandRunner` subclass — `detectAdapter`, `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`), `parseTestList`, `coverageFile`
 - [ ] Registered in `FrameworkRegistry.default()` at the right priority (a project several adapters claim goes to the higher one)
 - [ ] Exported from `src/index.ts`
@@ -613,7 +617,7 @@ engine.jumpTo(stepId)
 | Debug config hardcoded path | `getDebugConfig` in `JestAdapter` uses `${workspaceFolder}/node_modules/.bin/jest`; non-standard layouts may need the `liveTestRunner.jestCommand` override |
 | CRA config cache is in-memory | Lost when the session ends; recomputed (~2–3s) on next Start Testing |
 | Gutter icon animation | `animateTransform` in the running SVG is rendered statically by VS Code — the spinner does not spin in the gutter |
-| `location` not always present | Some Jest setups (CRA, Vitest stub) may not emit `location` in JSON; gutter icons won't appear for those files |
+| `location` not always present | Some Jest setups (CRA; Vitest needs its task-location option, plan task 2.3) may not emit `location` in JSON; gutter icons won't appear for those files |
 | Timeline transform: regex-based injection | `traceTransform.js` injects trace calls using Babel AST. It handles assignments, function calls, and common statement patterns, but may miss complex patterns such as multi-line destructuring or chained optional calls inside expressions. |
 | Timeline: no import tracing | The transform only instruments the target test file. Imported modules are not traced; their execution does not appear as steps in the timeline. |
 | Timeline: `console.log` in tests | `traceRuntime.js` patches `console.*` to emit LOG events. If the test patches `console` before the runtime loads, log capture may be incomplete. |
@@ -622,7 +626,7 @@ engine.jumpTo(stepId)
 
 ## Roadmap
 
-- [ ] Vitest support — `ViteAdapter` stub exists in `packages/runner`; implement `resolveBinary` and `resolveConfig`
+- [ ] Vitest support (3.0.0) — tracked in `docs/temp_plans/vitest-support-plan.md`; the runner `VitestAdapter` is done (task 2.1)
 - [x] ~~Suite/test-case level nodes in Test Explorer~~ — completed in 1.2.0 (recursive node tree with unlimited nesting)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
 - [ ] Streaming live output during a run (message type stubbed, not wired)

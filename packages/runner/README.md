@@ -55,6 +55,7 @@ Each adapter implements `FrameworkAdapter`. Its `framework` is a `FrameworkId` �
 | `getExtraArgs(projectRoot)` | Any extra CLI flags needed |
 | `outputFileArg(file)` | Flag(s) that make the runner write its JSON result to `file` (Jest: `--outputFile=<file>`) |
 | `parseResult(passed, raw, stderr)` | The runner's JSON result → `RunResult` |
+| `capabilities(projectRoot)` | What the framework can do at the installed version (`results`, `nameFilter`, `listTests`, `related`, `liveStream`, `coverage`) — never throws |
 | `createRunner(options)` | The `TestRunner` for this framework (Jest, CRA → `JestRunner`) |
 
 Current adapters:
@@ -63,9 +64,11 @@ Current adapters:
 |---------|---------|-------|
 | `JestAdapter` | Jest, Next.js + Jest | Jest finds its own config; config-relevant flags of the `test` script (`--config`, `--env`, `--resetMocks`, …) are passed on |
 | `CRAAdapter` | Create React App | Runs `--showConfig` once per session to extract the hidden config (transformer options kept); caches in memory; uses react-scripts' own Jest |
+| `VitestAdapter` | Vitest ≥ 3 (older best-effort) | A `vitest` dependency or Vitest config/workspace file, and no Jest dependency/config (BUG-37). Runs `vitest/package.json#bin` (`vitest.mjs`) with node — no `.bin` shim, no npx. Config: `vitest.config.*` > `vite.config.*`. Capabilities per installed major; refuses the editor's built-in Node when it fails Vitest's `engines.node`. **No runner yet** — `createRunner` throws until task 2.2; the Jest runner refuses Vitest projects at run time |
+
+Helpers: `utils/semver.ts` (`satisfies(version, range)` for `engines.node`; unknown syntax → undefined, never a failure), `nodeRuntimeVersion()` and `resolvePackageBin(pkg, bin, fromDir)` in `resolution/BinaryResolver.ts`.
 
 Config helpers (`framework/jestConfig.ts`): `toInputConfig()` turns a normalized `--showConfig` project config back into `--config` input form, `pickGlobalConfig()` keeps run-relevant global options, `testScriptJestArgs()` reads the project's `test` script.
-| `ViteAdapter` | Vitest | Stub — not yet implemented |
 
 ### Execution
 
@@ -157,7 +160,7 @@ The extracted config is cached in memory. It is invalidated if `package.json` ch
 
 1. Create `src/framework/adapters/YourAdapter.ts` implementing `FrameworkAdapter`
 2. Create `src/YourRunner.ts` extending `CommandRunner` (`detectAdapter`, `buildArgs`, `parseTestList`, `coverageFile`) and return it from the adapter's `createRunner`
-3. Register it in `FrameworkRegistry.default()` (`.register(new YourAdapter(), priority)` — higher priorities are tried first; `ADAPTER_PRIORITIES` has the shipped ones: CRA 300, Vite 200, Jest 100)
+3. Register it in `FrameworkRegistry.default()` (`.register(new YourAdapter(), priority)` — higher priorities are tried first; `ADAPTER_PRIORITIES` has the shipped ones: CRA 300, Vitest 200, Jest 100)
 4. Export from `src/index.ts`
 
 No other files need to change.

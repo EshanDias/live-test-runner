@@ -20,7 +20,7 @@ describe('FrameworkDetector', () => {
   afterAll(() => { for (const d of dirs) { fs.rmSync(d, { recursive: true, force: true }); } });
 
   it('picks Vitest for a Vitest-only project', () => {
-    expect(detect({ devDependencies: { vitest: '1' } })).toBe('vite');
+    expect(detect({ devDependencies: { vitest: '1' } })).toBe('vitest');
   });
 
   it('picks Jest when a project has Vitest and a Jest config (e.g. jest-dom)', () => {

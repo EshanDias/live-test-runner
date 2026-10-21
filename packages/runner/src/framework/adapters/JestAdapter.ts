@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { FRAMEWORK_IDS, FrameworkId, RunResult } from '../../types';
+import { FRAMEWORK_IDS, FrameworkCapabilities, FrameworkId, RunResult } from '../../types';
 import { FrameworkAdapter } from './FrameworkAdapter';
 import { BinaryResolver } from '../../resolution/BinaryResolver';
 import { testScriptJestArgs } from '../jestConfig';
@@ -70,6 +70,10 @@ export class JestAdapter implements FrameworkAdapter {
     return parseJestResult(passed, raw, stderr);
   }
 
+  capabilities(_projectRoot: string): FrameworkCapabilities {
+    return { ...JEST_CAPABILITIES };
+  }
+
   createRunner(options?: RunnerOptions): TestRunner {
     return createJestRunner(options);
   }
@@ -78,6 +82,11 @@ export class JestAdapter implements FrameworkAdapter {
 // ── Shared by every Jest-based adapter (plain Jest, CRA) ───────────────────────
 
 const jestParser = new ResultParser();
+
+/** Everything the extension does today is built on Jest. */
+export const JEST_CAPABILITIES: Readonly<FrameworkCapabilities> = {
+  results: true, nameFilter: true, listTests: true, related: true, liveStream: true, coverage: true,
+};
 
 /** Jest writes its `--json` result to the file named by `--outputFile`. */
 export function jestOutputFileArg(file: string): string[] {

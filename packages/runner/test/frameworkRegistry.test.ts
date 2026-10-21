@@ -11,6 +11,7 @@ function fake(framework: string, matches: boolean | 'throw'): FrameworkAdapter {
   return {
     framework,
     detect: () => { if (matches === 'throw') { throw new Error('boom'); } return matches; },
+    capabilities: () => ({ results: true, nameFilter: true, listTests: true, related: true, liveStream: true, coverage: true }),
     resolveBinary: () => '',
     resolveConfig: async () => undefined,
     getExtraArgs: () => [],
@@ -22,9 +23,9 @@ function fake(framework: string, matches: boolean | 'throw'): FrameworkAdapter {
 
 describe('FrameworkRegistry', () => {
   it('keeps the shipped order: CRA, then Vitest, then Jest', () => {
-    expect(FrameworkRegistry.default().adapters().map((a) => a.framework)).toEqual(['cra', 'vite', 'jest']);
-    expect(ADAPTER_PRIORITIES.cra).toBeGreaterThan(ADAPTER_PRIORITIES.vite);
-    expect(ADAPTER_PRIORITIES.vite).toBeGreaterThan(ADAPTER_PRIORITIES.jest);
+    expect(FrameworkRegistry.default().adapters().map((a) => a.framework)).toEqual(['cra', 'vitest', 'jest']);
+    expect(ADAPTER_PRIORITIES.cra).toBeGreaterThan(ADAPTER_PRIORITIES.vitest);
+    expect(ADAPTER_PRIORITIES.vitest).toBeGreaterThan(ADAPTER_PRIORITIES.jest);
   });
 
   it('orders by priority, then registration order', () => {
