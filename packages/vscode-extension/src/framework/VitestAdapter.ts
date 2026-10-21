@@ -6,6 +6,7 @@ import {
   registerProjectRoot,
   toVitestNamePattern,
   toVitestPathArg,
+  toSpawnPath,
 } from '@live-test-runner/runner';
 import { RunnerBackedAdapter } from './RunnerBackedAdapter';
 import { nameToPattern } from '../utils/testNames';
@@ -39,11 +40,12 @@ export class VitestAdapter extends RunnerBackedAdapter {
     isSuite = false,
   ): Promise<vscode.DebugConfiguration> {
     registerProjectRoot(projectRoot);
-    const program = this._runnerAdapter.findInstall(projectRoot)?.entry
-      ?? path.join(projectRoot, 'node_modules', 'vitest', 'vitest.mjs');
+    // Entry, cwd, config and filter in one spelling, like the runs (toSpawnPath).
+    const program = toSpawnPath(this._runnerAdapter.findInstall(projectRoot)?.entry
+      ?? path.join(projectRoot, 'node_modules', 'vitest', 'vitest.mjs'));
     const args = ['run', toVitestPathArg(filePath)];
     const config = await this._runnerAdapter.resolveConfig(projectRoot);
-    if (config) { args.push('--config', config); }
+    if (config) { args.push('--config', toSpawnPath(config)); }
     args.push(...this._runnerAdapter.getExtraArgs(projectRoot));
     if (testFullName) {
       args.push('-t', toVitestNamePattern(nameToPattern(testFullName), isSuite));
@@ -55,7 +57,7 @@ export class VitestAdapter extends RunnerBackedAdapter {
       name: 'Debug Vitest test',
       program,
       args,
-      cwd: projectRoot,
+      cwd: toSpawnPath(projectRoot),
       console: 'integratedTerminal',
       autoAttachChildProcesses: true,
       smartStep: true,
