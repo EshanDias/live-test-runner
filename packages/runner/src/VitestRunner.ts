@@ -116,6 +116,16 @@ export class VitestRunner extends CommandRunner {
     }
   }
 
+  /**
+   * Vitest's root is its cwd as given (no realpath): on Windows an 8.3 name
+   * like C:\Users\RUNNER~1 stays short, and the real-path file filters
+   * (toVitestPathArg) would then match nothing. Running from the real path
+   * keeps root, config and filters in one spelling.
+   */
+  protected override spawnPath(p: string): string {
+    return toRunnerPath(p);
+  }
+
   protected override leadingArgs(request: RunRequest): string[] {
     switch (request.kind) {
       case 'list':     return ['list'];
