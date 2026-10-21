@@ -273,6 +273,7 @@ Done (2026-10-21): `session/VitestBatchRunner.ts` rewritten on the live events �
 
 **4.3 Tests (1.5 d)** — `vitest-batch`, `vitest-save-during-run`, reporter unit tests with synthetic events.
 Gate → **M2b**.
+Done (2026-10-21) → **M2b reached** (Vitest live progress). e2e `vitest-batch`, `vitest-save-during-run` (written with 4.2); reporter unit tests `runner/test/vitestReporterSource.test.ts` (4) — the generated ESM reporter is loaded in a child node process and driven with synthetic task trees / hooks for both API paths, crash-at-run-end, hook failures and Vitest 1 console tags. Gate after 4.2 is the phase gate (6/6 real repos through the live batch runner).
 
 ### Phase 5 — Coverage (4.5 d) — *Feature V4*
 
@@ -432,8 +433,12 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 4.2 done (2026-10-21) — see the task note. Gate: build, lint, 169 runner + 29 extension unit tests, `e2e/run.js --all` (20 pass incl. 10 Vitest scenarios, 3 skipped), `e2e/real-repos.js` (6/6 PASS — vueuse / slidev / unplugin through the live batch runner).
 
+- 4.3 done → **M2b**. Phase 4 complete on `feat/vitest-live`.
+
+**Phase 5 (branch `feat/vitest-coverage`, from `feat/vitest-live`)**
+
 **Next**
-1. Task 4.3 — remaining phase 4 tests (reporter unit tests with synthetic events) → milestone M2b.
+1. Task 5.1 — Vitest coverage run (provider detection, json reporters into the session dir, include globs).
 
 ## Progress tracker
 
@@ -463,7 +468,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [ ] 11.1 Feature matrix + guide
 - [ ] 11.2 Real-repo validation
 - [ ] 11.3 Release prep → **3.0.0**
-- [ ] 4.1–4.3 Live streaming (3.0.x) — 4.1, 4.2 done
+- [x] 4.1–4.3 Live streaming (3.0.x)
 - [ ] 6.1–6.3 Related/on-save (3.0.x)
 - [ ] 7.1–7.7 Monorepos (3.1)
 - [ ] 8.1–8.6 Mixed (3.2)
