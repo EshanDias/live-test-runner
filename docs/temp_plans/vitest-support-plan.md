@@ -232,6 +232,8 @@ Done (2026-10-21): the extension `JestAdapter` was split — `framework/RunnerBa
 **2.5 Static discovery syntax (1.5 d)**
 Sketch: check `TestDiscoveryService`'s parser covers `test/it/describe` + `.skip/.only/.todo/.concurrent/.each/.for/.skipIf/.runIf`, `test.extend` fixtures, `import { test } from 'vitest'`; add missing forms and unit tests.
 
+Done (2026-10-21): `testDiscovery.js` — per-file name context (`_collectTestNames`): renamed imports from jest / vitest (`test as base`), Vitest `suite` (only when imported from vitest — a bare `suite(...)` stays ignored, Jest has none), aliases from `.extend(…)` (chains, TS generics, `as`/`satisfies`, repeated until stable so aliases of aliases work); `getCallType` treats `.each/.for/.skipIf/.runIf` as curried (tagged templates: `.each/.for`); `.skip/.only/.todo/.concurrent/.sequential/.fails` were already covered by the member-root rule; `test`/`it`/`describe` imported from project modules (relative, `@/`, `~/`, `#`) are no longer "shadowed" (the tstyche rule now only applies to other packages); `bench` ignored. Found on the way (both pre-existing, any framework): (1) the inner `describe.each([...])` call of a curried describe popped the suite on exit → its tests landed at the file root until a run rebuilt the tree — exit now pops only for calls that opened a suite (`WeakSet`); (2) the JSX plugin was on for `.ts` files, so a generic arrow `<T>(…) =>` failed the whole parse (vueuse `useFetch/index.test.ts`) — off for `.ts/.mts/.cts`. Unit tests: `vscode-extension/test/testDiscovery.test.ts` (12, run with the shipped parser + walker). Real repos (read-only): unplugin 26/26 files (180 tests), slidev 38/39 (314), vueuse 226/227 (1568; was 1514 before the JSX fix) — the two without static tests are generated (`describePackagesApiSnapshots(...)`); Jest repos discover exactly as before (vscode-jest 884, CRA 137). e2e: `vitest-basic/src/syntax.test.ts` + 2 checks in `vitest-full-run` (discovered before Start; results 4 passed / 1 skipped).
+
 **2.6 Session behaviour parity (1 d)**
 Sketch: confirm Start/Stop/hang detection/on-save-without-trace/session guard work through the plain-run path (`SessionManager` ~line 802) with Vitest; `Stop` is final; capability `trace=false` → timeline/“Covering tests” show “not available for Vitest yet”. Also (from 1.6): make `SessionManager`'s log / status messages framework-aware — today they name Jest and Jest options (`testMatch / testPathIgnorePatterns`, `jest --listTests`, "plain Jest"); use the bundle's `displayName` plus a per-framework detail, and update the e2e checks that match those strings. `instrumentedRunner` becomes optional in `FrameworkServices` here.
 
@@ -395,8 +397,10 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 2.4 done (2026-10-21) — see the task note. Gate: lint, 157 runner + 17 extension unit tests, `e2e/run.js --all` (12 pass incl. `vitest-full-run`, 2 repo scenarios skipped), `e2e/real-repos.js` (jest-dom, vscode-jest, sample-react-project PASS).
 
+- 2.5 done (2026-10-21) — see the task note. Gate: lint, 157 runner + 29 extension unit tests, `e2e/run.js --all` (12 pass, 2 skipped), `e2e/real-repos.js` (3/3 PASS).
+
 **Next**
-1. Task 2.5 — remaining Vitest discovery syntax (`.for`, `skipIf`/`runIf`, `test.extend` fixtures, `suite`, `bench` excluded).
+1. Task 2.6 — session behaviour parity (Start/Stop/hang/on-save/guard with Vitest; framework-aware log wording).
 
 ## Progress tracker
 
@@ -413,7 +417,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 2.2 VitestRunner
 - [x] 2.3 Result parsing
 - [x] 2.4 Extension VitestAdapter
-- [ ] 2.5 Static discovery syntax
+- [x] 2.5 Static discovery syntax
 - [ ] 2.6 Session behaviour parity
 - [ ] 2.8 Projects & browser-mode guard
 - [ ] 2.7 Tests (M1)

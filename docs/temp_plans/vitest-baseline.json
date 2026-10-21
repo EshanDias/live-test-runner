@@ -1,6 +1,6 @@
 {
   "sample-react-project": {
-    "recorded": "2026-10-21T05:45:37.806Z",
+    "recorded": "2026-10-21T05:58:12.643Z",
     "head": "",
     "extensionMatches": true,
     "files": 14,
@@ -83,7 +83,7 @@
     }
   },
   "jest-dom": {
-    "recorded": "2026-10-21T05:43:19.771Z",
+    "recorded": "2026-10-21T05:55:54.068Z",
     "head": "0ff8904ff4683d676ff70ab68b7f08465c44d0d0",
     "extensionMatches": true,
     "files": 31,
@@ -251,7 +251,7 @@
     }
   },
   "vscode-jest": {
-    "recorded": "2026-10-21T05:44:31.725Z",
+    "recorded": "2026-10-21T05:57:06.633Z",
     "head": "b71edf0b1b80aa22a16222775fbd37dabab3aea0",
     "extensionMatches": true,
     "files": 49,

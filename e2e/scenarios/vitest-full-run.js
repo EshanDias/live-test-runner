@@ -12,6 +12,10 @@ module.exports = {
 
   async run({ api, t, vscode, workspace }) {
     await h.waitForDiscovery(api);
+    // Static discovery (no Babel in this project: the extension's own parser) — before any run.
+    const discovered = h.allNodes(api).filter((n) => (n.type === 'test' || n.isDynamicTemplate) && n.fileId.replace(/\\/g, '/').endsWith('src/syntax.test.ts')).map((n) => n.name);
+    t.check('discovery finds test.extend / .for / skipIf / runIf tests before Start',
+      ['fixture value', 'for row %i', 'skipped by skipIf', 'run by runIf'].every((n) => discovered.includes(n)), JSON.stringify(discovered));
     const rec = h.recordEvents(api);
     const since = h.isoNow();
     const mark = h.rawMark(api);
@@ -35,6 +39,7 @@ module.exports = {
     t.eq('math.test.js results', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });
     t.eq('strings.test.ts results', h.statusCounts(api, 'src/strings.test.ts'), { passed: 1, failed: 1 });
     t.eq('top-level.spec.js results', h.statusCounts(api, 'src/top-level.spec.js'), { passed: 1 });
+    t.eq('syntax.test.ts results (extend / for / skipIf / runIf)', h.statusCounts(api, 'src/syntax.test.ts'), { passed: 4, skipped: 1 });
     h.checkMatchesPlainVitest(api, t, workspace);
 
     // Nested describe and test.each rows land under the right suites.
