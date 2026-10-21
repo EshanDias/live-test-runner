@@ -6,8 +6,9 @@
  *  2. Register VS Code commands and event subscriptions
  *  3. Hand control to SessionManager for all run logic
  *
- * No test-running logic, no Jest imports, no status bar text — those live in
- * SessionManager and JestAdapter respectively.
+ * No test-running logic, no framework classes, no status bar text — those
+ * live in SessionManager and the framework services bundle
+ * (framework/jestServices.ts) respectively.
  */
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -16,17 +17,16 @@ import { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
-import { JestAdapter } from './framework/JestAdapter';
+import { SingleFrameworkProvider } from './framework/FrameworkServices';
+import { createJestServices } from './framework/jestServices';
 import { CodeLensProvider } from './editor/CodeLensProvider';
 import { DecorationManager } from './editor/DecorationManager';
 import { ExplorerView } from './views/ExplorerView';
 import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
-import { JestProjectConfig } from './session/JestProjectConfig';
 import { TestDiscoveryService } from './session/TestDiscoveryService';
 import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
-import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
 import { DiscoveryCache, rotateAndCheckCapacity } from './cache/DiscoveryCache';
 import { CoverageStore } from './coverage/CoverageStore';
@@ -148,16 +148,17 @@ export function activate(context: vscode.ExtensionContext) {
     resultsView.sendScopedData(sel.fileId, sel.nodeId);
   };
 
-  // The project's Jest config as Jest resolves it — shared by session runs and the timeline.
-  const projectConfig = new JestProjectConfig(LTR_SESSION_TMP_DIR, (msg) => outputChannel.appendLine(msg));
+  // The test framework's services: adapter, project config, batch runner,
+  // timeline runner. Jest (incl. CRA) is the only framework so far.
+  const frameworkServices = createJestServices({
+    sessionDir: LTR_SESSION_TMP_DIR,
+    coverageStore,
+    rawLog: (msg) => outputChannel.appendLine(msg),
+  });
 
   // ── Timeline debugger ──────────────────────────────────────────────────────
   // Reference typed as the interface — never as the concrete class.
-  const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner(
-    LTR_SESSION_TMP_DIR,
-    (msg) => outputChannel.appendLine(msg),
-    projectConfig,
-  );
+  const instrumentedRunner: IInstrumentedRunner = frameworkServices.instrumentedRunner;
   const timelineDecorations = new TimelineDecorationManager();
 
   // Last timeline run context, used by the Re-run button in the sidebar.
@@ -306,7 +307,7 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   const session = new SessionManager(
-    new JestAdapter(LTR_SESSION_TMP_DIR),
+    new SingleFrameworkProvider(frameworkServices),
     store,
     traceStore,
     coverageStore,
@@ -316,8 +317,6 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel,
     statusBar,
     discovery,
-    LTR_SESSION_TMP_DIR,
-    projectConfig,
   );
 
   // Expose cleanup so deactivate() can delete trace files on extension shutdown

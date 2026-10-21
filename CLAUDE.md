@@ -82,8 +82,9 @@ Two interfaces manage framework abstraction:
 
 - **`FrameworkAdapter`** (`packages/runner/`) — binary resolution, config extraction. No VS Code dependency.
 - **`IFrameworkAdapter`** (`packages/vscode-extension/`) — adds VS Code-specific logic (test discovery, debug config, file classification).
+- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. `extension.ts` composes the Jest bundle (`createJestServices`).
 
-Adding a framework = one class in each package. `SessionManager`, `ResultStore`, views, and observers require zero changes.
+Adding a framework = one adapter in each package + its services bundle. `SessionManager`, `ResultStore`, views, and observers require zero changes.
 
 ### 3. Two Stores, One Source of Truth Per Concern
 
@@ -212,7 +213,7 @@ Key directories:
 | Dir | Purpose |
 |-----|---------|
 | `src/extension.ts` | Entry point; instantiates all managers and observers |
-| `src/session/` | `SessionManager`, `SessionTraceRunner`, trace runtime/transform |
+| `src/session/` | `SessionManager`, `JestBatchRunner`, trace runtime/transform |
 | `src/editor/` | `DecorationManager`, CodeLens |
 | `src/views/` | Explorer view, Results view, Timeline view |
 | `src/store/` | `ResultStore`, `ExecutionTraceStore` |

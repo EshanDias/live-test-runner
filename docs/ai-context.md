@@ -60,7 +60,7 @@ src/
 
 **Process model:** Jest is always `node <jest/bin/jest.js>` (`BinaryResolver.resolveJestEntry`, CRA: `resolveCraJestEntry`) with **no shell** — Windows `.cmd` shims broke arguments and paths with spaces. `nodeRuntime()` prefers `node` on PATH. `Executor.kill()` kills the process tree; `timeoutMs` stops a hanging run. Path arguments: forward slashes + upper-case drive (`toJestPathArg`).
 
-**Batch run command (SessionTraceRunner — initial run and on-save file reruns):**
+**Batch run command (JestBatchRunner — initial run and on-save file reruns):**
 ```sh
 node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
      --config <ltr-temp-config.js> --cacheDirectory <per-project transform cache> \
@@ -127,7 +127,8 @@ src/
 │   ├── SessionManager.ts           Session lifecycle, batched run pool (CONCURRENCY=cpus/4), on-save, rerun
 │   ├── IProjectConfig.ts           Interface: the project's resolved runner config (get / reset)
 │   ├── JestProjectConfig.ts        IProjectConfig for Jest: `jest --showConfig` once per session
-│   ├── SessionTraceRunner.ts       Runs combined test+trace+coverage batches; populates ResultStore + ExecutionTraceStore + CoverageStore
+│   ├── IBatchRunner.ts             Interface: runFiles(BatchRunOptions) / kill / reset — SessionManager's only view of batch runs
+│   ├── JestBatchRunner.ts       Runs combined test+trace+coverage batches; populates ResultStore + ExecutionTraceStore + CoverageStore
 │   │   instrumentation/
 │   │   ├── liveReporter.js         Custom Jest reporter: appends one JSON record per completed file to a JSONL file
 │   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
@@ -136,6 +137,8 @@ src/
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
 │   │                               getAffectedTests, getDebugConfig
+│   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all) + SingleFrameworkProvider
+│   ├── jestServices.ts             createJestServices(): the Jest bundle (adapter, JestProjectConfig, JestBatchRunner, JestInstrumentedRunner, session runner)
 │   └── JestAdapter.ts              All Jest-specific logic
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
@@ -198,8 +201,8 @@ src/
 2. File list read from `store.getAllFiles()` — no second file scan needed
 3. `onRunStarted` pushed to UI with the already-populated pending tree
 4. `_runFiles` builds a batch queue: `BATCH_SIZE = clamp(ceil(N / CONCURRENCY), 5, 50)` files per batch; `CONCURRENCY = max(1, floor(cpuCount / 4))` parallel Jest processes
-5. Each batch: files marked `running` in store → single Jest process via `SessionTraceRunner.runFiles` with combined test+trace+coverage instrumentation; `liveReporter.js` streams per-file results as they complete; `onFileDone` notifies observers after each file
-6. After Jest exits: `SessionTraceRunner` parses (a) the light-trace JSONL → updates `ExecutionTraceStore`; (b) the coverage counters JSONL → promotes `CoverageStore` entries from `'counted'` to `'measured'` using manifests on disk
+5. Each batch: files marked `running` in store → single Jest process via `JestBatchRunner.runFiles` with combined test+trace+coverage instrumentation; `liveReporter.js` streams per-file results as they complete; `onFileDone` notifies observers after each file
+6. After Jest exits: `JestBatchRunner` parses (a) the light-trace JSONL → updates `ExecutionTraceStore`; (b) the coverage counters JSONL → promotes `CoverageStore` entries from `'counted'` to `'measured'` using manifests on disk
 7. In parallel with step 5: `SourceCounter` AST-scans every source file and populates `CoverageStore` with `'counted'` (0-hit) entries so untouched files are included in coverage denominators
 7. On-save listener enabled
 
@@ -259,7 +262,7 @@ ResultStore
 
 ### `ExecutionTraceStore`
 
-Derived indexes built from per-test JSONL trace files written by `SessionTraceRunner` after each instrumented run. These are read-only caches — the trace files on disk are the source of truth. All three indexes are rebuilt from traces and cleared together on session reset.
+Derived indexes built from per-test JSONL trace files written by `JestBatchRunner` after each instrumented run. These are read-only caches — the trace files on disk are the source of truth. All three indexes are rebuilt from traces and cleared together on session reset.
 
 ```
 ExecutionTraceStore
@@ -282,7 +285,7 @@ ExecutionTraceStore
             }
           }
         }
-        Populated by SessionTraceRunner after each file run.
+        Populated by JestBatchRunner after each file run.
         Used by SessionManager._runAffectedBySourceFile() to scope on-save reruns
         to the specific test cases that actually executed code from the changed file.
 ```
@@ -291,7 +294,7 @@ ExecutionTraceStore
 - `ResultStore` answers "what happened" — pass/fail, output, failure messages
 - `ExecutionTraceStore` answers "what ran and where" — which source lines executed, which tests cover which files
 - `CoverageStore` answers "how much is covered" — statement/branch/function/line percentages; includes untouched files via `SourceCounter`
-- No store writes to another; `SessionManager` and `SessionTraceRunner` coordinate all three
+- No store writes to another; `SessionManager` and `JestBatchRunner` coordinate all three
 
 ### `ScopedOutput`
 
@@ -541,7 +544,7 @@ All in `packages/vscode-extension/package.json`:
 | Run lifecycle | `packages/vscode-extension/src/session/SessionManager.ts` |
 | All result data | `packages/vscode-extension/src/store/ResultStore.ts` |
 | Execution trace indexes | `packages/vscode-extension/src/store/ExecutionTraceStore.ts` |
-| Per-file trace runner | `packages/vscode-extension/src/session/SessionTraceRunner.ts` |
+| Per-file trace runner | `packages/vscode-extension/src/session/JestBatchRunner.ts` |
 | Selection tracking | `packages/vscode-extension/src/store/SelectionState.ts` |
 | Jest-specific logic | `packages/vscode-extension/src/framework/JestAdapter.ts` |
 | Gutter + inline | `packages/vscode-extension/src/editor/DecorationManager.ts` |

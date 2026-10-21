@@ -197,6 +197,7 @@ Done (2026-10-21): `runner/src/framework/FrameworkRegistry.ts` (`register` / `un
 **1.4 Extract `IBatchRunner` + services bundle (3 d)** (C1, C3, C4, C5)
 Sketch: define `IBatchRunner { runFiles(opts), kill(), reset(), … }` from `SessionTraceRunner`'s public surface; `JestBatchRunner = today's SessionTraceRunner`. Introduce `FrameworkServices` and have `SessionManager` take `servicesFor(file|root)` (single provider returning the one Jest bundle for now) — replacing the constructor's `_adapter` + `_projectConfig`, `new SessionTraceRunner`, and `new JestRunner` bootstrap (`TestSession` gets `adapter.createRunner()`). `extension.ts` composes services; `IInstrumentedRunner` is produced by the services bundle too.
 Risk: largest refactor; do it in small commits, run the gate after each.
+Done (2026-10-21): `session/IBatchRunner.ts` (`BatchRunOptions` = the former inline `runFiles` options); `SessionTraceRunner` → `session/JestBatchRunner.ts implements IBatchRunner`. `framework/FrameworkServices.ts`: `FrameworkServices { framework, adapter, projectConfig, batchRunner, instrumentedRunner, createSessionRunner() }`, `IFrameworkServicesProvider { servicesFor(fileOrRoot), all() }`, `SingleFrameworkProvider`. `framework/jestServices.ts` `createJestServices({ sessionDir, coverageStore, rawLog })` builds exactly what `extension.ts` / `SessionManager` built before (same constructor args). `SessionManager(provider, …)` — `_adapter`, `_projectConfig`, `_sessionDir` params gone; every adapter call goes through `_adapterFor(file|root)`, Stop / restart kill `all()` batch runners. `instrumentedRunner` is required in the bundle for now (2.6 adds the `trace=false` capability). Left for 1.6: Jest wording in `SessionManager` log/status text (`Asking Jest which files it runs…`, `jest --listTests`, …) and `_askJestForRunnable`.
 
 **1.5 Split instrumentation (1 d)** (C3)
 Sketch: `session/instrumentation/` → `shared/` (trace record format, writer protocol, doc of the `__strace` contract), `jest/` (transform, reporter, setup, discovery). Pure file moves + import updates; document the protocol in `docs/architecture.md` so Vitest can implement it later.
@@ -370,13 +371,13 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 **Done in this session**
 - 0.3 finished: `e2e/real-repos.js` records each repo's plain-runner per-file counts + extension match in `docs/temp_plans/vitest-baseline.json` (CRA gets a baseline too). Fixed `repo-cra`'s plain run for workspaces under macOS's `/var` symlink (it passed `/var/…` to `--runTestsByPath`; Jest only accepts `/private/var/…`). Baseline green: `jest-dom` 31 files, `vscode-jest` 49 files / 2012 tests, `sample-react-project` 14 files. The heavy `jest` monorepo: see below.
-- 1.1, 1.2 and 1.3 done — see the task notes below. Gate after 1.3: unit tests (53 runner + 17 extension), e2e --all, real-repos (3/3) green.
+- 1.1–1.4 done — see the task notes below. Gate after 1.4: unit tests, e2e --all (11 pass, 2 skipped), real-repos (3/3) green. Note: commit `b175e39` (1.3) accidentally carries the `SessionTraceRunner.ts → JestBatchRunner.ts` file rename without the import updates, so it does not build on its own; the 1.4 commit fixes it. Gate after 1.3: unit tests (53 runner + 17 extension), e2e --all, real-repos (3/3) green.
 - `jest` monorepo (`node e2e/real-repos.js jest`, after 1.2): harness fixed (spawnSync 1 MB buffer killed the plain-Jest baseline; save-test source picked from `packages/*`). 470/484 files match plain Jest; the rest are **BUG-43** (jest-runtime tests fail under the session run, `docs/bugs-and-issues.md`). The pre-refactor build (`e2ba4ae`) gives identical totals (6194 tests · 4141 passed · 1122 failed), so 1.1/1.2 changed nothing; BUG-43 is a 2.0.4 issue, open. Every other check passes on the monorepo.
 - Gate after 1.2: `pnpm build`, `pnpm lint`, `pnpm test` (47 runner incl. 4 command-line snapshots + 17 extension), `node e2e/run.js --all` (11 pass, 2 skipped), `node e2e/real-repos.js` (3/3 PASS).
 - Gate after 1.1: `pnpm build`, `pnpm lint`, `pnpm test` (35 runner + 17 extension), `node e2e/run.js --all` (11 pass, 2 repo scenarios skipped — covered by `real-repos.js`), `node e2e/real-repos.js` (3/3 PASS, originals untouched).
 
 **Next**
-1. Task 1.4 (`IBatchRunner` + services bundle) on `feat/vitest-decouple`.
+1. Task 1.5 (split instrumentation) on `feat/vitest-decouple`.
 
 ## Progress tracker
 
@@ -386,7 +387,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 1.1 Neutral naming & open types
 - [x] 1.2 Generic runner layer
 - [x] 1.3 FrameworkRegistry + detector
-- [ ] 1.4 IBatchRunner + services bundle
+- [x] 1.4 IBatchRunner + services bundle
 - [ ] 1.5 Split instrumentation
 - [ ] 1.6 Conformance suite + gate
 - [ ] 2.1 Runner VitestAdapter

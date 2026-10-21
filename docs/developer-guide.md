@@ -104,7 +104,9 @@ Two adapter interfaces exist in the codebase:
 
 The separation means the runner can be used independently of VS Code.
 
-Adding a framework = one class in each package. `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
+On the extension side a framework is a **services bundle** (`FrameworkServices`: `adapter`, `projectConfig: IProjectConfig`, `batchRunner: IBatchRunner`, `instrumentedRunner`, `createSessionRunner()`). `SessionManager` asks an `IFrameworkServicesProvider` for the bundle of a file or root (`servicesFor`) and never constructs framework classes; `extension.ts` composes the bundle (`createJestServices`) and wraps it in a `SingleFrameworkProvider`.
+
+Adding a framework = an adapter in each package plus the extension-side bundle (batch runner, project config). `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
 
 ### Two stores, one source of truth per concern
 
@@ -121,7 +123,7 @@ Adding a framework = one class in each package. `SessionManager`, `ResultStore`,
 
 The trace files on disk are the ground truth. The store entries are caches. Rule: **indexes are always rebuilt from trace files, never written independently.** Clear both together on session reset.
 
-`SessionTraceRunner` populates `ExecutionTraceStore` after each file run (fire-and-forget background pass). `SessionManager` reads from it in `_runAffectedBySourceFile` when a source file is saved. Neither store writes to the other.
+`JestBatchRunner` populates `ExecutionTraceStore` after each file run (fire-and-forget background pass). `SessionManager` reads from it in `_runAffectedBySourceFile` when a source file is saved. Neither store writes to the other.
 
 ### Output attribution
 
@@ -183,7 +185,7 @@ Rules:
 - **One summary line per run**, not one per file. Per-file detail belongs at `debug`/`trace`.
 - Put the *cause* in the message: when Jest fails, include its stderr tail (`tail()` from runner).
 - Never write extension diagnostics to the Test Output channel. It holds only Jest's output, plus `──── Run #N ────` separators.
-- Correlation tags: `Run #N` (SessionManager), `bN` (SessionTraceRunner batch), `jest#N` (Executor process).
+- Correlation tags: `Run #N` (SessionManager), `bN` (JestBatchRunner batch), `jest#N` (Executor process).
 
 **Logging from inside the Jest process** (instrumentation `.js` files): write `[LTR:<level>] message\n` to stderr. `Executor` routes those lines to the log at that level and strips them from captured stderr. `LTR_LOG_LEVEL` (set from the channel level) lets the scripts skip debug/trace writes:
 

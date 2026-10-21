@@ -119,7 +119,7 @@ Two different command shapes are used depending on context:
 
 **One file, several Jest projects.** A multi-project config can run the same file more than once (e.g. under `jsdom` and `node`). Jest reports each run; `mergeFileResults` (runner) merges them so a test fails if it failed in any project.
 
-**Batch run — `SessionTraceRunner` (initial run + on-save file reruns):**
+**Batch run — `JestBatchRunner` (initial run + on-save file reruns):**
 ```sh
 node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
      --config <ltr-temp-cfg.js> --cacheDirectory <per-project transform cache> \
@@ -354,11 +354,11 @@ ExecutionTraceStore
             }
           }
         }
-        Populated by SessionTraceRunner after each file run.
+        Populated by JestBatchRunner after each file run.
         Used by SessionManager._runAffectedBySourceFile() for smart on-save reruns.
 ```
 
-**`CoverageStore`** — in-memory store for statement/branch/function/line coverage metrics. Lives in `src/coverage/`. Separate from `ExecutionTraceStore` because it has its own lifecycle (populated by `SourceCounter` + `SessionTraceRunner._parseCoverage()`).
+**`CoverageStore`** — in-memory store for statement/branch/function/line coverage metrics. Lives in `src/coverage/`. Separate from `ExecutionTraceStore` because it has its own lifecycle (populated by `SourceCounter` + `JestBatchRunner._parseCoverage()`).
 
 ```
 CoverageStore
@@ -382,7 +382,7 @@ Key reads:
 
 Key writes:
   setCountedEntry(filePath, counts) — called by SourceCounter per source file
-  setMeasuredEntry(filePath, data)  — called by SessionTraceRunner._parseCoverage()
+  setMeasuredEntry(filePath, data)  — called by JestBatchRunner._parseCoverage()
   markFileStale(filePath)           — 'measured' → 'measured-stale' on save (rerun pending)
   clearStale(filePath)              — 'measured-stale' → 'measured' if rerun is aborted without
                                       completing (e.g. session stopped mid-rerun)
@@ -403,11 +403,11 @@ interface CoverageTotals {
 
 Entry lifecycle:
 1. `'counted'` — set by `SourceCounter` at session start (0 hits, denominator only)
-2. `'measured'` — promoted by `SessionTraceRunner._parseCoverage()` after a run touches the file
+2. `'measured'` — promoted by `JestBatchRunner._parseCoverage()` after a run touches the file
 3. `'measured-stale'` — set by `SessionManager` when the file is saved and a rerun is pending
 4. Back to `'measured'` — when the rerun completes and `_parseCoverage()` fires again
 
-**`CoverageReport`** (`src/coverage/CoverageReport.ts`): Stateless `calculate(manifest, counters): CoveragePct` function. Reads a coverage manifest (statement/branch/function IDs with location) and a live counter snapshot, and returns the four-metric `CoveragePct`. Called by `SessionTraceRunner._parseCoverage()` — not a class; no side effects.
+**`CoverageReport`** (`src/coverage/CoverageReport.ts`): Stateless `calculate(manifest, counters): CoveragePct` function. Reads a coverage manifest (statement/branch/function IDs with location) and a live counter snapshot, and returns the four-metric `CoveragePct`. Called by `JestBatchRunner._parseCoverage()` — not a class; no side effects.
 
 **`CoverageDecorationManager`** (`src/editor/CoverageDecorationManager.ts`): Implements `IResultObserver`. Subscribes to `CoverageStore.onDidChange` and refreshes all visible editors on every change. For each editor it reads the `CoverageStore` entry and — for `measured` or `measured-stale` entries — loads the manifest from disk to classify every line into one of four states:
 
@@ -502,7 +502,7 @@ Runs on extension activate — before the user clicks Start Testing.
 2. **On save** — debounced (default 300ms); classifies file as test or source; for source files calls `CoverageStore.markFileStale()` then `_runAffectedBySourceFile()` (trace-store driven with CoverageMap fallback)
 3. **Stop Testing** — kills child processes, clears decorations, calls `CoverageStore.clear()`, disables on-save
 
-After each file batch, `SessionTraceRunner` parses the light-trace JSONL (updates `ExecutionTraceStore`) and then parses the coverage counters JSONL (promotes `CoverageStore` entries from `'counted'` to `'measured'`). Both happen in the same post-Jest-exit phase — no extra process or phase needed.
+After each file batch, `JestBatchRunner` parses the light-trace JSONL (updates `ExecutionTraceStore`) and then parses the coverage counters JSONL (promotes `CoverageStore` entries from `'counted'` to `'measured'`). Both happen in the same post-Jest-exit phase — no extra process or phase needed.
 
 Concurrency is controlled by a `CONCURRENCY = 3` constant in `SessionManager`.
 
@@ -520,7 +520,21 @@ Concurrency is controlled by a `CONCURRENCY = 3` constant in `SessionManager`.
 | `getAffectedTests(session, changedFile)` | Test files affected by a source change |
 | `getDebugConfig(...)` | VS Code debug launch config for `▷ Debug` |
 
-Adding a new framework = one file implementing `IFrameworkAdapter`. `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
+Adding a new framework = one file implementing `IFrameworkAdapter`, plus that framework's batch runner and project config, bundled as `FrameworkServices`. `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
+
+### Framework services bundle (extension side)
+
+`SessionManager` never builds framework classes. It gets an `IFrameworkServicesProvider` (`servicesFor(fileOrRoot)`, `all()`) and asks it for the `FrameworkServices` of a file or project root (`framework/FrameworkServices.ts`):
+
+| Member | Interface | Jest implementation |
+|---|---|---|
+| `adapter` | `IFrameworkAdapter` | `framework/JestAdapter.ts` |
+| `projectConfig` | `IProjectConfig` (`get(root)`, `reset()`) | `session/JestProjectConfig.ts` (`jest --showConfig`) |
+| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` |
+| `instrumentedRunner` | `IInstrumentedRunner` (Timeline) | `timeline/JestInstrumentedRunner.ts` |
+| `createSessionRunner()` | runner `TestRunner` for core's `TestSession` | runner `JestAdapter.createRunner()` → `JestRunner` |
+
+`extension.ts` composes the Jest bundle (`framework/jestServices.ts`, `createJestServices`) and passes `new SingleFrameworkProvider(bundle)`. Stop kills the batch runners of `all()` bundles. Mixed-framework projects (phase 8) replace the provider with a router; nothing in `SessionManager` changes.
 
 ### Editor decorations
 
@@ -686,7 +700,7 @@ User clicks "Start Testing"
       → CoverageMap built from coverage data
       → On-save listener enabled
 
-**Session Isolation** — every window uses a unique `session-<pid>-<ts>` directory. The extension host creates this on startup and injects it into all internal components (`SessionManager`, `JestAdapter`, `SessionTraceRunner`). This ensures that multiple VS Code windows never conflict on shared temporary filenames.
+**Session Isolation** — every window uses a unique `session-<pid>-<ts>` directory. The extension host creates this on startup and injects it into all internal components (`SessionManager`, `JestAdapter`, `JestBatchRunner`). This ensures that multiple VS Code windows never conflict on shared temporary filenames.
 
 User saves a file
   → SessionManager.onSave(filePath)            debounced 300ms

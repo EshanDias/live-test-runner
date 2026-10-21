@@ -1,6 +1,7 @@
 /**
- * SessionTraceRunner — runs a batch of test files under light-trace
- * instrumentation and streams per-file results back to the caller.
+ * JestBatchRunner — the Jest {@link IBatchRunner}: runs a batch of test files
+ * under light-trace instrumentation and streams per-file results back to the
+ * caller.
  *
  * A single Jest process handles all files in the batch:
  *   - liveReporter.js appends one JSON record per completed file to
@@ -16,7 +17,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults } from '@live-test-runner/runner';
-import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
@@ -24,6 +24,7 @@ import { Manifest, FileCov, LiveCov } from '../coverage/types';
 import { logger } from '../utils/logger';
 import { IProjectConfig } from './IProjectConfig';
 import { sourceTransformPattern, upperDrive } from './JestProjectConfig';
+import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
 
 const log = logger.scope('Runner');
 const covLog = logger.scope('Coverage');
@@ -109,7 +110,7 @@ function toFileRunResult(rec: ReporterRecord): FileRunResult {
   };
 }
 
-export class SessionTraceRunner {
+export class JestBatchRunner implements IBatchRunner {
   /** Batch counter — "b7" in log lines ties a batch's messages together. */
   private static _batchSeq = 0;
   /** Every Jest process this runner started that is still running — for kill(). */
@@ -177,29 +178,12 @@ export class SessionTraceRunner {
    * - Returns the list of files that produced no result (crashed mid-batch).
    *   Result paths are always the caller's own keys (`filePaths` entries).
    */
-  async runFiles(options: {
-    filePaths: string[];
-    projectRoot: string;
-    traceStore: ExecutionTraceStore;
-    store: ResultStore;
-    applyFileResult: (filePath: string, fileResult: FileRunResult) => void;
-    onFileDone: (filePath: string, status: 'passed' | 'failed') => void;
-    /**
-     * Another Jest project reported a file already done in this batch; its
-     * merged result was applied. `wasStatus` is what onFileDone reported.
-     */
-    onFileUpdated?: (filePath: string, status: 'passed' | 'failed', wasStatus: 'passed' | 'failed') => void;
-    onFileStart?: (filePath: string) => void;
-    onFileTimedOut?: (filePath: string, seconds: number) => void;
-    /** 0 disables the hang timeout. */
-    hangTimeoutMs?: number;
-    log?: (msg: string) => void;
-  }): Promise<{ missing: string[] }> {
+  async runFiles(options: BatchRunOptions): Promise<{ missing: string[] }> {
     const { filePaths, projectRoot, traceStore, store: _store, applyFileResult, onFileDone, log: rawLog } = options;
     const hangTimeoutMs = options.hangTimeoutMs ?? 0;
     if (filePaths.length === 0) { return { missing: [] }; }
     const emit = rawLog ?? (() => {});
-    const batch = `b${++SessionTraceRunner._batchSeq}`;
+    const batch = `b${++JestBatchRunner._batchSeq}`;
     const startedAt = Date.now();
 
     fs.mkdirSync(this._tmpDir, { recursive: true });

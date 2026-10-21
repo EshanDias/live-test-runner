@@ -240,8 +240,7 @@ export class JestAdapter implements IFrameworkAdapter {
     projectRoot: string,
     rawLog: (msg: string) => void,
   ): JestRunner {
-    const cmd = this._getCommand();
-    const runner = new JestRunner(cmd, rawLog, this._tmpDir);
+    const runner = new JestRunner(jestCommandSetting(), rawLog, this._tmpDir);
     runner.setProjectRoot(projectRoot);
     // Plain runs have no per-test heartbeat, so the limit covers the whole
     // file (load + all tests) and is wider than the per-test hang limit.
@@ -249,14 +248,6 @@ export class JestAdapter implements IFrameworkAdapter {
       .getConfiguration('liveTestRunner')
       .get<number>('hangTimeoutSeconds') ?? 300));
     return runner;
-  }
-
-  private _getCommand(): string {
-    const cfg = vscode.workspace.getConfiguration('liveTestRunner');
-    if (cfg.get<string>('runMode') === 'npm') {
-      return 'npm test --';
-    }
-    return cfg.get<string>('jestCommand') || '';
   }
 
   applyFileResult(
@@ -490,4 +481,13 @@ export class JestAdapter implements IFrameworkAdapter {
       timestamp,
     }));
   }
+}
+
+/** The user's Jest command override: `npm test --` in npm run mode, else `liveTestRunner.jestCommand` ('' = local install). */
+export function jestCommandSetting(): string {
+  const cfg = vscode.workspace.getConfiguration('liveTestRunner');
+  if (cfg.get<string>('runMode') === 'npm') {
+    return 'npm test --';
+  }
+  return cfg.get<string>('jestCommand') || '';
 }
