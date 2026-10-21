@@ -165,7 +165,7 @@ All settings under `liveTestRunner.*`.
 | ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ |
 | Rerun a saved test file | ✅ | ✅ | ✅ |
 | Logs / console output | ✅ per file | ✅ per file | ✅ per test |
-| Coverage (gutter, hover) | ✅ | ✅ | ⏳ 3.0 |
+| Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) |
 | Live per-file progress | ✅ | ✅ | ✅ |
 | Rerun tests related to a saved source file | ✅ | ✅ | ⏳ 3.0.x |
 | Monorepo / multi-project | 🟡 | — | 🟡 Vitest `projects`, run from the root |

@@ -8,14 +8,16 @@ import { FrameworkServices } from './FrameworkServices';
 import { VitestAdapter, vitestCommandSetting, vitestIncludeBrowserProjects } from './VitestAdapter';
 import { VitestProjectConfig } from '../session/VitestProjectConfig';
 import { VitestBatchRunner } from '../session/VitestBatchRunner';
+import { CoverageStore } from '../coverage/CoverageStore';
 
 export function createVitestServices(options: {
-  /** The window's session folder (result files). */
+  /** The window's session folder (result, event and coverage files). */
   sessionDir: string;
+  coverageStore: CoverageStore;
   /** Sink for raw Vitest output (the "Test Output" channel). */
   rawLog: (msg: string) => void;
 }): FrameworkServices {
-  const { sessionDir, rawLog } = options;
+  const { sessionDir, rawLog, coverageStore } = options;
   const runnerAdapter = new VitestRunnerAdapter();
   const newRunner = (logger: (msg: string) => void) =>
     runnerAdapter.createRunner({
@@ -42,7 +44,7 @@ export function createVitestServices(options: {
     features: { trace: false, timeline: false },
     adapter: new VitestAdapter(sessionDir),
     projectConfig: new VitestProjectConfig(),
-    batchRunner: new VitestBatchRunner(newRunner),
+    batchRunner: new VitestBatchRunner(newRunner, { store: coverageStore, sessionDir }),
     // The Timeline debugger needs the Vite trace plugin (phase 10).
     instrumentedRunner: undefined,
     createSessionRunner: () => newRunner(rawLog),

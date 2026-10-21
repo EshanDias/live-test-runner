@@ -17,7 +17,10 @@
  * PLAIN_RUN_HANG_FACTOR is stopped too and its unfinished files retried one
  * by one — the single-file limit then pins down the hanging one.
  *
- * No trace and no coverage here: those are phases 9 and 5.
+ * Coverage: Vitest's own (v8 / istanbul provider), as istanbul JSON in a
+ * per-batch folder of the session dir, mapped into the CoverageStore when
+ * the batch ends. Off when the provider package is not installed (the
+ * runner says so once). No execution trace (phase 9).
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -34,6 +37,8 @@ import {
 } from '@live-test-runner/runner';
 import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
 import { runnableKey } from './RunnableFiles';
+import { CoverageStore } from '../coverage/CoverageStore';
+import { applyIstanbulCoverage } from '../coverage/istanbulCoverage';
 import { PLAIN_RUN_HANG_FACTOR } from '../constants';
 import { logger } from '../utils/logger';
 
@@ -52,8 +57,14 @@ export class VitestBatchRunner implements IBatchRunner {
   /** Bumped by kill(): events of batches started before it are dropped. */
   private _generation = 0;
 
-  /** @param _createRunner a fresh VitestRunner for the project (reads the settings) */
-  constructor(private readonly _createRunner: (rawLog: (msg: string) => void) => CommandRunner) {}
+  /**
+   * @param _createRunner a fresh VitestRunner for the project (reads the settings)
+   * @param _coverage where measured coverage goes, and the session dir for its files (none: no coverage)
+   */
+  constructor(
+    private readonly _createRunner: (rawLog: (msg: string) => void) => CommandRunner,
+    private readonly _coverage?: { store: CoverageStore; sessionDir: string },
+  ) {}
 
   kill(): void {
     this._killed = true;
@@ -92,7 +103,8 @@ export class VitestBatchRunner implements IBatchRunner {
     let live: Awaited<ReturnType<VitestRunner['liveCommand']>>;
     try {
       runner.setProjectRoot(projectRoot);
-      live = await runner.liveCommand(filePaths);
+      const coverageDir = this._coverage ? path.join(this._coverage.sessionDir, 'vitest-coverage', batch) : undefined;
+      live = await runner.liveCommand(filePaths, { coverageDir });
     } catch (err) {
       log.error(`${batch}: could not build the Vitest command for ${projectRoot}`, err);
       release();
@@ -219,6 +231,11 @@ export class VitestBatchRunner implements IBatchRunner {
       for (const f of [live.eventsFile, live.resultFile]) { try { fs.unlinkSync(f); } catch { /* gone */ } }
     }
 
+    // Coverage of whatever ran (not after Stop — those results are dropped too).
+    if (live.coverageFile && this._coverage && generation === this._generation) {
+      this._applyCoverage(live.coverageFile, projectRoot, batch);
+    }
+
     const stopped = generation !== this._generation;
     if (stopped) {
       log.debug(`${batch}: stopped by the user after ${seconds(startedAt)}`);
@@ -238,6 +255,25 @@ export class VitestBatchRunner implements IBatchRunner {
     const missing = stopped ? [] : filePaths.filter((fp) => owns(fp) && !received.has(fp));
     release();
     return { missing };
+  }
+
+  private _applyCoverage(coverageFile: string, projectRoot: string, batch: string): void {
+    const dir = path.dirname(coverageFile);
+    try {
+      if (!fs.existsSync(coverageFile)) {
+        log.debug(`${batch}: Vitest wrote no coverage (no source file was loaded, or the run was stopped)`);
+        return;
+      }
+      const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
+      const { measured, excluded } = applyIstanbulCoverage(
+        coverage, this._coverage!.store, path.join(this._coverage!.sessionDir, 'vitest-manifests'), projectRoot,
+      );
+      log.debug(`${batch}: coverage — ${measured} file(s) measured, ${excluded} excluded`);
+    } catch (err) {
+      log.warn(`${batch}: could not read Vitest's coverage (${coverageFile})`, err);
+    } finally {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ }
+    }
   }
 }
 

@@ -12,6 +12,7 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import { loadBabelParser, loadTraverse } from '../utils/babel';
 import { EventEmitter } from 'events';
 import { CoverageStore } from './CoverageStore';
 import { logger } from '../utils/logger';
@@ -91,21 +92,14 @@ export class SourceCounter extends EventEmitter {
       return { statements: 0, branches: 0, functions: 0, lines: 0 };
     }
 
-    // Lazy-load Babel from the project's node_modules
-    let parser: any, traverse: any, t: any;
-    try {
-      const resolve = (id: string) =>
-        require.resolve(id, { paths: [this._projectRoot, __dirname] });
-      parser   = require(resolve('@babel/parser'));
-      traverse = require(resolve('@babel/traverse'));
-      t        = require(resolve('@babel/types'));
-      if (traverse?.default) { traverse = traverse.default; }
-      if (t?.default) { t = t.default; }
-    } catch (err) {
+    // The project's Babel, else the extension's own parser (Vitest projects have no Babel).
+    const parser = loadBabelParser(this._projectRoot);
+    if (!parser) {
       // Same message for every file → the logger collapses the repeats into one line.
-      log.warn(`Could not load Babel from ${this._projectRoot} — source files report 0 coverage totals`, err);
+      log.warn(`Could not load a Babel parser for ${this._projectRoot} — source files report 0 coverage totals`);
       return { statements: 0, branches: 0, functions: 0, lines: 0 };
     }
+    const traverse = loadTraverse(this._projectRoot);
 
     let ast: any;
     try {

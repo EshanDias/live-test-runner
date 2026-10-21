@@ -28,30 +28,59 @@ const projects = (vitest.projects || []).map((p) => ({
   name: typeof p.getName === 'function' ? p.getName() : (p.name || ''),
   browser: !!(p.config && p.config.browser && p.config.browser.enabled),
 }));
+const coverage = vitest.config && vitest.config.coverage;
 process.stdout.write('\\nLTR_PROJECTS ' + JSON.stringify(projects) + '\\n');
+process.stdout.write('LTR_COVERAGE ' + JSON.stringify({ provider: (coverage && coverage.provider) || 'v8' }) + '\\n');
 await vitest.close();
 process.exit(0);
 `;
 
-const cache = new Map<string, { stamp: string; projects: Promise<VitestProjectInfo[] | undefined> }>();
+/** What the probe read from the resolved config. */
+export interface VitestConfigInfo {
+  projects: VitestProjectInfo[];
+  /** `coverage.provider`: 'v8' (Vitest's default), 'istanbul' or 'custom'. */
+  coverageProvider: string;
+}
+
+const cache = new Map<string, { stamp: string; info: Promise<VitestConfigInfo | undefined> }>();
 
 /**
  * The projects of the Vitest config in `projectRoot` (undefined when they
  * cannot be read — callers then apply no project filter). Cached until the
  * config file or package.json changes.
  */
-export function vitestProjects(
+export async function vitestProjects(
   projectRoot: string,
   configPath: string | undefined,
   tmpDir: string,
   logger?: (msg: string) => void,
 ): Promise<VitestProjectInfo[] | undefined> {
+  return (await vitestConfigInfo(projectRoot, configPath, tmpDir, logger))?.projects;
+}
+
+/** Projects and coverage provider of the resolved config (one probe, cached like vitestProjects). */
+export function vitestConfigInfo(
+  projectRoot: string,
+  configPath: string | undefined,
+  tmpDir: string,
+  logger?: (msg: string) => void,
+): Promise<VitestConfigInfo | undefined> {
   const stamp = [configPath ?? '', mtime(configPath), mtime(path.join(projectRoot, 'package.json'))].join('|');
   const hit = cache.get(projectRoot);
-  if (hit && hit.stamp === stamp) { return hit.projects; }
-  const projects = probe(projectRoot, configPath, tmpDir, logger);
-  cache.set(projectRoot, { stamp, projects });
-  return projects;
+  if (hit && hit.stamp === stamp) { return hit.info; }
+  const info = probe(projectRoot, configPath, tmpDir, logger);
+  cache.set(projectRoot, { stamp, info });
+  return info;
+}
+
+/**
+ * Whether Vitest can measure coverage here: the configured provider's
+ * package (`@vitest/coverage-v8` / `-istanbul`) is installed. A custom
+ * provider is assumed to be set up.
+ */
+export function vitestCoverageInstalled(projectRoot: string, provider: string): boolean {
+  if (provider !== 'v8' && provider !== 'istanbul') { return true; }
+  return !!resolvePackageDir(`@vitest/coverage-${provider}`, projectRoot);
 }
 
 /** For tests only. */
@@ -64,7 +93,7 @@ async function probe(
   configPath: string | undefined,
   tmpDir: string,
   logger?: (msg: string) => void,
-): Promise<VitestProjectInfo[] | undefined> {
+): Promise<VitestConfigInfo | undefined> {
   const nodeEntry = vitestNodeEntry(projectRoot);
   if (!nodeEntry) {
     log.debug(`No vitest/node entry under ${projectRoot} — not reading its projects`);
@@ -93,8 +122,10 @@ async function probe(
   }
   try {
     const projects = JSON.parse(line.slice('LTR_PROJECTS '.length)) as VitestProjectInfo[];
-    log.debug(`Vitest projects of ${projectRoot} (${Date.now() - startedAt} ms): ${projects.map((p) => `${p.name || '(default)'}${p.browser ? ' [browser]' : ''}`).join(', ')}`);
-    return projects;
+    const covLine = result.stdout.split('\n').find((l) => l.startsWith('LTR_COVERAGE '));
+    const coverageProvider = covLine ? (JSON.parse(covLine.slice('LTR_COVERAGE '.length)) as { provider: string }).provider : 'v8';
+    log.debug(`Vitest projects of ${projectRoot} (${Date.now() - startedAt} ms): ${projects.map((p) => `${p.name || '(default)'}${p.browser ? ' [browser]' : ''}`).join(', ')}; coverage provider ${coverageProvider}`);
+    return { projects, coverageProvider };
   } catch (err) {
     log.warn(`Could not parse the Vitest projects of ${projectRoot}`, err);
     return undefined;

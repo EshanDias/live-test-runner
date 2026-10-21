@@ -5,7 +5,7 @@ import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { refusingAdapter } from './framework/refusingAdapter';
 import type { VitestAdapter } from './framework/adapters/VitestAdapter';
-import { vitestProjects } from './framework/vitestProjects';
+import { VitestConfigInfo, vitestConfigInfo, vitestCoverageInstalled, vitestProjects } from './framework/vitestProjects';
 import { VITEST_EVENTS_ENV, applyVitestEvents, readVitestEvents, vitestReporterFile } from './framework/vitestReporter';
 import { RunResult } from './types';
 import * as os from 'os';
@@ -53,12 +53,21 @@ export function toVitestPathArg(filePath: string): string {
  * would otherwise leave no JSON to read. No `--root`: the project root is the
  * cwd, and a config's own `root` stays in charge.
  */
-/** Reads a config's projects; replaceable in unit tests. */
-let readProjects: typeof vitestProjects = vitestProjects;
-/** For tests only: replace (or with no argument, restore) how projects are read. */
-export function _setVitestProjectsReader(fn?: typeof vitestProjects): void {
-  readProjects = fn ?? vitestProjects;
+/** Reads a config's projects and coverage provider; replaceable in unit tests. */
+let readConfig: typeof vitestConfigInfo = vitestConfigInfo;
+/** For tests only: replace (or with no argument, restore) how the config is read. */
+export function _setVitestConfigReader(fn?: typeof vitestConfigInfo): void {
+  readConfig = fn ?? vitestConfigInfo;
 }
+/** For tests only: replace how projects are read (coverage provider: v8). */
+export function _setVitestProjectsReader(fn?: typeof vitestProjects): void {
+  readConfig = fn
+    ? async (...args) => { const projects = await fn(...args); return projects && ({ projects, coverageProvider: 'v8' } as VitestConfigInfo); }
+    : vitestConfigInfo;
+}
+
+/** Roots already told that coverage needs a provider package — once per root. */
+const toldNoCoverage = new Set<string>();
 
 /** Roots already told which browser projects were left out — once per root. */
 const toldBrowserGuard = new Set<string>();
@@ -110,17 +119,48 @@ export class VitestRunner extends CommandRunner {
    * events (see VitestBatchRunner in the extension): the same command as
    * runTestFilesJson, plus the events file and the json result file.
    */
-  async liveCommand(files: string[]): Promise<{ command: ExecutorCommand; eventsFile: string; resultFile: string }> {
+  async liveCommand(
+    files: string[],
+    options: { coverageDir?: string } = {},
+  ): Promise<{ command: ExecutorCommand; eventsFile: string; resultFile: string; coverageFile?: string }> {
     const request: RunRequest = { kind: 'files', files };
     const root = this.requireProjectRoot();
     const resultFile = path.join(this.tmpDir ?? os.tmpdir(), `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
     const env = this.runEnv(request) ?? {};
     const args = [...await this.commandArgs(request), ...this.requireAdapter().outputFileArg(resultFile)];
+    const coverage = options.coverageDir ? await this.coverageArgs(root, options.coverageDir) : undefined;
+    if (coverage) { args.push(...coverage); }
     return {
       command: { binary: this.resolveBinary(), args, cwd: root, extraEnv: env, label: this.processLabel, forwardStdout: true },
       eventsFile: env[VITEST_EVENTS_ENV],
       resultFile,
+      coverageFile: coverage ? path.join(options.coverageDir!, 'coverage-final.json') : undefined,
     };
+  }
+
+  /**
+   * Vitest's own coverage, as istanbul JSON in `dir` — when the configured
+   * provider's package is installed (otherwise one INFO line says what to
+   * install). Written even when tests fail; below Vitest 4, only files the
+   * tests loaded (`all` would instrument the whole project).
+   */
+  private async coverageArgs(root: string, dir: string): Promise<string[] | undefined> {
+    const info = await readConfig(root, await this.requireAdapter().resolveConfig(root), this.tmpDir ?? os.tmpdir(), this.logger);
+    const provider = info?.coverageProvider ?? 'v8';
+    if (!vitestCoverageInstalled(root, provider)) {
+      if (!toldNoCoverage.has(root)) {
+        toldNoCoverage.add(root);
+        log.info(`Vitest coverage is off for ${root}: it needs @vitest/coverage-${provider} (e.g. npm i -D @vitest/coverage-${provider})`);
+      }
+      return undefined;
+    }
+    return [
+      '--coverage.enabled=true',
+      '--coverage.reporter=json',
+      `--coverage.reportsDirectory=${dir}`,
+      '--coverage.reportOnFailure=true',
+      ...(this.vitestMajor() < 4 ? ['--coverage.all=false'] : []),
+    ];
   }
 
   protected detectAdapter(projectRoot: string): FrameworkAdapter {
@@ -140,7 +180,7 @@ export class VitestRunner extends CommandRunner {
     if (this.includeBrowserProjects) { return; }
     const scriptArgs = this.requireAdapter().getExtraArgs(projectRoot);
     if (scriptArgs.some((a) => a.startsWith('--project'))) { return; }
-    const projects = await readProjects(projectRoot, configPath, this.tmpDir ?? os.tmpdir(), this.logger);
+    const projects = (await readConfig(projectRoot, configPath, this.tmpDir ?? os.tmpdir(), this.logger))?.projects;
     const browser = (projects ?? []).filter((p) => p.browser);
     if (!projects || browser.length === 0) { return; }
     const others = projects.filter((p) => !p.browser);
@@ -184,8 +224,9 @@ export class VitestRunner extends CommandRunner {
       case 'full':
         return [
           ...this.resultArgs(),
+          // Into the session dir, never the project's own coverage folder.
           ...(request.withCoverage
-            ? ['--coverage.enabled=true', '--coverage.reporter=json', '--coverage.reporter=json-summary']
+            ? ['--coverage.enabled=true', '--coverage.reporter=json', `--coverage.reportsDirectory=${this.fullRunCoverageDir()}`, '--coverage.reportOnFailure=true']
             : []),
         ];
       case 'files':
@@ -218,9 +259,12 @@ export class VitestRunner extends CommandRunner {
     return [];
   }
 
-  protected coverageFile(projectRoot: string): string {
-    // Vitest's default reportsDirectory; task 5.1 points it at the session dir.
-    return path.join(projectRoot, 'coverage', 'coverage-final.json');
+  protected coverageFile(_projectRoot: string): string {
+    return path.join(this.fullRunCoverageDir(), 'coverage-final.json');
+  }
+
+  private fullRunCoverageDir(): string {
+    return path.join(this.tmpDir ?? os.tmpdir(), 'vitest-coverage');
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

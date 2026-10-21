@@ -143,7 +143,7 @@ src/
 │   │       ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
 │   │       ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
 │   │       └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
-│   ├── VitestBatchRunner.ts        IBatchRunner for Vitest: one process per batch, results streamed per file (reporter events), per-test hang limit
+│   ├── VitestBatchRunner.ts        IBatchRunner for Vitest: one process per batch, results streamed per file (reporter events), per-test hang limit, Vitest coverage → CoverageStore
 │   ├── VitestProjectConfig.ts      IProjectConfig for Vitest: the config file path
 │   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
 ├── framework/
