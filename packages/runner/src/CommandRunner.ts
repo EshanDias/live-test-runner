@@ -25,8 +25,10 @@ export type RunRequest =
  *  1. Pick the project's FrameworkAdapter once per project root
  *  2. Resolve the binary (or the user's command override) and the config
  *  3. Build each command as
- *       [user-command words] [config args] [adapter extra args] [framework args]
- *     where only the last part — {@link buildArgs} — is framework-specific
+ *       [user-command words] [leading args] [config args] [adapter extra args] [framework args]
+ *     where the leading args ({@link leadingArgs}: a subcommand and positionals,
+ *     e.g. `run <file>` for Vitest; none for Jest) and the framework args
+ *     ({@link buildArgs}) are framework-specific
  *  4. Hand it to Executor; the adapter names the result file flag and parses the JSON
  *
  * Subclasses (JestRunner, a VitestRunner) supply the adapter choice, the
@@ -47,6 +49,9 @@ export abstract class CommandRunner implements TestRunner {
   /** Name used in errors, e.g. "JestRunner". */
   protected abstract readonly runnerName: string;
 
+  /** Tag for the process's output lines: `[jest#12]`. */
+  protected get processLabel(): string { return 'jest'; }
+
   constructor(
     command: string = '',
     logger: (msg: string) => void = () => {},
@@ -63,6 +68,14 @@ export abstract class CommandRunner implements TestRunner {
 
   /** The framework's own args for a run (everything after the adapter's extra args). */
   protected abstract buildArgs(request: RunRequest): string[];
+
+  /**
+   * Args that must come first, before the config and the adapter's extra args:
+   * a subcommand and its positionals (Vitest: `run <files>`, `list`). Jest has none.
+   */
+  protected leadingArgs(_request: RunRequest): string[] {
+    return [];
+  }
 
   /**
    * Test files from the output of a `list` run (paths in the editor's
@@ -95,6 +108,7 @@ export abstract class CommandRunner implements TestRunner {
       binary: this.resolveBinary(),
       args: await this.commandArgs({ kind: 'list' }),
       cwd: this.requireProjectRoot(),
+      label: this.processLabel,
     });
     const found = this.parseTestList(result, projectRoot);
     if (found.length > 0) {
@@ -162,19 +176,20 @@ export abstract class CommandRunner implements TestRunner {
     const binary = this.resolveBinary();
     const args = await this.commandArgs(request);
     const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture(
-      { binary, args, cwd, timeoutMs },
+      { binary, args, cwd, timeoutMs, label: this.processLabel },
       (file) => adapter.outputFileArg(file),
     );
     return adapter.parseResult(passed, jsonOutput, stderr);
   }
 
-  /** [user-command words] [config args] [adapter extra args] [framework args] */
+  /** [user-command words] [leading args] [config args] [adapter extra args] [framework args] */
   private async commandArgs(request: RunRequest): Promise<string[]> {
     const adapter = this.requireAdapter();
     const projectRoot = this.requireProjectRoot();
     const configPath = await adapter.resolveConfig(projectRoot);
     return [
       ...this.resolvePrefixArgs(),
+      ...this.leadingArgs(request),
       ...(configPath ? ['--config', configPath] : []),
       ...adapter.getExtraArgs(projectRoot),
       ...this.buildArgs(request),
@@ -190,7 +205,7 @@ export abstract class CommandRunner implements TestRunner {
     }
   }
 
-  private requireAdapter(): FrameworkAdapter {
+  protected requireAdapter(): FrameworkAdapter {
     if (!this.adapter) {
       const err = new Error(`${this.runnerName}: no adapter — call setProjectRoot() or discoverTests() first.`);
       log.error(err.message);
@@ -199,7 +214,7 @@ export abstract class CommandRunner implements TestRunner {
     return this.adapter;
   }
 
-  private requireProjectRoot(): string {
+  protected requireProjectRoot(): string {
     if (!this.projectRoot) {
       const err = new Error(`${this.runnerName}: projectRoot not set — call discoverTests(projectRoot) first.`);
       log.error(err.message);

@@ -1,0 +1,190 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`VitestRunner command lines builds every run kind (Vitest 5, config file) 1`] = `
+[
+  {
+    "args": [
+      "list",
+      "--config",
+      "<root>/vitest.config.ts",
+      "--filesOnly",
+      "--json",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": undefined,
+  },
+  {
+    "args": [
+      "run",
+      "--config",
+      "<root>/vitest.config.ts",
+      "--reporter=json",
+      "--includeTaskLocation",
+      "--passWithNoTests",
+      "--watch=false",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": undefined,
+  },
+  {
+    "args": [
+      "run",
+      "--config",
+      "<root>/vitest.config.ts",
+      "--reporter=json",
+      "--includeTaskLocation",
+      "--passWithNoTests",
+      "--watch=false",
+      "--coverage.enabled=true",
+      "--coverage.reporter=json",
+      "--coverage.reporter=json-summary",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": undefined,
+  },
+  {
+    "args": [
+      "run",
+      "<root>/src/a.test.ts",
+      "--config",
+      "<root>/vitest.config.ts",
+      "--reporter=json",
+      "--includeTaskLocation",
+      "--passWithNoTests",
+      "--watch=false",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": 5000,
+  },
+  {
+    "args": [
+      "run",
+      "<root>/src/a.test.ts",
+      "<root>/src/b.test.ts",
+      "--config",
+      "<root>/vitest.config.ts",
+      "--reporter=json",
+      "--includeTaskLocation",
+      "--passWithNoTests",
+      "--watch=false",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": undefined,
+  },
+  {
+    "args": [
+      "run",
+      "<root>/src/a.test.ts",
+      "--config",
+      "<root>/vitest.config.ts",
+      "--reporter=json",
+      "--includeTaskLocation",
+      "--passWithNoTests",
+      "--watch=false",
+      "-t",
+      "^(?:Suite(?: > | )a|Suite(?: > | )b)$",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": 5000,
+  },
+  {
+    "args": [
+      "run",
+      "<root>/src/a.test.ts",
+      "--config",
+      "<root>/vitest.config.ts",
+      "--reporter=json",
+      "--includeTaskLocation",
+      "--passWithNoTests",
+      "--watch=false",
+      "-t",
+      "^(?:Suite)(?: > | |$)",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": 5000,
+  },
+  {
+    "args": [
+      "related",
+      "<root>/src/util.ts",
+      "--config",
+      "<root>/vitest.config.ts",
+      "--run",
+      "--reporter=json",
+      "--includeTaskLocation",
+      "--passWithNoTests",
+      "--watch=false",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": undefined,
+  },
+]
+`;
+
+exports[`VitestRunner command lines passes the test script's config and project flags (vueuse shape) 1`] = `
+[
+  {
+    "args": [
+      "run",
+      "--config",
+      "<root>/vitest.unit.ts",
+      "--project=unit",
+      "--project=server",
+      "--reporter=json",
+      "--includeTaskLocation",
+      "--passWithNoTests",
+      "--watch=false",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": undefined,
+  },
+]
+`;
+
+exports[`VitestRunner command lines runs an old Vitest best-effort: no task-location flag, related → full run 1`] = `
+[
+  {
+    "args": [
+      "run",
+      "<root>/src/a.test.ts",
+      "--reporter=json",
+      "--passWithNoTests",
+      "--watch=false",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": 0,
+  },
+  {
+    "args": [
+      "run",
+      "--reporter=json",
+      "--passWithNoTests",
+      "--watch=false",
+    ],
+    "binary": "<root>/node_modules/vitest/vitest.mjs",
+    "cwd": "<root>",
+    "label": "vitest",
+    "timeoutMs": undefined,
+  },
+]
+`;

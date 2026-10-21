@@ -406,7 +406,7 @@ Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `F
 
 Runner package (`packages/runner`):
 - [ ] `FrameworkAdapter` implemented — `detect`, `resolveBinary`, `resolveConfig`, `getExtraArgs`, `outputFileArg`, `parseResult`, `capabilities` (per installed version, never throws), `createRunner`
-- [ ] A `CommandRunner` subclass — `detectAdapter`, `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`), `parseTestList`, `coverageFile`
+- [ ] A `CommandRunner` subclass — `detectAdapter` (another framework's project → `refusingAdapter(adapter)`), `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`), `parseTestList`, `coverageFile`; `leadingArgs` if the CLI needs a subcommand first; `processLabel` for the `[label#N]` output tag
 - [ ] Registered in `FrameworkRegistry.default()` at the right priority (a project several adapters claim goes to the higher one)
 - [ ] Exported from `src/index.ts`
 - [ ] **Conformance suite** — one `describeAdapterConformance({ … })` call in `test/adapterConformance.test.ts` (matching / non-matching projects, a canned result with one passing and one failing test); it must pass unchanged
@@ -626,7 +626,7 @@ engine.jumpTo(stepId)
 
 ## Roadmap
 
-- [ ] Vitest support (3.0.0) — tracked in `docs/temp_plans/vitest-support-plan.md`; the runner `VitestAdapter` is done (task 2.1)
+- [ ] Vitest support (3.0.0) — tracked in `docs/temp_plans/vitest-support-plan.md`; the runner `VitestAdapter` + `VitestRunner` are done (tasks 2.1–2.2)
 - [x] ~~Suite/test-case level nodes in Test Explorer~~ — completed in 1.2.0 (recursive node tree with unlimited nesting)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
 - [ ] Streaming live output during a run (message type stubbed, not wired)

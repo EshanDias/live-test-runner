@@ -4,7 +4,8 @@ import { FRAMEWORK_IDS, FrameworkCapabilities, FrameworkId, RunResult } from '..
 import { RunnerOptions, TestRunner } from '../../TestRunner';
 import { FrameworkAdapter } from './FrameworkAdapter';
 import { JestAdapter, parseJestResult, readPackageJson } from './JestAdapter';
-import { UnsupportedFrameworkError } from '../UnsupportedFrameworkError';
+import { testScriptVitestArgs } from '../vitestConfig';
+import { VitestRunner } from '../../VitestRunner';
 import { NodeRuntime, nodeRuntime, nodeRuntimeVersion, resolvePackageBin, resolvePackageDir } from '../../resolution/BinaryResolver';
 import { parseVersion, satisfies } from '../../utils/semver';
 import { createLogger } from '../../utils/logger';
@@ -128,8 +129,13 @@ export class VitestAdapter implements FrameworkAdapter {
 
   // ── Config resolution ──────────────────────────────────────────────────────
 
-  /** `vitest.config.*` beats `vite.config.*` (Vitest's own order); none → Vitest decides. */
+  /**
+   * The `test` script's `--config`, else `vitest.config.*` before
+   * `vite.config.*` (Vitest's own order); none → Vitest decides.
+   */
   async resolveConfig(projectRoot: string): Promise<string | undefined> {
+    const fromScript = testScriptVitestArgs(projectRoot).config;
+    if (fromScript) { return fromScript; }
     for (const f of [...VITEST_CONFIG_FILES, ...VITE_CONFIG_FILES]) {
       const p = path.join(projectRoot, f);
       if (fs.existsSync(p)) { return p; }
@@ -137,9 +143,14 @@ export class VitestAdapter implements FrameworkAdapter {
     return undefined;
   }
 
-  /** Flags from the project's `test` script (`--project`, `--root`, …) arrive with the runner (task 2.2). */
-  getExtraArgs(_projectRoot: string): string[] {
-    return [];
+  /**
+   * Config-relevant flags of the project's `test` script (`--project`,
+   * `--root`, `--dir`, `--mode`, `--environment`, `--globals`, …), following
+   * `nr` / `npm run` / `pnpm` into other scripts — so runs match `npm test`.
+   * `--config` is returned by resolveConfig instead.
+   */
+  getExtraArgs(projectRoot: string): string[] {
+    return testScriptVitestArgs(projectRoot).args;
   }
 
   // ── Results ────────────────────────────────────────────────────────────────
@@ -158,9 +169,8 @@ export class VitestAdapter implements FrameworkAdapter {
     return parseJestResult(passed, raw, stderr);
   }
 
-  /** The VitestRunner arrives in task 2.2. */
-  createRunner(_options?: RunnerOptions): TestRunner {
-    throw new UnsupportedFrameworkError(FRAMEWORK_IDS.vitest);
+  createRunner(options: RunnerOptions = {}): TestRunner {
+    return new VitestRunner(options.command ?? '', options.logger, options.tmpDir);
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

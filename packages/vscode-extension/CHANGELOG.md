@@ -8,6 +8,10 @@ All notable changes to Live Test Runner are documented here.
 
 - **"Jest Output" is now "Test Output"** — the raw output channel is called "Live Test Runner: Test Output" and the command "Show Test Output", ready for more test frameworks. Nothing else changes.
 
+### Bug Fixes
+
+- **`npx jest` as the Jest command works as expected** — with `liveTestRunner.jestCommand` set to `npx jest`, "jest" was passed twice.
+
 ---
 
 ## [2.0.4] - 2026-10-19

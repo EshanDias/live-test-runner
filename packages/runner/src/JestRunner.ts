@@ -4,7 +4,7 @@ import { CommandRunner, RunRequest } from './CommandRunner';
 import { ExecutionResult } from './execution/Executor';
 import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
-import { UnsupportedFrameworkError } from './framework/UnsupportedFrameworkError';
+import { refusingAdapter } from './framework/refusingAdapter';
 import { FRAMEWORK_IDS } from './types';
 import { ResultParser } from './parsing/ResultParser';
 import { createLogger } from './utils/logger';
@@ -133,20 +133,4 @@ export class JestRunner extends CommandRunner {
       stderr.includes('https://jestjs.io/docs/configuration')
     );
   }
-}
-
-/** `adapter` with every run-time method throwing UnsupportedFrameworkError. */
-function refusingAdapter(adapter: FrameworkAdapter): FrameworkAdapter {
-  const refuse = (): never => { throw new UnsupportedFrameworkError(adapter.framework); };
-  return {
-    framework: adapter.framework,
-    detect: (root) => adapter.detect(root),
-    capabilities: (root) => adapter.capabilities(root),
-    resolveBinary: refuse,
-    resolveConfig: async () => refuse(),
-    getExtraArgs: refuse,
-    outputFileArg: refuse,
-    parseResult: refuse,
-    createRunner: refuse,
-  };
 }

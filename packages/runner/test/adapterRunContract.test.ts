@@ -7,13 +7,14 @@ import * as path from 'path';
 import { VitestAdapter } from '../src/framework/adapters/VitestAdapter';
 import { UnsupportedFrameworkError } from '../src/framework/UnsupportedFrameworkError';
 import { JestRunner } from '../src/JestRunner';
+import { VitestRunner } from '../src/VitestRunner';
 import { Executor } from '../src/execution/Executor';
 import { emptyRunResult, mergeRunResults } from '../src/parsing/runResults';
 import { setLogSink } from '../src/utils/logger';
 
 describe('vitest adapter — running', () => {
-  it('has no runner yet (task 2.2)', () => {
-    expect(() => new VitestAdapter().createRunner()).toThrow(UnsupportedFrameworkError);
+  it('creates a VitestRunner', () => {
+    expect(new VitestAdapter().createRunner()).toBeInstanceOf(VitestRunner);
   });
 
   it('writes its json result to --outputFile', () => {
@@ -36,6 +37,25 @@ describe('JestRunner on a Vitest project', () => {
     const runner = new JestRunner();
     expect(() => runner.setProjectRoot(dir)).not.toThrow();
     await expect(runner.runTestFileJson(path.join(dir, 'a.test.ts'))).rejects.toThrow(UnsupportedFrameworkError);
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('VitestRunner on a Jest project', () => {
+  let dir: string;
+  beforeAll(() => {
+    setLogSink(() => {});
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ltr refuse jest ')));
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ devDependencies: { jest: '30' } }));
+  });
+  afterAll(() => { setLogSink(undefined); fs.rmSync(dir, { recursive: true, force: true }); });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('accepts the project root, then refuses to run it', async () => {
+    const spy = jest.spyOn(Executor.prototype, 'runWithJsonCapture');
+    const runner = new VitestRunner();
+    expect(() => runner.setProjectRoot(dir)).not.toThrow();
+    await expect(runner.runTestFileJson(path.join(dir, 'a.test.js'))).rejects.toThrow(UnsupportedFrameworkError);
     expect(spy).not.toHaveBeenCalled();
   });
 });

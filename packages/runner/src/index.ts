@@ -30,6 +30,7 @@ export {
 // Runners: the generic command-line runner and the Jest one built on it
 export { CommandRunner, RunRequest } from './CommandRunner';
 export { JestRunner, toJestPathArg } from './JestRunner';
+export { VitestRunner, toVitestNamePattern, toVitestPathArg } from './VitestRunner';
 
 // Framework layer — exposed so callers can detect framework without running
 export { FrameworkDetector, DetectionResult } from './framework/FrameworkDetector';
@@ -47,6 +48,8 @@ export {
 } from './framework/adapters/VitestAdapter';
 export { UnsupportedFrameworkError } from './framework/UnsupportedFrameworkError';
 export { toInputConfig, pickGlobalConfig, testScriptJestArgs } from './framework/jestConfig';
+export { testScriptVitestArgs, VitestScriptArgs } from './framework/vitestConfig';
+export { refusingAdapter } from './framework/refusingAdapter';
 
 // Lower-level layers — exposed for testing and advanced usage
 export { BinaryResolver, nodeRuntime, nodeRuntimeVersion, NodeRuntime } from './resolution/BinaryResolver';

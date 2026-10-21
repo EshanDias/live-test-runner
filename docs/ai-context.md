@@ -39,6 +39,7 @@ src/
 ├── TestRunner.ts                     Interface the extension uses (+ RunnerOptions)
 ├── CommandRunner.ts                  Generic CLI runner: binary/config/extra args, chunking, kill, coverage; abstract buildArgs(RunRequest)
 ├── JestRunner.ts                     extends CommandRunner — Jest flags only
+├── VitestRunner.ts                   extends CommandRunner — `run|list|related` + files as leadingArgs; toVitestNamePattern (" " → "(?: > | )")
 ├── framework/
 │   ├── FrameworkRegistry.ts          register(adapter, priority); default(): CRA 300 → Vitest 200 → Jest 100 (built lazily)
 │   ├── FrameworkDetector.ts          First matching registry adapter; detectWithReason(); unknown → plain Jest + one WARN
@@ -46,8 +47,10 @@ src/
 │       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs, outputFileArg, parseResult, capabilities, createRunner
 │       ├── JestAdapter.ts            Plain Jest + Next.js + Jest
 │       ├── CRAAdapter.ts             Create React App
-│       └── VitestAdapter.ts          Vitest: detect (no Jest marker), vitest.mjs, config, version → capabilities, Node check; no runner until 2.2
-│   └── UnsupportedFrameworkError.ts
+│       └── VitestAdapter.ts          Vitest: detect (no Jest marker), vitest.mjs, config, version → capabilities, Node check; runner = VitestRunner
+│   ├── UnsupportedFrameworkError.ts
+│   ├── refusingAdapter.ts            stand-in adapter a runner keeps for another framework's project
+│   └── vitestConfig.ts               testScriptVitestArgs: config-relevant flags of the test script (follows nr/npm run/pnpm)
 ├── resolution/
 │   ├── BinaryResolver.ts             Finds jest binary in project node_modules
 │   └── RunnerPaths.ts                Symlinked roots: editor path ↔ the test runner's realpath
@@ -526,7 +529,7 @@ All in `packages/vscode-extension/package.json`:
 |-----------|--------|
 | Jest | Fully supported |
 | Create React App | Fully supported (via `--showConfig` + direct Jest invocation) |
-| Vitest | In progress (3.0.0) — runner `VitestAdapter` detects, resolves the binary/config and capabilities; runner, parsing and extension wiring follow (plan tasks 2.2–2.8) |
+| Vitest | In progress (3.0.0) — runner package done for runs (`VitestAdapter` + `VitestRunner`); Vitest-specific parsing and extension wiring follow (plan tasks 2.3–2.8) |
 
 ---
 
