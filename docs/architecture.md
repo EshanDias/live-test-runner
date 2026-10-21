@@ -536,6 +536,26 @@ Adding a new framework = one file implementing `IFrameworkAdapter`, plus that fr
 
 `extension.ts` composes the Jest bundle (`framework/jestServices.ts`, `createJestServices`) and passes `new SingleFrameworkProvider(bundle)`. Stop kills the batch runners of `all()` bundles. Mixed-framework projects (phase 8) replace the provider with a router; nothing in `SessionManager` changes.
 
+### Session instrumentation protocol
+
+The files that run **inside the test process** live in `src/session/instrumentation/` and are copied, with the same layout, to `out/instrumentation/` (they cannot be bundled; the runners pass their absolute paths to the framework):
+
+| Folder | File | Role |
+|---|---|---|
+| `shared/` | `sessionTraceRuntime.js` | The `__strace` runtime — framework-neutral |
+| `shared/` | `testDiscovery.js` | Static AST test discovery (bundled into the extension, not run in the test process) |
+| `jest/` | `sessionTraceTransform.js` | Jest transform: Babel-instruments source files with `__strace.step()` calls and `__cov` counters, writes coverage manifests |
+| `jest/` | `ltrCoverageSetup.js` | `setupFilesAfterEnv`: opens/closes the trace context around each test, flushes `__cov` on exit, test heartbeats |
+| `jest/` | `liveReporter.js` | Reporter: one JSONL record per finished file (`start` record when a file begins) |
+
+A framework other than Jest implements the `jest/` column for itself (Vitest: a Vite plugin transform, a setup file, a reporter) and reuses `shared/`. The contract it must keep:
+
+- **`globalThis.__strace`** (defined once per worker by `sessionTraceRuntime.js`): `beginFile(testFile)` — module-level code of the test file starts; `beginTest(name, testFile)` / `endTest(testFile)` — around each test body (between tests the context is `hook`); `enterTest` / `exitTest` / `enterHook(type, testFile)` / `exitHook` — injected wrappers, nest into the open context; `step(line, file)` — instrumented code hit a line; `finish()` — flush the last context. `var()` / `log()` are no-ops here (Timeline only).
+- **Trace records** — JSONL appended to `SESSION_TRACE_FILE`, one per test body / hook block: `{"type":"T","tf":"<test file>","tn":"<full test name>","fh":{"<source file>":[lines…]}}` and `{"type":"H","tf":…,"hk":"file"|"hook"|<hook name>,"fh":{…}}`. Paths are the runner's real paths; the batch runner maps them back (`fromRunnerPath`).
+- **Coverage** — instrumented code counts into `globalThis.__cov[<file hash>].s/b/f`; on exit each worker appends `{"workerPid":…, "cov":{…}}` to `COVERAGE_OUTPUT_FILE`; the transform writes a manifest per file (statement / branch / function locations) to `LTR_MANIFEST_DIR`, named by path + content hash.
+- **Per-file results** — JSONL appended to `LTR_REPORTER_FILE`: `{"ltrEvent":"start","testFilePath","at"}` when a file begins, then the file's result (`testFilePath`, `status`, `testResults[]`, `console[]`, `startTime`/`endTime`) when it ends; the batch runner polls this file every 200 ms.
+- **Logging** — `[LTR:<level>] message` lines on stderr, filtered by `LTR_LOG_LEVEL` (see developer guide → Logging).
+
 ### Editor decorations
 
 **`DecorationManager`** owns all `TextEditorDecorationType` instances. Applied to visible editors after each run, after discovery, and when an editor becomes active.

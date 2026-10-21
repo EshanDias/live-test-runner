@@ -12,7 +12,8 @@ const minify = process.argv.includes('--minify');
  * the exact path specified in the Jest config injected by the runners.
  *
  * Files from timeline/instrumentation → timeline debugger (traceTransform/traceRuntime)
- * Files from session/instrumentation  → session-wide tracing (sessionTraceTransform/Runtime)
+ * Files from session/instrumentation  → session-wide tracing, kept in shared/ (trace
+ *   runtime, framework-neutral) and jest/ (transform, reporter, setup file)
  */
 function copyInstrumentationFiles() {
   const dest = path.join(__dirname, 'out', 'instrumentation');
@@ -23,9 +24,18 @@ function copyInstrumentationFiles() {
     fs.copyFileSync(path.join(timelineSrc, file), path.join(dest, file));
   }
 
+  // Session instrumentation keeps its layout (shared/ + one folder per
+  // framework): files find each other by relative path at runtime.
   const sessionSrc = path.join(__dirname, 'src', 'session', 'instrumentation');
-  for (const file of ['sessionTraceTransform.js', 'sessionTraceRuntime.js', 'liveReporter.js', 'ltrCoverageSetup.js']) {
-    fs.copyFileSync(path.join(sessionSrc, file), path.join(dest, file));
+  const sessionFiles = {
+    shared: ['sessionTraceRuntime.js'],
+    jest: ['sessionTraceTransform.js', 'liveReporter.js', 'ltrCoverageSetup.js'],
+  };
+  for (const [dir, files] of Object.entries(sessionFiles)) {
+    fs.mkdirSync(path.join(dest, dir), { recursive: true });
+    for (const file of files) {
+      fs.copyFileSync(path.join(sessionSrc, dir, file), path.join(dest, dir, file));
+    }
   }
 }
 

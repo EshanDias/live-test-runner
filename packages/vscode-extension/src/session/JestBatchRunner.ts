@@ -32,18 +32,21 @@ const covLog = logger.scope('Coverage');
 const SESSION_TRANSFORM_PATH = path.resolve(
   __dirname,
   'instrumentation',
+  'jest',
   'sessionTraceTransform.js',
 );
 
 const LIVE_REPORTER_PATH = path.resolve(
   __dirname,
   'instrumentation',
+  'jest',
   'liveReporter.js',
 );
 
 const COVERAGE_SETUP_PATH = path.resolve(
   __dirname,
   'instrumentation',
+  'jest',
   'ltrCoverageSetup.js',
 );
 

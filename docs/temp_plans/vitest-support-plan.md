@@ -201,6 +201,7 @@ Done (2026-10-21): `session/IBatchRunner.ts` (`BatchRunOptions` = the former inl
 
 **1.5 Split instrumentation (1 d)** (C3)
 Sketch: `session/instrumentation/` → `shared/` (trace record format, writer protocol, doc of the `__strace` contract), `jest/` (transform, reporter, setup, discovery). Pure file moves + import updates; document the protocol in `docs/architecture.md` so Vitest can implement it later.
+Done (2026-10-21): `shared/` = `sessionTraceRuntime.js` + `testDiscovery.js` (discovery is static AST parsing, not Jest-specific — Vitest reuses it in 2.5, so it went to `shared/`, not `jest/` as sketched); `jest/` = `sessionTraceTransform.js`, `ltrCoverageSetup.js`, `liveReporter.js`. `out/instrumentation/{shared,jest}/` mirror the layout (`esbuild.js`), runtime paths updated (`JestBatchRunner`, the transform's `RUNTIME_PATH`, the setup file's runtime require, `TestDiscoveryService`). Timeline files (`timeline/instrumentation/`) untouched (timeline is deferred, D4). Protocol documented in `docs/architecture.md` → *Session instrumentation protocol* + `shared/README.md`. Side effect: the transform's hash changed, so users' persistent transform cache rebuilds once.
 
 **1.6 Conformance suite + gate (1.5 d)**
 Sketch: `packages/runner/test/adapterConformance.ts` — a reusable suite every adapter must pass (detect true/false cases, arg shape, parse a canned result, kill behaviour); apply to Jest and CRA. Run the full regression gate. Add a "Adding a framework" checklist to `docs/developer-guide.md`.
@@ -377,7 +378,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - Gate after 1.1: `pnpm build`, `pnpm lint`, `pnpm test` (35 runner + 17 extension), `node e2e/run.js --all` (11 pass, 2 repo scenarios skipped — covered by `real-repos.js`), `node e2e/real-repos.js` (3/3 PASS, originals untouched).
 
 **Next**
-1. Task 1.5 (split instrumentation) on `feat/vitest-decouple`.
+1. Task 1.6 (conformance suite + gate) on `feat/vitest-decouple`.
 
 ## Progress tracker
 
@@ -388,7 +389,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 1.2 Generic runner layer
 - [x] 1.3 FrameworkRegistry + detector
 - [x] 1.4 IBatchRunner + services bundle
-- [ ] 1.5 Split instrumentation
+- [x] 1.5 Split instrumentation
 - [ ] 1.6 Conformance suite + gate
 - [ ] 2.1 Runner VitestAdapter
 - [ ] 2.2 VitestRunner

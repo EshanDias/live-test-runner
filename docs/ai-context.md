@@ -128,11 +128,15 @@ src/
 │   ├── IProjectConfig.ts           Interface: the project's resolved runner config (get / reset)
 │   ├── JestProjectConfig.ts        IProjectConfig for Jest: `jest --showConfig` once per session
 │   ├── IBatchRunner.ts             Interface: runFiles(BatchRunOptions) / kill / reset — SessionManager's only view of batch runs
-│   ├── JestBatchRunner.ts       Runs combined test+trace+coverage batches; populates ResultStore + ExecutionTraceStore + CoverageStore
-│   │   instrumentation/
-│   │   ├── liveReporter.js         Custom Jest reporter: appends one JSON record per completed file to a JSONL file
-│   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
-│   │   └── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook; flushes T/H records + __cov to JSONL on exit
+│   ├── JestBatchRunner.ts          Runs combined test+trace+coverage batches; populates ResultStore + ExecutionTraceStore + CoverageStore
+│   │   instrumentation/            (protocol: docs/architecture.md → Session instrumentation protocol)
+│   │   ├── shared/
+│   │   │   ├── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook; flushes T/H records to JSONL — framework-neutral
+│   │   │   └── testDiscovery.js        Static AST test discovery (bundled; used by TestDiscoveryService)
+│   │   └── jest/
+│   │       ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
+│   │       ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
+│   │       └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
 │   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
