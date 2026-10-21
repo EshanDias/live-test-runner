@@ -129,8 +129,8 @@ export default class LtrReporter {
   endFile(file) {
     if (!file || this.ended.has(file.id)) { return; }
     this.ended.add(file.id);
+    failures(file); // before file-end: a live reader applies the result on file-end
     write({ ev: 'file-end', file: file.filepath, result: fileResult(file) });
-    failures(file);
   }
 
   // ── Vitest 3+ ──

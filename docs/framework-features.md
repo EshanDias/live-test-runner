@@ -15,7 +15,7 @@ Cells: ✅ supported · 🟡 partial · ⏳ planned (target release) · — not 
 | Rerun a saved test file | ✅ | ✅ | ✅ |
 | Logs / console output | ✅ per file | ✅ per file | ✅ per test |
 | Coverage (gutter, hover) | ✅ | ✅ | ⏳ 3.0 |
-| Live per-file progress | ✅ | ✅ | ⏳ 3.0.x |
+| Live per-file progress | ✅ | ✅ | ✅ |
 | Rerun tests related to a saved source file | ✅ | ✅ | ⏳ 3.0.x |
 | Monorepo / multi-project | 🟡 | — | 🟡 Vitest `projects`, run from the root |
 | Mixed frameworks in one project | — | — | ⏳ 3.2 |

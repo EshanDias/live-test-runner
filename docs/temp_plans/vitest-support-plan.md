@@ -269,6 +269,8 @@ Done (2026-10-21) → **M2a reached** (Vitest logs & output). Written with 3.1 /
 Done (2026-10-21, branch `feat/vitest-live`): spike — new reporter API events arrive live on 3.2 / 4.1 / 5.0; `onTaskUpdate` works live on 1.6 **and 2.1** (2.1 has `getReportedEntity` but no `onTestModuleStart/End`, so "modern" = `parseInt(ctx.version) >= 3`, not feature detection). The existing runner-owned reporter (no separate `.mjs` in the extension — the runner writes it to the session dir, like the project probe) now also writes `file-start`, `test-start` / `test-end`, and `file-end` with a json-reporter-shaped result built from the finished task tree (`STATUS` map = the json reporter's; empty suite names skipped); failures are written per file at its end (deduplicated, run end catches crashed files). Legacy file detection = `typeof task.filepath === 'string'` (Vitest 2 suites have no parent link). Runner: `liveFileResult()`, `applyVitestEvents()` (moved out of `afterRun`, shared), `VitestRunner.liveCommand(files)` → `{ command, eventsFile, resultFile }` (`commandArgs` / `resolveBinary` now protected). Verified with a polling driver on 1.6 / 2.1 / 5.0: fast files' results at 0.6–1 s, the 2.5 s file's at ~3 s.
 
 **4.2 `VitestBatchRunner` (2 d)** — implements `IBatchRunner` without trace: one process per batch, hang detection from start records, kill process tree, `--no-file-parallelism` never forced.
+Done (2026-10-21): `session/VitestBatchRunner.ts` rewritten on the live events — `runner.liveCommand(files)` + `Executor.runWithReporterPolling(command, eventsFile, onRecord)`; `file-start` → `onFileStart` (owned files); `log` / `error` buffered per file; `file-end` → `liveFileResult` + `applyVitestEvents` → `applyFileResult` + `onFileDone`; generation / ownership / kill as before; result and events files deleted. Hang handling: per-test limit from heartbeats (`test-start` without `test-end` > `hangTimeoutMs` → kill, `onFileTimedOut` for that file, the rest missing → retried); **found by `vitest-hang`:** a worker in a synchronous infinite loop never flushes its "test started" update (Vitest batches worker → main updates), so the heartbeat never comes — added a no-progress fallback (no event at all for `hangTimeoutMs × PLAIN_RUN_HANG_FACTOR` → kill, unfinished files missing → SessionManager's one-by-one retry pins the hanging file; ≈ 97 s with a 10 s limit). Reporter order fixed: failures before `file-end` (the live reader applies on `file-end`). Slow-batch warning every 60 s names the files running. `--no-file-parallelism` is not forced (sketch). e2e: `vitest-batch`, `vitest-save-during-run` (new), `vitest-hang` (either hang path); matrix "Live per-file progress" → ✅.
+
 **4.3 Tests (1.5 d)** — `vitest-batch`, `vitest-save-during-run`, reporter unit tests with synthetic events.
 Gate → **M2b**.
 
@@ -428,8 +430,10 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 4.1 done (2026-10-21) — see the task note. Gate: build, lint, 169 runner + 29 extension unit tests, `e2e/run.js --all` (18 pass, 3 skipped), `e2e/real-repos.js` (6/6 PASS).
 
+- 4.2 done (2026-10-21) — see the task note. Gate: build, lint, 169 runner + 29 extension unit tests, `e2e/run.js --all` (20 pass incl. 10 Vitest scenarios, 3 skipped), `e2e/real-repos.js` (6/6 PASS — vueuse / slidev / unplugin through the live batch runner).
+
 **Next**
-1. Task 4.2 — `VitestBatchRunner` on the live events (files running only when started, results per file, per-test hang limit).
+1. Task 4.3 — remaining phase 4 tests (reporter unit tests with synthetic events) → milestone M2b.
 
 ## Progress tracker
 
@@ -459,7 +463,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [ ] 11.1 Feature matrix + guide
 - [ ] 11.2 Real-repo validation
 - [ ] 11.3 Release prep → **3.0.0**
-- [ ] 4.1–4.3 Live streaming (3.0.x) — 4.1 done
+- [ ] 4.1–4.3 Live streaming (3.0.x) — 4.1, 4.2 done
 - [ ] 6.1–6.3 Related/on-save (3.0.x)
 - [ ] 7.1–7.7 Monorepos (3.1)
 - [ ] 8.1–8.6 Mixed (3.2)

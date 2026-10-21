@@ -533,7 +533,7 @@ Adding a new framework = one file implementing `IFrameworkAdapter`, plus that fr
 |---|---|---|---|
 | `adapter` | `IFrameworkAdapter` | `framework/JestAdapter.ts` | `framework/VitestAdapter.ts` |
 | `projectConfig` | `IProjectConfig` (`get(root)`, `reset()`) | `session/JestProjectConfig.ts` (`jest --showConfig`) | `session/VitestProjectConfig.ts` (the config file path) |
-| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` (results + trace + coverage, streamed) | `session/VitestBatchRunner.ts` (results when the batch exits) |
+| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` (results + trace + coverage, streamed) | `session/VitestBatchRunner.ts` (results streamed per file from the runner's Vitest reporter; per-test hang limit + no-progress fallback) |
 | `instrumentedRunner` | `IInstrumentedRunner` (Timeline), optional | `timeline/JestInstrumentedRunner.ts` | — (phase 10) |
 | `createSessionRunner()` | runner `TestRunner` for core's `TestSession` | runner `JestAdapter.createRunner()` → `JestRunner` | runner `VitestAdapter.createRunner()` → `VitestRunner` |
 
