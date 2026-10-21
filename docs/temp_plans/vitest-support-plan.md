@@ -227,6 +227,8 @@ Done (2026-10-21): `runner/src/parsing/VitestResultParser.ts` `parseVitestResult
 **2.4 Extension `VitestAdapter` (3 d)**
 Sketch: implements `IFrameworkAdapter`: `discoverTests` (`vitest list --filesOnly --json`, fallback to include-glob scan), `getFileGlob/isTestFile` from config `include`/defaults (`**/*.{test,spec}.?(c|m)[jt]s?(x)`), `runFile`, `applyFileResult`, `runTestCase`, `getDebugConfig` (node launch of `vitest.mjs run <file> -t … --no-file-parallelism --test-timeout=0`), `getAffectedTests` (coverage map; real impl phase 6), `runRelatedTests` (stub → phase 6, "not available" capability until then).
 
+Done (2026-10-21): the extension `JestAdapter` was split — `framework/RunnerBackedAdapter.ts` holds the framework-neutral half (moved verbatim: file / test-case / related runs, `FileRunResult` → `ResultStore`), `JestAdapter` keeps detection, `JestRunner` + `jestCommandSetting`, debug config. `framework/VitestAdapter.ts`: detection (runner adapter), `VitestRunner` with **`liveTestRunner.vitestCommand`** (setting added here; `runMode: npm` is Jest-only → one WARN), debug config = Vitest's recommended launch (`vitest.mjs run <file> [-t]` + script flags + `--no-file-parallelism --test-timeout=0 --hook-timeout=0 --coverage.enabled=false`, `autoAttachChildProcesses`, `smartStep`). Discovery = `vitest list` (runner), glob/`isTestFile` = the shared patterns (Vitest's default include is a subset; `vitest list` filters). `getAffectedTests` = coverage map; `runRelatedTests` = `vitest related` already works through the runner (polish in phase 6). Beyond the sketch, needed to run at all: (1) **`session/VitestBatchRunner.ts`** (the session runs files through `batchRunner`; without one every batch fell back to "plain Jest" per file) — one process per batch, results applied when it exits, generation/ownership/kill like Jest's, whole-batch limit `hangTimeoutMs × PLAIN_RUN_HANG_FACTOR` then SessionManager's per-file retry pins the hanging file; `session/VitestProjectConfig.ts` (config file path); `framework/vitestServices.ts`; (2) **`DetectingFrameworkProvider`** replaces `SingleFrameworkProvider` in `extension.ts` (bundle per detected framework, built lazily; services were built at activation before a root was known); `instrumentedRunner` optional (from 2.6) + delegating runner with "not available for Vitest yet"; (3) **discovery had no Babel**: `testDiscovery.js` only loaded the project's `@babel/parser`/`traverse` (present in every Jest project via Jest, absent in Vitest projects → 0 tests) — now falls back to `@babel/parser` 7.29.2 shipped as `out/vendor/babel-parser.js` (512 KB, self-contained, MIT; devDependency + `esbuild.js` copy — the .vsix is built with `--no-dependencies`) and a built-in `CallExpression` walker; and `vitest` joined `JEST_GLOBAL_PACKAGES` (imports from it were treated like tstyche's → 0 tests). The rest of 2.5 (`.for`, `skipIf`, `test.extend`, …) stays in 2.5; (4) a file that fails to load (`failureMessage`, no tests) now fails its discovered tests with the reason, for any framework (Jest batch crashes included; before: pending, no reason); a file-level failure with tests (Vitest hook) goes into the file's output. Runnable-files cache key: Vitest/Vite config files count only when present (Jest keys unchanged). Feature matrix: `docs/framework-features.md` + `scripts/framework-matrix.js` (writes README + guide; `--check`), README banner / quick start / settings / gif placeholder updated (D7). e2e: fixture `vitest-basic` (Vitest 3.2.4) + scenario `vitest-full-run` (20 checks, PASS).
+
 **2.5 Static discovery syntax (1.5 d)**
 Sketch: check `TestDiscoveryService`'s parser covers `test/it/describe` + `.skip/.only/.todo/.concurrent/.each/.for/.skipIf/.runIf`, `test.extend` fixtures, `import { test } from 'vitest'`; add missing forms and unit tests.
 
@@ -391,8 +393,10 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 2.3 done (2026-10-21) — see the task note. Gate: build, lint, 157 runner + 17 extension unit tests, `e2e/run.js --all` (11 pass, 2 repo scenarios skipped), `e2e/real-repos.js` (jest-dom, vscode-jest, sample-react-project PASS).
 
+- 2.4 done (2026-10-21) — see the task note. Gate: lint, 157 runner + 17 extension unit tests, `e2e/run.js --all` (12 pass incl. `vitest-full-run`, 2 repo scenarios skipped), `e2e/real-repos.js` (jest-dom, vscode-jest, sample-react-project PASS).
+
 **Next**
-1. Task 2.4 — extension `VitestAdapter` (`IFrameworkAdapter`) + Vitest services bundle + `liveTestRunner.vitestCommand`; surface `FileRunResult.failureMessage` on plain runs.
+1. Task 2.5 — remaining Vitest discovery syntax (`.for`, `skipIf`/`runIf`, `test.extend` fixtures, `suite`, `bench` excluded).
 
 ## Progress tracker
 
@@ -408,7 +412,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 2.1 Runner VitestAdapter
 - [x] 2.2 VitestRunner
 - [x] 2.3 Result parsing
-- [ ] 2.4 Extension VitestAdapter
+- [x] 2.4 Extension VitestAdapter
 - [ ] 2.5 Static discovery syntax
 - [ ] 2.6 Session behaviour parity
 - [ ] 2.8 Projects & browser-mode guard

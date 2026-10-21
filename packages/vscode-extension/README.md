@@ -14,7 +14,7 @@
 
 > Save a file. Tests run. Results appear inline. No terminal. No config.
 
-> **Only supports `Jest` at the moment**
+> **Works with Jest (incl. Create React App) and Vitest** — see [Supported frameworks](#supported-frameworks) for what each one supports.
 
 <!-- [TODO: USER_INPUT_NEEDED] Replace with an updated hero gif showing the full experience (test run + coverage bars + hover) -->
 ![Demo](resources/gifs/live%20test%20runner%20demo.gif)
@@ -36,12 +36,12 @@
 
 ## Quick Start
 
-1. Open a Jest project in VS Code
+1. Open a Jest or Vitest project in VS Code
 2. Click the **beaker icon** in the Activity Bar
 3. Click **▶ Start Testing**
 4. Save any file — results update instantly
 
-> No `jest.config` changes. No extra installs.
+> No config changes. No extra installs. The framework is detected from your project.
 
 ---
 
@@ -139,8 +139,9 @@ All settings under `liveTestRunner.*`.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `projectRoot` | `""` | Auto-detected for single-folder workspaces |
-| `runMode` | `"auto"` | `"auto"` calls Jest directly; `"npm"` delegates to `npm test` |
+| `runMode` | `"auto"` | `"auto"` calls Jest directly; `"npm"` delegates to `npm test` (Jest only) |
 | `jestCommand` | `""` | Override Jest binary path |
+| `vitestCommand` | `""` | Override the Vitest command (e.g. `npx vitest`); empty = the project's own Vitest |
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
 | `testFilePatterns` | `["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]` | Which files appear in the test tree. Jest's own config still decides what runs, and files it runs are added even when no pattern matches |
@@ -156,11 +157,25 @@ All settings under `liveTestRunner.*`.
 
 ## Supported frameworks
 
-| Framework | Status |
-|-----------|--------|
-| Jest | ✅ Fully supported |
-| Create React App (react-scripts) | ✅ Fully supported |
-| Vitest | 🗓 Planned |
+<!-- matrix:start -->
+| Feature | Jest | CRA | Vitest |
+|---|---|---|---|
+| Run & pass/fail | ✅ | ✅ | ✅ |
+| ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ |
+| Rerun a saved test file | ✅ | ✅ | ✅ |
+| Logs / console output | ✅ | ✅ | ⏳ 3.0 |
+| Coverage (gutter, hover) | ✅ | ✅ | ⏳ 3.0 |
+| Live per-file progress | ✅ | ✅ | ⏳ 3.0.x |
+| Rerun tests related to a saved source file | ✅ | ✅ | ⏳ 3.0.x |
+| Monorepo / multi-project | 🟡 | — | 🟡 Vitest `projects`, run from the root |
+| Mixed frameworks in one project | — | — | ⏳ 3.2 |
+| Execution trace / "covering tests" | ✅ | ✅ | ⏳ 3.3 |
+| Timeline debugger | ⏳ | ⏳ | ⏳ 3.4 |
+<!-- matrix:end -->
+
+<!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — the test tree fills in, results and gutter icons appear, ▶ Run on one test -->
+
+Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projects that list Vitest but configure Jest (e.g. libraries testing with both) run on Jest.
 
 ---
 

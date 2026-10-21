@@ -104,7 +104,7 @@ Two adapter interfaces exist in the codebase:
 
 The separation means the runner can be used independently of VS Code.
 
-On the extension side a framework is a **services bundle** (`FrameworkServices`: `adapter`, `projectConfig: IProjectConfig`, `batchRunner: IBatchRunner`, `instrumentedRunner`, `createSessionRunner()`). `SessionManager` asks an `IFrameworkServicesProvider` for the bundle of a file or root (`servicesFor`) and never constructs framework classes; `extension.ts` composes the bundle (`createJestServices`) and wraps it in a `SingleFrameworkProvider`.
+On the extension side a framework is a **services bundle** (`FrameworkServices`: `adapter`, `projectConfig: IProjectConfig`, `batchRunner: IBatchRunner`, `instrumentedRunner`, `createSessionRunner()`). `SessionManager` asks an `IFrameworkServicesProvider` for the bundle of a file or root (`servicesFor`) and never constructs framework classes; `extension.ts` composes a `DetectingFrameworkProvider` that builds the Jest (`createJestServices`) or Vitest (`createVitestServices`) bundle for the project's framework. Adapters that run through a packages/runner `CommandRunner` extend `RunnerBackedAdapter` and add only detection, their runner and the debug config.
 
 Adding a framework = an adapter in each package plus the extension-side bundle (batch runner, project config). `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
 

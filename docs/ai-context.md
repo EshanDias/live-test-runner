@@ -142,13 +142,18 @@ src/
 │   │       ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
 │   │       ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
 │   │       └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
+│   ├── VitestBatchRunner.ts        IBatchRunner for Vitest: one process per batch, results when it exits
+│   ├── VitestProjectConfig.ts      IProjectConfig for Vitest: the config file path
 │   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
 │   │                               getAffectedTests, getDebugConfig
-│   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all) + SingleFrameworkProvider
+│   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all) + SingleFrameworkProvider + DetectingFrameworkProvider (Vitest or Jest per root)
 │   ├── jestServices.ts             createJestServices(): the Jest bundle (adapter, JestProjectConfig, JestBatchRunner, JestInstrumentedRunner, session runner)
-│   └── JestAdapter.ts              All Jest-specific logic
+│   ├── vitestServices.ts           createVitestServices(): adapter, VitestProjectConfig, VitestBatchRunner, no instrumented runner
+│   ├── RunnerBackedAdapter.ts      Shared IFrameworkAdapter half: file / test-case / related runs, FileRunResult → ResultStore
+│   ├── JestAdapter.ts              Jest detection, JestRunner (jestCommand / runMode), debug config
+│   └── VitestAdapter.ts            Vitest detection, VitestRunner (vitestCommand), debug config (autoAttachChildProcesses)
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
 │   ├── DecorationManager.ts        Gutter icons + inline duration text

@@ -30,19 +30,74 @@ let _log = {
 
 function setLogger(log) { _log = log; }
 
+/**
+ * Babel for discovery: the project's own @babel/parser / @babel/traverse when
+ * it has them (every Jest project does — the same parser its tests are
+ * compiled with), otherwise the parser shipped with the extension
+ * (out/vendor, or this package's node_modules during development) and a
+ * built-in walker. Vitest projects usually have no Babel.
+ */
 function loadBabel(rootDir) {
   if (_rootDir === rootDir && _parser) { return true; }
-  try {
-    const resolve = (id) => require.resolve(id, { paths: [rootDir, __dirname] });
-    _parser   = require(resolve('@babel/parser'));
-    _traverse = require(resolve('@babel/traverse'));
-    if (_traverse && _traverse.default) { _traverse = _traverse.default; }
-    _rootDir = rootDir;
-    return true;
-  } catch (e) {
-    _log.error(`Could not load @babel/parser / @babel/traverse for ${rootDir} — no tests can be discovered: ${e && (e.message || e)}`);
-    return false;
+  const fromProject = (id) => {
+    try { return require(require.resolve(id, { paths: [rootDir] })); } catch (_) { return undefined; }
+  };
+  let parser = fromProject('@babel/parser');
+  let traverse = parser ? fromProject('@babel/traverse') : undefined;
+  if (!parser) {
+    parser = bundledParser();
+    if (!parser) {
+      _log.error(`Could not load @babel/parser for ${rootDir} — no tests can be discovered (the project has no Babel and the extension's own copy is missing)`);
+      return false;
+    }
+    _log.debug(`${rootDir} has no @babel/parser — discovering tests with the extension's own parser`);
   }
+  if (traverse && traverse.default) { traverse = traverse.default; }
+  _parser = parser;
+  _traverse = typeof traverse === 'function' ? traverse : walkCallExpressions;
+  _rootDir = rootDir;
+  return true;
+}
+
+/** The @babel/parser shipped with the extension. */
+function bundledParser() {
+  const path = require('path');
+  const candidates = [
+    // Bundled into out/extension.js: out/vendor/ (copied by esbuild.js).
+    path.join(__dirname, 'vendor', 'babel-parser.js'),
+  ];
+  for (const file of candidates) {
+    try { return require(file); } catch (_) { /* next */ }
+  }
+  // Development / unit tests: this package's own devDependency.
+  try { return require(require.resolve('@babel/parser', { paths: [__dirname] })); } catch (_) { return undefined; }
+}
+
+/** AST keys that never hold child nodes worth visiting. */
+const SKIP_KEYS = new Set(['loc', 'start', 'end', 'range', 'extra', 'leadingComments', 'trailingComments', 'innerComments', 'comments', 'tokens', 'errors']);
+
+/**
+ * The part of @babel/traverse discovery needs: `CallExpression.enter/exit`
+ * with `path.node`, depth-first in source order.
+ */
+function walkCallExpressions(ast, visitors) {
+  const v = visitors.CallExpression || {};
+  const visit = (node) => {
+    if (!node || typeof node.type !== 'string') { return; }
+    const isCall = node.type === 'CallExpression';
+    if (isCall && v.enter) { v.enter({ node }); }
+    for (const key of Object.keys(node)) {
+      if (SKIP_KEYS.has(key)) { continue; }
+      const child = node[key];
+      if (Array.isArray(child)) {
+        for (const c of child) { if (c && typeof c === 'object') { visit(c); } }
+      } else if (child && typeof child === 'object') {
+        visit(child);
+      }
+    }
+    if (isCall && v.exit) { v.exit({ node }); }
+  };
+  visit(ast.program || ast);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +221,8 @@ function _memberLeaf(memberExpr) {
  * If `describe`/`test`/`it` are imported from these, they ARE Jest globals
  * and should be treated normally.
  */
-const JEST_GLOBAL_PACKAGES = new Set(['@jest/globals', 'jest']);
+/** Packages whose describe / it / test are the real test functions (Jest, Vitest). */
+const JEST_GLOBAL_PACKAGES = new Set(['@jest/globals', 'jest', 'vitest']);
 
 /**
  * Scan import declarations at the top of the file and return the set of

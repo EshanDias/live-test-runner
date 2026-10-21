@@ -527,15 +527,19 @@ Adding a new framework = one file implementing `IFrameworkAdapter`, plus that fr
 
 `SessionManager` never builds framework classes. It gets an `IFrameworkServicesProvider` (`servicesFor(fileOrRoot)`, `all()`) and asks it for the `FrameworkServices` of a file or project root (`framework/FrameworkServices.ts`):
 
-| Member | Interface | Jest implementation |
-|---|---|---|
-| `adapter` | `IFrameworkAdapter` | `framework/JestAdapter.ts` |
-| `projectConfig` | `IProjectConfig` (`get(root)`, `reset()`) | `session/JestProjectConfig.ts` (`jest --showConfig`) |
-| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` |
-| `instrumentedRunner` | `IInstrumentedRunner` (Timeline) | `timeline/JestInstrumentedRunner.ts` |
-| `createSessionRunner()` | runner `TestRunner` for core's `TestSession` | runner `JestAdapter.createRunner()` → `JestRunner` |
+| Member | Interface | Jest implementation | Vitest implementation |
+|---|---|---|---|
+| `adapter` | `IFrameworkAdapter` | `framework/JestAdapter.ts` | `framework/VitestAdapter.ts` |
+| `projectConfig` | `IProjectConfig` (`get(root)`, `reset()`) | `session/JestProjectConfig.ts` (`jest --showConfig`) | `session/VitestProjectConfig.ts` (the config file path) |
+| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` (results + trace + coverage, streamed) | `session/VitestBatchRunner.ts` (results when the batch exits) |
+| `instrumentedRunner` | `IInstrumentedRunner` (Timeline), optional | `timeline/JestInstrumentedRunner.ts` | — (phase 10) |
+| `createSessionRunner()` | runner `TestRunner` for core's `TestSession` | runner `JestAdapter.createRunner()` → `JestRunner` | runner `VitestAdapter.createRunner()` → `VitestRunner` |
 
-`extension.ts` composes the Jest bundle (`framework/jestServices.ts`, `createJestServices`) and passes `new SingleFrameworkProvider(bundle)`. Stop kills the batch runners of `all()` bundles. Mixed-framework projects (phase 8) replace the provider with a router; nothing in `SessionManager` changes.
+Both adapters extend `framework/RunnerBackedAdapter.ts`, which holds everything that only needs a runner's `RunResult`: single-file, test-case and related runs, and mapping `FileRunResult`s into the `ResultStore` (suites, `.each` templates, scoped reruns, output, and a file's own failure — its tests are failed with `failureMessage` when nothing ran). The adapters add detection, their runner (with the user's command setting) and the debug launch config.
+
+`extension.ts` composes a `DetectingFrameworkProvider`: it detects the project root's framework (runner `FrameworkDetector`) and builds the Vitest bundle (`createVitestServices`) for a Vitest project, the Jest bundle (`createJestServices`) otherwise, on first use. The Timeline command goes through a delegating `IInstrumentedRunner` that reports "not available for Vitest yet". Stop kills the batch runners of `all()` bundles. Mixed-framework projects (phase 8) replace the provider with a router; nothing in `SessionManager` changes.
+
+Static discovery (`instrumentation/shared/testDiscovery.js`) uses the project's own `@babel/parser` / `@babel/traverse` when it has them (every Jest project), else `out/vendor/babel-parser.js` (shipped by `esbuild.js`) with a built-in call-expression walker.
 
 ### Session instrumentation protocol
 

@@ -4,8 +4,13 @@ All notable changes to Live Test Runner are documented here.
 
 ## [3.0.0] - Unreleased
 
+### New
+
+- **Vitest support (preview)** — open a Vitest project and Start Testing: the test tree, pass/fail results, gutter icons, ▶ Run / ▷ Debug for one test or suite, and reruns of saved test files work as they do for Jest. The framework is detected automatically; files your Vitest config does not include are not run. Logs and coverage for Vitest follow in this release. New setting `liveTestRunner.vitestCommand`.
+
 ### Improvements
 
+- **A test file that cannot load shows why** — its tests are marked failed with the error (e.g. a missing import) instead of staying "not run".
 - **"Jest Output" is now "Test Output"** — the raw output channel is called "Live Test Runner: Test Output" and the command "Show Test Output", ready for more test frameworks. Nothing else changes.
 
 ### Bug Fixes

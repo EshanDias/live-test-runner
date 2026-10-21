@@ -7,7 +7,8 @@
  * {@link createJestServices}); mixed-framework projects (phase 8) add a
  * provider that routes each file to its own framework's bundle.
  */
-import { FrameworkId, TestRunner } from '@live-test-runner/runner';
+import { FrameworkDetector, FrameworkId, FRAMEWORK_IDS, TestRunner } from '@live-test-runner/runner';
+import { logger } from '../utils/logger';
 import { IFrameworkAdapter } from './IFrameworkAdapter';
 import { IProjectConfig } from '../session/IProjectConfig';
 import { IBatchRunner } from '../session/IBatchRunner';
@@ -24,8 +25,8 @@ export interface FrameworkServices {
   readonly projectConfig: IProjectConfig;
   /** Session batches: results + trace + coverage. */
   readonly batchRunner: IBatchRunner;
-  /** The Timeline debugger's runner. */
-  readonly instrumentedRunner: IInstrumentedRunner;
+  /** The Timeline debugger's runner; undefined when the framework has none yet (Vitest). */
+  readonly instrumentedRunner: IInstrumentedRunner | undefined;
   /** A runner for core's TestSession (coverage map, stop). Reads the settings when called. */
   createSessionRunner(): TestRunner;
   /**
@@ -52,5 +53,54 @@ export class SingleFrameworkProvider implements IFrameworkServicesProvider {
 
   all(): FrameworkServices[] {
     return [this._services];
+  }
+}
+
+/**
+ * Picks the bundle by the project's framework: Vitest for a Vitest project,
+ * Jest (incl. CRA) otherwise. Bundles are built on first use and kept, so a
+ * session's batch runner is the one Stop kills. Files are resolved to the
+ * project root first (one root per window until phase 7).
+ */
+export class DetectingFrameworkProvider implements IFrameworkServicesProvider {
+  private readonly _bundles = new Map<FrameworkId, FrameworkServices>();
+  private readonly _byRoot = new Map<string, FrameworkId>();
+
+  constructor(
+    private readonly _factories: Record<'jest' | 'vitest', () => FrameworkServices>,
+    /** The project root a file or root belongs to (undefined: no root yet). */
+    private readonly _rootOf: (fileOrRoot: string) => string | undefined,
+    private readonly _detector = new FrameworkDetector(),
+  ) {}
+
+  servicesFor(fileOrRoot: string): FrameworkServices {
+    const root = this._rootOf(fileOrRoot) ?? fileOrRoot;
+    let framework = this._byRoot.get(root);
+    if (!framework) {
+      let detected: FrameworkId = FRAMEWORK_IDS.jest;
+      try { detected = this._detector.detectFramework(root); } catch { /* logged by the detector */ }
+      framework = detected === FRAMEWORK_IDS.vitest ? FRAMEWORK_IDS.vitest : FRAMEWORK_IDS.jest;
+      this._byRoot.set(root, framework);
+      logger.scope('Framework').debug(`${root}: using the ${framework} services (detected "${detected}")`);
+    }
+    return this._bundle(framework as 'jest' | 'vitest');
+  }
+
+  all(): FrameworkServices[] {
+    return [...this._bundles.values()];
+  }
+
+  /** Forget detected frameworks (e.g. the project root changed or package.json was edited). */
+  resetDetection(): void {
+    this._byRoot.clear();
+  }
+
+  private _bundle(framework: 'jest' | 'vitest'): FrameworkServices {
+    let b = this._bundles.get(framework);
+    if (!b) {
+      b = this._factories[framework]();
+      this._bundles.set(framework, b);
+    }
+    return b;
   }
 }

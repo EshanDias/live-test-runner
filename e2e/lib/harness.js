@@ -293,8 +293,59 @@ function checkMatchesPlainJest(api, t, workspace, label = 'results match plain J
   t.check(`${label} (${want.size} files)`, want.size > 0 && diffs.length === 0, diffs.slice(0, 20).join('\n') || 'no files');
 }
 
+/**
+ * The raw json-reporter result of a plain `vitest run` of the project's own
+ * Vitest, with the config-relevant flags of its test script (like npm test).
+ */
+function plainVitestJson(workspace) {
+  const { spawnSync } = require('child_process');
+  const fs = require('fs');
+  const os = require('os');
+  const runner = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'index.js'));
+  const adapter = new runner.VitestAdapter();
+  const entry = adapter.findInstall(workspace).entry;
+  const out = path.join(os.tmpdir(), `ltr-e2e-plain-vitest-${process.pid}-${Date.now()}.json`);
+  const env = { ...process.env, CI: 'true' };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const node = process.platform === 'win32' ? 'node.exe' : 'node';
+  const r = spawnSync(node, [entry, 'run', ...adapter.getExtraArgs(workspace), '--reporter=json', `--outputFile=${out}`],
+    { cwd: workspace, env, encoding: 'utf8', timeout: 20 * 60_000, maxBuffer: 1 << 30 });
+  if (!fs.existsSync(out)) {
+    throw new Error(`plain Vitest wrote no results (exit ${r.status}${r.error ? `, ${r.error.message}` : ''}): ${(r.stderr || '').slice(-1500)}`);
+  }
+  const json = JSON.parse(fs.readFileSync(out, 'utf8'));
+  fs.unlinkSync(out);
+  return json;
+}
+
+/**
+ * Per-file pass/fail/skip in the tree equal a plain `vitest run`. Files Vitest
+ * could not load (no tests, a message) are left out — the extension fails
+ * their discovered tests with the reason; check those separately.
+ */
+function checkMatchesPlainVitest(api, t, workspace, label = 'results match plain Vitest') {
+  const json = plainVitestJson(workspace);
+  json.testResults = json.testResults.filter((f) => f.assertionResults.length > 0 || !f.message);
+  const want = jestJsonCounts(json, workspace);
+  const diffs = [];
+  for (const [file, c] of want) {
+    const key = api.store.findFileKey(file);
+    if (!key) { diffs.push(`${path.basename(file)}: not in the tree`); continue; }
+    const got = { passed: 0, failed: 0, skipped: 0, other: 0 };
+    for (const n of api.store.getFileNodes(key)) {
+      if (n.type !== 'test') { continue; }
+      if (n.status in got) { got[n.status]++; } else { got.other++; }
+    }
+    if (got.passed !== c.passed || got.failed !== c.failed || got.skipped !== c.skipped || got.other) {
+      diffs.push(`${path.basename(file)}: vitest ${JSON.stringify(c)} vs extension ${JSON.stringify(got)}`);
+    }
+  }
+  t.check(`${label} (${want.size} files)`, want.size > 0 && diffs.length === 0, diffs.slice(0, 20).join('\n') || 'no files');
+}
+
 module.exports = {
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
   statusCounts, isoNow, plainJestCounts, plainJestJson, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,
+  plainVitestJson, checkMatchesPlainVitest,
 };
