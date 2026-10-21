@@ -58,6 +58,7 @@ src/
 │   └── Executor.ts                   Spawns the runner, reads its result file (flag from adapter.outputFileArg) on exit
 └── parsing/
     ├── ResultParser.ts               Parses Jest JSON output → RunResult (adapter.parseResult for Jest/CRA)
+    ├── VitestResultParser.ts         parseVitestResult: Vitest 1–5 json reporter → RunResult (fixtures: test/fixtures/vitest)
     ├── runResults.ts                 emptyRunResult / mergeRunResults — any framework
     └── mergeFileResults.ts           Merges reports of one file run by several Jest projects
 ```

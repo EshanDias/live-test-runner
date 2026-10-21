@@ -1,0 +1,235 @@
+{
+  "numTotalTestSuites": 7,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 7,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 10,
+  "numPassedTests": 4,
+  "numFailedTests": 2,
+  "numPendingTests": 3,
+  "numTodoTests": 1,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 0,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "Cannot find module './does-not-exist.js' imported from /project/t/broken.test.js",
+      "name": "/project/t/broken.test.js"
+    },
+    {
+      "assertionResults": [],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "No test suite found in file /project/t/empty.test.js",
+      "name": "/project/t/empty.test.js"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "Hooked"
+          ],
+          "fullName": "Hooked a",
+          "status": "skipped",
+          "title": "a",
+          "failureMessages": [],
+          "location": {
+            "line": 4,
+            "column": 3
+          },
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [
+            "Hooked"
+          ],
+          "fullName": "Hooked b",
+          "status": "skipped",
+          "title": "b",
+          "failureMessages": [],
+          "location": {
+            "line": 5,
+            "column": 3
+          },
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "",
+      "name": "/project/t/hook.test.js"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "Outer",
+            "Inner"
+          ],
+          "fullName": "Outer Inner adds",
+          "status": "passed",
+          "title": "adds",
+          "duration": 2.691507999999999,
+          "failureMessages": [],
+          "location": {
+            "line": 4,
+            "column": 5
+          },
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [
+            "Outer",
+            "Inner"
+          ],
+          "fullName": "Outer Inner fails",
+          "status": "failed",
+          "title": "fails",
+          "duration": 5.191179000000005,
+          "failureMessages": [
+            "AssertionError: expected { a: 1 } to deeply equal { a: 2 }\n    at /project/t/probe.test.js:5:42\n    at file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35\n    at file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26\n    at file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)\n    at file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)\n    at file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64"
+          ],
+          "location": {
+            "line": 5,
+            "column": 5
+          },
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [
+            "Outer"
+          ],
+          "fullName": "Outer adds too",
+          "status": "passed",
+          "title": "adds too",
+          "duration": 0.14775299999999447,
+          "failureMessages": [],
+          "location": {
+            "line": 7,
+            "column": 3
+          },
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [
+            "Outer"
+          ],
+          "fullName": "Outer later",
+          "status": "todo",
+          "title": "later",
+          "failureMessages": [],
+          "location": {
+            "line": 8,
+            "column": 6
+          },
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [
+            "Outer"
+          ],
+          "fullName": "Outer skipped",
+          "status": "skipped",
+          "title": "skipped",
+          "failureMessages": [],
+          "location": {
+            "line": 9,
+            "column": 6
+          },
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [
+            "Outer"
+          ],
+          "fullName": "Outer each 1",
+          "status": "passed",
+          "title": "each 1",
+          "duration": 0.2509509999999864,
+          "failureMessages": [],
+          "location": {
+            "line": 10,
+            "column": 20
+          },
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [
+            "Outer"
+          ],
+          "fullName": "Outer each 2",
+          "status": "failed",
+          "title": "each 2",
+          "duration": 0.3338049999999839,
+          "failureMessages": [
+            "AssertionError: expected 2 to be less than 2\n    at /project/t/probe.test.js:10:51\n    at file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2886:64\n    at file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35\n    at file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26\n    at file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)\n    at file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/eshandias/Projects/test/vitest-projects/unplugin/node_modules/.pnpm/vitest@5.0.5_@types+node@26.6.5_vite@8.3.4_@types+node@26.6.5_esbuild@0.28.2_jiti@2.7.0_terser@5.51.2_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)"
+          ],
+          "location": {
+            "line": 10,
+            "column": 20
+          },
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "top level",
+          "status": "passed",
+          "title": "top level",
+          "duration": 0.10279400000001715,
+          "failureMessages": [],
+          "location": {
+            "line": 12,
+            "column": 1
+          },
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "",
+      "name": "/project/t/probe.test.js"
+    }
+  ]
+}

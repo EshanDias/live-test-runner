@@ -68,5 +68,11 @@ export {
   ScopedLogger,
 } from './utils/logger';
 export { ResultParser } from './parsing/ResultParser';
+export {
+  parseVitestResult,
+  VITEST_HOOK_FAILURE,
+  VITEST_FILE_FAILURE,
+  VITEST_UNHANDLED_ERROR,
+} from './parsing/VitestResultParser';
 export { emptyRunResult, mergeRunResults } from './parsing/runResults';
 export { mergeFileResults, mergeByFile } from './parsing/mergeFileResults';

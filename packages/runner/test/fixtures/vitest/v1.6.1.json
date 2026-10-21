@@ -1,0 +1,168 @@
+{
+  "numTotalTestSuites": 7,
+  "numPassedTestSuites": 4,
+  "numFailedTestSuites": 3,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 10,
+  "numPassedTests": 8,
+  "numFailedTests": 2,
+  "numPendingTests": 0,
+  "numTodoTests": 1,
+  "startTime": 0,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "Failed to load url ./does-not-exist.js (resolved id: ./does-not-exist.js) in /project/t/broken.test.js. Does the file exist?",
+      "name": "/project/t/broken.test.js"
+    },
+    {
+      "assertionResults": [],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "No test suite found in file /project/t/empty.test.js",
+      "name": "/project/t/empty.test.js"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "",
+            "Hooked"
+          ],
+          "fullName": " Hooked a",
+          "status": "pending",
+          "title": "a",
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Hooked"
+          ],
+          "fullName": " Hooked b",
+          "status": "pending",
+          "title": "b",
+          "failureMessages": []
+        }
+      ],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "",
+      "name": "/project/t/hook.test.js"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "",
+            "Outer",
+            "Inner"
+          ],
+          "fullName": " Outer Inner adds",
+          "status": "passed",
+          "title": "adds",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Outer",
+            "Inner"
+          ],
+          "fullName": " Outer Inner fails",
+          "status": "failed",
+          "title": "fails",
+          "duration": 8,
+          "failureMessages": [
+            "expected { a: 1 } to deeply equal { a: 2 }"
+          ],
+          "location": {
+            "line": 5,
+            "column": 42
+          }
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Outer"
+          ],
+          "fullName": " Outer adds too",
+          "status": "passed",
+          "title": "adds too",
+          "duration": 0,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Outer"
+          ],
+          "fullName": " Outer later",
+          "status": "todo",
+          "title": "later",
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Outer"
+          ],
+          "fullName": " Outer skipped",
+          "status": "skipped",
+          "title": "skipped",
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Outer"
+          ],
+          "fullName": " Outer each 1",
+          "status": "passed",
+          "title": "each 1",
+          "duration": 0,
+          "failureMessages": []
+        },
+        {
+          "ancestorTitles": [
+            "",
+            "Outer"
+          ],
+          "fullName": " Outer each 2",
+          "status": "failed",
+          "title": "each 2",
+          "duration": 0,
+          "failureMessages": [
+            "expected 2 to be less than 2"
+          ],
+          "location": {
+            "line": 10,
+            "column": 51
+          }
+        },
+        {
+          "ancestorTitles": [
+            ""
+          ],
+          "fullName": " top level",
+          "status": "passed",
+          "title": "top level",
+          "duration": 0,
+          "failureMessages": []
+        }
+      ],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "",
+      "name": "/project/t/probe.test.js"
+    }
+  ]
+}

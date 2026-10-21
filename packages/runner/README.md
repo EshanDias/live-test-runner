@@ -39,6 +39,7 @@ CommandRunner (generic orchestrator)    detection hook, binary/config, chunking,
         ├── BinaryResolver              resolves Jest's JS entry point (jest/bin/jest.js) from the project
         ├── Executor                    runs it with node (no shell), reads the result file on exit
         └── ResultParser                Jest JSON → RunResult (behind adapter.parseResult)
+                                        Vitest: parsing/VitestResultParser.ts (parseVitestResult)
 ```
 
 Each command is `[user-command words] [--config …] [adapter extra args] [framework args] [adapter.outputFileArg(tmp)]`; only the framework args come from the runner subclass (`buildArgs({ kind: 'list' | 'full' | 'files' | 'testCase' | 'related' })`). Snapshot tests (`test/jestRunnerArgs.test.ts`) pin the Jest command lines.
@@ -96,6 +97,7 @@ node vitest.mjs related <abs file> … --run …                                
 - `-t`: Vitest 5 matches names joined with `" > "` (`Outer > Inner > adds`), older versions with spaces; the json reporter's `fullName` uses spaces. `toVitestNamePattern()` turns each literal space of the escaped name into `(?: > | )`, so one pattern fits both (suites end with `(?: > | |$)`).
 - Absolute file paths select exactly that file (Vitest resolves filters against its cwd).
 - `--includeTaskLocation` (test line numbers) only for Vitest ≥ 3, where the CLI flag exists.
+- Results: `parseVitestResult()` reads the json reporter (Jest's shape) for Vitest 1–5 — drops Vitest 1's empty file-level ancestor, counts from the tests (Vitest 1's counts are wrong), takes a load error from `message`, names a failing beforeAll/afterAll (whose error the report leaves out) and an unhandled error (exit 1, all passed) in plain words, drops Vitest 1's assertion positions posing as `location`, rounds durations. Real reports per major are in `test/fixtures/vitest/`.
 - Output lines are tagged `[vitest#N]` (Jest keeps `[jest#N]`): `ExecutorCommand.label`, from `CommandRunner.processLabel`.
 
 How Jest is started:

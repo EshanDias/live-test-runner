@@ -3,7 +3,8 @@ import * as path from 'path';
 import { FRAMEWORK_IDS, FrameworkCapabilities, FrameworkId, RunResult } from '../../types';
 import { RunnerOptions, TestRunner } from '../../TestRunner';
 import { FrameworkAdapter } from './FrameworkAdapter';
-import { JestAdapter, parseJestResult, readPackageJson } from './JestAdapter';
+import { JestAdapter, readPackageJson } from './JestAdapter';
+import { parseVitestResult } from '../../parsing/VitestResultParser';
 import { testScriptVitestArgs } from '../vitestConfig';
 import { VitestRunner } from '../../VitestRunner';
 import { NodeRuntime, nodeRuntime, nodeRuntimeVersion, resolvePackageBin, resolvePackageDir } from '../../resolution/BinaryResolver';
@@ -160,13 +161,9 @@ export class VitestAdapter implements FrameworkAdapter {
     return [`--outputFile=${file}`];
   }
 
-  /**
-   * Vitest's json reporter is Jest-compatible (`testResults[].assertionResults[]`),
-   * so the Jest parser reads it for now; task 2.3 adds the Vitest specifics
-   * (todo, collection errors, ANSI in messages).
-   */
+  /** Vitest's json reporter: Jest's shape with Vitest's own quirks (see VitestResultParser). */
   parseResult(passed: boolean, raw: string, stderr: string): RunResult {
-    return parseJestResult(passed, raw, stderr);
+    return parseVitestResult(passed, raw, stderr);
   }
 
   createRunner(options: RunnerOptions = {}): TestRunner {

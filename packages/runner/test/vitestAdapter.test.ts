@@ -144,7 +144,7 @@ describe('VitestAdapter (runner)', () => {
     });
   });
 
-  it('parses its Jest-compatible json result (until task 2.3)', () => {
+  it('parses its json result with the Vitest parser', () => {
     const r = new VitestAdapter().parseResult(false, JSON.stringify({
       testResults: [{
         name: '/p/a.test.ts', status: 'failed',
