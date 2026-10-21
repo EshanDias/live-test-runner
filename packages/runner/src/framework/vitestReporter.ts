@@ -153,7 +153,7 @@ export interface VitestReportedError {
 
 /** Reads (and deletes) the reporter's events file. */
 export function readVitestEvents(file: string): VitestEvent[] {
-  let text = '';
+  let text: string;
   try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
   finally { try { fs.unlinkSync(file); } catch { /* gone */ } }
   const events: VitestEvent[] = [];
