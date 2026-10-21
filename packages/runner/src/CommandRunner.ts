@@ -84,7 +84,7 @@ export abstract class CommandRunner implements TestRunner {
   }
 
   /**
-   * How a path is spelled in the spawned command (its cwd and `--config`).
+   * How a path is spelled in the spawned command (its binary, cwd and `--config`).
    * Jest resolves its root to the real path itself, so the editor's spelling
    * is fine. Vitest uses the cwd exactly as given, and file filters must be
    * spelled the same way — Vitest returns the real path (see RunnerPaths).
@@ -129,7 +129,7 @@ export abstract class CommandRunner implements TestRunner {
   async discoverTests(projectRoot: string): Promise<string[]> {
     this.initAdapter(projectRoot);
     const result = await this.executor.run({
-      binary: this.resolveBinary(),
+      binary: this.spawnPath(this.resolveBinary()),
       args: await this.commandArgs({ kind: 'list' }),
       cwd: this.spawnPath(this.requireProjectRoot()),
       label: this.processLabel,
@@ -197,7 +197,7 @@ export abstract class CommandRunner implements TestRunner {
   private async runJson(request: RunRequest, timeoutMs?: number): Promise<RunResult> {
     const adapter = this.requireAdapter();
     const cwd = this.spawnPath(this.requireProjectRoot());
-    const binary = this.resolveBinary();
+    const binary = this.spawnPath(this.resolveBinary());
     const args = await this.commandArgs(request);
     const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture(
       { binary, args, cwd, timeoutMs, label: this.processLabel },

@@ -71,6 +71,30 @@ export function fromRunnerPath(filePath: string): string {
   return filePath;
 }
 
+/**
+ * One spelling for every path handed to a runner that does not realpath
+ * anything itself (Vitest): its CLI entry, cwd, config and file filters.
+ * Vitest loads its own CLI from the path it was started by and the `vitest`
+ * import in test files from where Node resolves it — if the two are spelled
+ * differently (8.3 short name, drive-letter case), it runs two copies of
+ * itself and the tests register with the wrong one ("no tests"). Node's
+ * `require.resolve` keeps 8.3 names, so the native realpath is used here,
+ * with an upper-case drive letter. Paths that do not exist fall back to
+ * `toRunnerPath`.
+ */
+export function toSpawnPath(
+  p: string,
+  realpath: (p: string) => string = fs.realpathSync.native,
+): string {
+  let real: string;
+  try {
+    real = realpath(p);
+  } catch {
+    real = toRunnerPath(p);
+  }
+  return windows ? real.replace(/^([a-z]):/, (_, d: string) => `${d.toUpperCase()}:`) : real;
+}
+
 /** @deprecated Use toRunnerPath — kept for one release. */
 export const toJestPath = toRunnerPath;
 /** @deprecated Use fromRunnerPath — kept for one release. */
