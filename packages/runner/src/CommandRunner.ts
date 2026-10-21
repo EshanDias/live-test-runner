@@ -97,6 +97,16 @@ export abstract class CommandRunner implements TestRunner {
   }
 
   /**
+   * How a path is spelled in the spawned command (its cwd and `--config`).
+   * Jest resolves its root to the real path itself, so the editor's spelling
+   * is fine. Vitest uses the cwd exactly as given, and file filters must be
+   * spelled the same way — Vitest returns the real path (see RunnerPaths).
+   */
+  protected spawnPath(p: string): string {
+    return p;
+  }
+
+  /**
    * Args that must come first, before the config and the adapter's extra args:
    * a subcommand and its positionals (Vitest: `run <files>`, `list`). Jest has none.
    */
@@ -134,7 +144,7 @@ export abstract class CommandRunner implements TestRunner {
     const result = await this.executor.run({
       binary: this.resolveBinary(),
       args: await this.commandArgs({ kind: 'list' }),
-      cwd: this.requireProjectRoot(),
+      cwd: this.spawnPath(this.requireProjectRoot()),
       label: this.processLabel,
     });
     const found = this.parseTestList(result, projectRoot);
@@ -199,7 +209,7 @@ export abstract class CommandRunner implements TestRunner {
 
   private async runJson(request: RunRequest, timeoutMs?: number): Promise<RunResult> {
     const adapter = this.requireAdapter();
-    const cwd = this.requireProjectRoot();
+    const cwd = this.spawnPath(this.requireProjectRoot());
     const binary = this.resolveBinary();
     const args = await this.commandArgs(request);
     const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture(
@@ -218,7 +228,7 @@ export abstract class CommandRunner implements TestRunner {
     return [
       ...this.resolvePrefixArgs(),
       ...this.leadingArgs(request),
-      ...(configPath ? ['--config', configPath] : []),
+      ...(configPath ? ['--config', this.spawnPath(configPath)] : []),
       ...adapter.getExtraArgs(projectRoot),
       ...this.buildArgs(request),
     ];
