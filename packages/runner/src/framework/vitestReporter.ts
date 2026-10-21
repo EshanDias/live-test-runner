@@ -15,6 +15,11 @@ export const VITEST_EVENTS_ENV = 'LTR_VITEST_EVENTS';
  * JSON line per event in $LTR_VITEST_EVENTS:
  *
  *   { "ev": "log", "file", "scope": "file"|"suite"|"test", "names": [...], "type": "stdout"|"stderr", "content" }
+ *   { "ev": "error", "file", "scope", "names", "errors": [{ "name", "message", "diff", "stack", "stacks" }] }
+ *
+ * Failures come from the finished task tree (`onTestRunEnd` on Vitest 3+,
+ * `onFinished` before — 4+ dropped it): the json report has no diffs, no
+ * error locations and nothing at all for a failing beforeAll / afterAll.
  *
  * Console output comes from `onUserConsoleLog` with the task that printed
  * it (`ctx.state.idMap`). Vitest 1 tags module-scope output with
@@ -46,8 +51,42 @@ function chain(idMap, id) {
   return find(file) ? path : undefined;
 }
 
+function failures(file) {
+  const filepath = file.filepath;
+  const walk = (task, chain) => {
+    const errors = (task.result && task.result.errors) || [];
+    if (errors.length) {
+      const n = chain.map((t) => t.name).filter(Boolean);
+      const scope = task === file ? 'file' : task.type === 'suite' ? (n.length ? 'suite' : 'file') : 'test';
+      write({
+        ev: 'error', file: filepath, scope, names: n,
+        errors: errors.map((e) => ({
+          name: e && e.name, message: String((e && e.message) || e || ''),
+          diff: e && typeof e.diff === 'string' ? e.diff : undefined,
+          stack: e && typeof e.stack === 'string' ? e.stack.slice(0, 4000) : undefined,
+          stacks: e && Array.isArray(e.stacks) ? e.stacks.slice(0, 10).map((f) => ({ file: f.file, line: f.line, column: f.column })) : undefined,
+        })),
+      });
+    }
+    for (const c of task.tasks || []) { walk(c, [...chain, c]); }
+  };
+  walk(file, []);
+}
+
 export default class LtrReporter {
   onInit(ctx) { this.ctx = ctx; }
+
+  onTestRunEnd(modules) {
+    if (this.done) { return; }
+    this.done = true;
+    for (const m of modules || []) { if (m && m.task) { failures(m.task); } }
+  }
+
+  onFinished(files) {
+    if (this.done) { return; }
+    this.done = true;
+    for (const f of files || []) { failures(f); }
+  }
 
   onUserConsoleLog(entry) {
     const ctx = this.ctx;
@@ -83,13 +122,33 @@ export function vitestReporterFile(dir: string): string {
 }
 
 /** One event the reporter wrote. */
-export interface VitestEvent {
+export type VitestEvent = VitestLogEvent | VitestErrorEvent;
+
+export interface VitestLogEvent {
   ev: 'log';
   file?: string;
   scope: 'file' | 'suite' | 'test';
   names: string[];
   type: 'stdout' | 'stderr';
   content: string;
+}
+
+export interface VitestErrorEvent {
+  ev: 'error';
+  file?: string;
+  scope: 'file' | 'suite' | 'test';
+  names: string[];
+  errors: VitestReportedError[];
+}
+
+export interface VitestReportedError {
+  name?: string;
+  message: string;
+  /** Expected / received diff (ANSI-coloured on Vitest < 4). */
+  diff?: string;
+  stack?: string;
+  /** Parsed, source-mapped frames (Vitest 4+). */
+  stacks?: { file: string; line: number; column: number }[];
 }
 
 /** Reads (and deletes) the reporter's events file. */
@@ -114,7 +173,7 @@ export function fileKey(p: string): string {
 }
 
 /** A reporter log event as a ConsoleEntry with its scope. */
-export function toConsoleEntry(e: VitestEvent): ConsoleEntry {
+export function toConsoleEntry(e: VitestLogEvent): ConsoleEntry {
   const scopeName = e.names.join(' ');
   return {
     message: e.content.replace(/\r?\n$/, ''),
@@ -123,4 +182,43 @@ export function toConsoleEntry(e: VitestEvent): ConsoleEntry {
     scope: e.scope,
     ...(e.scope === 'file' ? {} : { scopeName }),
   };
+}
+
+/** Frames that are the test runner's, not the project's. */
+const INTERNAL_FRAME = /[\\/]node_modules[\\/]|^node:|^internal[\\/]|[\\/](vitest|@vitest|vite-node|tinypool|tinyspy)[\\/]/;
+/** `at fn (file:line:col)` / `at file:line:col` / `❯ file:line:col`. */
+const FRAME_RE = /^\s*(?:at\s+(?:.*?\()?|❯\s+)(?:file:\/\/)?((?:[A-Za-z]:)?[^():]+):(\d+):(\d+)\)?\s*$/;
+
+/** The first frame in the project's own code: from `stacks` (Vitest 4+) or the stack text. */
+export function errorLocation(e: VitestReportedError): { file: string; line: number; column: number } | undefined {
+  const frames = e.stacks?.length
+    ? e.stacks
+    : (e.stack ?? '').split('\n').map((l) => FRAME_RE.exec(l)).filter((m): m is RegExpExecArray => !!m)
+      .map((m) => ({ file: m[1], line: Number(m[2]), column: Number(m[3]) }));
+  return frames.find((f) => f.file && !INTERNAL_FRAME.test(f.file.replace(/\\/g, '/')));
+}
+
+/**
+ * One error as the Results panel shows it: `Name: message`, the diff, and
+ * where it happened (`❯ src/a.test.ts:5:30`, relative to the project root) —
+ * what Vitest's own output shows.
+ */
+export function formatVitestError(e: VitestReportedError, projectRoot: string): string {
+  const plain = (s: string) => stripAnsiText(s).trimEnd();
+  const message = plain(e.message);
+  const head = e.name && e.name !== 'Error' && !message.startsWith(`${e.name}:`) ? `${e.name}: ${message}` : message;
+  const parts = [head];
+  if (e.diff && plain(e.diff)) { parts.push(plain(e.diff)); }
+  const loc = errorLocation(e);
+  if (loc) {
+    const rel = path.relative(projectRoot, fromRunnerPath(loc.file));
+    parts.push(`❯ ${rel && !rel.startsWith('..') ? rel.split(path.sep).join('/') : loc.file}:${loc.line}:${loc.column}`);
+  }
+  return parts.join('\n\n');
+}
+
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1B\[[0-9;]*[A-Za-z]/g;
+function stripAnsiText(s: string): string {
+  return s.replace(ANSI, '');
 }

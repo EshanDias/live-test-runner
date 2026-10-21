@@ -31,6 +31,20 @@ module.exports = {
     t.eq('the suite shows its beforeAll output', texts(api.store.getNodeOutput(node('logs').id)), ['setup log']);
     t.check('the math test shows its console.log', texts(api.store.getNodeOutput(h.nodeByName(api, 'src/math.test.js', 'Math utils adds numbers').id)).includes('adding ✓ ünïcödé'));
 
+    // Failure details the json report lacks (task 3.2).
+    const fails = h.nodeByName(api, 'src/strings.test.ts', 'strings fails on purpose');
+    const msg = (fails?.failureMessages || []).join('\n');
+    t.check('a failed expectation shows the diff', /Expected: "hi"/.test(msg) && /Received: "HI!"/.test(msg), msg);
+    t.check('…and where it failed (source-mapped .ts line)', /❯ src\/strings\.test\.ts:11:\d+/.test(msg), msg);
+    const hook = h.fileBySuffix(api, 'src/hook.test.js');
+    t.eq('a failing beforeAll fails the file', hook.status, 'failed');
+    t.eq('…its test is skipped (never ran)', h.nodeByName(api, 'src/hook.test.js', 'hooked never runs').status, 'skipped');
+    const hookOut = texts(api.store.getFileOutput(hook.fileId)).join('\n');
+    t.check('…and the file output has the real error with its location', /setup broke/.test(hookOut) && /❯ src\/hook\.test\.js:6:\d+/.test(hookOut), hookOut);
+    const broken = h.nodeByName(api, 'src/broken.test.js', 'never runs');
+    t.check('a file that cannot load shows where', (broken?.failureMessages || []).some((m) => /does-not-exist/.test(m) && /❯ src\/broken\.test\.js:3:\d+/.test(m)),
+      JSON.stringify(broken?.failureMessages));
+
     t.check("Vitest's own reporter output reaches Test Output", raw.some((l) => /^\[vitest#\d+\] .*Test Files/.test(l)),
       raw.filter((l) => /vitest#/.test(l)).slice(-10).join('\n'));
 

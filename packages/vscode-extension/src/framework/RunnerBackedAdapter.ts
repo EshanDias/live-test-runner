@@ -441,6 +441,11 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
       const firstLine = fileFailure.split('\n').find((l) => l.trim())?.trim() ?? '';
       this.log.debug(`${filePath} failed to run — ${firstLine}`);
       store.failFile(filePath, stripAnsi(fileFailure));
+    } else if (hadTestCases && fileFailure && !opts?.nodeId && !opts?.fullNames) {
+      // Tests ran (or were skipped) but the file failed outside them — e.g. a
+      // beforeAll / afterAll hook. The tests keep their own status; the file
+      // is failed, with the reason in its output.
+      store.fileResult(filePath, 'failed', fileResult.duration);
     }
 
   }

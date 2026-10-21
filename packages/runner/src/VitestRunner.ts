@@ -6,7 +6,10 @@ import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { refusingAdapter } from './framework/refusingAdapter';
 import type { VitestAdapter } from './framework/adapters/VitestAdapter';
 import { vitestProjects } from './framework/vitestProjects';
-import { VITEST_EVENTS_ENV, fileKey, readVitestEvents, toConsoleEntry, vitestReporterFile } from './framework/vitestReporter';
+import {
+  VITEST_EVENTS_ENV, VitestErrorEvent, fileKey, formatVitestError, readVitestEvents, toConsoleEntry, vitestReporterFile,
+} from './framework/vitestReporter';
+import { VITEST_FILE_FAILURE, VITEST_HOOK_FAILURE } from './parsing/VitestResultParser';
 import { RunResult } from './types';
 import * as os from 'os';
 import { FRAMEWORK_IDS } from './types';
@@ -93,21 +96,57 @@ export class VitestRunner extends CommandRunner {
     return { [VITEST_EVENTS_ENV]: file };
   }
 
-  /** Console output per file from the reporter, each entry with its scope (file / suite / test). */
+  /**
+   * What the reporter saw that the json report lacks: console output per
+   * file with its scope (file / suite / test), and failures with their diff
+   * and location — including a failing beforeAll / afterAll, whose error the
+   * json report leaves out.
+   */
   protected override afterRun(request: RunRequest, result: RunResult): RunResult {
     const file = this.eventFiles.get(request);
     if (!file) { return result; }
-    const byFile = new Map<string, ReturnType<typeof toConsoleEntry>[]>();
+    const logs = new Map<string, ReturnType<typeof toConsoleEntry>[]>();
+    const errors = new Map<string, VitestErrorEvent[]>();
     for (const e of readVitestEvents(file)) {
-      if (e.ev !== 'log' || !e.file) { continue; }
+      if (!e.file) { continue; }
       const key = fileKey(e.file);
-      const list = byFile.get(key) ?? [];
-      list.push(toConsoleEntry(e));
-      byFile.set(key, list);
+      if (e.ev === 'log') {
+        const list = logs.get(key) ?? [];
+        list.push(toConsoleEntry(e));
+        logs.set(key, list);
+      } else if (e.ev === 'error') {
+        const list = errors.get(key) ?? [];
+        list.push(e);
+        errors.set(key, list);
+      }
     }
+    const root = this.requireProjectRoot();
     for (const fr of result.fileResults) {
-      const entries = byFile.get(fileKey(fr.testFilePath));
+      const key = fileKey(fr.testFilePath);
+      const entries = logs.get(key);
       if (entries) { fr.consoleOutput = [...fr.consoleOutput, ...entries]; }
+
+      const outside: string[] = [];
+      for (const ev of errors.get(key) ?? []) {
+        const messages = ev.errors.map((err) => formatVitestError(err, root));
+        if (ev.scope === 'test') {
+          const name = ev.names.join(' ');
+          const tc = fr.testCases.find((c) => c.fullName === name && c.status === 'failed');
+          if (tc) { tc.failureMessages = messages; }
+        } else {
+          const where = ev.scope === 'suite' ? `In "${ev.names.join(' > ')}" (a beforeAll / afterAll hook or the suite itself):
+` : '';
+          outside.push(...messages.map((m) => where + m));
+        }
+      }
+      if (outside.length) {
+        const known = fr.failureMessage && fr.failureMessage !== VITEST_HOOK_FAILURE && fr.failureMessage !== VITEST_FILE_FAILURE;
+        // A load error is already in the json report's message; the reporter adds its location.
+        fr.failureMessage = known && !outside.some((m) => m.startsWith(fr.failureMessage!.split('\n')[0]))
+          ? [fr.failureMessage!, ...outside].join('\n\n')
+          : outside.join('\n\n');
+        fr.status = 'failed';
+      }
     }
     return result;
   }
