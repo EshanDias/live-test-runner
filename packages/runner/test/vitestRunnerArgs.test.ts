@@ -116,6 +116,27 @@ describe('vitest list output', () => {
     listStdout = 'Collect Error';
     expect(await new VitestRunner().discoverTests(root)).toEqual([path.join(root, 'src', 'x.spec.ts')]);
   });
+
+  it('runs from the real path when the root is opened through another spelling (Windows 8.3 names, symlinks)', async () => {
+    project({ devDependencies: { vitest: '5' } }, '5.0.5', { 'vitest.config.ts': '' });
+    // A junction works without admin rights on Windows; a symlink elsewhere.
+    const link = path.join(os.tmpdir(), `ltr-vargs-link-${process.pid}`);
+    fs.rmSync(link, { recursive: true, force: true });
+    fs.symlinkSync(root, link, 'junction');
+    try {
+      const runner = new VitestRunner();
+      runner.setProjectRoot(link);
+      await runner.runTestFileJson(path.join(link, 'src', 'a.test.ts'));
+      const [cmd] = calls;
+      // cwd (Vitest's root), config and file filter all spelled the same way.
+      expect(cmd.cwd).toBe(root);
+      expect(cmd.args).toContain(path.join(root, 'vitest.config.ts'));
+      expect(cmd.args).toContain(path.join(root, 'src', 'a.test.ts').replace(/\\/g, '/'));
+      expect(cmd.args.join(' ')).not.toContain(link);
+    } finally {
+      fs.rmSync(link, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('toVitestNamePattern', () => {
