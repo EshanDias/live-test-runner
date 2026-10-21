@@ -195,9 +195,11 @@ function plainJestJson(workspace) {
   delete env.ELECTRON_RUN_AS_NODE;
   const node = process.platform === 'win32' ? 'node.exe' : 'node';
   const r = spawnSync(node, [entry, ...(cra ? ['test'] : []), ...scriptArgs, '--watchAll=false', '--json', `--outputFile=${out}`],
-    { cwd: workspace, env, encoding: 'utf8', timeout: 20 * 60_000 });
+    // A big project prints far more than spawnSync's 1 MB default buffer,
+    // which kills Jest mid-run (exit null) — the jest monorepo does.
+    { cwd: workspace, env, encoding: 'utf8', timeout: 20 * 60_000, maxBuffer: 1 << 30 });
   if (!fs.existsSync(out)) {
-    throw new Error(`plain Jest wrote no results (exit ${r.status}): ${(r.stderr || '').slice(-1500)}`);
+    throw new Error(`plain Jest wrote no results (exit ${r.status}${r.signal ? `, ${r.signal}` : ''}${r.error ? `, ${r.error.message}` : ''}): ${(r.stderr || '').slice(-1500)}`);
   }
   const json = JSON.parse(fs.readFileSync(out, 'utf8'));
   fs.unlinkSync(out);

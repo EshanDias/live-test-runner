@@ -76,7 +76,10 @@ export function buildDiagnosticReport(input: DiagnosticInput): string {
     row('"jest" key in package.json', pkg?.jest ? 'yes' : 'no');
     const configs = JEST_CONFIG_FILES.filter((f) => fs.existsSync(path.join(root, f)));
     row('Jest config files', configs.join(', ') || '(none)');
-    row('Detected framework', safe(() => new FrameworkDetector().detectFramework(root), 'error'));
+    row('Detected framework', safe(() => {
+      const d = new FrameworkDetector().detectWithReason(root);
+      return `${d.framework} (${d.reason})`;
+    }, 'error'));
     row('Jest binary', safe(() => new BinaryResolver().resolve(root), 'error'));
     row('jest', pkgVersion('jest', root));
     row('react-scripts', pkgVersion('react-scripts', root));

@@ -268,7 +268,7 @@
     <tr><td>Clear Cache and Restart Testing</td><td>Wipe the cache and rediscover tests</td></tr>
     <tr><td>Select Project Root</td><td>Pick the root folder in multi-folder workspaces</td></tr>
     <tr><td>Show Logs</td><td>Opens the <b>Live Test Runner</b> log (levelled)</td></tr>
-    <tr><td>Show Jest Output</td><td>Opens the raw Jest output</td></tr>
+    <tr><td>Show Test Output</td><td>Opens the raw Jest output</td></tr>
     <tr><td>Copy Diagnostic Report</td><td>Copies versions, project setup, settings and recent logs for a bug report</td></tr>
     <tr><td>Open Timeline Debugger</td><td>Traces a single test</td></tr>
     <tr><td>Show All Covering Tests</td><td>Quick Pick of every test that ran a line</td></tr>
@@ -300,7 +300,7 @@
   <div class="table-wrap"><table>
     <tr><th>Channel</th><th>Contains</th><th>Use it to…</th></tr>
     <tr><td><b>Live Test Runner</b></td><td>The extension's own log: timestamps, levels, one summary per run</td><td>Find out <i>what the extension did</i> and why</td></tr>
-    <tr><td><b>Live Test Runner: Jest Output</b></td><td>Jest's raw output, ANSI-free, each line tagged <code>[jest#N]</code></td><td>See <i>what Jest printed</i></td></tr>
+    <tr><td><b>Live Test Runner: Test Output</b></td><td>Jest's raw output, ANSI-free, each line tagged <code>[jest#N]</code></td><td>See <i>what Jest printed</i></td></tr>
   </table></div>
 
   <h3>Levels</h3>
@@ -320,7 +320,7 @@
 [info] [Session] Run #1 full suite — 58 file(s) · 409 passed · 3 failed · 21.4s — failing: cart.test.ts
 [info] [Session] Run #2 save cart.ts — 2 file(s) · 31 passed · 0 failed · 2.2s</code></pre>
   <ul>
-    <li><b>Run #N</b> numbers each run. The Jest Output channel has a matching <code>──── Run #N ────</code> separator.</li>
+    <li><b>Run #N</b> numbers each run. The Test Output channel has a matching <code>──── Run #N ────</code> separator.</li>
     <li><b>b7</b> (batch) and <b>jest#12</b> (process) tags link debug lines to raw output.</li>
     <li>Identical lines in a row are collapsed into <i>"previous message repeated N more times"</i>.</li>
   </ul>
@@ -383,7 +383,7 @@
   <div class="layout">
     <div class="bar">Activity Bar → Explorer</div>
     <div><b>Editor</b>: gutter icons · durations · CodeLens · coverage bars · hover</div>
-    <div><b>Panel</b>: Results / Timeline · Output (Logs, Jest Output)</div>
+    <div><b>Panel</b>: Results / Timeline · Output (Logs, Test Output)</div>
     <div><b>Status bar</b>: <code>Live Tests: ✅ 12 passed</code></div>
   </div>
 </section>

@@ -104,7 +104,9 @@ Two adapter interfaces exist in the codebase:
 
 The separation means the runner can be used independently of VS Code.
 
-Adding a framework = one class in each package. `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
+On the extension side a framework is a **services bundle** (`FrameworkServices`: `adapter`, `projectConfig: IProjectConfig`, `batchRunner: IBatchRunner`, `instrumentedRunner`, `createSessionRunner()`). `SessionManager` asks an `IFrameworkServicesProvider` for the bundle of a file or root (`servicesFor`) and never constructs framework classes; `extension.ts` composes the bundle (`createJestServices`) and wraps it in a `SingleFrameworkProvider`.
+
+Adding a framework = an adapter in each package plus the extension-side bundle (batch runner, project config). `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
 
 ### Two stores, one source of truth per concern
 
@@ -121,7 +123,7 @@ Adding a framework = one class in each package. `SessionManager`, `ResultStore`,
 
 The trace files on disk are the ground truth. The store entries are caches. Rule: **indexes are always rebuilt from trace files, never written independently.** Clear both together on session reset.
 
-`SessionTraceRunner` populates `ExecutionTraceStore` after each file run (fire-and-forget background pass). `SessionManager` reads from it in `_runAffectedBySourceFile` when a source file is saved. Neither store writes to the other.
+`JestBatchRunner` populates `ExecutionTraceStore` after each file run (fire-and-forget background pass). `SessionManager` reads from it in `_runAffectedBySourceFile` when a source file is saved. Neither store writes to the other.
 
 ### Output attribution
 
@@ -150,7 +152,7 @@ Two output channels, two purposes:
 | Channel | Written by | Content |
 |---------|-----------|---------|
 | **Live Test Runner** (`LogOutputChannel`) | `logger.scope('Area')` | The extension's own log — levelled, timestamped |
-| **Live Test Runner: Jest Output** (plain) | `Executor` raw sink | Jest process output, ANSI-stripped, line-buffered, tagged `[jest#N]` |
+| **Live Test Runner: Test Output** (plain) | `Executor` raw sink | Jest process output, ANSI-stripped, line-buffered, tagged `[jest#N]` |
 
 **How to log**
 
@@ -182,8 +184,8 @@ const log = createLogger('Executor');
 Rules:
 - **One summary line per run**, not one per file. Per-file detail belongs at `debug`/`trace`.
 - Put the *cause* in the message: when Jest fails, include its stderr tail (`tail()` from runner).
-- Never write extension diagnostics to the Jest Output channel. It holds only Jest's output, plus `──── Run #N ────` separators.
-- Correlation tags: `Run #N` (SessionManager), `bN` (SessionTraceRunner batch), `jest#N` (Executor process).
+- Never write extension diagnostics to the Test Output channel. It holds only Jest's output, plus `──── Run #N ────` separators.
+- Correlation tags: `Run #N` (SessionManager), `bN` (JestBatchRunner batch), `jest#N` (Executor process).
 
 **Logging from inside the Jest process** (instrumentation `.js` files): write `[LTR:<level>] message\n` to stderr. `Executor` routes those lines to the log at that level and strips them from captured stderr. `LTR_LOG_LEVEL` (set from the channel level) lets the scripts skip debug/trace writes:
 
@@ -299,12 +301,12 @@ Create `packages/runner/src/framework/adapters/VitestAdapter.ts`:
 
 ```typescript
 import { FrameworkAdapter } from './FrameworkAdapter'
-import { Framework } from '../../types'
+import { FrameworkId } from '../../types'
 import * as fs from 'fs'
 import * as path from 'path'
 
 export class VitestAdapter implements FrameworkAdapter {
-  readonly framework: Framework = 'vitest'
+  readonly framework: FrameworkId = 'vitest'   // open string id — add it to FRAMEWORK_IDS if shipped
 
   detect(projectRoot: string): boolean {
     const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
@@ -322,17 +324,32 @@ export class VitestAdapter implements FrameworkAdapter {
   getExtraArgs(projectRoot: string): string[] {
     return []
   }
+
+  outputFileArg(file: string): string[] {
+    return [`--outputFile=${file}`]   // the runner's own "write JSON here" flag
+  }
+
+  parseResult(passed: boolean, raw: string, stderr: string): RunResult {
+    return parseVitestJson(passed, raw, stderr)
+  }
+
+  createRunner(options?: RunnerOptions): TestRunner {
+    return new VitestRunner(options?.command, options?.logger, options?.tmpDir)
+  }
 }
+
+// VitestRunner extends CommandRunner and only builds Vitest's args:
+//   detectAdapter(root), buildArgs({ kind: 'list' | 'full' | 'files' | 'testCase' | 'related' }),
+//   parseTestList(result, root), coverageFile(root)
 ```
 
-Register it in `FrameworkDetector.ts`:
+Register it in `FrameworkRegistry.default()` (`packages/runner/src/framework/FrameworkRegistry.ts`) — higher priority is tried first:
 
 ```typescript
-const ADAPTER_PRIORITY: FrameworkAdapter[] = [
-  new CRAAdapter(),
-  new VitestAdapter(),  // add before JestAdapter
-  new JestAdapter(),
-]
+new FrameworkRegistry()
+  .register(new CRAAdapter(), ADAPTER_PRIORITIES.cra)      // 300
+  .register(new VitestAdapter(), ADAPTER_PRIORITIES.vite)  // 200 — before Jest
+  .register(new JestAdapter(), ADAPTER_PRIORITIES.jest)    // 100
 ```
 
 Export from `packages/runner/src/index.ts`.
@@ -377,7 +394,31 @@ export class VitestAdapter implements IFrameworkAdapter {
 }
 ```
 
-Update `extension.ts` to instantiate `VitestAdapter` or add auto-detection logic.
+### Step 3 — Services bundle
+
+Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `FrameworkServices` (see `jestServices.ts`): the adapter above, an `IProjectConfig`, an `IBatchRunner`, an `IInstrumentedRunner`, `createSessionRunner()` (the runner adapter's `createRunner()`), `displayName` and `settingsFingerprint()`. `extension.ts` composes it into the provider; `SessionManager` needs no change.
+
+### Checklist
+
+Runner package (`packages/runner`):
+- [ ] `FrameworkAdapter` implemented — `detect`, `resolveBinary`, `resolveConfig`, `getExtraArgs`, `outputFileArg`, `parseResult`, `createRunner`
+- [ ] A `CommandRunner` subclass — `detectAdapter`, `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`), `parseTestList`, `coverageFile`
+- [ ] Registered in `FrameworkRegistry.default()` at the right priority (a project several adapters claim goes to the higher one)
+- [ ] Exported from `src/index.ts`
+- [ ] **Conformance suite** — one `describeAdapterConformance({ … })` call in `test/adapterConformance.test.ts` (matching / non-matching projects, a canned result with one passing and one failing test); it must pass unchanged
+- [ ] Command-line snapshot tests for the new runner (like `test/jestRunnerArgs.test.ts`)
+
+Extension package (`packages/vscode-extension`):
+- [ ] `IFrameworkAdapter` implemented
+- [ ] `IProjectConfig`, `IBatchRunner` and (or a "not available" stand-in for) `IInstrumentedRunner`
+- [ ] A services bundle, composed in `extension.ts`
+- [ ] Instrumentation that runs inside the test process in `src/session/instrumentation/<framework>/`, keeping the protocol in `docs/architecture.md` → *Session instrumentation protocol* (reuse `shared/`), and copied by `esbuild.js`
+- [ ] `SessionManager`, `ResultStore`, views and observers untouched
+
+Verification:
+- [ ] An e2e fixture + scenarios (`e2e/fixtures/<framework>-basic`, full run / scoped run / stop / hang / on-save / debug)
+- [ ] Real repositories in `e2e/real-repos.js`; the regression gate (build, lint, unit, `e2e/run.js --all`, real repos) green
+- [ ] Docs: framework feature matrix (README + guide), both CHANGELOGs, `docs/architecture.md`, `docs/ai-context.md`
 
 ---
 
@@ -534,6 +575,7 @@ unzip -q /tmp/ltr.vsix -d /tmp/ltr-vsix && LTR_E2E_EXTENSION_DIR=/tmp/ltr-vsix/e
 - **Fixtures** (`e2e/fixtures/<name>`) are copied to `%TEMP%/ltr e2e/<name> project` — a path with spaces on purpose — and `npm install`ed once (again when `package.json` changes).
 - **Scenarios** (`e2e/scenarios/*.js`) export `{ workspace, timeoutMs, settings?, run({ api, t, vscode, workspace }) }`. `workspace` is `fixture:<name>`, `env:<VAR>` or a path. With `LTR_E2E=1` the extension's `activate()` returns its internals (`store`, `session`, `traceStore`, `coverageStore`, `observers`, `rawOutput`, …) — never in normal use. Helpers are in `e2e/lib/harness.js` (wait for discovery, record observer events, Jest summaries from raw output, Jest processes still alive, edit + save through VS Code).
 - **Real projects:** `LTR_E2E_TSJEST_REPO` (+ `LTR_E2E_TSJEST_BASELINE`, a `jest --json` result to compare every file with) for `repo-tsjest`; `LTR_E2E_CRA_REPO` for `repo-cra` (quick by default; `LTR_E2E_CRA_FULL=1` + `LTR_E2E_CRA_BASELINE` for the whole project). `repo-tsjest` edits one source file and restores it byte-for-byte; `repo-cra` never writes to the project.
+- **Real-repository matrix:** `node e2e/real-repos.js` (light repos) / `jest` (the heavy monorepo) / `--all` / `--fresh` runs those scenarios on a *copy* of each repo in `LTR_E2E_JEST_REPOS_DIR` (and, once Vitest support lands, `LTR_E2E_VITEST_REPOS_DIR`), computes the plain-Jest baseline itself, and fails if the original repository changed. Results go to `docs/temp_plans/vitest-baseline.json`.
 
 ---
 

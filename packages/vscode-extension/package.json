@@ -83,7 +83,7 @@
       },
       {
         "command": "liveTestRunner.showOutput",
-        "title": "Show Jest Output",
+        "title": "Show Test Output",
         "category": "Live Test Runner"
       },
       {

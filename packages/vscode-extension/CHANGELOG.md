@@ -2,7 +2,15 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [Unreleased]
+## [3.0.0] - Unreleased
+
+### Improvements
+
+- **"Jest Output" is now "Test Output"** — the raw output channel is called "Live Test Runner: Test Output" and the command "Show Test Output", ready for more test frameworks. Nothing else changes.
+
+---
+
+## [2.0.4] - 2026-10-19
 
 ### Improvements
 
@@ -34,14 +42,6 @@ All notable changes to Live Test Runner are documented here.
 - **Test files show how long they took** in the test lists.
 - **New test files run when you save them**, even if you created them after clicking Start.
 - **Coverage no longer stays "stale"** after saving a source file, and those reruns now update the test tree.
-
----
-
-## [2.0.4] - 2026-10-19
-
-### Maintenance
-
-- No changes to extension behaviour; internal release tooling only.
 
 ---
 

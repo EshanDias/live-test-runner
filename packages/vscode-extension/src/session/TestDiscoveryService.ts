@@ -7,7 +7,7 @@ import { logger } from '../utils/logger';
 
 const log = logger.scope('Discovery');
 
-const { discoverTests, setLogger: setDiscoveryLogger } = require('./instrumentation/testDiscovery.js') as {
+const { discoverTests, setLogger: setDiscoveryLogger } = require('./instrumentation/shared/testDiscovery.js') as {
   setLogger: (log: { debug(m: string): void; warn(m: string): void; error(m: string): void }) => void;
   discoverTests: (
     source: string,

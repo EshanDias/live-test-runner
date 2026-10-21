@@ -1,5 +1,15 @@
 import { RunResult } from './types';
 
+/** What a framework adapter needs to create its {@link TestRunner}. */
+export interface RunnerOptions {
+  /** User command override (e.g. `liveTestRunner.jestCommand`, or `npm test --`); '' = resolve the local install. */
+  command?: string;
+  /** Sink for raw test-runner output lines (the "Test Output" channel). */
+  logger?: (msg: string) => void;
+  /** Directory for temporary result files (the session dir). */
+  tmpDir?: string;
+}
+
 /**
  * Framework-agnostic test runner interface.
  *

@@ -2,7 +2,36 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [Unreleased]
+## [3.0.0] - Unreleased
+
+### Framework decoupling (Vitest support, phase 1)
+
+- **Neutral naming and open framework ids (task 1.1)** — `Framework` (closed union `'jest' | 'cra' | 'next' | 'vite' | 'unknown'`) is now `FrameworkId = string` with the shipped ids in `FRAMEWORK_IDS`; `Framework` stays as a deprecated alias. `toJestPath` / `fromJestPath` → `toRunnerPath` / `fromRunnerPath` (`resolution/JestPaths.ts` → `RunnerPaths.ts`; old names kept as deprecated aliases for one release). `PLAIN_RUN_HANG_FACTOR` moved from the Jest adapter to the extension's `constants.ts`. `ProjectJestConfig` → `JestProjectConfig` implementing the new `IProjectConfig` interface, which `SessionManager`, `SessionTraceRunner` and `JestInstrumentedRunner` now depend on.
+- **Generic runner layer (task 1.2)** — new abstract `CommandRunner` holds everything that is not Jest-specific (adapter per project root, binary / user-command prefix / `--config` / adapter extra args, Windows command-line chunking, file timeout, kill, coverage file); `JestRunner` now only builds Jest's args per run kind (`buildArgs({ kind: 'list' | 'full' | 'files' | 'testCase' | 'related' })`) and parses `--listTests`. `FrameworkAdapter` gains `outputFileArg(file)`, `parseResult(passed, raw, stderr)` and `createRunner(options)` (Jest + CRA: `--outputFile=`, `ResultParser`, `JestRunner`; the Vite stub throws "not supported"). `Executor.runWithJsonCapture(command, outputFileArg)` takes the result-file flag instead of hard-coding `--outputFile`. `emptyRunResult` / `mergeRunResults` moved out of the Jest parser. `FrameworkDetector` builds its adapter list on first use (adapters now import their runners). Snapshot tests pin the Jest command lines — unchanged.
+- **`FrameworkRegistry` (task 1.3)** — the detector's fixed adapter list is now a registry (`register(adapter, priority)`, `unregister`, `get`; `FrameworkRegistry.default()` = CRA 300 → Vite 200 → Jest 100, same order as before). `FrameworkDetector` takes a registry and gains `detectWithReason()` (`{ adapter, framework, matched, reason }`). A project no adapter recognises still runs as plain Jest, but now logs one WARN per project root instead of a DEBUG line; the diagnostic report shows the reason.
+- **Batch runner interface + framework services bundle (task 1.4)** — `IBatchRunner` (`runFiles(BatchRunOptions)`, `kill`, `reset`) is extracted from the session's batch runner, which is renamed `SessionTraceRunner` → `JestBatchRunner`. New `FrameworkServices` bundle (`adapter`, `projectConfig`, `batchRunner`, `instrumentedRunner`, `createSessionRunner()`) and `IFrameworkServicesProvider` (`servicesFor(fileOrRoot)`, `all()`; `SingleFrameworkProvider` for now). `SessionManager` takes the provider instead of the adapter + project config, and no longer constructs `SessionTraceRunner` or `JestRunner` (core's `TestSession` gets `createSessionRunner()`, i.e. the runner `JestAdapter.createRunner()`). `extension.ts` composes the Jest bundle (`createJestServices`); the Jest command setting is read by one helper (`jestCommandSetting`).
+- **Instrumentation split (task 1.5)** — `session/instrumentation/` is now `shared/` (`sessionTraceRuntime.js`, `testDiscovery.js` — framework-neutral) and `jest/` (`sessionTraceTransform.js`, `ltrCoverageSetup.js`, `liveReporter.js`); `out/instrumentation/` mirrors the layout. The contract between them (`__strace` API, trace / coverage / per-file record formats, environment variables) is documented in `docs/architecture.md` → *Session instrumentation protocol*. File moves and path updates only; because the transform's own source changed, the persistent transform cache is rebuilt once on the first Start.
+- **Adapter conformance suite + phase 1 gate (task 1.6)** — `packages/runner/test/adapterConformance.ts`: a reusable suite every `FrameworkAdapter` must pass (registered id, claims its projects and no others, result-file flag, canned result with a passing and a failing test, unreadable output → failed result, the created runner passes the file and the adapter's result-file flag, kill is safe), applied to Jest and CRA. The services bundle gains `displayName` and `settingsFingerprint()`, so `SessionManager` no longer reads Jest settings or names Jest in code (log wording is unchanged for Jest projects). "Adding a framework" checklist in the developer guide.
+- **"Jest Output" → "Test Output"** — the raw output channel is now **Live Test Runner: Test Output** and the command **Show Test Output** (same id, `liveTestRunner.showOutput`); lines keep their `[jest#N]` tag.
+
+### Tests
+
+- **Real-repository matrix** — `node e2e/real-repos.js [repo… | --all | --fresh]` copies each real Jest project (APFS copy-on-write on macOS), runs the repo scenarios on the copy, and fails if the original repository changed (HEAD, `git status`, newest mtime). Plain-Jest per-file counts and the match result are recorded in `docs/temp_plans/vitest-baseline.json`. Vitest repos are registered for when Vitest support lands.
+- **Jest monorepo in the matrix** — `node e2e/real-repos.js jest` now works end to end: the plain-Jest reference runs used spawnSync's 1 MB default buffer, which killed Jest on big projects (exit null, no baseline); `repo-tsjest` picks the source file for the save test from `packages/*` when there is no top-level `src/`, and reports how many files differ. Found BUG-43 (jest-runtime tests fail under the session run — present in 2.0.4 too, open).
+
+### CI
+
+- Workflows use `pnpm/setup@v3` (pnpm from `packageManager`, Node 24, pnpm store cache and install in one step) instead of `pnpm/action-setup` + `actions/setup-node`. The release job keeps the install conditional (`install: false`).
+
+---
+
+## [2.0.4] - 2026-10-19
+
+### Maintenance
+
+- Added PR checks workflow (branch naming/target rules, tests, version-bump check on PRs to `main`).
+- Replaced the tag-triggered publish workflow with `release.yml`: merging to `main` builds, tests, publishes, then tags `vX.Y.Z` and creates a GitHub Release.
+- Introduced `release/*` branches; documented the branching workflow in `CLAUDE.md` and `docs/developer-guide.md`.
 
 ### Logging overhaul
 
@@ -64,16 +93,6 @@ All notable changes to Live Test Runner are documented here.
 - `docs/bugs-and-issues.md` — full audit: 22 issues with symptom, root cause, fix and verification steps.
 - `docs/live-test-runner-guide.html` — navigable user & contributor guide.
 - Developer guide: new **Logging** section (levels, scopes, correlation tags, child-process protocol).
-
----
-
-## [2.0.4] - 2026-10-19
-
-### Maintenance
-
-- Added PR checks workflow (branch naming/target rules, tests, version-bump check on PRs to `main`).
-- Replaced the tag-triggered publish workflow with `release.yml`: merging to `main` builds, tests, publishes, then tags `vX.Y.Z` and creates a GitHub Release.
-- Introduced `release/*` branches; documented the branching workflow in `CLAUDE.md` and `docs/developer-guide.md`.
 
 ---
 

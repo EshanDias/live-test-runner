@@ -3,11 +3,13 @@
 export { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
 
 // Core interface — the extension layer depends only on this
-export { TestRunner } from './TestRunner';
+export { TestRunner, RunnerOptions } from './TestRunner';
 
 // Shared result types (canonical names)
 export {
   Framework,
+  FrameworkId,
+  FRAMEWORK_IDS,
   PackageManager,
   TestResult,
   RunResult,
@@ -24,11 +26,13 @@ export {
   JestConsoleEntry,
 } from './types';
 
-// Concrete runner
+// Runners: the generic command-line runner and the Jest one built on it
+export { CommandRunner, RunRequest } from './CommandRunner';
 export { JestRunner, toJestPathArg } from './JestRunner';
 
 // Framework layer — exposed so callers can detect framework without running
-export { FrameworkDetector } from './framework/FrameworkDetector';
+export { FrameworkDetector, DetectionResult } from './framework/FrameworkDetector';
+export { FrameworkRegistry, ADAPTER_PRIORITIES } from './framework/FrameworkRegistry';
 export { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 export { JestAdapter } from './framework/adapters/JestAdapter';
 export { CRAAdapter } from './framework/adapters/CRAAdapter';
@@ -37,7 +41,7 @@ export { toInputConfig, pickGlobalConfig, testScriptJestArgs } from './framework
 
 // Lower-level layers — exposed for testing and advanced usage
 export { BinaryResolver, nodeRuntime, NodeRuntime } from './resolution/BinaryResolver';
-export { registerProjectRoot, toJestPath, fromJestPath } from './resolution/JestPaths';
+export { registerProjectRoot, toRunnerPath, fromRunnerPath, toJestPath, fromJestPath } from './resolution/RunnerPaths';
 export { Executor, tail } from './execution/Executor';
 
 // Logging — the extension installs a sink so runner/core logs reach its log channel
@@ -51,4 +55,5 @@ export {
   ScopedLogger,
 } from './utils/logger';
 export { ResultParser } from './parsing/ResultParser';
+export { emptyRunResult, mergeRunResults } from './parsing/runResults';
 export { mergeFileResults, mergeByFile } from './parsing/mergeFileResults';

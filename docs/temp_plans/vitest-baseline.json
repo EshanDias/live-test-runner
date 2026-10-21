@@ -1,0 +1,2944 @@
+{
+  "sample-react-project": {
+    "recorded": "2026-10-21T00:43:50.075Z",
+    "head": "",
+    "extensionMatches": true,
+    "files": 14,
+    "total": {
+      "passed": 140,
+      "failed": 3,
+      "skipped": 0
+    },
+    "perFile": {
+      "src/api/incidentApi.test.js": {
+        "passed": 6,
+        "failed": 1,
+        "skipped": 0
+      },
+      "src/App.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/components/IncidentCard/IncidentCard.test.js": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/components/IncidentList/IncidentList.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/components/SearchBar/SearchBar.test.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/components/StatusBadge/StatusBadge.test.js": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/hooks/useIncidents.test.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/integration/incidentFlow.test.js": {
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/integration/incidentFormFlow.test.js": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/integration/incidentPipeline.test.js": {
+        "passed": 49,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/pages/Dashboard/Dashboard.test.js": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/pages/IncidentDetail/IncidentDetail.test.js": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/store/slices/incidentSlice.test.js": {
+        "passed": 12,
+        "failed": 2,
+        "skipped": 0
+      },
+      "src/store/slices/userSlice.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "jest-dom": {
+    "recorded": "2026-10-21T00:41:31.807Z",
+    "head": "0ff8904ff4683d676ff70ab68b7f08465c44d0d0",
+    "extensionMatches": true,
+    "files": 31,
+    "total": {
+      "passed": 250,
+      "failed": 18,
+      "skipped": 0
+    },
+    "perFile": {
+      "src/__tests__/to-appear-before.js": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-checked.js": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-disabled.js": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-empty-dom-element.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-empty.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-in-the-document.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-in-the-dom.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-invalid.js": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-partially-checked.js": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-partially-pressed.js": {
+        "passed": 6,
+        "failed": 2,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-pressed.js": {
+        "passed": 5,
+        "failed": 2,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-required.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-be-visible.js": {
+        "passed": 46,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-contain-element.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-contain-html.js": {
+        "passed": 1,
+        "failed": 1,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-accessible-description.js": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-accessible-errormessage.js": {
+        "passed": 5,
+        "failed": 4,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-accessible-name.js": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-attribute.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-class.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-description.js": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-display-value.js": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-errormessage.js": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-focus.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-form-values.js": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-role.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-selection.js": {
+        "passed": 9,
+        "failed": 4,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-style.js": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-text-content.js": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/to-have-value.js": {
+        "passed": 6,
+        "failed": 5,
+        "skipped": 0
+      },
+      "src/__tests__/utils.js": {
+        "passed": 22,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "vscode-jest": {
+    "recorded": "2026-10-21T00:42:43.802Z",
+    "head": "b71edf0b1b80aa22a16222775fbd37dabab3aea0",
+    "extensionMatches": true,
+    "files": 49,
+    "total": {
+      "passed": 2012,
+      "failed": 0,
+      "skipped": 0
+    },
+    "perFile": {
+      "tests/Coverage/CoverageCodeLensProvider.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/CoverageMapProvider.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/CoverageOverlay.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/Formatters/AbstractFormatter.test.ts": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/Formatters/DefaultFormatter.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/Formatters/GutterFormatter.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Coverage/Formatters/helpers.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/DebugConfigurationProvider.test.ts": {
+        "passed": 136,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/diagnostics.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/extension-manager.test.ts": {
+        "passed": 111,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/extension.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/helpers.test.ts": {
+        "passed": 148,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/core.test.ts": {
+        "passed": 137,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/helper.test.ts": {
+        "passed": 26,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/outpt-terminal.test.ts": {
+        "passed": 34,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/process-listeners.test.ts": {
+        "passed": 99,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/process-session.test.ts": {
+        "passed": 25,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/run-mode.test.ts": {
+        "passed": 51,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestExt/run-shell.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestProcessManagement/helper.test.ts": {
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestProcessManagement/JestProcess.test.ts": {
+        "passed": 83,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestProcessManagement/JestProcessManager.test.ts": {
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/JestProcessManagement/test-queue.test.ts": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/language-provider.test.ts": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/logging.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/output-manager.test.ts": {
+        "passed": 200,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/quick-fix.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/reporter.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/Settings/helper.test.ts": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/setup-wizard/start-wizard.test.ts": {
+        "passed": 27,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/setup-wizard/tasks/setup-jest-cmdline.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/setup-wizard/tasks/setup-jest-debug.test.ts": {
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/setup-wizard/tasks/setup-monorepo.test.ts": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/setup-wizard/wizard-helper.test.ts": {
+        "passed": 87,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/StatusBar.test.ts": {
+        "passed": 41,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/terminal-link-provider.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/jest-test-runt.test.ts": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/test-coverage.test.ts": {
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/test-item-context-manager.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/test-item-data.test.ts": {
+        "passed": 219,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/test-provider-context.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test-provider/test-provider.test.ts": {
+        "passed": 35,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/TestResults/match-by-context.test.ts": {
+        "passed": 57,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/TestResults/match-node.test.ts": {
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/TestResults/snapshot-provider.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/TestResults/TestResult.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/TestResults/TestResultProvider.test.ts": {
+        "passed": 65,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/virtual-workspace-folder.test.ts": {
+        "passed": 25,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/workspace-manager.test.ts": {
+        "passed": 32,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "jest": {
+    "recorded": "2026-10-21T01:06:53.912Z",
+    "head": "399b831484e372c07e03a634a197f3b9f5a261f7",
+    "extensionMatches": false,
+    "files": 484,
+    "total": {
+      "passed": 4272,
+      "failed": 1003,
+      "skipped": 57
+    },
+    "perFile": {
+      "benchmarks/test-file-overhead/0.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/asyncAndCallback.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/asyncRegenerator.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/autoClearMocks.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/autoResetMocks.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/autoRestoreMocks.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/babelPluginJestHoist.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/badSourceMap.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/beforeAllFiltered.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/beforeEachQueue.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 1
+      },
+      "e2e/__tests__/browserResolve.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/callDoneTwice.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/chaiAssertionLibrary.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/circularRefInBuiltInObj.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/circusConcurrent.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/circusConcurrentEach.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/circusDeclarationErrors.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/clearCache.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/clearFSAndTransformCache.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/cliHandlesExactFilenames.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/compareDomNodes.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/complexItemsInErrors.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/config.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/configOverride.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/console.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/consoleAfterTeardown.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/consoleDebugging.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/consoleLogOutputWhenRunInBand.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/coverageHandlebars.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/coverageProviderV8.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/coverageRemapping.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/coverageReport.test.ts": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/coverageThreshold.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/coverageTransformInstrumented.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/coverageWithoutTransform.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/crawlSymlinks.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/createProcessObject.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/custom-jsdom-version.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/customEsmTestSequencers.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/customHaste.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/customInlineSnapshotMatchers.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/customMatcherStackTrace.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/customReporters.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/customReportersOnCircus.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/customResolver.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/customTestSequencers.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/debug.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/declarationErrors.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/dependencyClash.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/detectOpenHandles.ts": {
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/domDiffing.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/doneInHooks.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/dynamicRequireDependencies.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/each.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/emptyDescribeWithHooks.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/emptySuiteError.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/env.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/environmentAfterTeardown.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/environmentAfterTeardownJasmine.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 2
+      },
+      "e2e/__tests__/environmentTeardownError.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/errorOnDeprecated.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 24
+      },
+      "e2e/__tests__/esmConfigFile.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/executeTestsOnceInMpr.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/existentRoots.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/expectAsyncMatcher.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/expectInVm.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/explicitResourceManagement.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/failureDetailsProperty.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/failures.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/fakePromises.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/fakeTimers.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/fakeTimersLegacy.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/fatalWorkerError.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/filter.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/findRelatedFiles.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/focusedTests.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/forceExit.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/generatorMock.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/global-mutation.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/global.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/globals.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/globalSetup.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/globalTeardown.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/hasteMapMockChanged.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/hasteMapSha1.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/hasteMapSize.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/importedGlobals.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/injectGlobals.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/isolateModules.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/isolateModulesAsync.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/jasmineAsync.test.ts": {
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/jasmineAsyncWithPendingDuringTest.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 1
+      },
+      "e2e/__tests__/jest.config.js.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/jest.config.ts.test.ts": {
+        "passed": 4,
+        "failed": 1,
+        "skipped": 5
+      },
+      "e2e/__tests__/jestChangedFiles.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 9
+      },
+      "e2e/__tests__/jestEnvironmentJsdom.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/jestObject.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/jestRequireActual.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/jestRequireMock.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/json.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/jsonReporter.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/lifecycles.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/listTests.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/locationInResults.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/logHeapUsage.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/mockFunctions.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/mockNames.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/moduleNameMapper.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/moduleParentNullInTest.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/multipleConfigs.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/multiProjectRunner.test.ts": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/nativeAsyncMock.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/nativeEsm.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 2
+      },
+      "e2e/__tests__/nativeEsmTypescript.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/nestedEventLoop.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/nestedTestDefinitions.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/nodePath.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/nodeURLManualMocks.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/nonSerializableStructuresInequality.test.ts": {
+        "passed": 11,
+        "failed": 1,
+        "skipped": 0
+      },
+      "e2e/__tests__/noTestFound.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/noTestsFound.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/onlyChanged.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 2
+      },
+      "e2e/__tests__/onlyFailuresNonWatch.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/overrideGlobals.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/pnp.test.ts": {
+        "passed": 0,
+        "failed": 1,
+        "skipped": 0
+      },
+      "e2e/__tests__/presets.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/processExit.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/promiseAsyncHandling.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/promiseReject.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/randomize.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/readInitialOptions.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 1
+      },
+      "e2e/__tests__/regexCharInPath.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/requireAfterTeardown.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/requireAfterTeardownJasmine.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 2
+      },
+      "e2e/__tests__/requireMain.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/requireMainAfterCreateRequire.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/requireMainIsolateModules.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/requireMainResetModules.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/requireMissingExt.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/requireV8Module.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/resetModules.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/resolve.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/resolveAsync.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/resolveConditions.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/resolveGetPaths.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/resolveNodeModule.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/resolveNoFileExtensions.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/resolveWithPaths.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/retainAllFiles.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/runProgrammatically.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/runProgrammaticallyMultipleProjects.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/runTestsByPath.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/runtimeInternalModuleRegistry.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/sandboxInjectedGlobals.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/selectProjects.test.ts": {
+        "passed": 31,
+        "failed": 0,
+        "skipped": 2
+      },
+      "e2e/__tests__/setupFiles.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/setupFilesAfterEnvConfig.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/shard.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/showConfig.test.ts": {
+        "passed": 0,
+        "failed": 1,
+        "skipped": 0
+      },
+      "e2e/__tests__/showSeed.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/skipBeforeAfterAll.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/snapshot-concurrent.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/snapshot-crlf.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/snapshot-unknown.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/snapshot.test.ts": {
+        "passed": 8,
+        "failed": 1,
+        "skipped": 0
+      },
+      "e2e/__tests__/snapshotMockFs.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/snapshotResolver.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/snapshotSerializers.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/stackTrace.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/stackTraceNoCaptureStackTrace.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/stackTraceSourceMaps.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/stackTraceSourceMapsWithCoverage.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/summaryThreshold.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/supportsDashedArgs.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/symbol.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testEnvironment.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testEnvironmentAsync.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testEnvironmentCircus.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testEnvironmentCircusAsync.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testEnvironmentEsm.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testEnvironmentRunScript.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testFailing.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testFailingJasmine.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 1
+      },
+      "e2e/__tests__/testFailingSnapshot.test.js": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testFailureExitCode.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testInRoot.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testMatch.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testMatchDefault.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testMatchTs.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testNamePattern.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testNamePatternSkipped.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testPathPatternReporterMessage.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testPathPatternsSubprojects.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testResultsProcessor.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testRetries.test.ts": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/testTodo.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/timeouts.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/timeoutsLegacy.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 3
+      },
+      "e2e/__tests__/toMatchInlineSnapshot.test.ts": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/toMatchInlineSnapshotCrlf.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/toMatchInlineSnapshotWithJSX.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/toMatchInlineSnapshotWithPretttier3.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/toMatchInlineSnapshotWithRetries.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/toMatchSnapshot.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/toMatchSnapshotWithRetries.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/toMatchSnapshotWithStringSerializer.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/toThrowErrorMatchingInlineSnapshot.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/toThrowErrorMatchingSnapshot.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/transform.test.ts": {
+        "passed": 22,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/transformLinkedModules.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/typescriptConfigFile.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 1
+      },
+      "e2e/__tests__/typescriptCoverage.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/unexpectedToken.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/useStderr.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/verbose.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/version.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/watch-plugins.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/watchModeNoAccess.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/watchModeOnlyFailed.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/watchModePatterns.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/watchModeUpdateSnapshot.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/workerForceExit.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/workerRestartBeforeSend.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/workerRestarting.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/__tests__/wrongEnv.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 1
+      },
+      "e2e/test-match-default/dot-spec-tests/test.spec.cjs": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/test-match-default/dot-spec-tests/test.spec.cts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/test-match-default/dot-spec-tests/test.spec.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/test-match-default/dot-spec-tests/test.spec.jsx": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/test-match-default/dot-spec-tests/test.spec.mjs": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/test-match-default/dot-spec-tests/test.spec.mts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/test-match-default/dot-spec-tests/test.spec.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "e2e/test-match-default/dot-spec-tests/test.spec.tsx": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/angular/app.component.spec.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/angular/shared/data.service.spec.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/angular/shared/sub.service.spec.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/async/__tests__/user.test.js": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/automatic-mocks/__tests__/automock.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/automatic-mocks/__tests__/createMockFromModule.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/automatic-mocks/__tests__/disableAutomocking.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/expect-extend/__tests__/ranges.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/getting-started/sum.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/jquery/__tests__/display_user.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/jquery/__tests__/fetch_current_user.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/manual-mocks/__tests__/file_summarizer.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/manual-mocks/__tests__/lodashMocking.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/manual-mocks/__tests__/user.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/manual-mocks/__tests__/userMocked.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/manual-mocks/__tests__/utils.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/module-mock/__tests__/full_mock.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/module-mock/__tests__/mock_per_test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/module-mock/__tests__/partial_mock.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/react-native/__tests__/intro.test.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/react-testing-library/__tests__/CheckboxWithLabel-test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/react/__tests__/CheckboxWithLabel-test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/snapshot/__tests__/clock.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/snapshot/__tests__/link.test.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/timer/__tests__/infinite_timer_game.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/timer/__tests__/timer_game.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/typescript/__tests__/calc.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/typescript/__tests__/CheckboxWithLabel-test.tsx": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/typescript/__tests__/sub-test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/typescript/__tests__/sum-test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/typescript/__tests__/sum.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/typescript/__tests__/utils.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/babel-jest/src/__tests__/getCacheKey.test.ts": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/babel-jest/src/__tests__/index.ts": {
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/babel-plugin-jest-hoist/src/__tests__/hoistPlugin.nodejs20plus.test.ts": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/create-jest/src/__tests__/init.test.ts": {
+        "passed": 26,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/create-jest/src/__tests__/modifyPackageJson.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/diff-sequences/src/__tests__/index.property.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/diff-sequences/src/__tests__/index.test.ts": {
+        "passed": 48,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect-utils/src/__tests__/isError.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect-utils/src/__tests__/utils.test.ts": {
+        "passed": 83,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/assertionCounts.test.ts": {
+        "passed": 9,
+        "failed": 1,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/asymmetricMatchers.test.ts": {
+        "passed": 90,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/customEqualityTesters.test.ts": {
+        "passed": 9,
+        "failed": 1,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/customEqualityTestersRecursive.test.ts": {
+        "passed": 10,
+        "failed": 1,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/extend.test.ts": {
+        "passed": 4,
+        "failed": 8,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/matchers-toContain.property.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/matchers-toContainEqual.property.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/matchers-toEqual.property.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/matchers-toStrictEqual.property.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/matchers.test.js": {
+        "passed": 149,
+        "failed": 477,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/spyMatchers.test.ts": {
+        "passed": 6,
+        "failed": 144,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/stacktrace.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/symbolInObjects.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/toEqual-dom.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/expect/src/__tests__/toThrowMatchers.test.ts": {
+        "passed": 30,
+        "failed": 33,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/afterAll.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/baseTest.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/circusItFailingTestError.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/circusItTestError.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/circusItTodoTestError.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/concurrent.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/eventHandler.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/hooks.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/hooksError.test.ts": {
+        "passed": 32,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/randomizeTest.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/shuffleArray.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/__tests__/utils.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-circus/src/legacy-code-todo-rewrite/__tests__/jestAdapterInit.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-cli/src/__tests__/args.test.ts": {
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/Defaults.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/defineConfig.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/getMaxWorkers.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/mergeConfig.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/normalize.test.ts": {
+        "passed": 116,
+        "failed": 32,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/parseShardPair.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/readConfig.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/readConfigFileAndSetRootDir.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/readConfigs.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/readInitialOptions.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/resolveConfigPath.test.ts": {
+        "passed": 46,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/setFromArgv.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-config/src/__tests__/stringToBytes.test.ts": {
+        "passed": 28,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-console/src/__tests__/bufferedConsole.test.ts": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-console/src/__tests__/CustomConsole.test.ts": {
+        "passed": 23,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-console/src/__tests__/getConsoleOutput.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/collectHandles.test.js": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/FailedTestsCache.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/FailedTestsInteractiveMode.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/getNoTestsFoundMessage.test.ts": {
+        "passed": 0,
+        "failed": 6,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/globals.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/runJest.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/SearchSource.test.ts": {
+        "passed": 36,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/SnapshotInteractiveMode.test.js": {
+        "passed": 6,
+        "failed": 7,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/TestScheduler.test.js": {
+        "passed": 28,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/testSchedulerHelper.test.js": {
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/watch.test.js": {
+        "passed": 79,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/watchFileChanges.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/watchFilenamePatternMode.test.js": {
+        "passed": 1,
+        "failed": 1,
+        "skipped": 0
+      },
+      "packages/jest-core/src/__tests__/watchTestNamePatternMode.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/lib/__tests__/isValidPath.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/lib/__tests__/logDebugMessages.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/lib/__tests__/serializeToJSON.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-core/src/plugins/__tests__/FailedTestsInteractive.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-create-cache-key-function/src/__tests__/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-diff/src/__tests__/diff.test.ts": {
+        "passed": 76,
+        "failed": 33,
+        "skipped": 0
+      },
+      "packages/jest-diff/src/__tests__/diffStringsRaw.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-diff/src/__tests__/escapeControlCharacters.test.ts": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-diff/src/__tests__/getAlignedDiffs.test.ts": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-diff/src/__tests__/joinAlignedDiffs.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-docblock/src/__tests__/index.test.ts": {
+        "passed": 39,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-each/src/__tests__/array.test.ts": {
+        "passed": 203,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-each/src/__tests__/index.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-each/src/__tests__/template.test.ts": {
+        "passed": 250,
+        "failed": 55,
+        "skipped": 0
+      },
+      "packages/jest-environment-jsdom-abstract/src/__tests__/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-environment-jsdom/src/__tests__/jsdom_environment.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-environment-node/src/__tests__/globals_cleanup_1.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-environment-node/src/__tests__/globals_cleanup_2.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-environment-node/src/__tests__/globals_cleanup_3.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-environment-node/src/__tests__/node_environment.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-fake-timers/src/__tests__/legacyFakeTimers.test.ts": {
+        "passed": 60,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-fake-timers/src/__tests__/modernFakeTimers.test.ts": {
+        "passed": 59,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-fake-timers/src/__tests__/sinon-integration.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-get-type/src/__tests__/getType.test.ts": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-get-type/src/__tests__/isPrimitive.test.ts": {
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-globals/src/__tests__/index.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/__tests__/get_mock_name.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/__tests__/includes_dotfiles.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/__tests__/index.test.js": {
+        "passed": 47,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/__tests__/worker.test.js": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/crawlers/__tests__/node.test.js": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/crawlers/__tests__/watchman.test.js": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/lib/__tests__/dependencyExtractor.test.js": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/lib/__tests__/fast_path.test.js": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/lib/__tests__/getPlatformExtension.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/lib/__tests__/isWatchmanInstalled.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-haste-map/src/lib/__tests__/normalizePathSep.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/concurrent.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/expectationResultFactory.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/hooksError.test.ts": {
+        "passed": 32,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/iterators.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/itTestError.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/itToTestAlias.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/pTimeout.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/queueRunner.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/reporter.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/Suite.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-jasmine2/src/__tests__/todoError.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-leak-detector/src/__tests__/index.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-matcher-utils/src/__tests__/deepCyclicCopyReplaceable.test.ts": {
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-matcher-utils/src/__tests__/deepCyclicCopyReplaceableDom.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-matcher-utils/src/__tests__/index.test.ts": {
+        "passed": 38,
+        "failed": 15,
+        "skipped": 0
+      },
+      "packages/jest-matcher-utils/src/__tests__/printDiffOrStringify.test.ts": {
+        "passed": 0,
+        "failed": 22,
+        "skipped": 0
+      },
+      "packages/jest-matcher-utils/src/__tests__/Replaceable.test.ts": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-message-util/src/__tests__/messages.test.ts": {
+        "passed": 1,
+        "failed": 15,
+        "skipped": 0
+      },
+      "packages/jest-mock/src/__tests__/class-mocks-dual-import.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-mock/src/__tests__/class-mocks-single-import.test.ts": {
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-mock/src/__tests__/class-mocks.test.ts": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-mock/src/__tests__/index.test.ts": {
+        "passed": 156,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-mock/src/__tests__/window-spy.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-pattern/src/__tests__/TestPathPatterns.test.ts": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-regex-util/src/__tests__/index.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/CoverageReporter.test.js": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/CoverageWorker.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/DefaultReporter.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/generateEmptyCoverage.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/getResultHeader.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/getSnapshotStatus.test.js": {
+        "passed": 1,
+        "failed": 2,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/getSnapshotSummary.test.js": {
+        "passed": 0,
+        "failed": 4,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/getSummary.test.ts": {
+        "passed": 1,
+        "failed": 2,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/getWatermarks.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/GitHubActionsReporter.test.ts": {
+        "passed": 10,
+        "failed": 10,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/NotifyReporter.test.ts": {
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/SummaryReporter.test.js": {
+        "passed": 1,
+        "failed": 7,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/utils.test.ts": {
+        "passed": 1,
+        "failed": 9,
+        "skipped": 0
+      },
+      "packages/jest-reporters/src/__tests__/VerboseReporter.test.js": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-resolve-dependencies/src/__tests__/dependency_resolver.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-resolve/src/__tests__/resolve.test.ts": {
+        "passed": 56,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runner/src/__tests__/testRunner.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/instrumentation.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_create_mock_from_module.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_environment.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_internal_module.test.js": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_jest_fn.js": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_jest_replaceProperty.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_jest_spy_on.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_mock.test.js": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_module_directories.test.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_node_path.test.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_require_actual.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_require_cache.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_require_mock.test.js": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_require_module_no_ext.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_require_module_or_mock_transitive_deps.test.js": {
+        "passed": 0,
+        "failed": 6,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_require_module_or_mock.test.js": {
+        "passed": 23,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_require_module.test.js": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_require_resolve.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_resetModules_unsafe_global_proxy.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/runtime_wrap.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/Runtime-sourceMaps.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-runtime/src/__tests__/Runtime-statics.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-snapshot-utils/src/__tests__/utils.test.ts": {
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-snapshot/src/__tests__/dedentLines.test.ts": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-snapshot/src/__tests__/InlineSnapshots.test.ts": {
+        "passed": 28,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-snapshot/src/__tests__/matcher.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-snapshot/src/__tests__/mockSerializer.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-snapshot/src/__tests__/printSnapshot.test.ts": {
+        "passed": 8,
+        "failed": 66,
+        "skipped": 0
+      },
+      "packages/jest-snapshot/src/__tests__/SnapshotResolver.test.ts": {
+        "passed": 6,
+        "failed": 4,
+        "skipped": 0
+      },
+      "packages/jest-snapshot/src/__tests__/throwMatcher.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-snapshot/src/__tests__/utils.test.ts": {
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-source-map/src/__tests__/getCallsite.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-test-result/src/__tests__/formatTestResults.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-test-sequencer/src/__tests__/test_sequencer.test.ts": {
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-transform/src/__tests__/ScriptTransformer.test.ts": {
+        "passed": 45,
+        "failed": 8,
+        "skipped": 0
+      },
+      "packages/jest-transform/src/__tests__/shouldInstrument.test.ts": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-util/src/__tests__/convertDescriptorToString.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-util/src/__tests__/createProcessObject.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-util/src/__tests__/deepCyclicCopy.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-util/src/__tests__/errorWithStack.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-util/src/__tests__/formatTime.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-util/src/__tests__/garbage-collection-utils.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-util/src/__tests__/globsToMatcher.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-util/src/__tests__/installCommonGlobals.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-util/src/__tests__/isInteractive.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-util/src/__tests__/isPromise.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-validate/src/__tests__/validate.test.ts": {
+        "passed": 11,
+        "failed": 12,
+        "skipped": 0
+      },
+      "packages/jest-validate/src/__tests__/validateCLIOptions.test.ts": {
+        "passed": 1,
+        "failed": 6,
+        "skipped": 0
+      },
+      "packages/jest-watcher/src/lib/__tests__/formatTestNameByPattern.test.ts": {
+        "passed": 0,
+        "failed": 11,
+        "skipped": 0
+      },
+      "packages/jest-watcher/src/lib/__tests__/prompt.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-watcher/src/lib/__tests__/scroll.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/__tests__/Farm.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/__tests__/FifoQueue.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/__tests__/index.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/__tests__/leak-integration.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/__tests__/PriorityQueue.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/__tests__/process-integration.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/__tests__/thread-integration.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/__tests__/WorkerPool.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/base/__tests__/BaseWorkerPool.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/workers/__tests__/ChildProcessWorker.test.ts": {
+        "passed": 23,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/workers/__tests__/NodeThreadsWorker.test.ts": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/workers/__tests__/processChild.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/workers/__tests__/threadChild.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/jest-worker/src/workers/__tests__/WorkerEdgeCases.test.ts": {
+        "passed": 35,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/pretty-format/src/__tests__/AsymmetricMatcher.test.ts": {
+        "passed": 47,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/pretty-format/src/__tests__/DOMCollection.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/pretty-format/src/__tests__/DOMElement.test.ts": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/pretty-format/src/__tests__/Immutable.test.ts": {
+        "passed": 111,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/pretty-format/src/__tests__/prettyFormat.test.ts": {
+        "passed": 99,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/pretty-format/src/__tests__/react.test.tsx": {
+        "passed": 55,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/pretty-format/src/__tests__/ReactElement.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  }
+}

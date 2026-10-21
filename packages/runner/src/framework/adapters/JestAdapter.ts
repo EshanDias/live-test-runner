@@ -1,9 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Framework } from '../../types';
+import { FRAMEWORK_IDS, FrameworkId, RunResult } from '../../types';
 import { FrameworkAdapter } from './FrameworkAdapter';
 import { BinaryResolver } from '../../resolution/BinaryResolver';
 import { testScriptJestArgs } from '../jestConfig';
+import { ResultParser } from '../../parsing/ResultParser';
+import { RunnerOptions, TestRunner } from '../../TestRunner';
+import { JestRunner } from '../../JestRunner';
 
 /** Config files Jest picks up from the project root. */
 const JEST_CONFIG_FILES = [
@@ -24,7 +27,7 @@ const JEST_CONFIG_FILES = [
  * Binary: node_modules/.bin/jest (local install).
  */
 export class JestAdapter implements FrameworkAdapter {
-  readonly framework: Framework = 'jest';
+  readonly framework: FrameworkId = FRAMEWORK_IDS.jest;
 
   private readonly binaryResolver = new BinaryResolver();
 
@@ -58,6 +61,37 @@ export class JestAdapter implements FrameworkAdapter {
   getExtraArgs(projectRoot: string): string[] {
     return testScriptJestArgs(projectRoot);
   }
+
+  outputFileArg(file: string): string[] {
+    return jestOutputFileArg(file);
+  }
+
+  parseResult(passed: boolean, raw: string, stderr: string): RunResult {
+    return parseJestResult(passed, raw, stderr);
+  }
+
+  createRunner(options?: RunnerOptions): TestRunner {
+    return createJestRunner(options);
+  }
+}
+
+// ── Shared by every Jest-based adapter (plain Jest, CRA) ───────────────────────
+
+const jestParser = new ResultParser();
+
+/** Jest writes its `--json` result to the file named by `--outputFile`. */
+export function jestOutputFileArg(file: string): string[] {
+  return [`--outputFile=${file}`];
+}
+
+/** Parses a `jest --json` result. */
+export function parseJestResult(passed: boolean, raw: string, stderr: string): RunResult {
+  return jestParser.parse(passed, raw, stderr);
+}
+
+/** A JestRunner — it detects plain Jest vs CRA per project root itself. */
+export function createJestRunner(options: RunnerOptions = {}): TestRunner {
+  return new JestRunner(options.command ?? '', options.logger, options.tmpDir);
 }
 
 // ── Shared utility ─────────────────────────────────────────────────────────────

@@ -1,6 +1,22 @@
 // ── Framework ──────────────────────────────────────────────────────────────────
 
-export type Framework = 'jest' | 'cra' | 'next' | 'vite' | 'unknown';
+/**
+ * Identifies a framework adapter. Open-ended: a new adapter brings its own id
+ * without editing a union here. The ids shipped with the runner are in
+ * {@link FRAMEWORK_IDS}.
+ */
+export type FrameworkId = string;
+
+/** Ids of the adapters shipped with the runner. */
+export const FRAMEWORK_IDS = {
+  jest: 'jest',
+  cra: 'cra',
+  vite: 'vite',
+  unknown: 'unknown',
+} as const;
+
+/** @deprecated Use FrameworkId — kept for one release. */
+export type Framework = FrameworkId;
 export type PackageManager = 'npm' | 'yarn' | 'pnpm';
 
 // ── Simple test result (used internally for non-JSON runs) ────────────────────

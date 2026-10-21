@@ -1,5 +1,6 @@
 /**
- * ProjectJestConfig — the project's Jest config exactly as Jest resolves it.
+ * JestProjectConfig — the project's Jest config exactly as Jest resolves it
+ * (the Jest {@link IProjectConfig}).
  *
  * The instrumented runs (session batches and the timeline) write their own
  * temporary config and layer our transform / reporter / setup file on top of
@@ -17,13 +18,15 @@ import {
   BinaryResolver,
   Executor,
   FrameworkDetector,
+  FRAMEWORK_IDS,
   pickGlobalConfig,
   tail,
   testScriptJestArgs,
   toInputConfig,
-  toJestPath,
+  toRunnerPath,
 } from '@live-test-runner/runner';
 import { logger } from '../utils/logger';
+import { IProjectConfig } from './IProjectConfig';
 
 const log = logger.scope('Config');
 
@@ -36,7 +39,7 @@ export interface ResolvedProjectConfig {
 
 const SHOW_CONFIG_TIMEOUT_MS = 120_000;
 
-export class ProjectJestConfig {
+export class JestProjectConfig implements IProjectConfig {
   private readonly _cache = new Map<string, Promise<string | undefined>>();
 
   /** @param _dir session folder where the resolved JSON is written */
@@ -66,7 +69,7 @@ export class ProjectJestConfig {
 
   private async _resolve(projectRoot: string): Promise<string | undefined> {
     const startedAt = Date.now();
-    const isCra = new FrameworkDetector().detect(projectRoot).framework === 'cra';
+    const isCra = new FrameworkDetector().detect(projectRoot).framework === FRAMEWORK_IDS.cra;
     const scriptArgs = testScriptJestArgs(projectRoot);
 
     let binary: string | undefined;
@@ -114,7 +117,7 @@ export class ProjectJestConfig {
  * Built from the root's real path: Jest matches it against realpath'd files.
  */
 export function sourceTransformPattern(projectRoot: string): string {
-  const rootFwd = toJestPath(projectRoot).replace(/\\/g, '/');
+  const rootFwd = toRunnerPath(projectRoot).replace(/\\/g, '/');
   const driveMatch = rootFwd.match(/^([a-zA-Z]):(.*)/);
   const escapedRoot = driveMatch
     ? `[${driveMatch[1].toLowerCase()}${driveMatch[1].toUpperCase()}]:${escapeRegex(driveMatch[2])}`

@@ -36,7 +36,7 @@ export interface IFrameworkAdapter {
 
   /**
    * Run a full test file. Writes results into the store and returns pass/fail.
-   * Used for scoped single-file reruns; the batch path uses SessionTraceRunner.
+   * Used for scoped single-file reruns; the batch path uses the batch runner (IBatchRunner).
    */
   runFile(
     store: ResultStore,
@@ -47,7 +47,7 @@ export interface IFrameworkAdapter {
 
   /**
    * Apply a parsed FileRunResult (from liveReporter) into the store.
-   * Called by SessionTraceRunner after the combined test+trace batch run.
+   * Called by the batch runner (JestBatchRunner) after the combined test+trace batch run.
    */
   applyFileResult(
     store: ResultStore,

@@ -183,24 +183,30 @@ Done when: `node e2e/run.js repo-matrix` passes on current code and proves the o
 
 **1.1 Neutral naming & open types (1 d)** (C7, C8)
 Sketch: `Framework` → `type FrameworkId = string` with known constants; `toJestPath/fromJestPath` → `toRunnerPath/fromRunnerPath` (keep deprecated aliases one release); `PLAIN_RUN_HANG_FACTOR` into a shared `constants.ts`; output channel "Jest Output" → "Test Output" (tag `[jest#N]`/`[vitest#N]` stays); `ProjectJestConfig` → interface `IProjectConfig` + class `JestProjectConfig`.
+Done (2026-10-20): `FrameworkId` + `FRAMEWORK_IDS` (`jest`, `cra`, `vite`, `unknown`; unused `next` dropped; `Framework` kept as deprecated alias) in `runner/src/types.ts`, used by all adapters and the detector; extension compares against `FRAMEWORK_IDS.cra`. `resolution/JestPaths.ts` → `RunnerPaths.ts` with `toRunnerPath/fromRunnerPath` (+ deprecated `toJestPath/fromJestPath`, unit-tested). `PLAIN_RUN_HANG_FACTOR` → `vscode-extension/src/constants.ts`. `session/IProjectConfig.ts` (`get(root)`, `reset()`); `JestProjectConfig` implements it; `SessionManager`, `SessionTraceRunner`, `JestInstrumentedRunner` take `IProjectConfig` (extension.ts still builds the Jest one — services bundle is 1.4). Channel "Live Test Runner: Test Output" and command title "Show Test Output" (id `liveTestRunner.showOutput` unchanged — the command title rename was not in the sketch, done for consistency). Docs + both CHANGELOGs updated.
 
 **1.2 Generic runner layer (2 d)** (C2)
 Sketch: `Executor` takes `outputFileArg(path)` from the adapter (Jest/Vitest both `--outputFile=`, but not assumed); `ResultParser` becomes `adapter.parseResult(raw)` (Jest parser stays, behind the interface); extract `CommandRunner` (run file / files / test case / related / full suite / kill / path normalisation) with abstract `buildArgs(kind, …)`; `JestRunner extends CommandRunner`. `FrameworkAdapter.createRunner(opts)`.
 Unit tests: arg-building snapshots for Jest must equal today's args exactly.
+Done (2026-10-20): `runner/src/CommandRunner.ts` (abstract: `detectAdapter`, `buildArgs(RunRequest)`, `parseTestList`, `coverageFile`); `JestRunner extends CommandRunner`. `FrameworkAdapter` + `outputFileArg` / `parseResult` / `createRunner(RunnerOptions)`; Jest + CRA share `jestOutputFileArg` / `parseJestResult` / `createJestRunner`; Vite stub throws. `Executor.runWithJsonCapture(cmd, outputFileArg)`. `parsing/runResults.ts` (`emptyRunResult`, `mergeRunResults`). Snapshot test `test/jestRunnerArgs.test.ts` was committed **before** the refactor and passes unchanged; `test/adapterRunContract.test.ts` covers the new adapter methods. Notes: (1) detection moved out of `CommandRunner` into `JestRunner.detectAdapter`, and `FrameworkDetector` builds its adapter list lazily — adapters → runners → detector → adapters is a cycle, and `class … extends CommandRunner` crashed while `CommandRunner` was half-loaded; (2) `SessionManager`'s bootstrap and the extension `JestAdapter` still construct `JestRunner` directly — switching them to `adapter.createRunner()` is task 1.4 (doing it now would make an unsupported Vite project fail at Start instead of at run).
 
 **1.3 `FrameworkRegistry` + detector (0.5 d)** (C7)
 Sketch: `ADAPTER_PRIORITY` becomes a registry (`register(adapter, priority)`); detector returns `{adapter, reason}`; unknown project → explicit `unknown` result with the existing Jest fallback kept (logged at WARN), so behaviour is unchanged.
+Done (2026-10-21): `runner/src/framework/FrameworkRegistry.ts` (`register` / `unregister` / `get` / `adapters`; same-id register replaces; `default()` lazily with `ADAPTER_PRIORITIES` CRA 300, Vite 200, Jest 100). `FrameworkDetector(registry = default)`; `detect()` / `detectFramework()` unchanged, new `detectWithReason()` → `{ adapter, framework, matched, reason }` (`matched: 'unknown'` on the Jest fallback). The fallback WARN is logged once per project root (detection runs on every runner creation). Diagnostic report shows the reason. Tests: `test/frameworkRegistry.test.ts`.
 
 **1.4 Extract `IBatchRunner` + services bundle (3 d)** (C1, C3, C4, C5)
 Sketch: define `IBatchRunner { runFiles(opts), kill(), reset(), … }` from `SessionTraceRunner`'s public surface; `JestBatchRunner = today's SessionTraceRunner`. Introduce `FrameworkServices` and have `SessionManager` take `servicesFor(file|root)` (single provider returning the one Jest bundle for now) — replacing the constructor's `_adapter` + `_projectConfig`, `new SessionTraceRunner`, and `new JestRunner` bootstrap (`TestSession` gets `adapter.createRunner()`). `extension.ts` composes services; `IInstrumentedRunner` is produced by the services bundle too.
 Risk: largest refactor; do it in small commits, run the gate after each.
+Done (2026-10-21): `session/IBatchRunner.ts` (`BatchRunOptions` = the former inline `runFiles` options); `SessionTraceRunner` → `session/JestBatchRunner.ts implements IBatchRunner`. `framework/FrameworkServices.ts`: `FrameworkServices { framework, adapter, projectConfig, batchRunner, instrumentedRunner, createSessionRunner() }`, `IFrameworkServicesProvider { servicesFor(fileOrRoot), all() }`, `SingleFrameworkProvider`. `framework/jestServices.ts` `createJestServices({ sessionDir, coverageStore, rawLog })` builds exactly what `extension.ts` / `SessionManager` built before (same constructor args). `SessionManager(provider, …)` — `_adapter`, `_projectConfig`, `_sessionDir` params gone; every adapter call goes through `_adapterFor(file|root)`, Stop / restart kill `all()` batch runners. `instrumentedRunner` is required in the bundle for now (2.6 adds the `trace=false` capability). Left for 1.6: Jest wording in `SessionManager` log/status text (`Asking Jest which files it runs…`, `jest --listTests`, …) and `_askJestForRunnable`.
 
 **1.5 Split instrumentation (1 d)** (C3)
 Sketch: `session/instrumentation/` → `shared/` (trace record format, writer protocol, doc of the `__strace` contract), `jest/` (transform, reporter, setup, discovery). Pure file moves + import updates; document the protocol in `docs/architecture.md` so Vitest can implement it later.
+Done (2026-10-21): `shared/` = `sessionTraceRuntime.js` + `testDiscovery.js` (discovery is static AST parsing, not Jest-specific — Vitest reuses it in 2.5, so it went to `shared/`, not `jest/` as sketched); `jest/` = `sessionTraceTransform.js`, `ltrCoverageSetup.js`, `liveReporter.js`. `out/instrumentation/{shared,jest}/` mirror the layout (`esbuild.js`), runtime paths updated (`JestBatchRunner`, the transform's `RUNTIME_PATH`, the setup file's runtime require, `TestDiscoveryService`). Timeline files (`timeline/instrumentation/`) untouched (timeline is deferred, D4). Protocol documented in `docs/architecture.md` → *Session instrumentation protocol* + `shared/README.md`. Side effect: the transform's hash changed, so users' persistent transform cache rebuilds once.
 
 **1.6 Conformance suite + gate (1.5 d)**
 Sketch: `packages/runner/test/adapterConformance.ts` — a reusable suite every adapter must pass (detect true/false cases, arg shape, parse a canned result, kill behaviour); apply to Jest and CRA. Run the full regression gate. Add a "Adding a framework" checklist to `docs/developer-guide.md`.
 Done when: gate green, `git grep -i jest` in `SessionManager`, `extension.ts`, `core/` shows only the Jest bundle wiring.
+Done (2026-10-21): `packages/runner/test/adapterConformance.ts` (`describeAdapterConformance(case)`: registered id; claims its projects, not others, not a folder without package.json; result-file flag contains the path; canned result with one passing + one failing test; unreadable output → failed result, no throw; created runner passes the file + the adapter's result-file flag through the Executor; kill safe when idle) applied to Jest and CRA in `adapterConformance.test.ts` (16 checks). `FrameworkServices` + `displayName`, `settingsFingerprint()`; `SessionManager` no longer reads `jestCommand` (runnable-files cache key unchanged) and `_askJestForRunnable` → `_askForRunnable`; `core/CoverageMap` comment says istanbul format. "Adding a framework" checklist in `docs/developer-guide.md`. **Grep result:** code coupling left = `createJestServices` in `extension.ts` only; what remains in `SessionManager` is log / message **wording** ("Jest config (testMatch / testPathIgnorePatterns)", "falling back to plain Jest", `jest --listTests` …). Kept deliberately: e2e checks match some of these strings, and the right Vitest wording is decided with the Vitest bundle → **task 2.6** makes these messages framework-aware (`displayName` + per-framework detail).
 
 ### Phase 2 — Vitest: run & pass/fail (15 d) — *Feature V1*
 
@@ -220,7 +226,7 @@ Sketch: implements `IFrameworkAdapter`: `discoverTests` (`vitest list --filesOnl
 Sketch: check `TestDiscoveryService`'s parser covers `test/it/describe` + `.skip/.only/.todo/.concurrent/.each/.for/.skipIf/.runIf`, `test.extend` fixtures, `import { test } from 'vitest'`; add missing forms and unit tests.
 
 **2.6 Session behaviour parity (1 d)**
-Sketch: confirm Start/Stop/hang detection/on-save-without-trace/session guard work through the plain-run path (`SessionManager` ~line 802) with Vitest; `Stop` is final; capability `trace=false` → timeline/“Covering tests” show “not available for Vitest yet”.
+Sketch: confirm Start/Stop/hang detection/on-save-without-trace/session guard work through the plain-run path (`SessionManager` ~line 802) with Vitest; `Stop` is final; capability `trace=false` → timeline/“Covering tests” show “not available for Vitest yet”. Also (from 1.6): make `SessionManager`'s log / status messages framework-aware — today they name Jest and Jest options (`testMatch / testPathIgnorePatterns`, `jest --listTests`, "plain Jest"); use the bundle's `displayName` plus a per-framework detail, and update the e2e checks that match those strings. `instrumentedRunner` becomes optional in `FrameworkServices` here.
 
 **2.8 Vitest `projects` & browser-mode guard (1.5 d)**
 Sketch: run from the root config once — Vitest fans out over `test.projects` itself (slidev, vueuse). Browser-mode projects (Playwright/WebdriverIO, e.g. vueuse `browser`) are excluded by default (`--project '!<name>'` resolved from `vitest list`/config; setting `liveTestRunner.vitestIncludeBrowserProjects`), with an INFO line explaining. Test results carry the project name for later display (phase 7). Honour `--project` in the user's `test` script when present.
@@ -359,36 +365,35 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - **Q5** — HTML guide (`docs/live-test-runner-guide.html`): my suggestion is to publish it with GitHub Pages as the project’s docs site, link it from the marketplace README, and add a “Open Guide” command that opens it in a webview — it is clearer than a long README. Want that as a task?
 
-## Handoff — where work stopped (2025-10-20)
+## Handoff — where work stopped (2026-10-20)
 
-**Branches (all local, nothing pushed):**
-- `release/3.0.0` (from `origin/main` @ 2.0.4) — 1 commit: version bump to 3.0.0 + this plan.
-- `feat/vitest-housekeeping` (from `release/3.0.0`) — commits: `pnpm/setup@v3` workflows; **uncommitted at hand-off time:** `e2e/real-repos.js`, `plainJestJson` in `e2e/lib/harness.js`, this doc update (committed right after this note was written — check `git log`).
-- Per CLAUDE.md, never push/merge `release/*` from a local checkout: the owner must push `release/3.0.0` and open the PR `feat/vitest-housekeeping → release/3.0.0`.
+**Branches**
+- `release/3.0.0` — includes PR #34 (`feat/vitest-housekeeping`: 0.2 workflows + 0.3 harness), so CI on `pnpm/setup@v3` ran green on all three OSes.
+- `feat/vitest-decouple` (from `release/3.0.0` @ `e2ba4ae`, pushed to origin) — 0.3 follow-ups, task 1.1, CHANGELOG clean-up (entries that shipped in 2.0.4 moved out of Unreleased; `[3.0.0] - Unreleased` header), task 1.2. Phase 1 continues on this branch; one PR into `release/3.0.0` at the end of phase 1.
 
-**Done**
-- 0.1 release branch + version.
-- 0.2 `.github/workflows/pr-checks.yml` (2 jobs) and `release.yml` now use `pnpm/setup@v3` (`runtime: node@24`, `cache: true`; release uses `install: false`). YAML validated. Verified locally that `pnpm runtime` installs **only `node`** (no npm/npx): e2e `npm install` and release `npx vsce/ovsx` rely on the runner image's npm — **must be confirmed on the first CI run**; fallback = keep `actions/setup-node` in those two jobs.
-- 0.3 `node e2e/real-repos.js [repo… | --all | --fresh]` clones each real repo (APFS `cp -c`), computes a plain-Jest baseline, runs the existing `repo-tsjest` / `repo-cra` scenario on the clone, and fails if the original repo's `git status`/HEAD/newest-mtime changed. Vitest repos (`unplugin`, `slidev`, `vueuse`) are registered and auto-run once a `repo-vitest` scenario exists (env `LTR_E2E_VITEST_REPO`).
-- Regression status on this branch: `pnpm build`, `pnpm lint`, `pnpm test` (34 runner + 17 extension tests) pass; `node e2e/run.js basic-full-run` passes; `real-repos.js jest-dom` PASS (31 files match plain Jest; originals untouched).
+**Done in this session**
+- 0.3 finished: `e2e/real-repos.js` records each repo's plain-runner per-file counts + extension match in `docs/temp_plans/vitest-baseline.json` (CRA gets a baseline too). Fixed `repo-cra`'s plain run for workspaces under macOS's `/var` symlink (it passed `/var/…` to `--runTestsByPath`; Jest only accepts `/private/var/…`). Baseline green: `jest-dom` 31 files, `vscode-jest` 49 files / 2012 tests, `sample-react-project` 14 files. The heavy `jest` monorepo: see below.
+- **Phase 1 done (1.1–1.6)** — see the task notes below. Phase gate (after 1.6): build, lint, 63 runner + 17 extension unit tests, `e2e/run.js --all` (11 pass, 2 repo scenarios skipped), real repos jest-dom / vscode-jest / CRA PASS; `jest` monorepo: first run hit BUG-44 (race, fallback recovered), rerun identical to the pre-refactor build (6194 · 4141 passed · 1122 failed; only BUG-43 differs).
+- 1.1–1.4 notes: Gate after 1.4: unit tests, e2e --all (11 pass, 2 skipped), real-repos (3/3) green. Note: commit `b175e39` (1.3) accidentally carries the `SessionTraceRunner.ts → JestBatchRunner.ts` file rename without the import updates, so it does not build on its own; the 1.4 commit fixes it. Gate after 1.3: unit tests (53 runner + 17 extension), e2e --all, real-repos (3/3) green.
+- `jest` monorepo (`node e2e/real-repos.js jest`, after 1.2): harness fixed (spawnSync 1 MB buffer killed the plain-Jest baseline; save-test source picked from `packages/*`). 470/484 files match plain Jest; the rest are **BUG-43** (jest-runtime tests fail under the session run, `docs/bugs-and-issues.md`). The pre-refactor build (`e2ba4ae`) gives identical totals (6194 tests · 4141 passed · 1122 failed), so 1.1/1.2 changed nothing; BUG-43 is a 2.0.4 issue, open. Every other check passes on the monorepo.
+- Gate after 1.2: `pnpm build`, `pnpm lint`, `pnpm test` (47 runner incl. 4 command-line snapshots + 17 extension), `node e2e/run.js --all` (11 pass, 2 skipped), `node e2e/real-repos.js` (3/3 PASS).
+- Gate after 1.1: `pnpm build`, `pnpm lint`, `pnpm test` (35 runner + 17 extension), `node e2e/run.js --all` (11 pass, 2 repo scenarios skipped — covered by `real-repos.js`), `node e2e/real-repos.js` (3/3 PASS, originals untouched).
 
-**Not done / next**
-1. Run `node e2e/real-repos.js vscode-jest sample-react-project` (and `jest` monorepo, heavy) once to record that the baseline is green; run `node e2e/run.js --all`.
-2. Confirm the workflows on a real PR (3 OSes).
-3. Add CHANGELOG entry for the CI change (root CHANGELOG only; not user-facing).
-4. Then **Phase 1 (Decouple from Jest)** — start at task 1.1 on a new branch `feat/vitest-decouple` cut from `release/3.0.0` (after housekeeping is merged).
+**Next**
+1. **Phase 1 is complete** — open the PR `feat/vitest-decouple → release/3.0.0` (owner), confirm CI on 3 OSes.
+2. Phase 2 starts at task 2.1 (runner `VitestAdapter`) on a new branch `feat/vitest-run` from `release/3.0.0` after the PR merges (or from `feat/vitest-decouple`).
 
 ## Progress tracker
 
 - [x] 0.1 Release branch + version (done: `release/3.0.0` cut from main@2.0.4, version 3.0.0 in root + extension)
-- [x] 0.2 Workflows → pnpm/setup@v3 (done in YAML; **CI not yet run** — see Handoff)
-- [~] 0.3 Baseline + real-repo harness (harness `e2e/real-repos.js` done; verified on `jest-dom` only — see Handoff)
-- [ ] 1.1 Neutral naming & open types
-- [ ] 1.2 Generic runner layer
-- [ ] 1.3 FrameworkRegistry + detector
-- [ ] 1.4 IBatchRunner + services bundle
-- [ ] 1.5 Split instrumentation
-- [ ] 1.6 Conformance suite + gate
+- [x] 0.2 Workflows → pnpm/setup@v3 (CI green on PR #34)
+- [x] 0.3 Baseline + real-repo harness (`e2e/real-repos.js`; baseline in `vitest-baseline.json`; 3 light Jest repos green; `jest` monorepo green except pre-existing BUG-43)
+- [x] 1.1 Neutral naming & open types
+- [x] 1.2 Generic runner layer
+- [x] 1.3 FrameworkRegistry + detector
+- [x] 1.4 IBatchRunner + services bundle
+- [x] 1.5 Split instrumentation
+- [x] 1.6 Conformance suite + gate
 - [ ] 2.1 Runner VitestAdapter
 - [ ] 2.2 VitestRunner
 - [ ] 2.3 Result parsing

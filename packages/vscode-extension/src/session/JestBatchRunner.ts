@@ -1,6 +1,7 @@
 /**
- * SessionTraceRunner — runs a batch of test files under light-trace
- * instrumentation and streams per-file results back to the caller.
+ * JestBatchRunner — the Jest {@link IBatchRunner}: runs a batch of test files
+ * under light-trace instrumentation and streams per-file results back to the
+ * caller.
  *
  * A single Jest process handles all files in the batch:
  *   - liveReporter.js appends one JSON record per completed file to
@@ -15,14 +16,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toJestPath, fromJestPath, mergeFileResults } from '@live-test-runner/runner';
-import { ResultStore } from '../store/ResultStore';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults } from '@live-test-runner/runner';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
 import { logger } from '../utils/logger';
-import { ProjectJestConfig, sourceTransformPattern, upperDrive } from './ProjectJestConfig';
+import { IProjectConfig } from './IProjectConfig';
+import { sourceTransformPattern, upperDrive } from './JestProjectConfig';
+import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
 
 const log = logger.scope('Runner');
 const covLog = logger.scope('Coverage');
@@ -30,18 +32,21 @@ const covLog = logger.scope('Coverage');
 const SESSION_TRANSFORM_PATH = path.resolve(
   __dirname,
   'instrumentation',
+  'jest',
   'sessionTraceTransform.js',
 );
 
 const LIVE_REPORTER_PATH = path.resolve(
   __dirname,
   'instrumentation',
+  'jest',
   'liveReporter.js',
 );
 
 const COVERAGE_SETUP_PATH = path.resolve(
   __dirname,
   'instrumentation',
+  'jest',
   'ltrCoverageSetup.js',
 );
 
@@ -108,7 +113,7 @@ function toFileRunResult(rec: ReporterRecord): FileRunResult {
   };
 }
 
-export class SessionTraceRunner {
+export class JestBatchRunner implements IBatchRunner {
   /** Batch counter — "b7" in log lines ties a batch's messages together. */
   private static _batchSeq = 0;
   /** Every Jest process this runner started that is still running — for kill(). */
@@ -160,7 +165,7 @@ export class SessionTraceRunner {
   constructor(
     private readonly _tmpDir: string,
     private readonly _coverageStore: CoverageStore,
-    private readonly _projectConfig: ProjectJestConfig,
+    private readonly _projectConfig: IProjectConfig,
   ) {}
 
   /**
@@ -176,29 +181,12 @@ export class SessionTraceRunner {
    * - Returns the list of files that produced no result (crashed mid-batch).
    *   Result paths are always the caller's own keys (`filePaths` entries).
    */
-  async runFiles(options: {
-    filePaths: string[];
-    projectRoot: string;
-    traceStore: ExecutionTraceStore;
-    store: ResultStore;
-    applyFileResult: (filePath: string, fileResult: FileRunResult) => void;
-    onFileDone: (filePath: string, status: 'passed' | 'failed') => void;
-    /**
-     * Another Jest project reported a file already done in this batch; its
-     * merged result was applied. `wasStatus` is what onFileDone reported.
-     */
-    onFileUpdated?: (filePath: string, status: 'passed' | 'failed', wasStatus: 'passed' | 'failed') => void;
-    onFileStart?: (filePath: string) => void;
-    onFileTimedOut?: (filePath: string, seconds: number) => void;
-    /** 0 disables the hang timeout. */
-    hangTimeoutMs?: number;
-    log?: (msg: string) => void;
-  }): Promise<{ missing: string[] }> {
+  async runFiles(options: BatchRunOptions): Promise<{ missing: string[] }> {
     const { filePaths, projectRoot, traceStore, store: _store, applyFileResult, onFileDone, log: rawLog } = options;
     const hangTimeoutMs = options.hangTimeoutMs ?? 0;
     if (filePaths.length === 0) { return { missing: [] }; }
     const emit = rawLog ?? (() => {});
-    const batch = `b${++SessionTraceRunner._batchSeq}`;
+    const batch = `b${++JestBatchRunner._batchSeq}`;
     const startedAt = Date.now();
 
     fs.mkdirSync(this._tmpDir, { recursive: true });
@@ -222,10 +210,10 @@ export class SessionTraceRunner {
     registerProjectRoot(projectRoot);
     const srcPattern = sourceTransformPattern(projectRoot);
 
-    // The project's config as Jest resolved it (any format) — see ProjectJestConfig.
+    // The project's config as Jest resolved it (any format) — see JestProjectConfig.
     const resolvedConfigPath = await this._projectConfig.get(projectRoot);
     // Jest's spelling: the real path (symlinks resolved), upper-case drive.
-    const jestRoot = upperDrive(toJestPath(projectRoot));
+    const jestRoot = upperDrive(toRunnerPath(projectRoot));
 
     const configContent = `
 'use strict';
@@ -402,7 +390,7 @@ module.exports = _projects
     // the caller's key so results land on the right store entry (BUG-13).
     const keyByNorm = new Map(filePaths.map((fp) => [pathKey(fp), fp]));
     const toKey = (p: string) => {
-      const q = fromJestPath(p);
+      const q = fromRunnerPath(p);
       return keyByNorm.get(pathKey(q)) ?? path.normalize(q);
     };
 
@@ -946,7 +934,7 @@ function _isExcludedFromCoverage(filePath: string): boolean {
 
 /** A source path from Jest in the editor's spelling (symlinks, drive-letter case). */
 function _normPath(filePath: string): string {
-  return fromJestPath(filePath).replace(/^[A-Z]:/, m => m.toLowerCase());
+  return fromRunnerPath(filePath).replace(/^[A-Z]:/, m => m.toLowerCase());
 }
 
 /** Comparison key for a file path: normalised, and case-insensitive on Windows. */
