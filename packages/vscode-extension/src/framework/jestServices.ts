@@ -24,6 +24,18 @@ export function createJestServices(options: {
   return {
     framework: FRAMEWORK_IDS.jest,
     displayName: 'Jest',
+    terms: {
+      name: 'Jest',
+      config: 'Jest config',
+      configRulesShort: 'testMatch / testPathIgnorePatterns',
+      configRules: 'testMatch / testRegex / testPathIgnorePatterns',
+      listCommand: 'jest --listTests',
+      relatedCommand: 'jest --findRelatedTests',
+      batchRun: 'instrumented run',
+      plainRun: 'plain Jest',
+      fallbackLoss: 'slower; no coverage or smart reruns for these files',
+    },
+    features: { trace: true, timeline: true },
     adapter: new JestAdapter(sessionDir),
     projectConfig,
     batchRunner: new JestBatchRunner(sessionDir, coverageStore, projectConfig),

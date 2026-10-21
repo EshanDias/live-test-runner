@@ -22,6 +22,19 @@ export function createVitestServices(options: {
   return {
     framework: FRAMEWORK_IDS.vitest,
     displayName: 'Vitest',
+    terms: {
+      name: 'Vitest',
+      config: 'Vitest config',
+      configRulesShort: 'include / exclude',
+      configRules: 'include / exclude / projects',
+      listCommand: 'vitest list',
+      relatedCommand: 'vitest related',
+      batchRun: 'Vitest batch',
+      plainRun: 'plain Vitest',
+      fallbackLoss: 'slower',
+    },
+    // Trace needs the Vite plugin (phase 9), the Timeline its runner (phase 10).
+    features: { trace: false, timeline: false },
     adapter: new VitestAdapter(sessionDir),
     projectConfig: new VitestProjectConfig(),
     batchRunner: new VitestBatchRunner(newRunner),

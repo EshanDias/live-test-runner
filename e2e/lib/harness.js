@@ -137,6 +137,37 @@ function jestProcesses(marker) {
   }
 }
 
+/** Processes whose command line contains `marker` (or its real path) and runs Vitest (its CLI or a worker). */
+function vitestProcesses(marker) {
+  let real = marker;
+  try { real = require('fs').realpathSync.native(marker); } catch { /* keep marker */ }
+  const has = (l) => l.includes(marker) || l.includes(real);
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('powershell', [
+        '-NoProfile', '-Command',
+        "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine } | ForEach-Object { \"$($_.ProcessId)`t$($_.Name)`t$($_.CommandLine)\" }",
+      ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+      const norm = (s) => s.toLowerCase().replace(/\\\\/g, '\\').replace(/\//g, '\\');
+      const m = norm(marker);
+      const r = norm(real);
+      return out.split(/\r?\n/).filter((l) => (norm(l).includes(m) || norm(l).includes(r)) && isVitest(l));
+    }
+    // Vitest renames its processes (process.title): the CLI shows as
+    // "node (vitest)", workers as "node (vitest 3)" — the path is gone from
+    // `ps`, so those titles count too (e2e runs one workspace at a time).
+    const out = execFileSync('ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    return out.split('\n').filter((l) => (has(l) && isVitest(l)) || /^\s*\d+\s+node \(vitest( \d+)?\)/.test(l));
+  } catch {
+    return [];
+  }
+}
+
+function isVitest(cmdLine) {
+  return /[\\/]node_modules[\\/](\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?vitest[\\/]/i.test(cmdLine) &&
+    !/Code(\.exe)?["\s]|extensionDevelopmentPath|powershell/i.test(cmdLine);
+}
+
 /** A Jest process (node running jest / react-scripts) — not VS Code or the probe itself. */
 function isJest(cmdLine) {
   return /[\\/](jest|jest-cli|react-scripts)[\\/]bin[\\/]|[\\/]\.bin[\\/]jest|jest-worker|processChild/i.test(cmdLine) &&
@@ -347,5 +378,5 @@ module.exports = {
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
   statusCounts, isoNow, plainJestCounts, plainJestJson, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,
-  plainVitestJson, checkMatchesPlainVitest,
+  plainVitestJson, checkMatchesPlainVitest, vitestProcesses,
 };

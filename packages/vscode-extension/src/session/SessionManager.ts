@@ -8,7 +8,7 @@ import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver } from '../IResultObserver';
 import { IFrameworkAdapter } from '../framework/IFrameworkAdapter';
-import { IFrameworkServicesProvider } from '../framework/FrameworkServices';
+import { FrameworkTerms, IFrameworkServicesProvider } from '../framework/FrameworkServices';
 import { PLAIN_RUN_HANG_FACTOR } from '../constants';
 import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
@@ -116,6 +116,11 @@ export class SessionManager {
     return this._services.servicesFor(fileOrRoot).adapter;
   }
 
+  /** The framework's wording for log and status messages. */
+  private _terms(fileOrRoot: string): FrameworkTerms {
+    return this._services.servicesFor(fileOrRoot).terms;
+  }
+
   /** Stop every framework's running batches (final until a new session). */
   private _killBatches(): void {
     for (const services of this._services.all()) { services.batchRunner.kill(); }
@@ -189,7 +194,7 @@ export class SessionManager {
         const known = new Set(discovered.map(runnableKey));
         const added = this._discovery.addFiles(runnableList.filter((fp) => !known.has(runnableKey(fp))));
         if (added > 0) {
-          log.info(`Added ${added} test file(s) that the project's Jest config runs but the testFilePatterns setting does not match`);
+          log.info(`Added ${added} test file(s) that the project's ${this._terms(projectRoot).config} runs but the testFilePatterns setting does not match`);
           discovered.splice(0, discovered.length, ...this._store.getAllFiles().map((f) => f.filePath));
         }
       }
@@ -198,7 +203,7 @@ export class SessionManager {
       log.info(`Session started — ${testFiles.length} test file(s) · framework: ${framework} · root: ${projectRoot}`);
 
       if (testFiles.length === 0) {
-        log.warn('No test files found — nothing to run. Jest listed no test files, and none match the liveTestRunner.testFilePatterns setting');
+        log.warn(`No test files found — nothing to run. ${this._terms(projectRoot).name} listed no test files, and none match the liveTestRunner.testFilePatterns setting`);
         this._updateStatusBar('✅ Ready');
         this._session.activate();
         return;
@@ -317,7 +322,8 @@ export class SessionManager {
     }
 
     if (!this._isRunnable(args.fileId)) {
-      log.info(`${path.basename(args.fileId)} is not run by this project's Jest config (testMatch / testPathIgnorePatterns) — nothing to run`);
+      const terms = this._terms(args.fileId);
+      log.info(`${path.basename(args.fileId)} is not run by this project's ${terms.config} (${terms.configRulesShort}) — nothing to run`);
       return;
     }
 
@@ -442,7 +448,8 @@ export class SessionManager {
       if (isTestFile && !this._isRunnable(filePath) && !this._store.getFile(filePath)?.excluded) {
         // A test file created after Start is not in Jest's list yet — ask again
         // (a file already known to be excluded is not asked about every save).
-        log.debug(`Saved ${path.basename(filePath)} — not in Jest's file list yet, asking Jest again`);
+        const name = this._terms(projectRoot).name;
+        log.debug(`Saved ${path.basename(filePath)} — not in ${name}'s file list yet, asking ${name} again`);
         const files = this._store.getAllFiles().map((f) => f.filePath);
         if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
         this._runnable = toRunnableSet(await this._askForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings(projectRoot))));
@@ -450,7 +457,7 @@ export class SessionManager {
         if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
       }
       if (isTestFile && !this._isRunnable(filePath)) {
-        log.debug(`Saved ${path.basename(filePath)} — not run by this project's Jest config, ignoring`);
+        log.debug(`Saved ${path.basename(filePath)} — not run by this project's ${this._terms(projectRoot).config}, ignoring`);
         return;
       }
       const run = this._beginRun(`save ${path.basename(filePath)}`);
@@ -530,7 +537,7 @@ export class SessionManager {
       // own static import-graph analysis: it finds test files that (transitively)
       // import the changed source file and reruns them whole. Less precise than
       // trace (whole file, not individual test cases) but correct as a safety net.
-      log.debug(`No trace data for ${path.basename(sourceFilePath)} — using jest --findRelatedTests`);
+      log.debug(`No trace data for ${path.basename(sourceFilePath)} — using ${this._terms(sourceFilePath).relatedCommand}`);
       this._addPlanned(1);
       const affectedPaths = await this._adapterFor(sourceFilePath).runRelatedTests(
         this._store,
@@ -797,7 +804,7 @@ export class SessionManager {
       try {
         status = await this._adapterFor(fp).runFile(this._store, fp, projectRoot, rawLog);
       } catch (err) {
-        log.error(`Plain Jest fallback also failed for ${fp}`, err);
+        log.error(`${capitalise(this._terms(fp).plainRun)} fallback also failed for ${fp}`, err);
       }
       if (!live()) { return; }
       if (this._store.getFile(fp)?.status === 'running') {
@@ -860,9 +867,10 @@ export class SessionManager {
       // the same CONCURRENCY limit used by the main queue — do NOT run all
       // files in parallel, which would flood the machine with jest processes.
       if (missing.length === batch.length) {
+        const terms = this._terms(projectRoot);
         log.warn(
-          `No results from the instrumented run for ${batch.length} file(s) — falling back to plain Jest, one file at a time ` +
-          `(slower; no coverage or smart reruns for these files). Files: ${shortList(batch)}`,
+          `No results from the ${terms.batchRun} for ${batch.length} file(s) — falling back to ${terms.plainRun}, one file at a time ` +
+          `(${terms.fallbackLoss}). Files: ${shortList(batch)}`,
         );
         const fallbackQueue = [...missing];
         await Promise.all(
@@ -880,7 +888,7 @@ export class SessionManager {
       // Partial miss: some files produced results so remaining ones likely
       // crashed mid-batch. Split and retry with smaller batches.
       if (missing.length === 1) {
-        log.warn(`No result for ${path.basename(missing[0])} — retrying it with plain Jest`);
+        log.warn(`No result for ${path.basename(missing[0])} — retrying it with ${this._terms(projectRoot).plainRun}`);
         await runPlain(missing[0]);
         return;
       }
@@ -973,10 +981,11 @@ export class SessionManager {
     try {
       const files = await this._adapterFor(projectRoot).discoverTests(projectRoot, (msg) => this._outputChannel.appendLine(msg));
       if (files.length === 0) { return undefined; }
-      log.debug(`jest --listTests: ${files.length} file(s) in ${secondsSince(startedAt)}`);
+      log.debug(`${this._terms(projectRoot).listCommand}: ${files.length} file(s) in ${secondsSince(startedAt)}`);
       return files;
     } catch (err) {
-      log.warn('Could not ask Jest which files it runs (jest --listTests) — running every discovered test file', err);
+      const terms = this._terms(projectRoot);
+      log.warn(`Could not ask ${terms.name} which files it runs (${terms.listCommand}) — running every discovered test file`, err);
       return undefined;
     }
   }
@@ -1005,7 +1014,7 @@ export class SessionManager {
     try {
       this._runnableCache.write(projectRoot, key, files);
     } catch (err) {
-      log.debug(`Could not remember the runnable test files — the next Start asks Jest again (${(err as Error).message})`);
+      log.debug(`Could not remember the runnable test files — the next Start asks ${this._terms(projectRoot).name} again (${(err as Error).message})`);
     }
     return files;
   }
@@ -1021,10 +1030,11 @@ export class SessionManager {
 
   private _markExcluded(files: string[]): void {
     if (files.length === 0) { return; }
+    const terms = this._terms(files[0]);
     for (const fp of files) {
-      this._store.markFileExcluded(fp, "Not run: this project's Jest config excludes this file (testMatch / testRegex / testPathIgnorePatterns).");
+      this._store.markFileExcluded(fp, `Not run: this project's ${terms.config} excludes this file (${terms.configRules}).`);
     }
-    log.info(`${files.length} test file(s) are not run by this project's Jest config and are shown as skipped: ${shortList(files)}`);
+    log.info(`${files.length} test file(s) are not run by this project's ${terms.config} and are shown as skipped: ${shortList(files)}`);
   }
 
   // ── Private: helpers ───────────────────────────────────────────────────────
@@ -1138,4 +1148,8 @@ export class SessionManager {
   private _updateStatusBar(text: string): void {
     this._statusBar.text = `Live Tests: ${text}`;
   }
+}
+
+function capitalise(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

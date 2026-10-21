@@ -237,6 +237,8 @@ Done (2026-10-21): `testDiscovery.js` — per-file name context (`_collectTestNa
 **2.6 Session behaviour parity (1 d)**
 Sketch: confirm Start/Stop/hang detection/on-save-without-trace/session guard work through the plain-run path (`SessionManager` ~line 802) with Vitest; `Stop` is final; capability `trace=false` → timeline/“Covering tests” show “not available for Vitest yet”. Also (from 1.6): make `SessionManager`'s log / status messages framework-aware — today they name Jest and Jest options (`testMatch / testPathIgnorePatterns`, `jest --listTests`, "plain Jest"); use the bundle's `displayName` plus a per-framework detail, and update the e2e checks that match those strings. `instrumentedRunner` becomes optional in `FrameworkServices` here.
 
+Done (2026-10-21): confirmed through e2e in real VS Code — new scenarios `vitest-session` (guard: save before Start runs nothing; saved test file reruns alone; saved source file → "No trace data … using vitest related" → `vitest related <file> --run`; ▶ Run → `-t` pattern, siblings unchanged; save after Stop runs nothing), `vitest-stop` (Vitest CLI + workers gone 4 s after Stop, no new process, no results after Stop, nothing spinning), `vitest-hang` (`hangTimeoutSeconds: 10`: the batch with an infinite loop is stopped at 30 s, its files retried one by one, only `loop.test.js` failed "hangs"; never-resolving promise failed by Vitest's 5 s timeout; other files correct; no process left; run ≈ 61 s). Framework-aware wording: `FrameworkServices.terms` (`FrameworkTerms`: name, config, configRules(Short), listCommand, relatedCommand, batchRun, plainRun, fallbackLoss) — every Jest-named message in `SessionManager` uses it; Jest's strings are byte-identical (e2e checks match them). `FrameworkServices.features` (`trace`, `timeline`; Vitest false/false). `instrumentedRunner` optional and the Timeline "not available for Vitest yet" were done in 2.4. **Deferred to 5.2:** the coverage hover's "covering tests" list — it only appears once a file has coverage, which Vitest gets in phase 5; then it must say "covering tests: not available for Vitest yet" (`features.trace === false`) instead of an empty list. Harness: `vitestProcesses()` — Vitest sets `process.title` (`node (vitest)`, `node (vitest N)`), so the workspace path is not in `ps`; titles are matched too (macOS/Linux; Windows keeps the command line).
+
 **2.8 Vitest `projects` & browser-mode guard (1.5 d)**
 Sketch: run from the root config once — Vitest fans out over `test.projects` itself (slidev, vueuse). Browser-mode projects (Playwright/WebdriverIO, e.g. vueuse `browser`) are excluded by default (`--project '!<name>'` resolved from `vitest list`/config; setting `liveTestRunner.vitestIncludeBrowserProjects`), with an INFO line explaining. Test results carry the project name for later display (phase 7). Honour `--project` in the user's `test` script when present.
 
@@ -399,8 +401,10 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 2.5 done (2026-10-21) — see the task note. Gate: lint, 157 runner + 29 extension unit tests, `e2e/run.js --all` (12 pass, 2 skipped), `e2e/real-repos.js` (3/3 PASS).
 
+- 2.6 done (2026-10-21) — see the task note. Gate: lint, 157 runner + 29 extension unit tests, `e2e/run.js --all` (15 pass incl. 4 Vitest scenarios, 2 skipped), `e2e/real-repos.js` (3/3 PASS).
+
 **Next**
-1. Task 2.6 — session behaviour parity (Start/Stop/hang/on-save/guard with Vitest; framework-aware log wording).
+1. Task 2.8 — Vitest `projects` and the browser-mode guard (vueuse).
 
 ## Progress tracker
 
@@ -418,7 +422,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 2.3 Result parsing
 - [x] 2.4 Extension VitestAdapter
 - [x] 2.5 Static discovery syntax
-- [ ] 2.6 Session behaviour parity
+- [x] 2.6 Session behaviour parity
 - [ ] 2.8 Projects & browser-mode guard
 - [ ] 2.7 Tests (M1)
 - [ ] 3.1 Output capture

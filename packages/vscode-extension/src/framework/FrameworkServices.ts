@@ -14,11 +14,45 @@ import { IProjectConfig } from '../session/IProjectConfig';
 import { IBatchRunner } from '../session/IBatchRunner';
 import { IInstrumentedRunner } from '../timeline/IInstrumentedRunner';
 
+/** How log and status messages name the framework's pieces (Jest's are the historical wording). */
+export interface FrameworkTerms {
+  /** "Jest" */
+  name: string;
+  /** The project config that decides which files run: "Jest config". */
+  config: string;
+  /** The rules in it, short: "testMatch / testPathIgnorePatterns". */
+  configRulesShort: string;
+  /** The rules in it: "testMatch / testRegex / testPathIgnorePatterns". */
+  configRules: string;
+  /** The command that lists runnable files: "jest --listTests". */
+  listCommand: string;
+  /** The static related-tests fallback: "jest --findRelatedTests". */
+  relatedCommand: string;
+  /** The session's batch run: "instrumented run". */
+  batchRun: string;
+  /** A single-file run outside the batch: "plain Jest". */
+  plainRun: string;
+  /** What a file loses on that fallback: "slower; no coverage or smart reruns for these files". */
+  fallbackLoss: string;
+}
+
+/** What a framework can do in the extension — features it lacks say "not available" instead of failing. */
+export interface FrameworkFeatures {
+  /** Per-test execution trace ("covering tests", trace-based reruns). */
+  trace: boolean;
+  /** The Timeline debugger. */
+  timeline: boolean;
+}
+
 export interface FrameworkServices {
   /** The framework family this bundle serves (`jest` covers CRA too). */
   readonly framework: FrameworkId;
   /** Name shown to the user ("Jest"). */
   readonly displayName: string;
+  /** Wording for log and status messages. */
+  readonly terms: FrameworkTerms;
+  /** Features beyond running tests. */
+  readonly features: FrameworkFeatures;
   /** Discovery, single-file / test-case runs, debug configs, result mapping. */
   readonly adapter: IFrameworkAdapter;
   /** The project's resolved config, re-read every session. */
