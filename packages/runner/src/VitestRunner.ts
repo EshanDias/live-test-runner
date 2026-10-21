@@ -131,7 +131,7 @@ export class VitestRunner extends CommandRunner {
     const coverage = options.coverageDir ? await this.coverageArgs(root, options.coverageDir) : undefined;
     if (coverage) { args.push(...coverage); }
     return {
-      command: { binary: this.resolveBinary(), args, cwd: root, extraEnv: env, label: this.processLabel, forwardStdout: true },
+      command: { binary: this.resolveBinary(), args, cwd: this.spawnPath(root), extraEnv: env, label: this.processLabel, forwardStdout: true },
       eventsFile: env[VITEST_EVENTS_ENV],
       resultFile,
       coverageFile: coverage ? path.join(options.coverageDir!, 'coverage-final.json') : undefined,

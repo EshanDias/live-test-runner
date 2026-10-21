@@ -133,6 +133,10 @@ describe('vitest list output', () => {
       expect(cmd.args).toContain(path.join(root, 'vitest.config.ts'));
       expect(cmd.args).toContain(path.join(root, 'src', 'a.test.ts').replace(/\\/g, '/'));
       expect(cmd.args.join(' ')).not.toContain(link);
+      // The live batch command too.
+      const live = await runner.liveCommand([path.join(link, 'src', 'a.test.ts')]);
+      expect(live.command.cwd).toBe(root);
+      expect(live.command.args.join(' ')).not.toContain(link);
     } finally {
       fs.rmSync(link, { recursive: true, force: true });
     }
