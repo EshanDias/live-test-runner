@@ -1,6 +1,6 @@
 {
   "sample-react-project": {
-    "recorded": "2026-10-21T06:34:03.271Z",
+    "recorded": "2026-10-21T06:51:48.076Z",
     "head": "",
     "extensionMatches": true,
     "files": 14,
@@ -83,7 +83,7 @@
     }
   },
   "jest-dom": {
-    "recorded": "2026-10-21T06:31:44.799Z",
+    "recorded": "2026-10-21T06:49:29.253Z",
     "head": "0ff8904ff4683d676ff70ab68b7f08465c44d0d0",
     "extensionMatches": true,
     "files": 31,
@@ -251,7 +251,7 @@
     }
   },
   "vscode-jest": {
-    "recorded": "2026-10-21T06:32:57.169Z",
+    "recorded": "2026-10-21T06:50:42.039Z",
     "head": "b71edf0b1b80aa22a16222775fbd37dabab3aea0",
     "extensionMatches": true,
     "files": 49,
@@ -2936,6 +2936,1015 @@
       },
       "packages/pretty-format/src/__tests__/ReactElement.test.ts": {
         "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "unplugin": {
+    "recorded": "2026-10-21T06:52:09.261Z",
+    "head": "bd0f8ddba859b2ca1d0e91269afb8eac42785576",
+    "extensionMatches": true,
+    "files": 26,
+    "total": {
+      "passed": 138,
+      "failed": 28,
+      "skipped": 25
+    },
+    "perFile": {
+      "test/fixtures/load/__test__/build.test.ts": {
+        "passed": 0,
+        "failed": 7,
+        "skipped": 1
+      },
+      "test/fixtures/transform/__test__/build.test.ts": {
+        "passed": 0,
+        "failed": 7,
+        "skipped": 1
+      },
+      "test/fixtures/virtual-module/__test__/build.test.ts": {
+        "passed": 0,
+        "failed": 7,
+        "skipped": 1
+      },
+      "test/unit-tests/bun/index.test.ts": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 4
+      },
+      "test/unit-tests/bun/namespace.test.ts": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 4
+      },
+      "test/unit-tests/bun/nested.test.ts": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 6
+      },
+      "test/unit-tests/bun/utils.test.ts": {
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/esbuild/utils.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/farm/context.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/farm/index.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/farm/utils.test.ts": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/filter/filter.test.ts": {
+        "passed": 4,
+        "failed": 2,
+        "skipped": 1
+      },
+      "test/unit-tests/framework-version/index.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 1
+      },
+      "test/unit-tests/id-consistency/id-consistency.test.ts": {
+        "passed": 3,
+        "failed": 2,
+        "skipped": 1
+      },
+      "test/unit-tests/resolve-id-external/resolve-id-external.test.ts": {
+        "passed": 3,
+        "failed": 2,
+        "skipped": 1
+      },
+      "test/unit-tests/resolve-id/resolve-id.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 1
+      },
+      "test/unit-tests/rolldown/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/rspack/context.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/rspack/loaders/load.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/rspack/loaders/transform.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/unloader/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/virtual-id/virtual-id.test.ts": {
+        "passed": 3,
+        "failed": 1,
+        "skipped": 2
+      },
+      "test/unit-tests/webpack/context.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/webpack/loaders/load.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/webpack/loaders/transform.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/unit-tests/write-bundle/write-bundle.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 1
+      }
+    }
+  },
+  "slidev": {
+    "recorded": "2026-10-21T06:52:29.880Z",
+    "head": "73053ab2b9653ed475960301b56e1ce4439d9c75",
+    "extensionMatches": true,
+    "files": 34,
+    "total": {
+      "passed": 334,
+      "failed": 14,
+      "skipped": 0
+    },
+    "perFile": {
+      "packages/client/builtin/KaTexBlockWrapper.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/client/composables/useNav.test.ts": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/client/logic/slidePath.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/client/logic/tweet.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/parser/src/timesplit/timesplit.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/parser/src/timesplit/timestring.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/parser/src/utils.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/commands/pptx/build.test.ts": {
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/commands/pptx/capture.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/commands/pptx/normalize.test.ts": {
+        "passed": 75,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/commands/pptx/walker.test.ts": {
+        "passed": 10,
+        "failed": 4,
+        "skipped": 0
+      },
+      "packages/slidev/node/integrations/drawings.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/options.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/resolver.test.ts": {
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/codeblock/magic-move.test.ts": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/codeblock/wrapper.test.ts": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/drag.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/escape-code.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/integration.test.ts": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/katex.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/link.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/scoped.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/shiki.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/slot-sugar.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/syntax/snippet.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/slidev/node/utils.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/vscode/src/utils/isSamePath.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/api-snapshots.test.ts": {
+        "passed": 0,
+        "failed": 10,
+        "skipped": 0
+      },
+      "test/import-guard.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/mcp.test.ts": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/mermaid-renderer.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/parser.test.ts": {
+        "passed": 107,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/side-editor.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/utils.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "vueuse": {
+    "recorded": "2026-10-21T06:54:42.409Z",
+    "head": "279bac0230c56a5707e3f92f2f5f2225acda6c5d",
+    "extensionMatches": true,
+    "files": 134,
+    "total": {
+      "passed": 940,
+      "failed": 0,
+      "skipped": 2
+    },
+    "perFile": {
+      "packages/core/_template/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/onClickOutside/directive.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/onKeyStroke/directive.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/onLongPress/directive.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/onLongPress/index.test.ts": {
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useAnimate/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useAsyncState/index.test.ts": {
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useBrowserLocation/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useClipboard/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useCssVar/index.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useDraggable/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useElementBounding/directive.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useElementBounding/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useElementHover/directive.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useElementOverflow/directive.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useElementSize/directive.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useElementVisibility/directive.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useFetch/index.test.ts": {
+        "passed": 54,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useFocusWithin/index.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useInfiniteScroll/directive.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useIntersectionObserver/directive.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useKeyModifier/index.test.ts": {
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useMouse/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useMouseInElement/directive.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/usePointer/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useResizeObserver/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useScreenOrientation/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useScroll/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useStyleTag/index.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useSwipe/index.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useTemporalNow/index.test.ts": {
+        "passed": 27,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useTextareaAutosize/index.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useTextDirection/index.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useUrlSearchParams/index.test.ts": {
+        "passed": 34,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useVibrate/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useVirtualList/index.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useWakeLock/index.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useWebMCP/index.test.ts": {
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/core/useWebSocket/index.test.ts": {
+        "passed": 26,
+        "failed": 0,
+        "skipped": 1
+      },
+      "packages/firebase/useFirestore/index.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/integrations/useAsyncValidator/index.test.ts": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/integrations/useAxios/index.test.ts": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/integrations/useChangeCase/index.test.ts": {
+        "passed": 44,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/integrations/useCookies/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/integrations/useFuse/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/integrations/useIDBKeyval/index.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/integrations/useJwt/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/createProjection/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/logicAnd/index.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/logicNot/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/logicOr/index.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useAbs/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useAverage/index.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useCeil/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useClamp/index.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useFloor/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useMath/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useMax/index.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useMin/index.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/usePrecision/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useProjection/index.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useRound/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useSum/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/useTrunc/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/math/utils.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/router/useRouteHash/index.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/router/useRouteParams/index.test.ts": {
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/router/useRouteQuery/index.test.ts": {
+        "passed": 21,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/rxjs/useExtractedObservable/index.test.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/rxjs/useObservable/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/rxjs/useSubject/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/rxjs/watchExtractedObservable/index.test.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/computedEager/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/computedWithControl/index.test.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/createDisposableDirective/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/createEventHook/index.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/createGlobalState/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/createInjectionState/index.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/createRef/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/createSharedComposable/index.server.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/createSharedComposable/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/get/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/injectLocal/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/isDefined/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/reactify/index.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/reactifyObject/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/reactiveComputed/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/reactiveOmit/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/reactivePick/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/refAutoReset/index.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/refManualReset/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/refWithControl/index.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/set/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/syncRef/index.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/syncRefs/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/toReactive/index.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/toRefs/index.test.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/until/index.test.ts": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayDifference/index.test.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayEvery/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayFilter/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayFind/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayFindIndex/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayFindLast/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayIncludes/index.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayJoin/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayMap/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayReduce/index.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArraySome/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useArrayUnique/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useCounter/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useDateFormat/index.test.ts": {
+        "passed": 39,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useIntervalFn/index.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useThrottleFn/index.test.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useTimeout/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useTimeoutFn/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useToggle/index.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useToNumber/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/useToString/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/utils/index.server.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/utils/index.test.ts": {
+        "passed": 49,
+        "failed": 0,
+        "skipped": 1
+      },
+      "packages/shared/watchArray/index.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/watchAtMost/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/watchDebounced/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/watchDeep/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/watchIgnorable/index.test.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/watchImmediate/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/watchOnce/index.test.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/watchPausable/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/watchThrottled/index.test.ts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/watchTriggerable/index.test.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/shared/whenever/index.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "packages/skills/rewrite-function-links.test.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test/package-json-export.test.ts": {
+        "passed": 10,
         "failed": 0,
         "skipped": 0
       }

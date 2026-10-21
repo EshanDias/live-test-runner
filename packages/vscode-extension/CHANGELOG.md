@@ -10,6 +10,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### Improvements
 
+- **Test files with generated tests show up** — a file whose tests are created at runtime (no plain `test(...)` calls) is listed and shows its results.
 - **Better test discovery** — tests inside `describe.each(...)` appear under their suite before the first run, and TypeScript test files using generic arrow functions are no longer missing from the tree.
 - **A test file that cannot load shows why** — its tests are marked failed with the error (e.g. a missing import) instead of staying "not run".
 - **"Jest Output" is now "Test Output"** — the raw output channel is called "Live Test Runner: Test Output" and the command "Show Test Output", ready for more test frameworks. Nothing else changes.

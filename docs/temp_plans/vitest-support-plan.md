@@ -249,6 +249,7 @@ Done (2026-10-21): `runner/src/framework/vitestProjects.ts` — a probe script (
 - Fixtures: `e2e/fixtures/vitest-basic` (+ later `vitest-ts`, `vitest-esm`), scenarios `vitest-full-run`, `vitest-scoped-run`, `vitest-stop`, `vitest-hang`, `vitest-on-save`, `vitest-debug`.
 - Add `unplugin`, `slidev`, `vueuse` to the repo matrix (compare with plain `vitest run`; vueuse with browser projects excluded).
 Gate → **tag milestone M1** (Vitest run & pass/fail).
+Done (2026-10-21) → **M1 reached**: Vitest projects run and show pass/fail in the extension. Unit: adapter detect matrix + conformance (2.1/2.2), arg snapshots, parser fixtures per version 1.6–5.0 (2.3), registry, discovery (2.5), browser guard (2.8). e2e on `fixture:vitest-basic` (Vitest 3.2.4): `vitest-full-run`, `vitest-scoped-run` (new: test / suite / `.each` template patterns, nothing else touched), `vitest-session` (= the sketch's `vitest-on-save`, plus guard / ▶ Run / after Stop), `vitest-stop`, `vitest-hang`, `vitest-debug` (new: launch config runs exactly 1 test, a suite's 2, both `.each` rows). `vitest-ts` / `vitest-esm` fixtures were not needed: `vitest-basic` is ESM (`"type": "module"`, `.mjs` config) and has a TS test file. Real repos: `repo-vitest` scenario; `real-repos.js` computes a plain `vitest run` baseline (with the test script's flags) per clone — **unplugin (5.0.5) 26 files, slidev (5.0.1) 29 files, vueuse (4.1.11, `--project unit --project=server`) 134 files: results equal plain Vitest test for test**; discovery before Start, ▶ Run, save-to-rerun, Stop (no process left) pass on all three. Found with slidev: `test/api-snapshots.test.ts` (tests generated at runtime by `describePackagesApiSnapshots`) was missing — discovery drops files without static tests, and the "files the framework runs but discovery missed" path re-ran the same discovery; `TestDiscoveryService.addFiles` now keeps such files (`keepEmpty`), for any framework.
 
 ### Phase 3 — Logs & output (4.5 d) — *Feature V2*
 
@@ -407,8 +408,10 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 2.8 done (2026-10-21) — see the task note. Gate: build, lint, 162 runner + 29 extension unit tests, `e2e/run.js --all` (15 pass, 2 skipped), `e2e/real-repos.js` (3/3 PASS).
 
+- 2.7 done (2026-10-21) → **M1** (Vitest run & pass/fail). Phase 2 complete on `feat/vitest-run`. Gate: lint, 162 runner + 29 extension unit tests, `e2e/run.js --all` (17 pass incl. 6 Vitest scenarios, 3 repo scenarios skipped — run by real-repos.js), `e2e/real-repos.js` (6/6 PASS: jest-dom, vscode-jest, sample-react-project, unplugin, slidev, vueuse).
+
 **Next**
-1. Task 2.7 — remaining tests: scoped-run / debug scenarios, Vitest repos (unplugin, slidev, vueuse) in the real-repo matrix → milestone M1.
+1. Phase 3 (logs & output) on `feat/vitest-logs`, branched from `feat/vitest-run` after it is pushed (the phase 2 PR into `release/3.0.0` is the owner's call).
 
 ## Progress tracker
 
@@ -428,7 +431,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 2.5 Static discovery syntax
 - [x] 2.6 Session behaviour parity
 - [x] 2.8 Projects & browser-mode guard
-- [ ] 2.7 Tests (M1)
+- [x] 2.7 Tests (M1)
 - [ ] 3.1 Output capture
 - [ ] 3.2 Failure details & diagnostics
 - [ ] 3.3 Tests

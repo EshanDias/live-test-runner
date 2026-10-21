@@ -194,7 +194,7 @@ export class SessionManager {
         const known = new Set(discovered.map(runnableKey));
         const added = this._discovery.addFiles(runnableList.filter((fp) => !known.has(runnableKey(fp))));
         if (added > 0) {
-          log.info(`Added ${added} test file(s) that the project's ${this._terms(projectRoot).config} runs but the testFilePatterns setting does not match`);
+          log.info(`Added ${added} test file(s) that the project's ${this._terms(projectRoot).config} runs but discovery did not list (the testFilePatterns setting does not match them, or their tests are generated at runtime)`);
           discovered.splice(0, discovered.length, ...this._store.getAllFiles().map((f) => f.filePath));
         }
       }

@@ -354,9 +354,8 @@ function plainVitestJson(workspace) {
  * could not load (no tests, a message) are left out — the extension fails
  * their discovered tests with the reason; check those separately.
  */
-function checkMatchesPlainVitest(api, t, workspace, label = 'results match plain Vitest') {
-  const json = plainVitestJson(workspace);
-  json.testResults = json.testResults.filter((f) => f.assertionResults.length > 0 || !f.message);
+function checkMatchesPlainVitest(api, t, workspace, label = 'results match plain Vitest', json = plainVitestJson(workspace)) {
+  json = { ...json, testResults: json.testResults.filter((f) => f.assertionResults.length > 0 || !f.message) };
   const want = jestJsonCounts(json, workspace);
   const diffs = [];
   for (const [file, c] of want) {

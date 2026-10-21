@@ -24,8 +24,8 @@
  *   LTR_E2E_VITEST_REPOS_DIR  default /Users/eshandias/Projects/test/vitest-projects
  *   LTR_E2E_CLONES_DIR        default <tmp>/ltr real repos
  *
- * Vitest repos are listed here and picked up automatically once the
- * `repo-vitest` scenario exists (Vitest support, phase 2).
+ * Vitest repos run the `repo-vitest` scenario against a plain `vitest run`
+ * (with the test script's config flags) on the same clone.
  */
 const { spawnSync, execFileSync } = require('child_process');
 const fs = require('fs');
@@ -42,16 +42,17 @@ const BASELINE_FILE = path.join(ROOT, 'docs', 'temp_plans', 'vitest-baseline.jso
 
 /**
  * name → { dir, scenario, env (the variable the scenario reads), light,
- *          baseline (the variable the scenario reads a plain-Jest result from) }
+ *          baseline (the variable the scenario reads a plain-run result from),
+ *          plain ('vitest' for a plain Vitest reference; Jest otherwise) }
  */
 const REPOS = {
   'jest-dom':             { dir: JEST_DIR, scenario: 'repo-tsjest', env: 'LTR_E2E_TSJEST_REPO', light: true, baseline: 'LTR_E2E_TSJEST_BASELINE' },
   'vscode-jest':          { dir: JEST_DIR, scenario: 'repo-tsjest', env: 'LTR_E2E_TSJEST_REPO', light: true, baseline: 'LTR_E2E_TSJEST_BASELINE' },
   'sample-react-project': { dir: JEST_DIR, scenario: 'repo-cra',    env: 'LTR_E2E_CRA_REPO',    light: true, baseline: 'LTR_E2E_CRA_BASELINE' },
   'jest':                 { dir: JEST_DIR, scenario: 'repo-tsjest', env: 'LTR_E2E_TSJEST_REPO', light: false, baseline: 'LTR_E2E_TSJEST_BASELINE' },
-  'unplugin':             { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true },
-  'slidev':               { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true },
-  'vueuse':               { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true },
+  'unplugin':             { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true, baseline: 'LTR_E2E_VITEST_BASELINE', plain: 'vitest' },
+  'slidev':               { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true, baseline: 'LTR_E2E_VITEST_BASELINE', plain: 'vitest' },
+  'vueuse':               { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true, baseline: 'LTR_E2E_VITEST_BASELINE', plain: 'vitest' },
 };
 
 function git(dir, ...args) {
@@ -116,11 +117,12 @@ function main() {
     const env = { [repo.env]: copy };
     let baseline;
     if (repo.baseline) {
-      // Plain Jest on the clone is the reference the extension is compared with.
+      // A plain run of the project's own runner on the clone is the reference the extension is compared with.
       const h = require('./lib/harness');
       const out = path.join(os.tmpdir(), `ltr-baseline-${n}.json`);
-      console.log(`[repos] ${n}: plain Jest baseline…`);
-      try { baseline = h.plainJestJson(copy); fs.writeFileSync(out, JSON.stringify(baseline)); env[repo.baseline] = out; }
+      const vitest = repo.plain === 'vitest';
+      console.log(`[repos] ${n}: plain ${vitest ? 'Vitest' : 'Jest'} baseline…`);
+      try { baseline = vitest ? h.plainVitestJson(copy) : h.plainJestJson(copy); fs.writeFileSync(out, JSON.stringify(baseline)); env[repo.baseline] = out; }
       catch (e) { console.log(`[repos] ${n}: no baseline (${String(e.message).split('\n')[0]})`); }
     }
     console.log(`\n[repos] ===== ${n} (${repo.scenario}) =====`);
