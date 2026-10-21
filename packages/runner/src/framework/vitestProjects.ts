@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Executor } from '../execution/Executor';
 import { resolvePackageDir } from '../resolution/BinaryResolver';
-import { toRunnerPath } from '../resolution/RunnerPaths';
+import { toSpawnPath } from '../resolution/RunnerPaths';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('VitestProjects');
@@ -82,9 +82,9 @@ async function probe(
   const startedAt = Date.now();
   const result = await new Executor(logger).run({
     binary: script,
-    // Real path, like the runs (see VitestRunner.spawnPath).
-    args: [nodeEntry, configPath ? toRunnerPath(configPath) : ''],
-    cwd: toRunnerPath(projectRoot),
+    // One spelling, like the runs (see toSpawnPath).
+    args: [toSpawnPath(nodeEntry), configPath ? toSpawnPath(configPath) : ''],
+    cwd: toSpawnPath(projectRoot),
     timeoutMs: 60_000,
     label: 'vitest',
   });
