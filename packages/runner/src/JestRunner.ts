@@ -4,11 +4,16 @@ import { CommandRunner, RunRequest } from './CommandRunner';
 import { ExecutionResult } from './execution/Executor';
 import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
+import { refusingAdapter } from './framework/refusingAdapter';
+import { FRAMEWORK_IDS } from './types';
 import { ResultParser } from './parsing/ResultParser';
 import { createLogger } from './utils/logger';
 import { fromRunnerPath, toRunnerPath } from './resolution/RunnerPaths';
 
 const log = createLogger('JestRunner');
+
+/** Adapters whose projects run on Jest. */
+const JEST_FAMILY = new Set<string>([FRAMEWORK_IDS.jest, FRAMEWORK_IDS.cra]);
 
 /**
  * A file path as Jest expects it on the command line (--runTestsByPath,
@@ -35,9 +40,17 @@ export class JestRunner extends CommandRunner {
   private readonly parser = new ResultParser();
   private readonly detector = new FrameworkDetector();
 
-  /** Plain Jest or Create React App — whichever the project is. */
+  /**
+   * Plain Jest or Create React App — whichever the project is. Any other
+   * framework (e.g. Vitest) has its own runner: running it with Jest flags
+   * would fail confusingly, so its runs are refused — when they start, not
+   * here, so setting the project root never fails.
+   */
   protected detectAdapter(projectRoot: string): FrameworkAdapter {
-    return this.detector.detect(projectRoot);
+    const adapter = this.detector.detect(projectRoot);
+    if (JEST_FAMILY.has(adapter.framework)) { return adapter; }
+    log.debug(`${projectRoot} is a "${adapter.framework}" project — the Jest runner will refuse to run it`);
+    return refusingAdapter(adapter);
   }
 
   protected buildArgs(request: RunRequest): string[] {

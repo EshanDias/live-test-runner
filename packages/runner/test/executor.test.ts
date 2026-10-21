@@ -72,3 +72,18 @@ describe('Executor', () => {
     expect(r.stderr).toMatch(/does not exist/);
   });
 });
+
+describe('Executor — npx', () => {
+  // buildInvocation is private; the decision is what matters here.
+  const invocation = (args: string[]) =>
+    (new Executor() as unknown as { buildInvocation(b: string, a: string[]): { args: string[] } }).buildInvocation('npx', args).args;
+
+  it('adds "jest" for the Jest fallback, which passes only flags', () => {
+    expect(invocation(['--watchAll=false'])).toEqual(['jest', '--watchAll=false']);
+  });
+
+  it('leaves a command that names its package alone ("npx vitest", "npx jest")', () => {
+    expect(invocation(['vitest', 'run'])).toEqual(['vitest', 'run']);
+    expect(invocation(['jest', '--ci'])).toEqual(['jest', '--ci']);
+  });
+});

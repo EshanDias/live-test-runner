@@ -221,6 +221,9 @@ importers:
         specifier: workspace:*
         version: link:../runner
     devDependencies:
+      '@babel/parser':
+        specifier: 7.29.2
+        version: 7.29.2
       '@types/node':
         specifier: 16.x
         version: 16.18.126

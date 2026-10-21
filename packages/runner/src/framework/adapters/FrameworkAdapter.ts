@@ -1,4 +1,4 @@
-import { FrameworkId, RunResult } from '../../types';
+import { FrameworkCapabilities, FrameworkId, RunResult } from '../../types';
 import { RunnerOptions, TestRunner } from '../../TestRunner';
 
 /**
@@ -51,6 +51,12 @@ export interface FrameworkAdapter {
    * @param stderr the process's stderr (some frameworks only print console output there)
    */
   parseResult(passed: boolean, raw: string, stderr: string): RunResult;
+
+  /**
+   * What the framework, at the version installed in `projectRoot`, can do.
+   * Must not throw — a missing install reports the capabilities of a current version.
+   */
+  capabilities(projectRoot: string): FrameworkCapabilities;
 
   /** The TestRunner that runs this framework's tests. */
   createRunner(options?: RunnerOptions): TestRunner;

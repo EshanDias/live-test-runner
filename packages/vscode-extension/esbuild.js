@@ -39,6 +39,20 @@ function copyInstrumentationFiles() {
   }
 }
 
+/**
+ * Ships @babel/parser (one self-contained file, MIT) in out/vendor/: static
+ * test discovery uses the project's own Babel when it has one (every Jest
+ * project does), and this copy otherwise — Vitest projects usually have no
+ * Babel. The published .vsix has no node_modules (vsce --no-dependencies).
+ */
+function copyVendorFiles() {
+  const dest = path.join(__dirname, 'out', 'vendor');
+  fs.mkdirSync(dest, { recursive: true });
+  const pkgDir = path.dirname(require.resolve('@babel/parser/package.json'));
+  fs.copyFileSync(path.join(pkgDir, 'lib', 'index.js'), path.join(dest, 'babel-parser.js'));
+  fs.copyFileSync(path.join(pkgDir, 'LICENSE'), path.join(dest, 'babel-parser.LICENSE'));
+}
+
 const config = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
@@ -58,6 +72,7 @@ if (watch) {
       build.onEnd(result => {
         if (result.errors.length === 0) {
           copyInstrumentationFiles();
+          copyVendorFiles();
         }
       });
     },
@@ -66,12 +81,13 @@ if (watch) {
     .context({ ...config, plugins: [onRebuild] })
     .then(ctx => {
       copyInstrumentationFiles();
+      copyVendorFiles();
       return ctx.watch();
     })
     .catch(e => { console.error(e); process.exit(1); });
 } else {
   esbuild
     .build(config)
-    .then(() => copyInstrumentationFiles())
+    .then(() => { copyInstrumentationFiles(); copyVendorFiles(); })
     .catch(e => { console.error(e); process.exit(1); });
 }

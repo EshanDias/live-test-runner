@@ -88,7 +88,7 @@ JestRunner (orchestrator)
 
 ### Framework adapters
 
-Each adapter implements `FrameworkAdapter` and names itself with a `FrameworkId` — an open string id (`FRAMEWORK_IDS` lists the shipped ones: `jest`, `cra`, `vite`, `unknown`).
+Each adapter implements `FrameworkAdapter` and names itself with a `FrameworkId` — an open string id (`FRAMEWORK_IDS` lists the shipped ones: `jest`, `cra`, `vitest`, `unknown`).
 
 | Method | Purpose |
 |--------|---------|
@@ -96,6 +96,7 @@ Each adapter implements `FrameworkAdapter` and names itself with a `FrameworkId`
 | `resolveBinary(projectRoot)` | Returns absolute path to the test runner binary |
 | `resolveConfig(projectRoot)` | Returns path to a resolved config file, or undefined |
 | `getExtraArgs(projectRoot)` | Any extra CLI flags the framework needs |
+| `capabilities(projectRoot)` | `FrameworkCapabilities` at the installed version — callers check these, not the framework id |
 
 Current adapters:
 
@@ -103,11 +104,11 @@ Current adapters:
 |---------|---------|-------|
 | `JestAdapter` | Jest, Next.js + Jest | Reads `jest.config.*` or `package.json#jest` directly |
 | `CRAAdapter` | Create React App | Runs `--showConfig` once per session to extract the hidden config; cached in memory |
-| `ViteAdapter` | Vitest | Stub — not yet implemented |
+| `VitestAdapter` | Vitest ≥ 3 (older best-effort) | A `vitest` dependency or Vitest config/workspace file, and no Jest dependency/config (BUG-37). Runs `vitest/package.json#bin` (`vitest.mjs`) with node — no `.bin` shim, no npx. Config: `vitest.config.*` > `vite.config.*`. Capabilities per installed major; refuses the editor's built-in Node when it fails Vitest's `engines.node`. Runner: `VitestRunner`. The `test` script's config-relevant flags are passed on, following `nr` / `npm run` / `pnpm` into other scripts (`testScriptVitestArgs`); its `--config` wins over the config files |
 
-Adapters also own how a run is read: `outputFileArg(file)` (the result-file flag the `Executor` appends), `parseResult(...)` (raw JSON → `RunResult`; Jest and CRA use `ResultParser`) and `createRunner(...)`. The runner layer is `CommandRunner` (generic: binary/config/extra-arg assembly, chunking, kill, coverage) with one subclass per framework that only builds that framework's args per run kind (`JestRunner`).
+Adapters also own how a run is read: `outputFileArg(file)` (the result-file flag the `Executor` appends), `parseResult(...)` (raw JSON → `RunResult`; Jest and CRA use `ResultParser`, Vitest `parseVitestResult` — see the runner README for what differs between Vitest versions) and `createRunner(...)`. The runner layer is `CommandRunner` (generic: binary/config/extra-arg assembly, chunking, kill, coverage) with one subclass per framework that only builds that framework's args per run kind (`JestRunner`, `VitestRunner`). Commands are `[user-command words] [leadingArgs] [--config] [adapter extra args] [buildArgs]` — `leadingArgs` holds a subcommand and its positionals (Vitest `run <files>`; empty for Jest). Each runner refuses another framework's project with `refusingAdapter()` (throws `UnsupportedFrameworkError` when a run starts).
 
-`FrameworkDetector` tries the adapters of a `FrameworkRegistry` (default: CRA 300 → Vite 200 → Jest 100, highest priority first) and returns the first match; `detectWithReason()` also says why. A project nothing matches falls back to plain Jest with one WARN per project root (`matched: 'unknown'`). `ViteAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest.
+`FrameworkDetector` tries the adapters of a `FrameworkRegistry` (default: CRA 300 → Vitest 200 → Jest 100, highest priority first) and returns the first match; `detectWithReason()` also says why. A project nothing matches falls back to plain Jest with one WARN per project root (`matched: 'unknown'`). `VitestAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest. `JestRunner` only runs Jest-family adapters (`jest`, `cra`); for any other project it keeps a stand-in adapter that throws `UnsupportedFrameworkError` when a run starts — setting the project root never fails.
 
 ### Jest invocation
 
@@ -526,15 +527,19 @@ Adding a new framework = one file implementing `IFrameworkAdapter`, plus that fr
 
 `SessionManager` never builds framework classes. It gets an `IFrameworkServicesProvider` (`servicesFor(fileOrRoot)`, `all()`) and asks it for the `FrameworkServices` of a file or project root (`framework/FrameworkServices.ts`):
 
-| Member | Interface | Jest implementation |
-|---|---|---|
-| `adapter` | `IFrameworkAdapter` | `framework/JestAdapter.ts` |
-| `projectConfig` | `IProjectConfig` (`get(root)`, `reset()`) | `session/JestProjectConfig.ts` (`jest --showConfig`) |
-| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` |
-| `instrumentedRunner` | `IInstrumentedRunner` (Timeline) | `timeline/JestInstrumentedRunner.ts` |
-| `createSessionRunner()` | runner `TestRunner` for core's `TestSession` | runner `JestAdapter.createRunner()` → `JestRunner` |
+| Member | Interface | Jest implementation | Vitest implementation |
+|---|---|---|---|
+| `adapter` | `IFrameworkAdapter` | `framework/JestAdapter.ts` | `framework/VitestAdapter.ts` |
+| `projectConfig` | `IProjectConfig` (`get(root)`, `reset()`) | `session/JestProjectConfig.ts` (`jest --showConfig`) | `session/VitestProjectConfig.ts` (the config file path) |
+| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` (results + trace + coverage, streamed) | `session/VitestBatchRunner.ts` (results when the batch exits) |
+| `instrumentedRunner` | `IInstrumentedRunner` (Timeline), optional | `timeline/JestInstrumentedRunner.ts` | — (phase 10) |
+| `createSessionRunner()` | runner `TestRunner` for core's `TestSession` | runner `JestAdapter.createRunner()` → `JestRunner` | runner `VitestAdapter.createRunner()` → `VitestRunner` |
 
-`extension.ts` composes the Jest bundle (`framework/jestServices.ts`, `createJestServices`) and passes `new SingleFrameworkProvider(bundle)`. Stop kills the batch runners of `all()` bundles. Mixed-framework projects (phase 8) replace the provider with a router; nothing in `SessionManager` changes.
+Both adapters extend `framework/RunnerBackedAdapter.ts`, which holds everything that only needs a runner's `RunResult`: single-file, test-case and related runs, and mapping `FileRunResult`s into the `ResultStore` (suites, `.each` templates, scoped reruns, output, and a file's own failure — its tests are failed with `failureMessage` when nothing ran). The adapters add detection, their runner (with the user's command setting) and the debug launch config.
+
+`extension.ts` composes a `DetectingFrameworkProvider`: it detects the project root's framework (runner `FrameworkDetector`) and builds the Vitest bundle (`createVitestServices`) for a Vitest project, the Jest bundle (`createJestServices`) otherwise, on first use. The Timeline command goes through a delegating `IInstrumentedRunner` that reports "not available for Vitest yet". Stop kills the batch runners of `all()` bundles. Mixed-framework projects (phase 8) replace the provider with a router; nothing in `SessionManager` changes.
+
+Static discovery (`instrumentation/shared/testDiscovery.js`) uses the project's own `@babel/parser` / `@babel/traverse` when it has them (every Jest project), else `out/vendor/babel-parser.js` (shipped by `esbuild.js`) with a built-in call-expression walker.
 
 ### Session instrumentation protocol
 

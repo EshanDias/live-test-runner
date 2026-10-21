@@ -80,6 +80,14 @@ export function describeAdapterConformance(c: AdapterConformanceCase): void {
       expect(c.createAdapter().detect(empty)).toBe(false);
     });
 
+    it('reports its capabilities without throwing, even for a project without an install', () => {
+      const caps = c.createAdapter().capabilities(project(c.matching[0]));
+      for (const key of ['results', 'nameFilter', 'listTests', 'related', 'liveStream', 'coverage'] as const) {
+        expect(typeof caps[key]).toBe('boolean');
+      }
+      expect(caps.results).toBe(true);
+    });
+
     it('names a result file that contains the given path', () => {
       const args = c.createAdapter().outputFileArg('/tmp/ltr result.json');
       expect(args.length).toBeGreaterThan(0);

@@ -6,7 +6,13 @@ import { BinaryResolver, nodeRuntime } from '../resolution/BinaryResolver';
 import { createLogger, LogLevel, stripAnsi } from '../utils/logger';
 
 const log = createLogger('Executor');
-const childLog = createLogger('Jest');
+/** Structured logs from instrumentation inside the child, per process label ('jest' → scope "Jest"). */
+const childLogs = new Map<string, ReturnType<typeof createLogger>>();
+function childLog(label: string) {
+  let l = childLogs.get(label);
+  if (!l) { childLogs.set(label, (l = createLogger(label.charAt(0).toUpperCase() + label.slice(1)))); }
+  return l;
+}
 
 /**
  * Lines written by our instrumentation inside the Jest process use the form
@@ -32,6 +38,8 @@ export interface ExecutorCommand {
   extraEnv?: Record<string, string>;
   /** Kill Jest (and its children) if it runs longer than this. 0/undefined = no limit. */
   timeoutMs?: number;
+  /** Tag prefix for this process's output lines (`[jest#12]`, `[vitest#13]`). Default 'jest'. */
+  label?: string;
 }
 
 /**
@@ -124,7 +132,7 @@ export class Executor {
 
     this.kill();
 
-    const result = await this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs);
+    const result = await this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs, command.label);
 
     // Prefer the output file; fall back to captured stdout for CRA edge cases.
     let jsonOutput: string;
@@ -206,7 +214,7 @@ export class Executor {
     try {
       // Stdout is forwarded here: test console output written directly by the
       // test (or by a verbose reporter) would otherwise be invisible.
-      return await this.spawn(inv, command.cwd, command.extraEnv, true);
+      return await this.spawn(inv, command.cwd, command.extraEnv, true, 0, command.label);
     } finally {
       clearInterval(interval);
       pollReporter();
@@ -233,7 +241,7 @@ export class Executor {
     const inv = this.buildInvocation(command.binary, command.args);
     this.kill();
 
-    return this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs);
+    return this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs, command.label);
   }
 
   /** Ends the running Jest process and everything it started (workers, shells). */
@@ -257,8 +265,11 @@ export class Executor {
       const node = nodeRuntime();
       return { file: node.binary, args: [binary, ...args], shell: false, env: node.env };
     }
-    // npx needs the jest subcommand first
-    const cmdArgs = /^npx(\.cmd)?$/i.test(binary) ? ['jest', ...args] : args;
+    // npx needs a package name first. The Jest fallback (BinaryResolver) passes
+    // only flags, so 'jest' is added; a user command such as "npx vitest" or
+    // "npx jest" already names it and is left alone.
+    const npxNeedsPackage = /^npx(\.cmd)?$/i.test(binary) && (args.length === 0 || args[0].startsWith('-'));
+    const cmdArgs = npxNeedsPackage ? ['jest', ...args] : args;
     const needsShell = process.platform === 'win32'
       ? /\.(cmd|bat)$/i.test(binary) || !path.isAbsolute(binary)
       : false;
@@ -271,9 +282,10 @@ export class Executor {
     extraEnv?: Record<string, string>,
     forwardStdout = false,
     timeoutMs = 0,
+    label = 'jest',
   ): Promise<ExecutionResult> {
     return new Promise((resolve) => {
-      const tag = `jest#${++Executor._seq}`;
+      const tag = `${label}#${++Executor._seq}`;
       const startedAt = Date.now();
       const binary = inv.file;
 
@@ -316,7 +328,7 @@ export class Executor {
       const errLines = new LineSplitter((line) => {
         const m = CHILD_LOG_RE.exec(line);
         if (m) {
-          childLog[m[1] as LogLevel](`${tag}: ${m[2]}`);
+          childLog(label)[m[1] as LogLevel](`${tag}: ${m[2]}`);
           return;
         }
         stderr += line + '\n';
@@ -356,7 +368,7 @@ export class Executor {
       child.on('error', (err) => {
         if (resolved) return;
         const hint = (err as NodeJS.ErrnoException).code === 'ENOENT'
-          ? ' — the Jest binary was not found. Run npm install, or set liveTestRunner.jestCommand.'
+          ? ` — the ${label === 'jest' ? 'Jest' : label} binary was not found. Run npm install, or set liveTestRunner.${label}Command.`
           : '';
         log.error(`${tag} could not start "${binary}" (cwd ${cwd})${hint}`, err);
         resolved = true;

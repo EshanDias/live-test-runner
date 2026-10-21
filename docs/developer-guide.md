@@ -104,7 +104,7 @@ Two adapter interfaces exist in the codebase:
 
 The separation means the runner can be used independently of VS Code.
 
-On the extension side a framework is a **services bundle** (`FrameworkServices`: `adapter`, `projectConfig: IProjectConfig`, `batchRunner: IBatchRunner`, `instrumentedRunner`, `createSessionRunner()`). `SessionManager` asks an `IFrameworkServicesProvider` for the bundle of a file or root (`servicesFor`) and never constructs framework classes; `extension.ts` composes the bundle (`createJestServices`) and wraps it in a `SingleFrameworkProvider`.
+On the extension side a framework is a **services bundle** (`FrameworkServices`: `adapter`, `projectConfig: IProjectConfig`, `batchRunner: IBatchRunner`, `instrumentedRunner`, `createSessionRunner()`). `SessionManager` asks an `IFrameworkServicesProvider` for the bundle of a file or root (`servicesFor`) and never constructs framework classes; `extension.ts` composes a `DetectingFrameworkProvider` that builds the Jest (`createJestServices`) or Vitest (`createVitestServices`) bundle for the project's framework. Adapters that run through a packages/runner `CommandRunner` extend `RunnerBackedAdapter` and add only detection, their runner and the debug config.
 
 Adding a framework = an adapter in each package plus the extension-side bundle (batch runner, project config). `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
 
@@ -297,11 +297,11 @@ Supporting Vitest, Mocha, or any other framework requires one class in each of t
 
 ### Step 1 — Runner package
 
-Create `packages/runner/src/framework/adapters/VitestAdapter.ts`:
+Create `packages/runner/src/framework/adapters/YourAdapter.ts` (the sketch below uses Vitest; the shipped `VitestAdapter.ts` is the real reference — it resolves `package.json#bin` with node instead of a `.bin` shim, gates `capabilities()` on the installed version, and checks the Node runtime):
 
 ```typescript
 import { FrameworkAdapter } from './FrameworkAdapter'
-import { FrameworkId } from '../../types'
+import { FrameworkCapabilities, FrameworkId } from '../../types'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -323,6 +323,10 @@ export class VitestAdapter implements FrameworkAdapter {
 
   getExtraArgs(projectRoot: string): string[] {
     return []
+  }
+
+  capabilities(projectRoot: string): FrameworkCapabilities {
+    return { results: true, nameFilter: true, listTests: true, related: true, liveStream: false, coverage: true }
   }
 
   outputFileArg(file: string): string[] {
@@ -348,7 +352,7 @@ Register it in `FrameworkRegistry.default()` (`packages/runner/src/framework/Fra
 ```typescript
 new FrameworkRegistry()
   .register(new CRAAdapter(), ADAPTER_PRIORITIES.cra)      // 300
-  .register(new VitestAdapter(), ADAPTER_PRIORITIES.vite)  // 200 — before Jest
+  .register(new VitestAdapter(), ADAPTER_PRIORITIES.vitest) // 200 — before Jest
   .register(new JestAdapter(), ADAPTER_PRIORITIES.jest)    // 100
 ```
 
@@ -401,8 +405,8 @@ Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `F
 ### Checklist
 
 Runner package (`packages/runner`):
-- [ ] `FrameworkAdapter` implemented — `detect`, `resolveBinary`, `resolveConfig`, `getExtraArgs`, `outputFileArg`, `parseResult`, `createRunner`
-- [ ] A `CommandRunner` subclass — `detectAdapter`, `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`), `parseTestList`, `coverageFile`
+- [ ] `FrameworkAdapter` implemented — `detect`, `resolveBinary`, `resolveConfig`, `getExtraArgs`, `outputFileArg`, `parseResult`, `capabilities` (per installed version, never throws), `createRunner`
+- [ ] A `CommandRunner` subclass — `detectAdapter` (another framework's project → `refusingAdapter(adapter)`), `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`), `parseTestList`, `coverageFile`; `leadingArgs` if the CLI needs a subcommand first; `processLabel` for the `[label#N]` output tag
 - [ ] Registered in `FrameworkRegistry.default()` at the right priority (a project several adapters claim goes to the higher one)
 - [ ] Exported from `src/index.ts`
 - [ ] **Conformance suite** — one `describeAdapterConformance({ … })` call in `test/adapterConformance.test.ts` (matching / non-matching projects, a canned result with one passing and one failing test); it must pass unchanged
@@ -573,9 +577,10 @@ unzip -q /tmp/ltr.vsix -d /tmp/ltr-vsix && LTR_E2E_EXTENSION_DIR=/tmp/ltr-vsix/e
 
   Every fixture's full run is compared file by file with plain Jest (`checkMatchesPlainJest`). When a real project shows a new problem, reproduce it in a fixture (or a new one) so CI keeps catching it.
 - **Fixtures** (`e2e/fixtures/<name>`) are copied to `%TEMP%/ltr e2e/<name> project` — a path with spaces on purpose — and `npm install`ed once (again when `package.json` changes).
-- **Scenarios** (`e2e/scenarios/*.js`) export `{ workspace, timeoutMs, settings?, run({ api, t, vscode, workspace }) }`. `workspace` is `fixture:<name>`, `env:<VAR>` or a path. With `LTR_E2E=1` the extension's `activate()` returns its internals (`store`, `session`, `traceStore`, `coverageStore`, `observers`, `rawOutput`, …) — never in normal use. Helpers are in `e2e/lib/harness.js` (wait for discovery, record observer events, Jest summaries from raw output, Jest processes still alive, edit + save through VS Code).
+- **Scenarios** (`e2e/scenarios/*.js`) export `{ workspace, timeoutMs, settings?, run({ api, t, vscode, workspace }) }`. `workspace` is `fixture:<name>`, `env:<VAR>` or a path. With `LTR_E2E=1` the extension's `activate()` returns its internals (`store`, `session`, `traceStore`, `coverageStore`, `observers`, `rawOutput`, …) — never in normal use. Helpers are in `e2e/lib/harness.js` (wait for discovery, record observer events, Jest summaries from raw output, Jest / Vitest processes still alive — Vitest renames its processes to `node (vitest)`, so `vitestProcesses()` matches those titles —, edit + save through VS Code, plain Jest / Vitest reference runs and per-file comparisons).
+- **Vitest scenarios** run on `fixture:vitest-basic` (Vitest 3.2.4): `vitest-full-run`, `vitest-scoped-run`, `vitest-session` (guard, test / source-file saves, ▶ Run, after Stop), `vitest-stop`, `vitest-hang`, `vitest-debug`; `repo-vitest` runs on real Vitest repos through `real-repos.js`.
 - **Real projects:** `LTR_E2E_TSJEST_REPO` (+ `LTR_E2E_TSJEST_BASELINE`, a `jest --json` result to compare every file with) for `repo-tsjest`; `LTR_E2E_CRA_REPO` for `repo-cra` (quick by default; `LTR_E2E_CRA_FULL=1` + `LTR_E2E_CRA_BASELINE` for the whole project). `repo-tsjest` edits one source file and restores it byte-for-byte; `repo-cra` never writes to the project.
-- **Real-repository matrix:** `node e2e/real-repos.js` (light repos) / `jest` (the heavy monorepo) / `--all` / `--fresh` runs those scenarios on a *copy* of each repo in `LTR_E2E_JEST_REPOS_DIR` (and, once Vitest support lands, `LTR_E2E_VITEST_REPOS_DIR`), computes the plain-Jest baseline itself, and fails if the original repository changed. Results go to `docs/temp_plans/vitest-baseline.json`.
+- **Real-repository matrix:** `node e2e/real-repos.js` (light repos) / `jest` (the heavy monorepo) / `--all` / `--fresh` runs those scenarios on a *copy* of each repo in `LTR_E2E_JEST_REPOS_DIR` and `LTR_E2E_VITEST_REPOS_DIR` (unplugin, slidev, vueuse — `repo-vitest`), computes the plain Jest / plain `vitest run` baseline itself, and fails if the original repository changed. Results go to `docs/temp_plans/vitest-baseline.json`.
 
 ---
 
@@ -613,7 +618,7 @@ engine.jumpTo(stepId)
 | Debug config hardcoded path | `getDebugConfig` in `JestAdapter` uses `${workspaceFolder}/node_modules/.bin/jest`; non-standard layouts may need the `liveTestRunner.jestCommand` override |
 | CRA config cache is in-memory | Lost when the session ends; recomputed (~2–3s) on next Start Testing |
 | Gutter icon animation | `animateTransform` in the running SVG is rendered statically by VS Code — the spinner does not spin in the gutter |
-| `location` not always present | Some Jest setups (CRA, Vitest stub) may not emit `location` in JSON; gutter icons won't appear for those files |
+| `location` not always present | Some Jest setups (CRA; Vitest needs its task-location option, plan task 2.3) may not emit `location` in JSON; gutter icons won't appear for those files |
 | Timeline transform: regex-based injection | `traceTransform.js` injects trace calls using Babel AST. It handles assignments, function calls, and common statement patterns, but may miss complex patterns such as multi-line destructuring or chained optional calls inside expressions. |
 | Timeline: no import tracing | The transform only instruments the target test file. Imported modules are not traced; their execution does not appear as steps in the timeline. |
 | Timeline: `console.log` in tests | `traceRuntime.js` patches `console.*` to emit LOG events. If the test patches `console` before the runtime loads, log capture may be incomplete. |
@@ -622,7 +627,7 @@ engine.jumpTo(stepId)
 
 ## Roadmap
 
-- [ ] Vitest support — `ViteAdapter` stub exists in `packages/runner`; implement `resolveBinary` and `resolveConfig`
+- [ ] Vitest support (3.0.0) — tracked in `docs/temp_plans/vitest-support-plan.md`; the runner `VitestAdapter` + `VitestRunner` are done (tasks 2.1–2.2)
 - [x] ~~Suite/test-case level nodes in Test Explorer~~ — completed in 1.2.0 (recursive node tree with unlimited nesting)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
 - [ ] Streaming live output during a run (message type stubbed, not wired)

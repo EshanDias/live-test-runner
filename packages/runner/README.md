@@ -39,6 +39,7 @@ CommandRunner (generic orchestrator)    detection hook, binary/config, chunking,
         ├── BinaryResolver              resolves Jest's JS entry point (jest/bin/jest.js) from the project
         ├── Executor                    runs it with node (no shell), reads the result file on exit
         └── ResultParser                Jest JSON → RunResult (behind adapter.parseResult)
+                                        Vitest: parsing/VitestResultParser.ts (parseVitestResult)
 ```
 
 Each command is `[user-command words] [--config …] [adapter extra args] [framework args] [adapter.outputFileArg(tmp)]`; only the framework args come from the runner subclass (`buildArgs({ kind: 'list' | 'full' | 'files' | 'testCase' | 'related' })`). Snapshot tests (`test/jestRunnerArgs.test.ts`) pin the Jest command lines.
@@ -55,6 +56,7 @@ Each adapter implements `FrameworkAdapter`. Its `framework` is a `FrameworkId` �
 | `getExtraArgs(projectRoot)` | Any extra CLI flags needed |
 | `outputFileArg(file)` | Flag(s) that make the runner write its JSON result to `file` (Jest: `--outputFile=<file>`) |
 | `parseResult(passed, raw, stderr)` | The runner's JSON result → `RunResult` |
+| `capabilities(projectRoot)` | What the framework can do at the installed version (`results`, `nameFilter`, `listTests`, `related`, `liveStream`, `coverage`) — never throws |
 | `createRunner(options)` | The `TestRunner` for this framework (Jest, CRA → `JestRunner`) |
 
 Current adapters:
@@ -63,9 +65,11 @@ Current adapters:
 |---------|---------|-------|
 | `JestAdapter` | Jest, Next.js + Jest | Jest finds its own config; config-relevant flags of the `test` script (`--config`, `--env`, `--resetMocks`, …) are passed on |
 | `CRAAdapter` | Create React App | Runs `--showConfig` once per session to extract the hidden config (transformer options kept); caches in memory; uses react-scripts' own Jest |
+| `VitestAdapter` | Vitest ≥ 3 (older best-effort) | A `vitest` dependency or Vitest config/workspace file, and no Jest dependency/config (BUG-37). Runs `vitest/package.json#bin` (`vitest.mjs`) with node — no `.bin` shim, no npx. Config: `vitest.config.*` > `vite.config.*`. Capabilities per installed major; refuses the editor's built-in Node when it fails Vitest's `engines.node`. Runner: `VitestRunner`. The `test` script's config-relevant flags are passed on, following `nr` / `npm run` / `pnpm` into other scripts (`testScriptVitestArgs`); its `--config` wins over the config files |
+
+Helpers: `utils/semver.ts` (`satisfies(version, range)` for `engines.node`; unknown syntax → undefined, never a failure), `nodeRuntimeVersion()` and `resolvePackageBin(pkg, bin, fromDir)` in `resolution/BinaryResolver.ts`.
 
 Config helpers (`framework/jestConfig.ts`): `toInputConfig()` turns a normalized `--showConfig` project config back into `--config` input form, `pickGlobalConfig()` keeps run-relevant global options, `testScriptJestArgs()` reads the project's `test` script.
-| `ViteAdapter` | Vitest | Stub — not yet implemented |
 
 ### Execution
 
@@ -77,6 +81,25 @@ jest --config <resolved> --watchAll=false --forceExit --no-bail --json \
 ```
 
 `--outputFile` is required. Jest's stdout is never parsed — on Windows, large JSON payloads are silently truncated through pipes.
+
+Vitest runs (`VitestRunner`) look like this — subcommand and file paths first, so Vitest's option parser never reads a path as a flag's value:
+
+```sh
+node vitest.mjs run [<abs file>…] [--config <c>] [test-script flags] \
+     --reporter=json --includeTaskLocation --passWithNoTests --watch=false \
+     [-t <pattern>] --outputFile=<tmpfile>
+node vitest.mjs list [--config <c>] [test-script flags] --filesOnly --json   # --json last: it takes an optional path
+node vitest.mjs related <abs file> … --run …                                 # Vitest < 3: a full run instead
+```
+
+- `--reporter=json` always — it replaces reporters from the config (e.g. `dot`), which would leave no JSON.
+- No `--root`: the project root is the cwd, so a config's own `root` stays in charge.
+- `-t`: Vitest 5 matches names joined with `" > "` (`Outer > Inner > adds`), older versions with spaces; the json reporter's `fullName` uses spaces. `toVitestNamePattern()` turns each literal space of the escaped name into `(?: > | )`, so one pattern fits both (suites end with `(?: > | |$)`).
+- Absolute file paths select exactly that file (Vitest resolves filters against its cwd).
+- `--includeTaskLocation` (test line numbers) only for Vitest ≥ 3, where the CLI flag exists.
+- Results: `parseVitestResult()` reads the json reporter (Jest's shape) for Vitest 1–5 — drops Vitest 1's empty file-level ancestor, counts from the tests (Vitest 1's counts are wrong), takes a load error from `message`, names a failing beforeAll/afterAll (whose error the report leaves out) and an unhandled error (exit 1, all passed) in plain words, drops Vitest 1's assertion positions posing as `location`, rounds durations. Real reports per major are in `test/fixtures/vitest/`.
+- Browser-mode guard: `framework/vitestProjects.ts` reads the config's projects with the project's own Vitest (`createVitest`, a probe script, cached per config / package.json mtime). If some use browser mode, the test script picks no `--project`, and `RunnerOptions.includeBrowserProjects` is false, `VitestRunner.prepare()` adds `--project=<name>` for every other project and logs which were left out.
+- Output lines are tagged `[vitest#N]` (Jest keeps `[jest#N]`): `ExecutorCommand.label`, from `CommandRunner.processLabel`.
 
 How Jest is started:
 - `BinaryResolver.resolveJestEntry(dir)` / `resolveCraJestEntry(projectRoot)` find Jest's JS entry point through `jest/package.json` (Jest's `exports` hides `bin/jest.js`). `.bin` shims and `npx` are fallbacks only.
@@ -156,8 +179,8 @@ The extracted config is cached in memory. It is invalidated if `package.json` ch
 ## Adding a new framework
 
 1. Create `src/framework/adapters/YourAdapter.ts` implementing `FrameworkAdapter`
-2. Create `src/YourRunner.ts` extending `CommandRunner` (`detectAdapter`, `buildArgs`, `parseTestList`, `coverageFile`) and return it from the adapter's `createRunner`
-3. Register it in `FrameworkRegistry.default()` (`.register(new YourAdapter(), priority)` — higher priorities are tried first; `ADAPTER_PRIORITIES` has the shipped ones: CRA 300, Vite 200, Jest 100)
+2. Create `src/YourRunner.ts` extending `CommandRunner` (`detectAdapter`, `buildArgs`, `parseTestList`, `coverageFile`; optionally `leadingArgs` for a subcommand + positionals and `processLabel` for the output tag) and return it from the adapter's `createRunner`. For another framework's project, `detectAdapter` returns `refusingAdapter(adapter)`
+3. Register it in `FrameworkRegistry.default()` (`.register(new YourAdapter(), priority)` — higher priorities are tried first; `ADAPTER_PRIORITIES` has the shipped ones: CRA 300, Vitest 200, Jest 100)
 4. Export from `src/index.ts`
 
 No other files need to change.

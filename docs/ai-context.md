@@ -39,14 +39,19 @@ src/
 ├── TestRunner.ts                     Interface the extension uses (+ RunnerOptions)
 ├── CommandRunner.ts                  Generic CLI runner: binary/config/extra args, chunking, kill, coverage; abstract buildArgs(RunRequest)
 ├── JestRunner.ts                     extends CommandRunner — Jest flags only
+├── VitestRunner.ts                   extends CommandRunner — `run|list|related` + files as leadingArgs; toVitestNamePattern (" " → "(?: > | )")
 ├── framework/
-│   ├── FrameworkRegistry.ts          register(adapter, priority); default(): CRA 300 → Vite 200 → Jest 100 (built lazily)
+│   ├── FrameworkRegistry.ts          register(adapter, priority); default(): CRA 300 → Vitest 200 → Jest 100 (built lazily)
 │   ├── FrameworkDetector.ts          First matching registry adapter; detectWithReason(); unknown → plain Jest + one WARN
 │   └── adapters/
-│       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs, outputFileArg, parseResult, createRunner
+│       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs, outputFileArg, parseResult, capabilities, createRunner
 │       ├── JestAdapter.ts            Plain Jest + Next.js + Jest
 │       ├── CRAAdapter.ts             Create React App
-│       └── ViteAdapter.ts            Vitest stub — only when the project has no Jest dep/config
+│       └── VitestAdapter.ts          Vitest: detect (no Jest marker), vitest.mjs, config, version → capabilities, Node check; runner = VitestRunner
+│   ├── UnsupportedFrameworkError.ts
+│   ├── refusingAdapter.ts            stand-in adapter a runner keeps for another framework's project
+│   ├── vitestConfig.ts               testScriptVitestArgs: config-relevant flags of the test script (follows nr/npm run/pnpm)
+│   └── vitestProjects.ts             vitestProjects(): projects + browser flag via the project's own Vitest node API (browser-mode guard)
 ├── resolution/
 │   ├── BinaryResolver.ts             Finds jest binary in project node_modules
 │   └── RunnerPaths.ts                Symlinked roots: editor path ↔ the test runner's realpath
@@ -54,6 +59,7 @@ src/
 │   └── Executor.ts                   Spawns the runner, reads its result file (flag from adapter.outputFileArg) on exit
 └── parsing/
     ├── ResultParser.ts               Parses Jest JSON output → RunResult (adapter.parseResult for Jest/CRA)
+    ├── VitestResultParser.ts         parseVitestResult: Vitest 1–5 json reporter → RunResult (fixtures: test/fixtures/vitest)
     ├── runResults.ts                 emptyRunResult / mergeRunResults — any framework
     └── mergeFileResults.ts           Merges reports of one file run by several Jest projects
 ```
@@ -137,13 +143,18 @@ src/
 │   │       ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
 │   │       ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
 │   │       └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
+│   ├── VitestBatchRunner.ts        IBatchRunner for Vitest: one process per batch, results when it exits
+│   ├── VitestProjectConfig.ts      IProjectConfig for Vitest: the config file path
 │   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
 │   │                               getAffectedTests, getDebugConfig
-│   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all) + SingleFrameworkProvider
+│   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all) + SingleFrameworkProvider + DetectingFrameworkProvider (Vitest or Jest per root)
 │   ├── jestServices.ts             createJestServices(): the Jest bundle (adapter, JestProjectConfig, JestBatchRunner, JestInstrumentedRunner, session runner)
-│   └── JestAdapter.ts              All Jest-specific logic
+│   ├── vitestServices.ts           createVitestServices(): adapter, VitestProjectConfig, VitestBatchRunner, no instrumented runner
+│   ├── RunnerBackedAdapter.ts      Shared IFrameworkAdapter half: file / test-case / related runs, FileRunResult → ResultStore
+│   ├── JestAdapter.ts              Jest detection, JestRunner (jestCommand / runMode), debug config
+│   └── VitestAdapter.ts            Vitest detection, VitestRunner (vitestCommand), debug config (autoAttachChildProcesses)
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
 │   ├── DecorationManager.ts        Gutter icons + inline duration text
@@ -525,7 +536,7 @@ All in `packages/vscode-extension/package.json`:
 |-----------|--------|
 | Jest | Fully supported |
 | Create React App | Fully supported (via `--showConfig` + direct Jest invocation) |
-| Vitest | Planned — `ViteAdapter` stub in `packages/runner` |
+| Vitest | In progress (3.0.0) — runner package done for runs (`VitestAdapter` + `VitestRunner`); Vitest-specific parsing and extension wiring follow (plan tasks 2.3–2.8) |
 
 ---
 

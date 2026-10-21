@@ -1,3 +1,4 @@
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../utils/logger';
@@ -61,7 +62,7 @@ export class BinaryResolver {
    */
   static resolveJestEntry(fromDir: string): string | undefined {
     for (const pkgName of JEST_PACKAGES) {
-      const entry = resolvePackageBin(pkgName, fromDir);
+      const entry = resolvePackageBin(pkgName, 'jest', fromDir, path.join('bin', 'jest.js'));
       if (entry) { return entry; }
     }
     return undefined;
@@ -120,7 +121,8 @@ export class BinaryResolver {
 /** Packages that ship the `jest` CLI, in preference order. */
 const JEST_PACKAGES = ['jest', 'jest-cli'];
 
-function resolvePackageDir(pkgName: string, fromDir: string): string | undefined {
+/** Directory of `pkgName` as Node resolves it from `fromDir` (local, hoisted or pnpm), or undefined. */
+export function resolvePackageDir(pkgName: string, fromDir: string): string | undefined {
   try {
     // Non-literal id so bundlers leave this require.resolve alone.
     const pkgJson = require.resolve(`${pkgName}/package.json`, { paths: [fromDir] });
@@ -130,13 +132,24 @@ function resolvePackageDir(pkgName: string, fromDir: string): string | undefined
   }
 }
 
-function resolvePackageBin(pkgName: string, fromDir: string): string | undefined {
+/**
+ * Absolute path of the JS file behind `pkgName`'s `bin[binName]` (or its only
+ * `bin` string), falling back to `defaultRel` inside the package. Running that
+ * file with `node` avoids the `.bin` shims (no shell, works on Windows).
+ */
+export function resolvePackageBin(
+  pkgName: string,
+  binName: string,
+  fromDir: string,
+  defaultRel?: string,
+): string | undefined {
   const dir = resolvePackageDir(pkgName, fromDir);
   if (!dir) { return undefined; }
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')) as { bin?: string | Record<string, string> };
-    const rel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.jest;
-    const candidate = path.join(dir, rel ?? path.join('bin', 'jest.js'));
+    const rel = (typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.[binName]) ?? defaultRel;
+    if (!rel) { return undefined; }
+    const candidate = path.join(dir, rel);
     return fs.existsSync(candidate) ? candidate : undefined;
   } catch {
     return undefined;
@@ -150,6 +163,8 @@ export interface NodeRuntime {
   binary: string;
   /** Extra environment needed to run it as plain Node. */
   env: Record<string, string>;
+  /** True when no node was on PATH and the editor's own runtime (Electron as Node) is used. */
+  isEditorFallback?: boolean;
 }
 
 let _nodeRuntime: NodeRuntime | undefined;
@@ -179,7 +194,27 @@ export function nodeRuntime(): NodeRuntime {
     } catch { /* not here */ }
   }
   log.warn(`No "node" on PATH — running Jest with the editor's built-in Node (${process.execPath})`);
-  return (_nodeRuntime = { binary: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } });
+  return (_nodeRuntime = { binary: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' }, isEditorFallback: true });
+}
+
+const _versions = new Map<string, string | undefined>();
+
+/**
+ * The Node version of a runtime (e.g. `22.12.0`), or undefined if it cannot
+ * be read. The editor fallback is this process; a PATH node is asked once.
+ */
+export function nodeRuntimeVersion(runtime: NodeRuntime = nodeRuntime()): string | undefined {
+  if (runtime.isEditorFallback || runtime.binary === process.execPath) { return process.versions.node; }
+  if (_versions.has(runtime.binary)) { return _versions.get(runtime.binary); }
+  let version: string | undefined;
+  try {
+    const r = spawnSync(runtime.binary, ['--version'], { encoding: 'utf8', timeout: 10_000, windowsHide: true, env: { ...process.env, ...runtime.env } });
+    version = /v?(\d+\.\d+\.\d+)/.exec(r.stdout ?? '')?.[1];
+  } catch (err) {
+    log.debug(`Could not read the version of ${runtime.binary}: ${(err as Error).message}`);
+  }
+  _versions.set(runtime.binary, version);
+  return version;
 }
 
 // ── Shared platform helper ─────────────────────────────────────────────────────

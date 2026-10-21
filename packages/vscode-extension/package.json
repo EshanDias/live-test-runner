@@ -151,6 +151,16 @@
           "default": "",
           "description": "Override the Jest command (e.g. 'node_modules/.bin/jest'). Leave empty to auto-detect from package.json scripts and node_modules. Only used when runMode is 'extension'."
         },
+        "liveTestRunner.vitestCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Override the Vitest command for Vitest projects (e.g. 'npx vitest'). Leave empty to run the project's own Vitest install. Live Test Runner adds its own subcommand and flags (run, --reporter=json, …) after it."
+        },
+        "liveTestRunner.vitestIncludeBrowserProjects": {
+          "type": "boolean",
+          "default": false,
+          "description": "Vitest: also run browser-mode projects (Playwright / WebdriverIO). They need real browsers installed, so by default they are left out when the test script does not choose projects itself."
+        },
         "liveTestRunner.runMode": {
           "type": "string",
           "enum": [
@@ -265,10 +275,11 @@
     "@live-test-runner/runner": "workspace:*"
   },
   "devDependencies": {
-    "@types/vscode": "^1.74.0",
+    "@babel/parser": "7.29.2",
     "@types/node": "16.x",
-    "typescript": "~6.0.3",
+    "@types/vscode": "^1.74.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.13.0",
-    "esbuild": "^0.28.2"
+    "typescript": "~6.0.3"
   }
 }

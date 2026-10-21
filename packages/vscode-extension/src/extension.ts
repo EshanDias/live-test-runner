@@ -17,8 +17,9 @@ import { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
-import { SingleFrameworkProvider } from './framework/FrameworkServices';
+import { DetectingFrameworkProvider } from './framework/FrameworkServices';
 import { createJestServices } from './framework/jestServices';
+import { createVitestServices } from './framework/vitestServices';
 import { CodeLensProvider } from './editor/CodeLensProvider';
 import { DecorationManager } from './editor/DecorationManager';
 import { ExplorerView } from './views/ExplorerView';
@@ -148,17 +149,30 @@ export function activate(context: vscode.ExtensionContext) {
     resultsView.sendScopedData(sel.fileId, sel.nodeId);
   };
 
-  // The test framework's services: adapter, project config, batch runner,
-  // timeline runner. Jest (incl. CRA) is the only framework so far.
-  const frameworkServices = createJestServices({
-    sessionDir: LTR_SESSION_TMP_DIR,
-    coverageStore,
-    rawLog: (msg) => outputChannel.appendLine(msg),
-  });
+  // The test framework's services (adapter, project config, batch runner,
+  // timeline runner), picked by the project's framework: Vitest or Jest (incl. CRA).
+  const rawLog = (msg: string) => outputChannel.appendLine(msg);
+  const frameworks = new DetectingFrameworkProvider(
+    {
+      jest: () => createJestServices({ sessionDir: LTR_SESSION_TMP_DIR, coverageStore, rawLog }),
+      vitest: () => createVitestServices({ sessionDir: LTR_SESSION_TMP_DIR, rawLog }),
+    },
+    () => _resolveProjectRoot(),
+  );
 
   // ── Timeline debugger ──────────────────────────────────────────────────────
-  // Reference typed as the interface — never as the concrete class.
-  const instrumentedRunner: IInstrumentedRunner = frameworkServices.instrumentedRunner;
+  // Reference typed as the interface — never as the concrete class. It hands
+  // each run to the project's framework, which may not have one yet.
+  const instrumentedRunner: IInstrumentedRunner = {
+    run: (options) => {
+      const services = frameworks.servicesFor(options.projectRoot);
+      if (!services.instrumentedRunner) {
+        return Promise.reject(new Error(`The Timeline debugger is not available for ${services.displayName} yet.`));
+      }
+      return services.instrumentedRunner.run(options);
+    },
+    cancel: () => { for (const s of frameworks.all()) { s.instrumentedRunner?.cancel(); } },
+  };
   const timelineDecorations = new TimelineDecorationManager();
 
   // Last timeline run context, used by the Re-run button in the sidebar.
@@ -307,7 +321,7 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   const session = new SessionManager(
-    new SingleFrameworkProvider(frameworkServices),
+    frameworks,
     store,
     traceStore,
     coverageStore,

@@ -8,6 +8,8 @@ export interface RunnerOptions {
   logger?: (msg: string) => void;
   /** Directory for temporary result files (the session dir). */
   tmpDir?: string;
+  /** Vitest: also run browser-mode projects (they need Playwright / WebdriverIO browsers). Default false. */
+  includeBrowserProjects?: boolean;
 }
 
 /**

@@ -11,9 +11,29 @@ export type FrameworkId = string;
 export const FRAMEWORK_IDS = {
   jest: 'jest',
   cra: 'cra',
-  vite: 'vite',
+  vitest: 'vitest',
   unknown: 'unknown',
 } as const;
+
+/**
+ * What a framework (at the installed version) can do through its runner.
+ * Callers check these instead of the framework id, so a feature the
+ * framework lacks degrades ("not available") instead of failing.
+ */
+export interface FrameworkCapabilities {
+  /** Runs tests and reports a JSON pass/fail result. */
+  results: boolean;
+  /** Runs one test or suite by name pattern. */
+  nameFilter: boolean;
+  /** Lists its test files without running them. */
+  listTests: boolean;
+  /** Finds the tests related to a source file. */
+  related: boolean;
+  /** Can report per-file results while a run is in progress. */
+  liveStream: boolean;
+  /** Writes istanbul-format JSON coverage. */
+  coverage: boolean;
+}
 
 /** @deprecated Use FrameworkId — kept for one release. */
 export type Framework = FrameworkId;

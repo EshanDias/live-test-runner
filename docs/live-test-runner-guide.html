@@ -283,8 +283,10 @@
   <div class="table-wrap"><table>
     <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
     <tr><td><code>projectRoot</code></td><td><code>""</code></td><td>Project folder. Detected automatically for single-folder workspaces.</td></tr>
-    <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code>.</td></tr>
+    <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code> (Jest only).</td></tr>
     <tr><td><code>jestCommand</code></td><td><code>""</code></td><td>Override the Jest binary or command.</td></tr>
+    <tr><td><code>vitestCommand</code></td><td><code>""</code></td><td>Override the Vitest command (e.g. <code>npx vitest</code>). Empty = the project's own Vitest.</td></tr>
+    <tr><td><code>vitestIncludeBrowserProjects</code></td><td><code>false</code></td><td>Also run Vitest browser-mode projects. They need real browsers, so they are left out by default (unless the test script picks projects itself).</td></tr>
     <tr><td><code>onSaveDebounceMs</code></td><td><code>300</code></td><td>Wait after a save before running.</td></tr>
     <tr><td><code>durationThresholds.*</code></td><td>100 / 500 ms …</td><td>When test, suite and file durations turn amber or red.</td></tr>
     <tr><td><code>coverageThresholds.red / amber</code></td><td>50 / 80</td><td>Coverage % colour bands.</td></tr>
@@ -349,12 +351,23 @@
 <!-- ───────────────────────── Support ───────────────────────── -->
 <section id="support">
   <h2>Support &amp; limits</h2>
+  <p>Jest covers babel-jest, ts-jest and @swc/jest; Create React App (react-scripts 4 / 5) has its Jest config extracted automatically. Vitest 3+ is fully supported, Vitest 1–2 run with results only; the framework is detected from the project (a project that lists Vitest but configures Jest runs on Jest).</p>
+  <!-- matrix:start -->
   <div class="table-wrap"><table>
-    <tr><th>Framework</th><th>Status</th></tr>
-    <tr><td>Jest (babel-jest, ts-jest, @swc/jest)</td><td>✅ Supported</td></tr>
-    <tr><td>Create React App (react-scripts 4 / 5)</td><td>✅ Supported (its Jest config is extracted automatically)</td></tr>
-    <tr><td>Vitest</td><td>🗓 Planned</td></tr>
+    <tr><th>Feature</th><th>Jest</th><th>CRA</th><th>Vitest</th></tr>
+    <tr><td>Run &amp; pass/fail</td><td>✅</td><td>✅</td><td>✅</td></tr>
+    <tr><td>▶ Run / ▷ Debug one test or suite</td><td>✅</td><td>✅</td><td>✅</td></tr>
+    <tr><td>Rerun a saved test file</td><td>✅</td><td>✅</td><td>✅</td></tr>
+    <tr><td>Logs / console output</td><td>✅</td><td>✅</td><td>⏳ 3.0</td></tr>
+    <tr><td>Coverage (gutter, hover)</td><td>✅</td><td>✅</td><td>⏳ 3.0</td></tr>
+    <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>⏳ 3.0.x</td></tr>
+    <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>⏳ 3.0.x</td></tr>
+    <tr><td>Monorepo / multi-project</td><td>🟡</td><td>—</td><td>🟡 Vitest <code>projects</code>, run from the root</td></tr>
+    <tr><td>Mixed frameworks in one project</td><td>—</td><td>—</td><td>⏳ 3.2</td></tr>
+    <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>⏳ 3.3</td></tr>
+    <tr><td>Timeline debugger</td><td>⏳</td><td>⏳</td><td>⏳ 3.4</td></tr>
   </table></div>
+  <!-- matrix:end -->
   <ul>
     <li>Single-test reruns use <code>--testNamePattern</code>, so tests with overlapping names can run together.</li>
     <li>Console output is captured per file by Jest. Per-test output needs an individual rerun.</li>
