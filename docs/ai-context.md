@@ -40,7 +40,8 @@ src/
 ├── CommandRunner.ts                  Generic CLI runner: binary/config/extra args, chunking, kill, coverage; abstract buildArgs(RunRequest)
 ├── JestRunner.ts                     extends CommandRunner — Jest flags only
 ├── framework/
-│   ├── FrameworkDetector.ts          Reads package.json → picks adapter from adapterPriority() (built lazily)
+│   ├── FrameworkRegistry.ts          register(adapter, priority); default(): CRA 300 → Vite 200 → Jest 100 (built lazily)
+│   ├── FrameworkDetector.ts          First matching registry adapter; detectWithReason(); unknown → plain Jest + one WARN
 │   └── adapters/
 │       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs, outputFileArg, parseResult, createRunner
 │       ├── JestAdapter.ts            Plain Jest + Next.js + Jest

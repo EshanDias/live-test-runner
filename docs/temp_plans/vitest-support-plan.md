@@ -192,6 +192,7 @@ Done (2026-10-20): `runner/src/CommandRunner.ts` (abstract: `detectAdapter`, `bu
 
 **1.3 `FrameworkRegistry` + detector (0.5 d)** (C7)
 Sketch: `ADAPTER_PRIORITY` becomes a registry (`register(adapter, priority)`); detector returns `{adapter, reason}`; unknown project → explicit `unknown` result with the existing Jest fallback kept (logged at WARN), so behaviour is unchanged.
+Done (2026-10-21): `runner/src/framework/FrameworkRegistry.ts` (`register` / `unregister` / `get` / `adapters`; same-id register replaces; `default()` lazily with `ADAPTER_PRIORITIES` CRA 300, Vite 200, Jest 100). `FrameworkDetector(registry = default)`; `detect()` / `detectFramework()` unchanged, new `detectWithReason()` → `{ adapter, framework, matched, reason }` (`matched: 'unknown'` on the Jest fallback). The fallback WARN is logged once per project root (detection runs on every runner creation). Diagnostic report shows the reason. Tests: `test/frameworkRegistry.test.ts`.
 
 **1.4 Extract `IBatchRunner` + services bundle (3 d)** (C1, C3, C4, C5)
 Sketch: define `IBatchRunner { runFiles(opts), kill(), reset(), … }` from `SessionTraceRunner`'s public surface; `JestBatchRunner = today's SessionTraceRunner`. Introduce `FrameworkServices` and have `SessionManager` take `servicesFor(file|root)` (single provider returning the one Jest bundle for now) — replacing the constructor's `_adapter` + `_projectConfig`, `new SessionTraceRunner`, and `new JestRunner` bootstrap (`TestSession` gets `adapter.createRunner()`). `extension.ts` composes services; `IInstrumentedRunner` is produced by the services bundle too.
@@ -369,13 +370,13 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 **Done in this session**
 - 0.3 finished: `e2e/real-repos.js` records each repo's plain-runner per-file counts + extension match in `docs/temp_plans/vitest-baseline.json` (CRA gets a baseline too). Fixed `repo-cra`'s plain run for workspaces under macOS's `/var` symlink (it passed `/var/…` to `--runTestsByPath`; Jest only accepts `/private/var/…`). Baseline green: `jest-dom` 31 files, `vscode-jest` 49 files / 2012 tests, `sample-react-project` 14 files. The heavy `jest` monorepo: see below.
-- 1.1 and 1.2 done — see the task notes below.
+- 1.1, 1.2 and 1.3 done — see the task notes below. Gate after 1.3: unit tests (53 runner + 17 extension), e2e --all, real-repos (3/3) green.
 - `jest` monorepo (`node e2e/real-repos.js jest`, after 1.2): harness fixed (spawnSync 1 MB buffer killed the plain-Jest baseline; save-test source picked from `packages/*`). 470/484 files match plain Jest; the rest are **BUG-43** (jest-runtime tests fail under the session run, `docs/bugs-and-issues.md`). The pre-refactor build (`e2ba4ae`) gives identical totals (6194 tests · 4141 passed · 1122 failed), so 1.1/1.2 changed nothing; BUG-43 is a 2.0.4 issue, open. Every other check passes on the monorepo.
 - Gate after 1.2: `pnpm build`, `pnpm lint`, `pnpm test` (47 runner incl. 4 command-line snapshots + 17 extension), `node e2e/run.js --all` (11 pass, 2 skipped), `node e2e/real-repos.js` (3/3 PASS).
 - Gate after 1.1: `pnpm build`, `pnpm lint`, `pnpm test` (35 runner + 17 extension), `node e2e/run.js --all` (11 pass, 2 repo scenarios skipped — covered by `real-repos.js`), `node e2e/real-repos.js` (3/3 PASS, originals untouched).
 
 **Next**
-1. Task 1.3 (`FrameworkRegistry` + detector) on `feat/vitest-decouple` — replaces the lazy `adapterPriority()` list from 1.2.
+1. Task 1.4 (`IBatchRunner` + services bundle) on `feat/vitest-decouple`.
 
 ## Progress tracker
 
@@ -384,7 +385,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 0.3 Baseline + real-repo harness (`e2e/real-repos.js`; baseline in `vitest-baseline.json`; 3 light Jest repos green; `jest` monorepo green except pre-existing BUG-43)
 - [x] 1.1 Neutral naming & open types
 - [x] 1.2 Generic runner layer
-- [ ] 1.3 FrameworkRegistry + detector
+- [x] 1.3 FrameworkRegistry + detector
 - [ ] 1.4 IBatchRunner + services bundle
 - [ ] 1.5 Split instrumentation
 - [ ] 1.6 Conformance suite + gate

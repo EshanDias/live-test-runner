@@ -341,14 +341,13 @@ export class VitestAdapter implements FrameworkAdapter {
 //   parseTestList(result, root), coverageFile(root)
 ```
 
-Register it in `FrameworkDetector.ts`:
+Register it in `FrameworkRegistry.default()` (`packages/runner/src/framework/FrameworkRegistry.ts`) — higher priority is tried first:
 
 ```typescript
-return adapters ??= [
-  new CRAAdapter(),
-  new VitestAdapter(),  // add before JestAdapter
-  new JestAdapter(),
-]
+new FrameworkRegistry()
+  .register(new CRAAdapter(), ADAPTER_PRIORITIES.cra)      // 300
+  .register(new VitestAdapter(), ADAPTER_PRIORITIES.vite)  // 200 — before Jest
+  .register(new JestAdapter(), ADAPTER_PRIORITIES.jest)    // 100
 ```
 
 Export from `packages/runner/src/index.ts`.

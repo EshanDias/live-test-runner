@@ -11,7 +11,7 @@ import { RunnerOptions, TestRunner } from '../../TestRunner';
  *  - How it writes and how to read its JSON result
  *  - Which TestRunner builds its command lines
  *
- * Adding a new framework = implementing this interface + registering it in FrameworkDetector.
+ * Adding a new framework = implementing this interface + registering it in FrameworkRegistry.
  */
 export interface FrameworkAdapter {
   readonly framework: FrameworkId;

@@ -107,7 +107,7 @@ Current adapters:
 
 Adapters also own how a run is read: `outputFileArg(file)` (the result-file flag the `Executor` appends), `parseResult(...)` (raw JSON → `RunResult`; Jest and CRA use `ResultParser`) and `createRunner(...)`. The runner layer is `CommandRunner` (generic: binary/config/extra-arg assembly, chunking, kill, coverage) with one subclass per framework that only builds that framework's args per run kind (`JestRunner`).
 
-`FrameworkDetector` tries adapters in `adapterPriority()` order and returns the first match. `ViteAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest.
+`FrameworkDetector` tries the adapters of a `FrameworkRegistry` (default: CRA 300 → Vite 200 → Jest 100, highest priority first) and returns the first match; `detectWithReason()` also says why. A project nothing matches falls back to plain Jest with one WARN per project root (`matched: 'unknown'`). `ViteAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest.
 
 ### Jest invocation
 

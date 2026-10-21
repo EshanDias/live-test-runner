@@ -157,7 +157,7 @@ The extracted config is cached in memory. It is invalidated if `package.json` ch
 
 1. Create `src/framework/adapters/YourAdapter.ts` implementing `FrameworkAdapter`
 2. Create `src/YourRunner.ts` extending `CommandRunner` (`detectAdapter`, `buildArgs`, `parseTestList`, `coverageFile`) and return it from the adapter's `createRunner`
-3. Add an instance to `adapterPriority()` in `FrameworkDetector.ts`
+3. Register it in `FrameworkRegistry.default()` (`.register(new YourAdapter(), priority)` — higher priorities are tried first; `ADAPTER_PRIORITIES` has the shipped ones: CRA 300, Vite 200, Jest 100)
 4. Export from `src/index.ts`
 
 No other files need to change.

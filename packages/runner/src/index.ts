@@ -31,7 +31,8 @@ export { CommandRunner, RunRequest } from './CommandRunner';
 export { JestRunner, toJestPathArg } from './JestRunner';
 
 // Framework layer — exposed so callers can detect framework without running
-export { FrameworkDetector } from './framework/FrameworkDetector';
+export { FrameworkDetector, DetectionResult } from './framework/FrameworkDetector';
+export { FrameworkRegistry, ADAPTER_PRIORITIES } from './framework/FrameworkRegistry';
 export { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 export { JestAdapter } from './framework/adapters/JestAdapter';
 export { CRAAdapter } from './framework/adapters/CRAAdapter';
