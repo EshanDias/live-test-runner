@@ -212,7 +212,7 @@
   <p>Opens in the bottom panel and has three columns: <b>test list</b> · <b>console output</b> (tabs per level: log / info / warn / error) · <b>errors</b>.</p>
   <ul>
     <li>Select a file, suite or test to scope the output and errors to it.</li>
-    <li>Output is stored <b>per scope</b>. Jest reports console output per file, so a single test only has its own output after you rerun that test on its own. Until then it shows a placeholder; output from other scopes is never copied in.</li>
+    <li>Output is stored <b>per scope</b>. Jest reports console output per file, so a single test only has its own output after you rerun that test on its own. Until then it shows a placeholder; output from other scopes is never copied in. Vitest says which test or suite printed each line, so with Vitest every test shows its own output right away.</li>
     <li>Each log line has a copy button.</li>
   </ul>
 </section>
@@ -358,7 +358,7 @@
     <tr><td>Run &amp; pass/fail</td><td>✅</td><td>✅</td><td>✅</td></tr>
     <tr><td>▶ Run / ▷ Debug one test or suite</td><td>✅</td><td>✅</td><td>✅</td></tr>
     <tr><td>Rerun a saved test file</td><td>✅</td><td>✅</td><td>✅</td></tr>
-    <tr><td>Logs / console output</td><td>✅</td><td>✅</td><td>⏳ 3.0</td></tr>
+    <tr><td>Logs / console output</td><td>✅ per file</td><td>✅ per file</td><td>✅ per test</td></tr>
     <tr><td>Coverage (gutter, hover)</td><td>✅</td><td>✅</td><td>⏳ 3.0</td></tr>
     <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>⏳ 3.0.x</td></tr>
     <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>⏳ 3.0.x</td></tr>
@@ -370,7 +370,7 @@
   <!-- matrix:end -->
   <ul>
     <li>Single-test reruns use <code>--testNamePattern</code>, so tests with overlapping names can run together.</li>
-    <li>Console output is captured per file by Jest. Per-test output needs an individual rerun.</li>
+    <li>Jest captures console output per file; per-test output needs an individual rerun. Vitest attributes output per test.</li>
     <li>Instrumented runs raise <code>testTimeout</code> to at least 30 s to absorb the instrumentation overhead.</li>
   </ul>
 </section>

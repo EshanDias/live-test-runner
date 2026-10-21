@@ -479,6 +479,8 @@ interface OutputLine {
 
 **Output scoping rules:** Jest JSON reports console output at file level only. When a file runs, only `FileResult.output` is set. Node output is set only when that scope is individually rerun via `--testNamePattern`. Output is never back-filled or fabricated for scopes that haven't been run individually.
 
+Vitest is different: the runner's reporter (`framework/vitestReporter.ts`, loaded with `--reporter=<file>` next to `default` and `json`) records each console call with the task that made it, so `ConsoleEntry.scope` is `file` / `suite` / `test` with the scope's full name. `RunnerBackedAdapter` then sets every touched test's output to exactly its own lines (empty for a quiet test that ran), a suite's to its hooks' lines, and — on a whole-file run — the file's to all lines. Scoped reruns update only the scopes they ran.
+
 **`SelectionState`** — tracks which row the user has selected in the results panel. Emits `scope-changed` messages when selection changes.
 
 ### Static test discovery (`TestDiscoveryService`)

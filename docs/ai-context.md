@@ -101,7 +101,7 @@ RunResult
       failureMessages: string[]
       ancestorTitles: string[]
 
-ConsoleEntry   // console output per file
+ConsoleEntry   // console output per file; Vitest adds scope ('file'|'suite'|'test') + scopeName
   message: string
   type: string   // 'log' | 'warn' | 'error' | 'info' | 'debug'
   origin: string
@@ -330,6 +330,7 @@ interface OutputLine {
 - Suite/node rerun → that node's `output` set
 - Test rerun → `TestNode.output` set
 - **Never back-fill** node output from file-level output
+- Vitest attributes output (`ConsoleEntry.scope`): every test that ran gets its own lines (possibly none), suites their hooks' lines — attribution, not back-fill
 
 ### `LineMap`
 

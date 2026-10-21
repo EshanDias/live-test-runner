@@ -374,7 +374,31 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
       capturedAt: now,
     };
 
-    if (opts?.nodeId && lastTouchedTestNodeId) {
+    // Frameworks that attribute output to its suite / test (Vitest) give each
+    // test that ran exactly its own lines — that is the test's output, not
+    // the file's copied in. Jest reports per file only (scope unset).
+    const attributed = consoleLines.some((e) => e.scope !== undefined);
+
+    if (attributed) {
+      if (!opts?.nodeId && !opts?.fullNames) { store.setFileOutput(filePath, output); }
+      const own = new Map<string, ConsoleEntry[]>();
+      for (const e of consoleLines) {
+        if (e.scope === 'test' || e.scope === 'suite') {
+          const list = own.get(e.scopeName ?? '') ?? [];
+          list.push(e);
+          own.set(e.scopeName ?? '', list);
+        }
+      }
+      for (const id of touchedNodeIds) {
+        const node = store.getNode(id);
+        if (!node) { continue; }
+        const lines = own.get(node.fullName);
+        const ran = node.type === 'test' && (node.status === 'passed' || node.status === 'failed');
+        if (lines || ran) {
+          store.setNodeOutput(id, { lines: this._buildOutputLines(lines ?? [], now), capturedAt: now });
+        }
+      }
+    } else if (opts?.nodeId && lastTouchedTestNodeId) {
       const targetNode = store.getNode(opts.nodeId);
       if (targetNode?.type === 'test') {
         store.setNodeOutput(lastTouchedTestNodeId, output);
@@ -417,6 +441,11 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
       const firstLine = fileFailure.split('\n').find((l) => l.trim())?.trim() ?? '';
       this.log.debug(`${filePath} failed to run — ${firstLine}`);
       store.failFile(filePath, stripAnsi(fileFailure));
+    } else if (hadTestCases && fileFailure && !opts?.nodeId && !opts?.fullNames) {
+      // Tests ran (or were skipped) but the file failed outside them — e.g. a
+      // beforeAll / afterAll hook. The tests keep their own status; the file
+      // is failed, with the reason in its output.
+      store.fileResult(filePath, 'failed', fileResult.duration);
     }
 
   }

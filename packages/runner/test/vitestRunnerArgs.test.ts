@@ -14,7 +14,7 @@ let outputFileArgs: ((file: string) => string[])[];
 let listStdout: string;
 
 function stable(cmd: ExecutorCommand) {
-  const fix = (s: string) => s.split(root).join('<root>');
+  const fix = (s: string) => s.split(root).join('<root>').split(fs.realpathSync(os.tmpdir())).join('<tmp>').split(os.tmpdir()).join('<tmp>');
   return { binary: fix(cmd.binary), args: cmd.args.map(fix), cwd: fix(cmd.cwd), timeoutMs: cmd.timeoutMs, label: cmd.label };
 }
 
@@ -70,7 +70,7 @@ describe('VitestRunner command lines', () => {
     await runner.runTestCaseJson(path.join(root, 'src', 'a.test.ts'), 'Suite', true);
     await runner.runRelatedTestsJson(path.join(root, 'src', 'util.ts'));
     expect(calls.map(stable)).toMatchSnapshot();
-    expect(outputFileArgs.map((f) => f('/tmp/out.json'))).toEqual(Array(7).fill(['--outputFile=/tmp/out.json']));
+    expect(outputFileArgs.map((f) => f('/tmp/out.json'))).toEqual(Array(7).fill(['--outputFile.json=/tmp/out.json']));
   });
 
   it('runs an old Vitest best-effort: no task-location flag, related → full run', async () => {

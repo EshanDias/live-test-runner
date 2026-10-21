@@ -70,6 +70,14 @@ export interface ConsoleEntry {
   /** Console level: 'log' | 'warn' | 'error' | 'info' | 'debug' | etc. */
   type: string;
   origin: string;
+  /**
+   * Where the framework attributes the output (Vitest does; Jest reports per
+   * file only and leaves this unset): the file itself (module scope,
+   * describe bodies), a suite (its hooks) or a test.
+   */
+  scope?: 'file' | 'suite' | 'test';
+  /** Full name of that suite or test, space-joined like TestCaseRunResult.fullName. */
+  scopeName?: string;
 }
 
 export interface FileRunResult {
