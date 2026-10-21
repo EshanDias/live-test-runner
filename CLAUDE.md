@@ -127,6 +127,8 @@ On-save reruns are session-guarded: nothing runs in the background until the use
 
 Jest reports console output at the **file level only** (test runner limitation — individual console calls are not attributed to specific tests). Suite and test output exist only when that scope is individually rerun by name pattern.
 
+Vitest attributes every console call to the test or suite that made it (our reporter, `onUserConsoleLog`): `ConsoleEntry.scope` / `scopeName` are set, and every test that ran gets exactly its own lines (possibly none), suites their hooks' lines, the file all lines. That is attribution, not back-fill.
+
 **Never back-fill**: A test section never individually run shows a placeholder, not inherited file output. This is correct behavior.
 
 ---

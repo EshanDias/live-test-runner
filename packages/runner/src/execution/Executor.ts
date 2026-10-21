@@ -40,6 +40,8 @@ export interface ExecutorCommand {
   timeoutMs?: number;
   /** Tag prefix for this process's output lines (`[jest#12]`, `[vitest#13]`). Default 'jest'. */
   label?: string;
+  /** Also send stdout to the raw-output sink (still captured). Default false. */
+  forwardStdout?: boolean;
 }
 
 /**
@@ -132,7 +134,7 @@ export class Executor {
 
     this.kill();
 
-    const result = await this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs, command.label);
+    const result = await this.spawn(inv, command.cwd, command.extraEnv, command.forwardStdout ?? false, command.timeoutMs, command.label);
 
     // Prefer the output file; fall back to captured stdout for CRA edge cases.
     let jsonOutput: string;

@@ -6,6 +6,8 @@ import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { refusingAdapter } from './framework/refusingAdapter';
 import type { VitestAdapter } from './framework/adapters/VitestAdapter';
 import { vitestProjects } from './framework/vitestProjects';
+import { VITEST_EVENTS_ENV, fileKey, readVitestEvents, toConsoleEntry, vitestReporterFile } from './framework/vitestReporter';
+import { RunResult } from './types';
 import * as os from 'os';
 import { FRAMEWORK_IDS } from './types';
 import { createLogger } from './utils/logger';
@@ -77,6 +79,38 @@ export class VitestRunner extends CommandRunner {
   }
 
   protected override get processLabel(): string { return 'vitest'; }
+
+  /** Vitest's default reporter prints to stdout — that is its raw output. */
+  protected override get forwardsStdout(): boolean { return true; }
+
+  /** The events file of each run in flight (request → file). */
+  private readonly eventFiles = new WeakMap<RunRequest, string>();
+
+  protected override runEnv(request: RunRequest): Record<string, string> | undefined {
+    if (request.kind === 'list') { return undefined; }
+    const file = path.join(this.tmpDir ?? os.tmpdir(), `ltr-vitest-events-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`);
+    this.eventFiles.set(request, file);
+    return { [VITEST_EVENTS_ENV]: file };
+  }
+
+  /** Console output per file from the reporter, each entry with its scope (file / suite / test). */
+  protected override afterRun(request: RunRequest, result: RunResult): RunResult {
+    const file = this.eventFiles.get(request);
+    if (!file) { return result; }
+    const byFile = new Map<string, ReturnType<typeof toConsoleEntry>[]>();
+    for (const e of readVitestEvents(file)) {
+      if (e.ev !== 'log' || !e.file) { continue; }
+      const key = fileKey(e.file);
+      const list = byFile.get(key) ?? [];
+      list.push(toConsoleEntry(e));
+      byFile.set(key, list);
+    }
+    for (const fr of result.fileResults) {
+      const entries = byFile.get(fileKey(fr.testFilePath));
+      if (entries) { fr.consoleOutput = [...fr.consoleOutput, ...entries]; }
+    }
+    return result;
+  }
 
   protected detectAdapter(projectRoot: string): FrameworkAdapter {
     const adapter = this.detector.detect(projectRoot);
@@ -180,9 +214,15 @@ export class VitestRunner extends CommandRunner {
 
   // ── Private ────────────────────────────────────────────────────────────────
 
-  /** Flags every run that produces a result needs. */
+  /**
+   * Flags every run that produces a result needs: Vitest's default reporter
+   * (its own output, for the Test Output channel), ours (console output per
+   * test) and json (the result, written to --outputFile.json).
+   */
   private resultArgs(): string[] {
     return [
+      '--reporter=default',
+      `--reporter=${vitestReporterFile(this.tmpDir ?? os.tmpdir())}`,
       '--reporter=json',
       // `location` (test line numbers, for the gutter) — a CLI flag since Vitest 3.
       ...(this.vitestMajor() >= 3 ? ['--includeTaskLocation'] : []),

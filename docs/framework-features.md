@@ -13,7 +13,7 @@ Cells: ✅ supported · 🟡 partial · ⏳ planned (target release) · — not 
 | Run & pass/fail | ✅ | ✅ | ✅ |
 | ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ |
 | Rerun a saved test file | ✅ | ✅ | ✅ |
-| Logs / console output | ✅ | ✅ | ⏳ 3.0 |
+| Logs / console output | ✅ per file | ✅ per file | ✅ per test |
 | Coverage (gutter, hover) | ✅ | ✅ | ⏳ 3.0 |
 | Live per-file progress | ✅ | ✅ | ⏳ 3.0.x |
 | Rerun tests related to a saved source file | ✅ | ✅ | ⏳ 3.0.x |

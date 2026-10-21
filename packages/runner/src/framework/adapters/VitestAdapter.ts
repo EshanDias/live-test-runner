@@ -156,9 +156,9 @@ export class VitestAdapter implements FrameworkAdapter {
 
   // ── Results ────────────────────────────────────────────────────────────────
 
-  /** The json reporter writes to `--outputFile` when it is the only reporter. */
+  /** The json reporter's file; `.json` because the run has several reporters. */
   outputFileArg(file: string): string[] {
-    return [`--outputFile=${file}`];
+    return [`--outputFile.json=${file}`];
   }
 
   /** Vitest's json reporter: Jest's shape with Vitest's own quirks (see VitestResultParser). */

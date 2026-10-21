@@ -164,7 +164,7 @@ All settings under `liveTestRunner.*`.
 | Run & pass/fail | ✅ | ✅ | ✅ |
 | ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ |
 | Rerun a saved test file | ✅ | ✅ | ✅ |
-| Logs / console output | ✅ | ✅ | ⏳ 3.0 |
+| Logs / console output | ✅ per file | ✅ per file | ✅ per test |
 | Coverage (gutter, hover) | ✅ | ✅ | ⏳ 3.0 |
 | Live per-file progress | ✅ | ✅ | ⏳ 3.0.x |
 | Rerun tests related to a saved source file | ✅ | ✅ | ⏳ 3.0.x |
@@ -183,7 +183,7 @@ Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projec
 ## Known limitations
 
 - Individual test reruns use `--testNamePattern` — tests with exactly the same full name run together
-- Console output is captured per file by Jest; it shows on a single test only when that test is rerun on its own
+- Jest captures console output per file; it shows on a single test only when that test is rerun on its own. With Vitest every test shows its own output.
 - Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
 
 ---

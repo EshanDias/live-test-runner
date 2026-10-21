@@ -17,8 +17,8 @@ describe('vitest adapter — running', () => {
     expect(new VitestAdapter().createRunner()).toBeInstanceOf(VitestRunner);
   });
 
-  it('writes its json result to --outputFile', () => {
-    expect(new VitestAdapter().outputFileArg('/tmp/r.json')).toEqual(['--outputFile=/tmp/r.json']);
+  it('writes its json result to --outputFile.json (it runs several reporters)', () => {
+    expect(new VitestAdapter().outputFileArg('/tmp/r.json')).toEqual(['--outputFile.json=/tmp/r.json']);
   });
 });
 

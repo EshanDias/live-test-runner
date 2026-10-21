@@ -75,6 +75,19 @@ export abstract class CommandRunner implements TestRunner {
   /** The framework's own args for a run (everything after the adapter's extra args). */
   protected abstract buildArgs(request: RunRequest): string[];
 
+  /** Extra environment for a run's process (e.g. where a reporter writes). */
+  protected runEnv(_request: RunRequest): Record<string, string> | undefined {
+    return undefined;
+  }
+
+  /** Adds what the framework reported outside its JSON result (e.g. console output). */
+  protected afterRun(_request: RunRequest, result: RunResult): RunResult {
+    return result;
+  }
+
+  /** Forward the runner's stdout to the raw-output sink (Vitest's reporter prints there). */
+  protected get forwardsStdout(): boolean { return false; }
+
   /**
    * Async work before a command is built (e.g. Vitest reading its projects).
    * Called for every command; implementations cache.
@@ -190,10 +203,10 @@ export abstract class CommandRunner implements TestRunner {
     const binary = this.resolveBinary();
     const args = await this.commandArgs(request);
     const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture(
-      { binary, args, cwd, timeoutMs, label: this.processLabel },
+      { binary, args, cwd, timeoutMs, label: this.processLabel, extraEnv: this.runEnv(request), forwardStdout: this.forwardsStdout },
       (file) => adapter.outputFileArg(file),
     );
-    return adapter.parseResult(passed, jsonOutput, stderr);
+    return this.afterRun(request, adapter.parseResult(passed, jsonOutput, stderr));
   }
 
   /** [user-command words] [leading args] [config args] [adapter extra args] [framework args] */

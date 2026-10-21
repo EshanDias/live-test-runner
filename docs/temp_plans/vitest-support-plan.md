@@ -254,6 +254,8 @@ Done (2026-10-21) → **M1 reached**: Vitest projects run and show pass/fail in 
 ### Phase 3 — Logs & output (4.5 d) — *Feature V2*
 
 **3.1 Output capture (2 d)** — spike first: does `onUserConsoleLog` give per-test attribution? If yes, document it as a Vitest improvement; otherwise keep the file-level rule (never back-fill). Run with `--reporter=default --reporter=json` (+ `--outputFile.json=`) so raw stdout streams to the Test Output channel and Results pane.
+Done (2026-10-21, branch `feat/vitest-logs` from `feat/vitest-run`): spike answered **yes** — `onUserConsoleLog` gives the task that printed each line on every version (1.6, 2.1, 3.2, 4.1, 5.0): test-body logs → the test, `beforeAll` → its suite, module scope / describe bodies → the file (v1: `taskId` = `<file>:<line>:<col>`, not in `idMap`). `task.suite` is not filled in for suites on v2+ in the main process, so the reporter finds the chain by searching the file's task tree. Runner: `framework/vitestReporter.ts` (reporter source written to the session dir once; `readVitestEvents`, `toConsoleEntry`), `VitestRunner` runs `--reporter=default --reporter=<ours> --reporter=json` (json → `--outputFile.json=`), `runEnv` sets `LTR_VITEST_EVENTS` per run, `afterRun` attaches entries; `ConsoleEntry.scope` / `scopeName`; `CommandRunner.runEnv/afterRun/forwardsStdout` hooks; `ExecutorCommand.forwardStdout` (Vitest's default reporter prints to stdout → Test Output channel). Extension: `RunnerBackedAdapter` — when entries carry a scope, each touched test that ran gets exactly its own lines (empty, with `capturedAt`, for a quiet test — known, not a placeholder), suites their hooks' lines, the file all lines on a whole-file run; scoped / pattern reruns update only what ran. Documented as a Vitest improvement (CLAUDE.md §8, architecture, README, guide, matrix "✅ per test"). Unit: `test/vitestConsole.test.ts`. e2e: `vitest-basic/src/logs.test.js` + `vitest-output` (10 checks, part of 3.3).
+
 **3.2 Failure details & inline diagnostics (1.5 d)** — parse Vitest stack frames (strip `vite-node`/`❯` noise, map `file:line:col`), use `location` for the test line, feed `utils/diagnostics.ts`.
 **3.3 Tests (1 d)** — scoped output rerun e2e (`vitest-output`), unit tests for stack parsing.
 Gate → **M2a**.
@@ -410,8 +412,11 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 2.7 done (2026-10-21) → **M1** (Vitest run & pass/fail). Phase 2 complete on `feat/vitest-run`. Gate: lint, 162 runner + 29 extension unit tests, `e2e/run.js --all` (17 pass incl. 6 Vitest scenarios, 3 repo scenarios skipped — run by real-repos.js), `e2e/real-repos.js` (6/6 PASS: jest-dom, vscode-jest, sample-react-project, unplugin, slidev, vueuse).
 
+**Phase 3 (branch `feat/vitest-logs`, from `feat/vitest-run`)**
+- 3.1 done (2026-10-21) — see the task note. Gate: build, lint, 164 runner + 29 extension unit tests, `e2e/run.js --all` (18 pass, 3 repo scenarios skipped), `e2e/real-repos.js` (6/6 PASS).
+
 **Next**
-1. Phase 3 (logs & output) on `feat/vitest-logs`, branched from `feat/vitest-run` after it is pushed (the phase 2 PR into `release/3.0.0` is the owner's call).
+1. Task 3.2 — failure details: the real hook error, `toEqual` diffs and the failure location from the reporter.
 
 ## Progress tracker
 
@@ -432,7 +437,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 2.6 Session behaviour parity
 - [x] 2.8 Projects & browser-mode guard
 - [x] 2.7 Tests (M1)
-- [ ] 3.1 Output capture
+- [x] 3.1 Output capture
 - [ ] 3.2 Failure details & diagnostics
 - [ ] 3.3 Tests
 - [ ] 5.1 Coverage run
