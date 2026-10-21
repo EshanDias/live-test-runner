@@ -509,13 +509,13 @@
     }
   },
   "jest": {
-    "recorded": "2026-10-21T00:55:10.338Z",
+    "recorded": "2026-10-21T01:06:53.912Z",
     "head": "399b831484e372c07e03a634a197f3b9f5a261f7",
     "extensionMatches": false,
     "files": 484,
     "total": {
-      "passed": 4273,
-      "failed": 1002,
+      "passed": 4272,
+      "failed": 1003,
       "skipped": 57
     },
     "perFile": {
@@ -1110,8 +1110,8 @@
         "skipped": 0
       },
       "e2e/__tests__/nonSerializableStructuresInequality.test.ts": {
-        "passed": 12,
-        "failed": 0,
+        "passed": 11,
+        "failed": 1,
         "skipped": 0
       },
       "e2e/__tests__/noTestFound.test.ts": {
