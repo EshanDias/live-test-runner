@@ -16,7 +16,7 @@
 
 > **Works with Jest (incl. Create React App) and Vitest** — see [Supported frameworks](#supported-frameworks) for what each one supports.
 
-📖 **[Read the full guide](https://eshandias.github.io/live-test-runner/)** — or run **Live Test Runner: Open Guide** in VS Code.
+🌐 **[Website](https://eshandias.github.io/live-test-runner/)** · 📖 **[Read the full guide](https://eshandias.github.io/live-test-runner/guide/)** — or run **Live Test Runner: Open Guide** in VS Code.
 
 <!-- [TODO: USER_INPUT_NEEDED] Replace with an updated hero gif showing the full experience (test run + coverage bars + hover) -->
 ![Demo](resources/gifs/live%20test%20runner%20demo.gif)

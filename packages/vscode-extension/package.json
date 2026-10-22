@@ -16,6 +16,23 @@
   "categories": [
     "Testing"
   ],
+  "keywords": [
+    "jest",
+    "vitest",
+    "test runner",
+    "live testing",
+    "continuous testing",
+    "test on save",
+    "code coverage",
+    "tdd",
+    "unit testing",
+    "create react app",
+    "typescript"
+  ],
+  "homepage": "https://eshandias.github.io/live-test-runner/",
+  "bugs": {
+    "url": "https://github.com/EshanDias/live-test-runner/issues"
+  },
   "activationEvents": [
     "onStartupFinished",
     "onView:liveTestRunner.explorer",
