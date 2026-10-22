@@ -270,6 +270,30 @@ export class VitestRunner extends CommandRunner {
     return [];
   }
 
+  /** `projectName` of each listed file — only when the config has two or more projects (D12). */
+  protected override parseTestGroups(result: ExecutionResult, projectRoot: string): Record<string, string> | undefined {
+    const start = result.stdout.indexOf('[');
+    if (start < 0) { return undefined; }
+    try {
+      const entries = JSON.parse(result.stdout.slice(start)) as { file?: string; projectName?: string }[];
+      const names = new Map<string, Set<string>>();
+      for (const e of entries) {
+        if (typeof e.file !== 'string' || typeof e.projectName !== 'string' || !e.projectName) { continue; }
+        const file = fromRunnerPath(path.resolve(projectRoot, e.file));
+        const set = names.get(file) ?? new Set<string>();
+        set.add(e.projectName);
+        names.set(file, set);
+      }
+      const distinct = new Set([...names.values()].flatMap((s) => [...s]));
+      if (distinct.size < 2) { return undefined; }
+      const groups: Record<string, string> = {};
+      for (const [file, set] of names) { groups[file] = [...set].sort().join(', '); }
+      return groups;
+    } catch {
+      return undefined;
+    }
+  }
+
   protected coverageFile(_projectRoot: string): string {
     return path.join(this.fullRunCoverageDir(), 'coverage-final.json');
   }

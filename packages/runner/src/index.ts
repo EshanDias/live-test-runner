@@ -28,7 +28,7 @@ export {
 } from './types';
 
 // Runners: the generic command-line runner and the Jest one built on it
-export { CommandRunner, RunRequest } from './CommandRunner';
+export { CommandRunner, RunRequest, TestFileList } from './CommandRunner';
 export { JestRunner, toJestPathArg } from './JestRunner';
 export { VitestRunner, toVitestNamePattern, toVitestPathArg } from './VitestRunner';
 
@@ -61,6 +61,17 @@ export {
   fileKey as vitestFileKey,
 } from './framework/vitestReporter';
 export { refusingAdapter } from './framework/refusingAdapter';
+export {
+  DetectedProject,
+  findTestProjects,
+  projectsInFolder,
+  hasOwnTestConfig,
+  testFrameworkOf,
+  workspaceGlobs,
+  pnpmWorkspacePackages,
+  expandWorkspaceGlobs,
+  isInside,
+} from './framework/projectDiscovery';
 
 // Lower-level layers — exposed for testing and advanced usage
 export { BinaryResolver, nodeRuntime, nodeRuntimeVersion, NodeRuntime } from './resolution/BinaryResolver';

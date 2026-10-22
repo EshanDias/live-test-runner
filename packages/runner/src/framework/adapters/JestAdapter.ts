@@ -9,7 +9,7 @@ import { RunnerOptions, TestRunner } from '../../TestRunner';
 import { JestRunner } from '../../JestRunner';
 
 /** Config files Jest picks up from the project root. */
-const JEST_CONFIG_FILES = [
+export const JEST_CONFIG_FILES = [
   'jest.config.js', 'jest.config.ts', 'jest.config.cjs', 'jest.config.mjs',
   'jest.config.cts', 'jest.config.mts', 'jest.config.json',
 ];
