@@ -274,7 +274,32 @@ TimelineDecorationManager
 
 ### Entry point (`extension.ts`)
 
-Approximately 110 lines. Creates instances, registers VS Code commands and event handlers, hands control to `SessionManager`. Contains no business logic.
+Creates the views and the `ProjectRegistry`, registers VS Code commands and event handlers, and hands each command to the selected project's (or the file's project's) `SessionManager`. Contains no run logic.
+
+### Projects — monorepos & multi-root workspaces (phase 7)
+
+A window holds one **`ProjectContext`** per test project (`src/project/`). Everything that used to exist once per window is per project:
+
+| Per project (`ProjectContext`) | Shared by the window |
+|---|---|
+| `ResultStore`, `ExecutionTraceStore`, `CoverageStore` | `SelectionState`, the views, decorations, CodeLens, hover |
+| `TestDiscoveryService` + `DiscoveryCache` (keyed by root) | Output channels, status bar item |
+| framework services (`DetectingFrameworkProvider` → Jest / Vitest bundle with its own batch runner) | Timeline decorations |
+| `SessionManager` (fixed `projectRoot`), runnable-files cache entry (keyed by root) | |
+| session folder (`session-<pid>-<ts>/p<N>-<name>`; the folder itself when there is one project) | |
+
+**Detection** (runner `framework/projectDiscovery.ts`, pure, unit-tested) — for each VS Code workspace folder:
+1. the folder has its own test config (`jest.config.*`, `package.json#jest`, `vitest.config.*` / `vite.config.*` / `vitest.workspace.*`, `react-scripts test`) → **one project at the folder**; its config covers its packages (the `jest` repo's root `projects`, vueuse / slidev `test.projects` — D12);
+2. else a monorepo root (`pnpm-workspace.yaml` `packages:`, `package.json#workspaces`) → **one project per workspace package with tests** (a framework dependency, config, or a test script running jest / vitest / react-scripts);
+3. else the folder, if a framework is detected there.
+
+Projects inside another project's root are dropped; a single folder with nothing recognised is still the project (plain Jest, as before). `liveTestRunner.projectRoot` pins the window to that one root.
+
+**`ProjectRegistry`** owns the contexts and the *selected* project. Nothing runs automatically (D11): only the selected project's static discovery starts at activation, others on first selection or Start. Each project's `SessionManager` notifies one observer, the project's **`ProjectObserverGate`**: it records the project's live state (session active, discovering) for the switcher row and forwards every event to the window's observers **only while the project is selected**. Switching (`onDidChangeSelection`) rebinds the views to the new project's stores (`bindProject` / `bind`) and sends them a fresh `init` (with `running` progress when the project is mid-run). Background projects keep running and rerunning on save (`onDidSaveTextDocument` goes to the file's project). Start / Stop act on the selected project; `liveTestRunner.maxRunningProjects` (`auto` = 2, or 1 with ≤ 4 cores / < 4 GB free memory) caps how many sessions are active at once — Start on one more is refused with a message naming the running projects.
+
+Why one `SessionManager` per project instead of one manager over contexts: the manager's run bookkeeping (`_token` for Stop, `_activeRuns`, progress, save timers, runnable set) is per session by nature. Keeping it per project made the phase a re-wiring (fixed root, a status sink, a gated observer list) instead of a rewrite, and every single-project path is unchanged.
+
+The status bar shows the selected project: `Live Tests: ✅ 12 passed` with one project (unchanged), `Live Tests: web · ✅ 12 passed · 2 running` with several. The Explorer's **switcher row** (`projects` message; only with two or more projects) lists each project with its state (`● running 3/10`, `● live`, `⟳ discovering`) and ✓ / ✗ counts; clicking one runs `liveTestRunner.selectProject`. Files of a Vitest config with several `test.projects` carry `FileResult.group` (Vitest's `projectName` from `vitest list --json`, cached with the runnable list) and the test list groups them under one collapsible row per Vitest project (D12).
 
 ### Observer pattern
 
@@ -539,7 +564,7 @@ Adding a new framework = one file implementing `IFrameworkAdapter`, plus that fr
 
 Both adapters extend `framework/RunnerBackedAdapter.ts`, which holds everything that only needs a runner's `RunResult`: single-file, test-case and related runs, and mapping `FileRunResult`s into the `ResultStore` (suites, `.each` templates, scoped reruns, output, and a file's own failure — its tests are failed with `failureMessage` when nothing ran). The adapters add detection, their runner (with the user's command setting) and the debug launch config.
 
-`extension.ts` composes a `DetectingFrameworkProvider`: it detects the project root's framework (runner `FrameworkDetector`) and builds the Vitest bundle (`createVitestServices`) for a Vitest project, the Jest bundle (`createJestServices`) otherwise, on first use. The Timeline command goes through a delegating `IInstrumentedRunner` that reports "not available for Vitest yet". Stop kills the batch runners of `all()` bundles. Mixed-framework projects (phase 8) replace the provider with a router; nothing in `SessionManager` changes.
+Each `ProjectContext` composes its own `DetectingFrameworkProvider` (phase 7 — one per project, so two projects never share a batch runner): it detects the project root's framework (runner `FrameworkDetector`) and builds the Vitest bundle (`createVitestServices`) for a Vitest project, the Jest bundle (`createJestServices`) otherwise, on first use. The Timeline command goes through a delegating `IInstrumentedRunner` that reports "not available for Vitest yet". Stop kills the batch runners of `all()` bundles. Mixed-framework projects (phase 8) replace the provider with a router; nothing in `SessionManager` changes.
 
 Static discovery (`instrumentation/shared/testDiscovery.js`) uses the project's own `@babel/parser` / `@babel/traverse` when it has them (every Jest project), else `out/vendor/babel-parser.js` (shipped by `esbuild.js`) with a built-in call-expression walker.
 
@@ -673,6 +698,8 @@ Both views extend `BaseWebviewProvider`, which handles webview lifecycle, `postM
 | `step-changed` | ResultsView → extension | User stepped to a new step; carries `stepId`, `filePath`, `line` |
 | `step-update` | Extension → ExplorerView | Forward of step-changed to sync sidebar panels |
 | `timeline-rerun` | ExplorerView → extension | User clicked Re-run in the timeline sidebar |
+| `projects` | Extension → ExplorerView | Project list + live state for the switcher row (also in `init`) |
+| `select-project` | ExplorerView → extension | User picked a project in the switcher (`liveTestRunner.selectProject`) |
 
 `scope-logs` and `scope-changed` are always sent as separate messages.
 
@@ -798,6 +825,9 @@ User stops session
 | `extension.ts` ≤ 110 lines | Wires instances and registers commands only; no business logic |
 | `CONCURRENCY = 3` for parallel runs | Balances throughput against system load; configurable constant |
 | Session guard on all background behavior | No surprise background work; resource usage is predictable |
+| One `ProjectContext` (stores, discovery, services, `SessionManager`) per project; views bound to the selected one | File ids stay naturally namespaced, background projects keep running untouched, single-project behaviour is unchanged (phase 7) |
+| A root with its own test config is one project, never split per package | Its config already runs its packages (Jest `projects`, Vitest `test.projects`); splitting would run tests twice or with the wrong config |
+| Projects are detected, never started automatically; `maxRunningProjects` caps active sessions | A monorepo with 30 packages must not spawn 30 test runners on open (D11) |
 | `step-changed` boundary: playback in webview, editor in host | `PlaybackEngine` drives the timeline UI inside the webview sandbox. The extension host only reacts to `step-changed` — it never drives playback. This keeps the playback loop fast (no round-trips) and the editor highlight authoritative. |
 | `TimelineDecorationManager` separate from `DecorationManager` | Timeline decorations (whole-line highlight, ghost text, hover) never touch pass/fail gutter icons. Two completely independent `TextEditorDecorationType` sets. |
 | Webview router instead of new tabs | Both `ResultsView` and `ExplorerView` implement an internal JS router. Timeline mode is a view swap inside an existing panel — no new VS Code panel is registered. |

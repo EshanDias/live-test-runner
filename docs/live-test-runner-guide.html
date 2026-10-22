@@ -122,6 +122,7 @@
     <a href="#coverage">Code coverage</a>
     <a href="#debugging">Debugging</a>
     <a href="#vitest">Vitest</a>
+    <a href="#monorepos">Monorepos</a>
     <a href="#timeline">Timeline Debugger</a>
     <div class="group">Reference</div>
     <a href="#commands">Commands</a>
@@ -157,7 +158,7 @@
 <section id="quick-start">
   <h2>Quick start</h2>
   <ol class="steps">
-    <li>Open a Jest or Vitest project (a single folder, or set <code>liveTestRunner.projectRoot</code>).</li>
+    <li>Open a Jest or Vitest project — a single folder, a monorepo or a multi-root workspace (see <a href="#monorepos">Monorepos</a>).</li>
     <li>Click the <b>beaker</b> icon in the Activity Bar. Tests are discovered right away.</li>
     <li>Click <b>▶ Start Testing</b>. The full suite runs once.</li>
     <li>Edit and save. The affected tests rerun automatically.</li>
@@ -255,9 +256,30 @@
     <li><b>Coverage</b> uses Vitest's own provider. Install <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>, whichever your config names); without it the log says once that coverage is off. Nothing is written into your project's <code>coverage/</code> folder.</li>
     <li><b>Projects</b>: a config with <code>test.projects</code> runs once from the root; Vitest runs every project. Browser-mode projects need real browsers, so they are left out unless you turn on <code>vitestIncludeBrowserProjects</code> or your test script picks projects itself.</li>
     <li><b>Saving a source file</b> reruns the test files that import it (<code>vitest related</code>), live and with fresh coverage. Saving <code>vitest.config.*</code> restarts the session.</li>
-    <li><b>Not yet</b>: "covering tests" in the hover and per-test source-file reruns (they need the execution trace), the Timeline Debugger, and monorepos with several packages.</li>
+    <li><b>Not yet</b>: "covering tests" in the hover and per-test source-file reruns (they need the execution trace) and the Timeline Debugger.</li>
   </ul>
   <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — tree fills in, results, coverage bars -->
+</section>
+
+<!-- ───────────────────────── Monorepos ───────────────────────── -->
+<section id="monorepos">
+  <h2>Monorepos &amp; multi-root workspaces</h2>
+  <p>Every test project in the workspace is detected when you open it. <b>None runs until you start it.</b></p>
+  <div class="table-wrap"><table>
+    <tr><th>Your layout</th><th>Projects</th></tr>
+    <tr><td>A folder with its own test config (<code>jest.config.*</code>, <code>vitest.config.*</code>, <code>package.json#jest</code>, CRA)</td><td>One project — its config already covers its packages (Jest <code>projects</code>, Vitest <code>test.projects</code>)</td></tr>
+    <tr><td>A monorepo root (<code>pnpm-workspace.yaml</code>, <code>package.json#workspaces</code>) without a test config</td><td>One project per package that has tests (a Jest / Vitest dependency, config or <code>test</code> script)</td></tr>
+    <tr><td>A multi-root workspace</td><td>Each folder, by the rules above</td></tr>
+  </table></div>
+  <ul>
+    <li><b>Project switcher</b>: the row at the top of the Explorer (<code>web ▾ ● running ✓120 ✗2</code>) lists every project with its state. Pick one and the tree, Results panel, gutter, CodeLens and status bar switch to it. Also: <b>Select Project</b> in the Command Palette.</li>
+    <li><b>Start / Stop act on the project shown.</b> The others keep running — and rerunning on save — in the background; switch back to see their progress.</li>
+    <li><b>How many at once</b>: <code>maxRunningProjects</code> (<code>auto</code> = 2, or 1 on machines with ≤ 4 CPU cores or less than 4 GB free memory). Starting one more asks you to stop a running project first and names the running ones. <b>Stop All Projects</b> stops them all.</li>
+    <li><b>Vitest projects</b>: a package whose config has <code>test.projects</code> is one project; its files are grouped by Vitest project name in the tree.</li>
+    <li><b>Pin one root</b>: <b>Select Project Root</b> (or <code>liveTestRunner.projectRoot</code>) limits Live Test Runner to that folder, exactly as before 3.1; choose "Detect all projects" to go back.</li>
+    <li>The status bar shows the selected project and how many run: <code>Live Tests: web · ✅ 12 passed · 2 running</code>.</li>
+  </ul>
+  <!-- [TODO: USER_INPUT_NEEDED] gif: the project switcher in a pnpm monorepo — start two packages, switch while both run -->
 </section>
 
 <!-- ───────────────────────── Timeline ───────────────────────── -->
@@ -283,7 +305,9 @@
     <tr><td>Stop Testing</td><td>Ends the session and kills running Jest / Vitest processes</td></tr>
     <tr><td>Stop Testing and Clear Cache</td><td>Stop, then wipe the discovery cache (<kbd>Shift</kbd>+<kbd>Delete</kbd> in the views)</td></tr>
     <tr><td>Clear Cache and Restart Testing</td><td>Wipe the cache and rediscover tests</td></tr>
-    <tr><td>Select Project Root</td><td>Pick the root folder in multi-folder workspaces</td></tr>
+    <tr><td>Select Project</td><td>Switch the project the views show (the Explorer's switcher row)</td></tr>
+    <tr><td>Select Project Root</td><td>Pin Live Test Runner to one folder, or back to every detected project</td></tr>
+    <tr><td>Stop All Projects</td><td>Stops every running project</td></tr>
     <tr><td>Show Logs</td><td>Opens the <b>Live Test Runner</b> log (levelled)</td></tr>
     <tr><td>Show Test Output</td><td>Opens the raw Jest / Vitest output</td></tr>
     <tr><td>Open Guide</td><td>Opens this guide in an editor tab</td></tr>
@@ -300,7 +324,8 @@
   <p class="muted">All under <code>liveTestRunner.*</code>.</p>
   <div class="table-wrap"><table>
     <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-    <tr><td><code>projectRoot</code></td><td><code>""</code></td><td>Project folder. Detected automatically for single-folder workspaces.</td></tr>
+    <tr><td><code>projectRoot</code></td><td><code>""</code></td><td>Pin to one project folder. Empty: every test project in the workspace is detected.</td></tr>
+    <tr><td><code>maxRunningProjects</code></td><td><code>"auto"</code></td><td>Projects running at once: <code>auto</code> = 2 (1 on ≤ 4 cores or &lt; 4 GB free memory), or a number</td></tr>
     <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code> (Jest only).</td></tr>
     <tr><td><code>jestCommand</code></td><td><code>""</code></td><td>Override the Jest binary or command.</td></tr>
     <tr><td><code>vitestCommand</code></td><td><code>""</code></td><td>Override the Vitest command (e.g. <code>npx vitest</code>). Empty = the project's own Vitest.</td></tr>
@@ -380,7 +405,7 @@
     <tr><td>Coverage (gutter, hover)</td><td>✅</td><td>✅</td><td>✅ needs <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>)</td></tr>
     <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td></tr>
     <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ whole test files (<code>vitest related</code>)</td></tr>
-    <tr><td>Monorepo / multi-project</td><td>🟡</td><td>—</td><td>🟡 Vitest <code>projects</code>, run from the root</td></tr>
+    <tr><td>Monorepo / multi-project (project switcher)</td><td>✅ one project per package; a root <code>projects</code> config stays one</td><td>🟡 a CRA app is detected as a package (not e2e-tested)</td><td>✅ one project per package; <code>test.projects</code> stays one, grouped by name</td></tr>
     <tr><td>Mixed frameworks in one project</td><td>—</td><td>—</td><td>⏳ 3.2</td></tr>
     <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>⏳ 3.3</td></tr>
     <tr><td>Timeline debugger</td><td>⏳</td><td>⏳</td><td>⏳ later</td></tr>
@@ -433,6 +458,7 @@
     <li><b>Adapter pattern</b>: one adapter per framework in <code>runner</code> plus one in the extension.</li>
     <li><b>One source of truth</b>: <code>ResultStore</code> for results, trace files on disk for trace indexes.</li>
     <li><b>Isolation</b>: each VS Code window gets its own <code>session-&lt;pid&gt;-&lt;ts&gt;</code> temp folder.</li>
+    <li><b>Projects</b>: one <code>ProjectContext</code> per test project (its stores, discovery, framework services and session); the views show the selected one.</li>
   </ul>
   <p class="muted">More detail: <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/architecture.md">architecture.md</a> · <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/developer-guide.md">developer-guide.md</a></p>
 </section>

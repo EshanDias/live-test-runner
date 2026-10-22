@@ -115,7 +115,11 @@ ConsoleEntry   // console output per file; Vitest adds scope ('file'|'suite'|'te
 
 ```
 src/
-├── extension.ts                    Entry point — wires, registers commands, kicks off discovery
+├── extension.ts                    Entry point — wires views + ProjectRegistry, registers commands
+├── project/                        Monorepos & multi-root workspaces (phase 7)
+│   ├── ProjectRegistry.ts          Detects the projects (runner findTestProjects / projectRoot setting), owns one ProjectContext each, the selected one, status bar text, start limit
+│   ├── ProjectContext.ts           Per project: ResultStore / ExecutionTraceStore / CoverageStore, TestDiscoveryService + DiscoveryCache, DetectingFrameworkProvider, SessionManager, session dir; ProjectObserverGate (forwards events only while selected)
+│   └── projectLimits.ts            maxRunningProjects: auto (2, or 1 with ≤ 4 cores / < 4 GB free) and the refusal message (pure)
 ├── IResultObserver.ts              Interface: onSessionStart/Stop, onRunStart, onFileResult,
 │                                   onDiscoveryStarted/Progress/Complete (optional)
 ├── store/
@@ -201,6 +205,8 @@ src/
 ---
 
 ## Session lifecycle
+
+**Projects (phase 7):** on activate `ProjectRegistry.refresh()` detects the test projects (one per workspace folder with its own test config; one per workspace package with tests under a monorepo root without one; the `liveTestRunner.projectRoot` setting pins one root) and builds a `ProjectContext` each — none is started (D11). The first (or remembered / active-editor) project is selected; the views show it, Start / Stop act on it, and only its discovery runs now (the others on first selection or Start). Everything below happens **per project**. Several projects may run at once, up to `liveTestRunner.maxRunningProjects`; a background project keeps running and rerunning on save, its events held back by its `ProjectObserverGate` until it is selected again.
 
 **On extension activate (before any user action):**
 1. `DiscoveryCache` loaded from `globalStorageUri/cache/<folderName>-<hash8>/discovery-cache.json` (if exists). A `session.lock` PID file is written.
@@ -373,6 +379,10 @@ Identity only — **never status or duration**. `DecorationManager` always queri
 | `step-update` | Extension → ExplorerView | Forward of step-changed; sidebar syncs State/Watch/Call Stack |
 | `add-to-watch` | Extension → ExplorerView | Add a variable to the sidebar Watch panel |
 | `timeline-rerun` | ExplorerView → extension | User clicked Re-run in the timeline sidebar |
+| `projects` | Extension → ExplorerView | Switcher row: `ProjectSummary[]` (name, framework, state idle/discovering/running/watching, counts, progress, selected) — also in `init`; shown with 2+ projects |
+| `select-project` | ExplorerView → extension | User picked a project → `liveTestRunner.selectProject` |
+
+`init` also carries `running` (`{completed,total,failed}` or null) so a project switched to mid-run shows its progress. File objects carry `group` (Vitest project name, D12) when the config has several `test.projects`.
 
 **Rule:** `scope-logs` and `scope-changed` are always sent as separate messages. Different lifecycles; keeping them separate prevents double-renders.
 
@@ -493,7 +503,10 @@ All in `packages/vscode-extension/package.json`:
 **Commands:**
 - `liveTestRunner.startTesting`
 - `liveTestRunner.stopTesting`
-- `liveTestRunner.selectProjectRoot`
+- `liveTestRunner.selectProjectRoot` — pins the window to one root (writes `liveTestRunner.projectRoot`; "Detect all projects" clears it)
+- `liveTestRunner.selectProject` — "Select Project": switch the project the views show (quick pick, or an id / name argument; the Explorer switcher row uses it)
+- `liveTestRunner.stopAllProjects` — "Stop All Projects"
+- `liveTestRunner.startTesting` / `stopTesting` accept an optional project id (root) argument; without it they act on the selected project
 - `liveTestRunner.showOutput` — "Show Test Output": raw Jest / Vitest output channel
 - `liveTestRunner.showLogs` — "Show Logs": levelled extension log channel
 - `liveTestRunner.openGuide` — "Open Guide": the user guide shipped in `out/guide/guide.html` (copied from `docs/live-test-runner-guide.html`) in a webview tab (`views/GuidePanel.ts`); the same page is on GitHub Pages (`.github/workflows/pages.yml`)
@@ -519,7 +532,8 @@ All in `packages/vscode-extension/package.json`:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `liveTestRunner.projectRoot` | `""` | Override auto-detected root |
+| `liveTestRunner.projectRoot` | `""` | Pin the window to one project root; empty = detect every test project |
+| `liveTestRunner.maxRunningProjects` | `"auto"` | Projects running at once: `auto` = 2, or 1 with ≤ 4 CPU cores or < 4 GB free memory; or a number ≥ 1 |
 | `liveTestRunner.runMode` | `"auto"` | `"auto"`: extension calls Jest directly (full structured output). `"npm"`: delegates to `npm test --` from your package.json scripts (limited structured output — see below). |
 | `liveTestRunner.jestCommand` | `""` | Override Jest binary/command. Only used when `runMode` is `"auto"`. |
 | `liveTestRunner.onSaveDebounceMs` | `300` | Debounce delay (ms) |
@@ -547,6 +561,8 @@ All in `packages/vscode-extension/package.json`:
 | Purpose | File |
 |---------|------|
 | Wire everything | `packages/vscode-extension/src/extension.ts` |
+| Projects of the workspace (detection rules) | `packages/runner/src/framework/projectDiscovery.ts` |
+| Per-project state, selected project, gate | `packages/vscode-extension/src/project/ProjectRegistry.ts`, `ProjectContext.ts` |
 | Timeline contracts | `packages/vscode-extension/src/timeline/IInstrumentedRunner.ts` |
 | Timeline data model | `packages/vscode-extension/src/timeline/TimelineStore.ts` |
 | Timeline event union | `packages/vscode-extension/src/timeline/TimelineEvent.ts` |
@@ -597,7 +613,8 @@ All in `packages/vscode-extension/package.json`:
 5. **Never back-fill suite/test output from file-level output.** Empty output is correct for scopes that haven't been individually run.
 6. **Never add business logic to `extension.ts`.** It wires instances and registers commands only.
 7. **`SessionManager`, `ResultStore`, views, and observers must be framework-agnostic.** All framework differences live in `IFrameworkAdapter` implementations.
-8. **Multi-Session Isolation is mandatory.** Never use global shared temporary directories for runner configs or traces. Always use the window-local `LTR_SESSION_TMP_DIR` injected via constructors.
+8. **Multi-Session Isolation is mandatory.** Never use global shared temporary directories for runner configs or traces. Always use the window-local `LTR_SESSION_TMP_DIR` injected via constructors — per project, the `ProjectContext.sessionDir` (a sub-folder when the window has several projects).
+18. **Per-project state lives in `ProjectContext`.** Never add a window-wide store or framework bundle: a new store goes into `ProjectContext` and views bind to the selected project (`bindProject` / `bind`). Views never pull from a project that is not selected; background projects reach them only through their gate.
 9. **Safe Cleanup.** On activation, the extension host must only delete stale session folders belonging to dead processes (verified via `process.kill(pid, 0)`). Never perform recursive blind deletions in the base temp root.
 10. **Persistent Templates.** AST-discovered dynamic test headers (`.each`) are `template` nodes. They must survive cleanup and status rollups even when childless.
 11. **Nested Branch Compatibility.** The recursive tree must support arbitrary depth. High-level status rollups must be reliable even when only deep-nested leaves are rerun. Always bubble status changes up the full ancestor chain.

@@ -32,6 +32,7 @@
 | 🎨 | **Editor decorations** — gutter icons, inline duration, CodeLens buttons | |
 | 📊 | **Per-line code coverage** — coloured bars + hover shows which tests hit each line | |
 | 🔍 | **Results panel** — 3-column view: test list · console output · errors | |
+| 🗂 | **Monorepos & multi-root workspaces** — every package is a project; switch between them, run several at once | |
 | ⏱ | **Timeline Debugger** *(coming soon)* — step through a test like a time-travel debugger | |
 
 ---
@@ -90,6 +91,18 @@ Hover any line to see which tests cover it, their pass/fail status, and duration
 
 ---
 
+### Monorepos & multi-root workspaces
+
+- Every package with tests is detected as its own project — nothing runs until you start it.
+- A **project switcher** at the top of the Explorer shows each project's state (`● running`, `● live`, ✓ / ✗ counts). Pick one: the tree, results, gutter and status bar switch to it.
+- **▶ Start / ⏹ Stop act on the project shown.** Others keep running (and rerunning on save) in the background.
+- A root config that already covers its packages (Jest `projects`, Vitest `test.projects`) stays one project; Vitest projects are grouped by name in the tree.
+- `maxRunningProjects` limits how many run at once.
+
+<!-- [TODO: USER_INPUT_NEEDED] gif: a pnpm monorepo — open the switcher, start two packages, switch between them while both run -->
+
+---
+
 ### Results panel
 
 3-column view: test tree with search · console output tabbed by level · failure messages and stack traces.
@@ -115,7 +128,9 @@ Step through any test case line by line — variable values as inline ghost text
 | `Stop Testing` | End the session |
 | `Stop Testing and Clear Cache` | Stop + wipe discovery cache |
 | `Clear Cache and Restart Testing` | Fresh restart |
-| `Select Project Root` | Pick root in multi-folder workspace |
+| `Select Project` | Switch the project shown (same as the Explorer's switcher) |
+| `Select Project Root` | Pin Live Test Runner to one folder (or back to all projects) |
+| `Stop All Projects` | Stop every running project |
 | `Show Logs` | Open the extension log (filter by level) |
 | `Show Test Output` | Open the raw test-runner output |
 | `Copy Diagnostic Report` | Copy versions, setup and recent logs for a bug report |
@@ -142,7 +157,8 @@ All settings under `liveTestRunner.*`.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `projectRoot` | `""` | Auto-detected for single-folder workspaces |
+| `projectRoot` | `""` | Pin to one project root; empty = detect every project in the workspace |
+| `maxRunningProjects` | `"auto"` | Projects running at once: `auto` = 2 (1 on ≤ 4 cores or < 4 GB free memory), or a number |
 | `runMode` | `"auto"` | `"auto"` calls Jest directly; `"npm"` delegates to `npm test` (Jest only) |
 | `jestCommand` | `""` | Override Jest binary path |
 | `vitestCommand` | `""` | Override the Vitest command (e.g. `npx vitest`); empty = the project's own Vitest |
@@ -172,7 +188,7 @@ All settings under `liveTestRunner.*`.
 | Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) |
 | Live per-file progress | ✅ | ✅ | ✅ |
 | Rerun tests related to a saved source file | ✅ | ✅ | ✅ whole test files (`vitest related`) |
-| Monorepo / multi-project | 🟡 | — | 🟡 Vitest `projects`, run from the root |
+| Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name |
 | Mixed frameworks in one project | — | — | ⏳ 3.2 |
 | Execution trace / "covering tests" | ✅ | ✅ | ⏳ 3.3 |
 | Timeline debugger | ⏳ | ⏳ | ⏳ later |
@@ -189,6 +205,7 @@ Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projec
 - Individual test reruns use `--testNamePattern` — tests with exactly the same full name run together
 - Jest captures console output per file; it shows on a single test only when that test is rerun on its own. With Vitest every test shows its own output.
 - Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
+- Monorepos: gutter icons and CodeLens show the project selected in the Explorer — switch to see another package's
 - Vitest: saving a source file reruns the whole test files that import it (`vitest related`); per-test reruns need the execution trace, coming in a later release
 
 ---

@@ -69,6 +69,8 @@ Current adapters:
 
 Helpers: `utils/semver.ts` (`satisfies(version, range)` for `engines.node`; unknown syntax → undefined, never a failure), `nodeRuntimeVersion()` and `resolvePackageBin(pkg, bin, fromDir)` in `resolution/BinaryResolver.ts`.
 
+Workspace projects (`framework/projectDiscovery.ts`, phase 7): `findTestProjects(folders)` → `DetectedProject[]` (`root`, `name`, `framework`, `reason`). A folder with its own test config is one project (its Jest `projects` / Vitest `test.projects` cover its packages); a monorepo root (`pnpm-workspace.yaml`, `package.json#workspaces`) without one is split into its workspace packages that have tests; nested roots are dropped; one folder with nothing recognised stays the project. Helpers: `workspaceGlobs`, `pnpmWorkspacePackages`, `expandWorkspaceGlobs`, `hasOwnTestConfig`, `testFrameworkOf`, `isInside`. `CommandRunner.listTestFiles(root)` is `discoverTests` plus the framework's file groups (Vitest: `projectName` per file when the config has several `test.projects`). `VitestAdapter.detect` also accepts a package whose `test` script runs `vitest` (Vitest hoisted in the monorepo root).
+
 Config helpers (`framework/jestConfig.ts`): `toInputConfig()` turns a normalized `--showConfig` project config back into `--config` input form, `pickGlobalConfig()` keeps run-relevant global options, `testScriptJestArgs()` reads the project's `test` script.
 
 ### Execution

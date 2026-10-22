@@ -142,6 +142,16 @@ To support multiple concurrent VS Code windows, every extension instance must op
 1. **Partitioning**: Session directories are named `session-<pid>-<timestamp>`.
 2. **Injection**: All runners and managers receive this directory via constructor injection. NEVER use global temporary constants for file writes.
 3. **Safe Cleanup**: On activate, scan the temp root and prune only session folders whose owning PID is inactive (verified via `process.kill(pid, 0)`). 
+4. **Per project**: with several test projects in the window (monorepo / multi-root, phase 7) each `ProjectContext` gets its own sub-folder `session-<pid>-<ts>/p<N>-<name>`; with one project it is the session folder itself.
+
+### Projects (monorepos, multi-root workspaces)
+
+Since phase 7 a window holds one `ProjectContext` per test project (`src/project/`): its own `ResultStore`, `ExecutionTraceStore`, `CoverageStore`, `TestDiscoveryService` + cache, framework services and `SessionManager`. The views, decorations and CodeLens are bound to the **selected** project (`ProjectRegistry.select` → `bindProject` / `bind`); each project's events reach them through its `ProjectObserverGate` only while it is selected.
+
+- Detection rules are pure and unit-tested in the runner (`framework/projectDiscovery.ts`, `test/projectDiscovery.test.ts`): a folder with its own test config is one project; a monorepo root without one is split into its workspace packages that have tests; nested projects are dropped.
+- New per-project state goes into `ProjectContext`, never a window-wide singleton; anything a view shows must be re-bindable.
+- Commands act on the selected project; commands that get a file (`rerunScope`, `rerunFromEditor`, `debugFromEditor`, `openTimelineDebugger`, saves) go to the file's project (`ProjectRegistry.forFile`).
+- Try it: `node e2e/run.js monorepo-select monorepo-run monorepo-stop` (fixtures `monorepo-jest`, `monorepo-vitest`).
 
 Use `spawn`, never `exec`. `exec` has a buffer limit that silently truncates large outputs. `spawn` streams.
 
@@ -402,7 +412,7 @@ export class VitestAdapter implements IFrameworkAdapter {
 
 ### Step 3 — Services bundle
 
-Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `FrameworkServices` (see `jestServices.ts`): the adapter above, an `IProjectConfig`, an `IBatchRunner`, an `IInstrumentedRunner`, `createSessionRunner()` (the runner adapter's `createRunner()`), `displayName` and `settingsFingerprint()`. `extension.ts` composes it into the provider; `SessionManager` needs no change.
+Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `FrameworkServices` (see `jestServices.ts`): the adapter above, an `IProjectConfig`, an `IBatchRunner`, an `IInstrumentedRunner`, `createSessionRunner()` (the runner adapter's `createRunner()`), `displayName` and `settingsFingerprint()`. Each `ProjectContext` composes it into its own `DetectingFrameworkProvider` (one provider per project, so projects never share a batch runner); `SessionManager` needs no change.
 
 ### Checklist
 
@@ -432,7 +442,7 @@ Verification:
 
 1. Implement `IResultObserver` from `src/IResultObserver.ts`
 2. Instantiate in `extension.ts`
-3. `sessionManager.addObserver(instance)`
+3. Add it to the `observers` array there — it receives the selected project's events (each project's `ProjectObserverGate` forwards them while that project is shown). If it holds a store reference, give it a `bind(...)` and call it from the `onDidChangeSelection` handler so it follows a project switch.
 
 The observer receives:
 - `onSessionStart()` — session began
@@ -582,6 +592,7 @@ unzip -q /tmp/ltr.vsix -d /tmp/ltr-vsix && LTR_E2E_EXTENSION_DIR=/tmp/ltr-vsix/e
   Every fixture's full run is compared file by file with plain Jest (`checkMatchesPlainJest`). When a real project shows a new problem, reproduce it in a fixture (or a new one) so CI keeps catching it.
 - **Fixtures** (`e2e/fixtures/<name>`) are copied to `%TEMP%/ltr e2e/<name> project` — a path with spaces on purpose — and `npm install`ed once (again when `package.json` changes).
 - **Scenarios** (`e2e/scenarios/*.js`) export `{ workspace, timeoutMs, settings?, run({ api, t, vscode, workspace }) }`. `workspace` is `fixture:<name>`, `env:<VAR>` or a path. With `LTR_E2E=1` the extension's `activate()` returns its internals (`store`, `session`, `traceStore`, `coverageStore`, `observers`, `rawOutput`, …) — never in normal use. Helpers are in `e2e/lib/harness.js` (wait for discovery, record observer events, Jest summaries from raw output, Jest / Vitest processes still alive — Vitest renames its processes to `node (vitest)`, so `vitestProcesses()` matches those titles —, edit + save through VS Code, plain Jest / Vitest reference runs and per-file comparisons).
+- **Monorepo scenarios** (phase 7): `fixture:monorepo-jest` (npm workspaces: two Jest packages — one with its own config, one with only a `jest` test script — and a package without tests) runs `monorepo-select` (detection, switching, the `maxRunningProjects` refusal, `projectRoot` pinning) and `monorepo-stop` (Stop on one project leaves the other running; each project's Jest CLI is found by its session folder in `--config`); `fixture:monorepo-vitest` (a Vitest package with two `test.projects` and one configured only by its test script) runs `monorepo-run` (two projects at once, switching while both run, results per project vs plain Vitest, D12 groups, a background on-save rerun). `api.projects` is the `ProjectRegistry`; `api.store` / `api.session` / … are the selected project's.
 - **Vitest scenarios** run on `fixture:vitest-basic` (Vitest 3.2.4): `vitest-full-run`, `vitest-scoped-run`, `vitest-session` (guard, test / source-file saves, ▶ Run, after Stop), `vitest-stop`, `vitest-hang`, `vitest-debug`; `repo-vitest` runs on real Vitest repos through `real-repos.js`.
 - **Real projects:** `LTR_E2E_TSJEST_REPO` (+ `LTR_E2E_TSJEST_BASELINE`, a `jest --json` result to compare every file with) for `repo-tsjest`; `LTR_E2E_CRA_REPO` for `repo-cra` (quick by default; `LTR_E2E_CRA_FULL=1` + `LTR_E2E_CRA_BASELINE` for the whole project). `repo-tsjest` edits one source file and restores it byte-for-byte; `repo-cra` never writes to the project.
 - **Real-repository matrix:** `node e2e/real-repos.js` (light repos) / `jest` (the heavy monorepo) / `--all` / `--fresh` runs those scenarios on a *copy* of each repo in `LTR_E2E_JEST_REPOS_DIR` and `LTR_E2E_VITEST_REPOS_DIR` (unplugin, slidev, vueuse — `repo-vitest`), computes the plain Jest / plain `vitest run` baseline itself, and fails if the original repository changed. Results go to `docs/temp_plans/vitest-baseline.json`.
@@ -621,6 +632,9 @@ engine.jumpTo(stepId)
 | `describe` fallback | If no `LineMap` entry exists for the line, `▶ Run` on a `describe` block reruns the whole file |
 | Debug config hardcoded path | `getDebugConfig` in `JestAdapter` uses `${workspaceFolder}/node_modules/.bin/jest`; non-standard layouts may need the `liveTestRunner.jestCommand` override |
 | CRA config cache is in-memory | Lost when the session ends; recomputed (~2–3s) on next Start Testing |
+| Projects inside a project | A folder with its own test config is one project even when its packages have their own configs; nested workspaces (a package that is itself a monorepo root) are not split further |
+| Editor follows the selected project | Gutter icons / CodeLens show only the selected project's files; open a file of another project and switch to it in the Explorer |
+| `maxRunningProjects: auto` on macOS | `os.freemem()` counts only free pages (not cache), so Macs often report < 4 GB free and `auto` allows 1 project — set a number to run more |
 | Gutter icon animation | `animateTransform` in the running SVG is rendered statically by VS Code — the spinner does not spin in the gutter |
 | `location` not always present | Some Jest setups (CRA) and Vitest 1–2 do not emit `location` in JSON; gutter icons won't appear for those files (Vitest ≥ 3 gets it via `--includeTaskLocation`) |
 | Timeline transform: regex-based injection | `traceTransform.js` injects trace calls using Babel AST. It handles assignments, function calls, and common statement patterns, but may miss complex patterns such as multi-line destructuring or chained optional calls inside expressions. |
@@ -636,4 +650,5 @@ engine.jumpTo(stepId)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
 - [ ] Streaming live output during a run (message type stubbed, not wired)
 - [ ] Coverage overlay in the file tree
-- [ ] Monorepo multi-root support — multiple `TestDiscoveryService` instances, one per root
+- [x] Monorepo / multi-root support (3.1.0, phase 7) — one `ProjectContext` per test project, project switcher, `maxRunningProjects`
+- [ ] Mixed-framework projects (phase 8)
