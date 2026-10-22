@@ -10,6 +10,8 @@ All notable changes to Live Test Runner are documented here.
 
 ### Improvements
 
+- **Vitest: saving a source file reruns the tests that import it** — live, with fresh coverage for that file.
+- **Saving your Jest or Vitest config restarts testing** — the new config is picked up right away and every test reruns.
 - **Open Guide** — a new command opens the full user guide in an editor tab (also online at https://eshandias.github.io/live-test-runner/).
 - **Test files with generated tests show up** — a file whose tests are created at runtime (no plain `test(...)` calls) is listed and shows its results.
 - **Better test discovery** — tests inside `describe.each(...)` appear under their suite before the first run, and TypeScript test files using generic arrow functions are no longer missing from the tree.

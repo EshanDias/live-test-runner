@@ -18,6 +18,18 @@ function hasCoverageProvider(workspace) {
   });
 }
 
+/** The first relative import of a test file that is an existing source file (not a test, not in node_modules). */
+function relativeImport(testFile) {
+  const code = fs.readFileSync(testFile, 'utf8');
+  for (const m of code.matchAll(/from\s+['"](\.{1,2}\/[^'"]+)['"]/g)) {
+    const base = path.resolve(path.dirname(testFile), m[1]);
+    for (const f of [base, ...['.ts', '.js', '.mts', '.mjs', '.tsx'].map((e) => base + e), ...['index.ts', 'index.js'].map((i) => path.join(base, i))]) {
+      if (fs.existsSync(f) && fs.statSync(f).isFile() && !/\.(test|spec)\./.test(f) && !/node_modules/.test(f)) { return f; }
+    }
+  }
+  return undefined;
+}
+
 async function waitIdle(api) {
   await h.sleep(1200);
   await h.waitFor(() => api.session._activeRuns === 0, { what: 'runs to finish', timeout: 15 * 60_000 });
@@ -92,6 +104,32 @@ module.exports = {
       } finally {
         fs.writeFileSync(one.fileId, original);
       }
+    }
+
+    // Save a source file a passing test file imports: `vitest related` reruns it live (phase 6). Restored afterwards.
+    const testFile = h.allNodes(api).find((n) => n.type === 'test' && n.status === 'passed')?.fileId;
+    const src = testFile && relativeImport(testFile);
+    if (src) {
+      const original = fs.readFileSync(src, 'utf8');
+      const rec2 = h.recordEvents(api);
+      try {
+        const mark3 = h.rawMark(api);
+        const since3 = h.isoNow();
+        await h.editAndSave(vscode, src, (s) => s + '\n');
+        await waitIdle(api);
+        const cmds3 = h.rawSince(api, mark3).filter((l) => /^\[vitest#\d+\] > /.test(l));
+        const logs3 = h.logsSince(api, since3);
+        const rel = path.relative(workspace, src);
+        t.check(`saving ${rel} runs \`vitest related\``, cmds3.some((l) => / related /.test(l) && l.includes(path.basename(src))), cmds3.join('\n'));
+        t.check(`…and reruns ${path.basename(testFile)}`, rec2.of('file-result').some((e) => e.file === path.basename(testFile)), JSON.stringify(rec2.of('file-result').slice(0, 10)));
+        t.check('…without a plain-run fallback', !logs3.some((l) => /falling back to plain|retrying it with plain/.test(l)), logs3.join('\n'));
+        t.eq('…nothing left running', h.nodesWithStatus(api, 'running').length, 0);
+      } finally {
+        rec2.stop();
+        fs.writeFileSync(src, original);
+      }
+    } else {
+      t.info('no relative source import found in a passing test file — source-save check skipped');
     }
 
     await vscode.commands.executeCommand('liveTestRunner.stopTesting');

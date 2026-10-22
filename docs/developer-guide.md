@@ -213,7 +213,9 @@ On-save runs are debounced at 300ms (configurable). Rapid successive saves only 
 When a **source file** (non-test) is saved, the rerun scope is determined by `_runAffectedBySourceFile`:
 
 1. **Trace data available** (after at least one full run): `ExecutionTraceStore.sourceToTests` is queried. For each affected test file, suites with `isSharedVars: false` rerun only their specific affected test cases (single Jest process with a combined `--testNamePattern`). Suites with `isSharedVars: true` rerun the whole file.
-2. **No trace data yet**: falls back to `CoverageMap` / `jest --findRelatedTests` and reruns whole test files (same as pre-trace behaviour).
+2. **No trace data yet** (always for Vitest until its trace lands): the framework's related run reruns whole test files. A batch runner with `runRelated` (Vitest) runs it as a live batch — `vitest related <src> --run`, files show running as Vitest starts them, coverage of the saved file is measured again; otherwise the adapter's plain `runRelatedTests` (`jest --findRelatedTests`).
+
+When the framework's **config file** is saved (`FrameworkServices.isConfigFile`: `jest.config.*`, `vitest.config.*`, `vite.config.*`, `vitest.workspace.*` in the root, or the config the test script names), the session restarts: config, runnable files and every result are re-read.
 
 When a **test file** is saved, the whole file always reruns — discovery handles any structural changes.
 

@@ -13,6 +13,7 @@ import { PLAIN_RUN_HANG_FACTOR } from '../constants';
 import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
+import type { IBatchRunner } from './IBatchRunner';
 import { RunnableFilesCache, runnableCacheKey, runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
@@ -443,6 +444,14 @@ export class SessionManager {
         return;
       }
 
+      // The framework's config changed: which files run, and how, may differ — start over.
+      if (await this._services.servicesFor(projectRoot).isConfigFile(filePath, projectRoot)) {
+        if (token !== this._token) { return; }
+        log.info(`Saved ${path.basename(filePath)} — the ${this._terms(projectRoot).config} changed, restarting the session (every test reruns)`);
+        await this.start();
+        return;
+      }
+
       // Jest's own list also knows tests named by a custom testRegex/testMatch.
       const isTestFile = this._adapterFor(filePath).isTestFile(filePath) || !!this._runnable?.has(runnableKey(filePath));
       if (isTestFile && !this._isRunnable(filePath) && !this._store.getFile(filePath)?.excluded) {
@@ -538,6 +547,10 @@ export class SessionManager {
       // import the changed source file and reruns them whole. Less precise than
       // trace (whole file, not individual test cases) but correct as a safety net.
       log.debug(`No trace data for ${path.basename(sourceFilePath)} — using ${this._terms(sourceFilePath).relatedCommand}`);
+      const batchRunner = this._services.servicesFor(projectRoot).batchRunner;
+      if (batchRunner.runRelated) {
+        return this._runRelatedBatch(batchRunner.runRelated.bind(batchRunner), sourceFilePath, projectRoot, token);
+      }
       this._addPlanned(1);
       const affectedPaths = await this._adapterFor(sourceFilePath).runRelatedTests(
         this._store,
@@ -610,6 +623,74 @@ export class SessionManager {
     // Scoped reruns don't produce coverage data; onSave clears the stale flag
     // once this returns — the existing counters are still valid.
     return [...new Set([...filesToRunFull, ...individualCases.map((c) => c.filePath)])];
+  }
+
+  /**
+   * The framework's own related run through its batch runner (Vitest:
+   * `vitest related`): files show running as the framework starts them,
+   * results stream, coverage is measured. Files that started without a
+   * result go through the normal batch path (retry / split / plain run).
+   */
+  private async _runRelatedBatch(
+    runRelated: NonNullable<IBatchRunner['runRelated']>,
+    sourceFilePath: string,
+    projectRoot: string,
+    token: number,
+  ): Promise<string[]> {
+    const live = () => token === this._token;
+    const rawLog = (msg: string) => this._outputChannel.appendLine(msg);
+    const hangTimeoutMs = 1000 * (vscode.workspace.getConfiguration('liveTestRunner').get<number>('hangTimeoutSeconds') ?? 300);
+    const planned = new Set<string>();
+    const plan = (fp: string) => {
+      if (planned.has(fp)) { return; }
+      planned.add(fp);
+      if (!this._store.getFile(fp)) { this._store.fileDiscovered(fp, fp, vscode.workspace.asRelativePath(fp)); }
+      this._addPlanned(1);
+    };
+    const markRunning = (fp: string) => {
+      plan(fp);
+      if (this._store.getFile(fp)?.status === 'running') { return; }
+      this._store.markFileRunning(fp);
+      this._notify('onFilesRerunning', [fp]);
+    };
+    const onFileDone = (fp: string, status: 'passed' | 'failed') => {
+      plan(fp);
+      this._fileFinished(status);
+      this._notify('onFileResult', fp);
+      this._refreshScopedLogs(fp);
+    };
+    let r: { ran: string[]; missing: string[] };
+    try {
+      r = await runRelated({
+        sourceFiles: [sourceFilePath],
+        projectRoot,
+        traceStore: this._traceStore,
+        store: this._store,
+        applyFileResult: (fp, fr) => {
+          if (this._store.getFile(fp)?.status !== 'running') { this._store.markFileRunning(fp); }
+          this._adapterFor(fp).applyFileResult(this._store, fp, fr);
+        },
+        onFileDone,
+        onFileStart: markRunning,
+        onFileTimedOut: (fp, seconds) => {
+          this._store.failFile(fp, hangMessage(seconds));
+          onFileDone(fp, 'failed');
+        },
+        hangTimeoutMs,
+        log: rawLog,
+      });
+    } catch (err) {
+      log.error(`Running the tests related to ${path.basename(sourceFilePath)} failed`, err);
+      return [];
+    }
+    if (!live()) { return r.ran; }
+    // Started but no result (crash, stalled batch): the normal batch path retries them. Their planned count moves there.
+    const missing = r.missing.filter((fp) => this._isRunnable(fp) || this._store.getFile(fp));
+    if (missing.length > 0) {
+      this._progress.total -= missing.length;
+      await this._runFiles(missing, projectRoot, token);
+    }
+    return [...new Set([...r.ran, ...missing])];
   }
 
   // ── Private: run test cases (parallel, one Jest invocation per file) ────────

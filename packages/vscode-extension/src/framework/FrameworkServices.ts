@@ -68,6 +68,11 @@ export interface FrameworkServices {
    * files it lists) — part of the runnable-files cache key.
    */
   settingsFingerprint(): string;
+  /**
+   * True for the framework's own config file (saving it restarts the
+   * session: config, runnable files and every result are re-read).
+   */
+  isConfigFile(filePath: string, projectRoot: string): Promise<boolean>;
 }
 
 export interface IFrameworkServicesProvider {

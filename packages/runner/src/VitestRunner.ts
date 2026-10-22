@@ -121,9 +121,10 @@ export class VitestRunner extends CommandRunner {
    */
   async liveCommand(
     files: string[],
-    options: { coverageDir?: string } = {},
+    options: { coverageDir?: string; related?: string } = {},
   ): Promise<{ command: ExecutorCommand; eventsFile: string; resultFile: string; coverageFile?: string }> {
-    const request: RunRequest = { kind: 'files', files };
+    // `related`: Vitest finds the test files that import this source file (`vitest related <src> --run`); `files` is ignored.
+    const request: RunRequest = options.related ? { kind: 'related', file: options.related } : { kind: 'files', files };
     const root = this.requireProjectRoot();
     const resultFile = path.join(this.tmpDir ?? os.tmpdir(), `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
     const env = this.runEnv(request) ?? {};

@@ -7,7 +7,6 @@
  */
 import * as path from 'path';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 export type BabelParser = { parse(code: string, options: Record<string, unknown>): any };
 /** A visitor called as `visitors[node.type]({ node, parent, parentKey })`, depth first, parents first. */
 export type Traverse = (ast: any, visitors: Record<string, (p: { node: any; parent: any; parentKey: string | undefined }) => void>) => void;

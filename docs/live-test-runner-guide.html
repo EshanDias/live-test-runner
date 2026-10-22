@@ -254,7 +254,8 @@
     <li><b>Failures</b>: the expected / received diff and the source-mapped line. A failing <code>beforeAll</code> shows its real error and marks the file failed.</li>
     <li><b>Coverage</b> uses Vitest's own provider. Install <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>, whichever your config names); without it the log says once that coverage is off. Nothing is written into your project's <code>coverage/</code> folder.</li>
     <li><b>Projects</b>: a config with <code>test.projects</code> runs once from the root; Vitest runs every project. Browser-mode projects need real browsers, so they are left out unless you turn on <code>vitestIncludeBrowserProjects</code> or your test script picks projects itself.</li>
-    <li><b>Not yet</b>: "covering tests" in the hover and precise source-file reruns (they need the execution trace; saving a source file runs <code>vitest related</code> instead), the Timeline Debugger, and monorepos with several packages.</li>
+    <li><b>Saving a source file</b> reruns the test files that import it (<code>vitest related</code>), live and with fresh coverage. Saving <code>vitest.config.*</code> restarts the session.</li>
+    <li><b>Not yet</b>: "covering tests" in the hover and per-test source-file reruns (they need the execution trace), the Timeline Debugger, and monorepos with several packages.</li>
   </ul>
   <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — tree fills in, results, coverage bars -->
 </section>
@@ -378,7 +379,7 @@
     <tr><td>Logs / console output</td><td>✅ per file</td><td>✅ per file</td><td>✅ per test</td></tr>
     <tr><td>Coverage (gutter, hover)</td><td>✅</td><td>✅</td><td>✅ needs <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>)</td></tr>
     <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td></tr>
-    <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>⏳ 3.0.x</td></tr>
+    <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ whole test files (<code>vitest related</code>)</td></tr>
     <tr><td>Monorepo / multi-project</td><td>🟡</td><td>—</td><td>🟡 Vitest <code>projects</code>, run from the root</td></tr>
     <tr><td>Mixed frameworks in one project</td><td>—</td><td>—</td><td>⏳ 3.2</td></tr>
     <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>⏳ 3.3</td></tr>

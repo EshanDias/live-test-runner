@@ -16,7 +16,7 @@ Cells: ✅ supported · 🟡 partial · ⏳ planned (target release) · — not 
 | Logs / console output | ✅ per file | ✅ per file | ✅ per test |
 | Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) |
 | Live per-file progress | ✅ | ✅ | ✅ |
-| Rerun tests related to a saved source file | ✅ | ✅ | ⏳ 3.0.x |
+| Rerun tests related to a saved source file | ✅ | ✅ | ✅ whole test files (`vitest related`) |
 | Monorepo / multi-project | 🟡 | — | 🟡 Vitest `projects`, run from the root |
 | Mixed frameworks in one project | — | — | ⏳ 3.2 |
 | Execution trace / "covering tests" | ✅ | ✅ | ⏳ 3.3 |

@@ -298,6 +298,8 @@ Done (2026-10-22, branch `feat/vitest-coverage-tests` from `release/3.0.0` after
 **6.3 Tests (1 d)** — `vitest-on-save` extended to source-file saves.
 Gate → **M3b**.
 
+Done (2026-10-22, branch `feat/vitest-related` from `feat/vitest-release-docs`) → **M3b reached**. **6.1:** `vitest related` already worked (2.2/2.6) but as a *plain* run — no live progress, no per-test hang limit, and no coverage, so the saved file kept its old counters. Now optional `IBatchRunner.runRelated(RelatedRunOptions)`; `VitestRunner.liveCommand(files, { related })` builds `related <src> … --run` with the batch flags + coverage; `VitestBatchRunner._run(options, related?)` (shared with `runFiles`) claims test files on `file-start`/`file-end` (unknown up front), maps paths through `store.findFileKey`, and a related run with no results is DEBUG ("no test depends on X"), not the "Vitest returned no results" WARN. `SessionManager._runRelatedBatch` plans files into the progress as they start, retries started-without-result files through `_runFiles`. Jest has no `runRelated` (trace first, plain `--findRelatedTests` second — unchanged). Not done from the sketch: "`getAffectedTests` via coverage map first" — core's `CoverageMap` is never filled by the extension (dead path, documented as such in architecture.md); Vitest's coverage is per batch, so it cannot map source → test file either; the trace (phase 9) is the precise path. **6.2:** `--passWithNoTests` was already on every command (related on an untested file exits 0, nothing reruns, no WARN); files outside the module graph = the same; **config saves**: new `FrameworkServices.isConfigFile()` — saving `jest.config.*` / `vitest.config.*` / `vite.config.*` / `vitest.workspace.*` (root) or the test script's `--config` restarts the session (before: handled as a source file, nothing reran, cached config kept). **6.3:** e2e `vitest-related` (16 checks), `basic-config-save` (Jest), `repo-vitest` saves a source file imported by a passing test (unplugin `src/bun/utils.ts`, slidev `katex-lines.ts`, vueuse `_template/index.ts` → related reruns that test file); runner unit test for the related live command. Matrix: Vitest related ✅ (whole test files).
+
 ### Phase 7 — Monorepos & multi-project workspaces (17 d) — *3.1.0, Feature V6*
 
 Today a session has **one** `projectRoot`. Goal: a user can open a monorepo or a multi-root VS Code workspace and run the projects they choose, each with its own framework/config. (Vitest-native `projects` already work from a single root from 3.0.0; this phase is the extension-level model.)
@@ -458,8 +460,11 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 **Phase 11 (branch `feat/vitest-release-docs`, from `feat/vitest-coverage-tests`)**
 - 11.1–11.4 done (2026-10-22) → **3.0.0 ready for the owner's release PR**. Gate: build, lint, 180 runner + 39 extension unit tests, e2e on the packed .vsix 25/25, `e2e/real-repos.js --all` 6/7 PASS (jest monorepo: BUG-43 only, unchanged).
 
+**Phase 6 (branch `feat/vitest-related`, from `feat/vitest-release-docs`)**
+- 6.1–6.3 done (2026-10-22) → **M3b**. Gate: build, lint (clean), 181 runner + 39 extension unit tests, `e2e/run.js --all` 27/27 (24 pass, 3 repo scenarios skipped), `e2e/real-repos.js` 6/6 PASS.
+
 **Next**
-1. Phase 6 (related tests on save) on `feat/vitest-related`, then 7 → 8 → 9 (D9).
+1. Phase 7 (monorepos / multi-project, D11/D12) on `feat/monorepo` from `feat/vitest-related`, then 8 → 9 (D9).
 
 ## Progress tracker
 
@@ -491,7 +496,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 11.3 Release prep → **3.0.0** (release PR by the owner)
 - [x] 11.4 Guide on GitHub Pages + Open Guide command (D10)
 - [x] 4.1–4.3 Live streaming (3.0.x)
-- [ ] 6.1–6.3 Related/on-save (3.0.x)
+- [x] 6.1–6.3 Related/on-save (3.0.x) (M3b)
 - [ ] 7.1–7.7 Monorepos (3.1)
 - [ ] 8.1–8.6 Mixed (3.2)
 - [ ] 9.1–9.4 Trace (3.3)
