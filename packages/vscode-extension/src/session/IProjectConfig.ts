@@ -7,6 +7,8 @@
  * file it points to is in that framework's own format; only the matching
  * batch / instrumented runner reads it.
  */
+import { CoverageScope } from '../coverage/coverageScope';
+
 export interface IProjectConfig {
   /**
    * Path of a file holding the project's resolved config, or undefined when
@@ -14,6 +16,13 @@ export interface IProjectConfig {
    * config loading). Cached per project root until {@link reset}.
    */
   get(projectRoot: string): Promise<string | undefined>;
+
+  /**
+   * Which files count toward coverage, from the project's coverage settings
+   * (so the totals match the framework's CLI report); undefined when the
+   * config could not be read — callers then use defaultCoverageScope.
+   */
+  coverageScope(projectRoot: string): Promise<CoverageScope | undefined>;
 
   /** Forget cached configs (a new session re-reads them — the config may have changed). */
   reset(): void;

@@ -59,6 +59,8 @@ export function applyIstanbulCoverage(
   store: CoverageStore,
   manifestDir: string,
   projectRoot: string,
+  /** Whether a file counts toward coverage (the project's coverage settings); default: the built-in rules. */
+  counts: (filePath: string) => boolean = (fp) => !isExcludedFromCoverage(path.relative(projectRoot, fp)),
 ): { measured: number; excluded: number } {
   fs.mkdirSync(manifestDir, { recursive: true });
   let measured = 0;
@@ -66,7 +68,7 @@ export function applyIstanbulCoverage(
   for (const [key, fc] of Object.entries(coverage)) {
     // The editor's spelling of the path (symlinks resolved back, lower-case drive) — like Jest's entries.
     const filePath = fromRunnerPath(fc.path || key).replace(/^[A-Z]:/, (m) => m.toLowerCase());
-    if (isExcludedFromCoverage(path.relative(projectRoot, filePath))) { excluded++; continue; }
+    if (!counts(filePath)) { excluded++; continue; }
 
     const manifest = toManifest(fc, filePath);
     const hash = crypto.createHash('sha1')

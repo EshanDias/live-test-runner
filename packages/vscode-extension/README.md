@@ -16,7 +16,7 @@
 
 > **Works with Jest (incl. Create React App) and Vitest** — see [Supported frameworks](#supported-frameworks) for what each one supports.
 
-📖 **[Read the full guide](https://eshandias.github.io/live-test-runner/)** — or run **Live Test Runner: Open Guide** in VS Code.
+🌐 **[Website](https://eshandias.github.io/live-test-runner/)** · 📖 **[Read the full guide](https://eshandias.github.io/live-test-runner/guide/)** — or run **Live Test Runner: Open Guide** in VS Code.
 
 <!-- [TODO: USER_INPUT_NEEDED] Replace with an updated hero gif showing the full experience (test run + coverage bars + hover) -->
 ![Demo](resources/gifs/live%20test%20runner%20demo.gif)
@@ -166,7 +166,7 @@ All settings under `liveTestRunner.*`.
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
 | `testFilePatterns` | `["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]` | Which files appear in the test tree. Jest's own config still decides what runs, and files it runs are added even when no pattern matches |
-| `coverageExclude` | `[]` | Extra globs left out of the coverage totals |
+| `coverageExclude` | `[]` | Extra globs left out of the coverage totals (which otherwise follow your Vitest `coverage.include` / `exclude` or Jest `collectCoverageFrom`) |
 | `durationThresholds.testAmberMs` | `100` | Test turns amber |
 | `durationThresholds.testRedMs` | `500` | Test turns red |
 | `durationThresholds.suiteAmberMs` | `500` | Suite turns amber |

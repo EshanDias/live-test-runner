@@ -28,8 +28,7 @@
 
 | Release | Scope | Phases |
 |---|---|---|
-| **3.0.0** | Decouple + Vitest single project: run, pass/fail, logs, coverage; feature matrix | 0, 1, 2, 3, 5, 11.1 |
-| 3.0.x | Live per-file streaming, source-file on-save (related tests) | 4, 6 |
+| **3.0.0** (released 2026-10-22) | Decouple + Vitest single project: run, pass/fail, logs, live per-file streaming, coverage, source-file on-save (related tests); feature matrix | 0, 1, 2, 3, 4, 5, 6, 11 |
 | 3.1.0 | Monorepos / multi-project workspaces | 7 |
 | 3.2.0 | Mixed-framework projects | 8 |
 | 3.3.0 | Execution trace for Vitest | 9 |
@@ -177,6 +176,7 @@ Sketch (`.github/workflows/pr-checks.yml` ×2 jobs, `release.yml`):
 - Verify on all three OSes (the e2e matrix) — Windows runner is the risk.
 Findings: `pnpm runtime` installs **only `node`** (verified locally: no `npm`/`npx` in the bin dir). The e2e job (`npm install` in fixtures) and the release job (`npx vsce/ovsx`) therefore rely on the runner image's own npm; confirm on the first CI run. Fallback if CI shows otherwise: keep `actions/setup-node` in those two jobs only.
 Done when: PR Checks (3 OSes) is green; Release is verified by the first real release.
+Follow-up (2026-10-22, owner request, branch `bugfix/ci-action-versions` from `feat/vitest-release-docs`): every action bumped to its current major — `checkout@v7`, `cache@v6`, `upload-artifact@v7`, Pages: `configure-pages@v6`, `upload-pages-artifact@v5`, `deploy-pages@v5` (+ `actions: read`, `.nojekyll` dropped: v4+ of the upload action excludes dotfiles). `pnpm/setup@v3` is current. Verified by the next PR Checks run (3 OSes).
 
 **0.3 Baseline + real-repo harness (1.5 d)**
 Sketch:
@@ -518,8 +518,8 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 11.2 Real-repo validation
 - [x] 11.3 Release prep → **3.0.0** (release PR by the owner)
 - [x] 11.4 Guide on GitHub Pages + Open Guide command (D10)
-- [x] 4.1–4.3 Live streaming (3.0.x)
-- [x] 6.1–6.3 Related/on-save (3.0.x) (M3b)
+- [x] 4.1–4.3 Live streaming (pulled into 3.0.0)
+- [x] 6.1–6.3 Related/on-save (pulled into 3.0.0) (M3b)
 - [x] 7.1–7.7 Monorepos (3.1) (M4)
 - [ ] 8.1–8.6 Mixed (3.2)
 - [ ] 9.1–9.4 Trace (3.3)

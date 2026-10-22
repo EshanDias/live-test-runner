@@ -176,6 +176,7 @@
   let _completedFiles   = 0;
   let _failedDuringRun  = 0;
   let _runStartTime     = 0;
+  let _runTimer         = null;
   let _isPartialRerun   = false;
   let _sessionState     = 'idle';   // 'idle' | 'discovering' | 'running' | 'watching'
   let _discoveryTotal   = 0;
@@ -188,6 +189,7 @@
   let _sortCol          = 'lines'; // 'statements'|'branches'|'functions'|'lines'
   let _sortAsc          = true;
   let _lastCovFiles     = [];
+  let _lastCovTotals    = null;
   let _covSearchQuery   = '';
   let _covFolderView    = false;
   let _covExpandedFolders = new Set();
@@ -199,6 +201,30 @@
 
   function _q(id) {
     return _container ? _container.querySelector('#' + id) : null;
+  }
+
+  function _renderRunProgress() {
+    if (!_runStartTime) { return; }
+    const progress = _q('runProgress');
+    if (!progress) { return; }
+    const fl = _failedDuringRun > 0 ? ` • <span class="progress-failed">${_failedDuringRun} failed</span>` : '';
+    progress.innerHTML = `Running — ${_completedFiles} / ${_totalFiles} files • ${durationLabel(Date.now() - _runStartTime)}${fl}`;
+    progress.classList.add('visible');
+  }
+
+  function _startRunTimer() {
+    if (!_runStartTime) { _runStartTime = Date.now(); }
+    _renderRunProgress();
+    if (_runTimer === null) {
+      _runTimer = setInterval(_renderRunProgress, 1000);
+    }
+  }
+
+  function _clearRunTimer() {
+    if (_runTimer !== null) {
+      clearInterval(_runTimer);
+      _runTimer = null;
+    }
   }
 
   function _switchTab(tab) {
@@ -324,6 +350,7 @@
   }
 
   function updateCoverage(totals, files) {
+    _lastCovTotals = totals ?? null;
     _lastCovFiles = files ?? [];
 
     // ── compact badge in Tests panel ────────────────────────────────────────
@@ -360,6 +387,11 @@
     }
 
     _renderCovFiles(_lastCovFiles);
+  }
+
+  /** Re-draws the totals and the file list after a display change (% ↔ N/M). */
+  function _rerenderCoverage() {
+    if (_lastCovTotals) { updateCoverage(_lastCovTotals, _lastCovFiles); } else { _renderCovFiles(_lastCovFiles); }
   }
 
   function _esc(str) {
@@ -539,6 +571,7 @@
       _sortCol          = 'lines';
       _sortAsc          = true;
       _lastCovFiles     = [];
+      _lastCovTotals    = null;
       _statusFilter     = 'all';
       _covSearchQuery   = '';
       _covFolderView    = false;
@@ -596,13 +629,13 @@
         _metricMode = 'pct';
         _q('covTogglePct').dataset.active = 'true';
         _q('covToggleNM').dataset.active  = 'false';
-        _renderCovFiles(_lastCovFiles);
+        _rerenderCoverage();
       });
       _q('covToggleNM').addEventListener('click', () => {
         _metricMode = 'nm';
         _q('covTogglePct').dataset.active = 'false';
         _q('covToggleNM').dataset.active  = 'true';
-        _renderCovFiles(_lastCovFiles);
+        _rerenderCoverage();
       });
 
       // ── Coverage search + folder view ────────────────────────────────────────
@@ -712,6 +745,7 @@
     },
 
     unmount() {
+      _clearRunTimer();
       _list      = null;
       _container = null;
     },
@@ -765,6 +799,7 @@
             const el = _q(id); if (el) { el.textContent = '—'; el.className = 'value'; }
           });
           _lastCovFiles = [];
+          _lastCovTotals = null;
           _renderCovFiles([]);
           break;
 
@@ -779,10 +814,10 @@
           _totalFiles      = msg.fileCount ?? 0;
           _completedFiles  = 0;
           _failedDuringRun = 0;
+          _clearRunTimer();
           _runStartTime    = Date.now();
+          _startRunTimer();
           _isPartialRerun  = false;
-          _q('runProgress').textContent = `Running — 0 / ${_totalFiles} files`;
-          _q('runProgress').classList.add('visible');
           applySessionState('running');
           updateSummary(null, null, null, null);
           _q('summaryDuration').style.display = 'none';
@@ -790,6 +825,7 @@
           break;
 
         case 'run-finished':
+          _clearRunTimer();
           _q('runProgress').classList.remove('visible');
           _runStartTime = 0;
           applySessionState(msg.sessionActive !== false ? 'watching' : 'idle');
@@ -827,11 +863,7 @@
           _totalFiles     = msg.total ?? 0;
           _completedFiles = msg.completed ?? 0;
           _failedDuringRun = msg.failed ?? 0;
-          if (!_runStartTime) { _runStartTime = Date.now(); }
-          const elapsed = (Date.now() - _runStartTime).toFixed(1);
-          const fl = _failedDuringRun > 0 ? ` • <span class="progress-failed">${_failedDuringRun} failed</span>` : '';
-          _q('runProgress').innerHTML = `Running — ${_completedFiles} / ${_totalFiles} files • ${durationLabel(elapsed)}${fl}`;
-          _q('runProgress').classList.add('visible');
+          _startRunTimer();
           break;
         }
 
