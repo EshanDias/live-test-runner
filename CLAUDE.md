@@ -196,7 +196,7 @@ Each `FrameworkAdapter` implements:
 - `outputFileArg(file)` / `parseResult(passed, raw, stderr)` — where the JSON result goes and how it is read
 - `createRunner(options)` — the framework's `TestRunner`
 
-Current adapters: Jest, Create React App.
+Current adapters: Jest, Create React App, Vitest.
 
 ### `packages/core` — Session Lifecycle & Coverage
 
