@@ -49,6 +49,12 @@ export class ResultsView extends BaseWebviewProvider {
     super.onRunFinished(payload);
   }
 
+  bindProject(state: Parameters<BaseWebviewProvider['bindProject']>[0]): void {
+    super.bindProject(state);
+    // The previous project's logs / errors must not stay on screen.
+    this.postMessage({ type: 'scope-logs', payload: { logSections: [], errorSections: [] } });
+  }
+
   // ── Results-view-specific ──────────────────────────────────────────────────
 
   sendScopedData(fileId: string, nodeId?: string): void {

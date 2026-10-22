@@ -82,6 +82,16 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.selectProject",
+        "title": "Select Project",
+        "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.stopAllProjects",
+        "title": "Stop All Projects",
+        "category": "Live Test Runner"
+      },
+      {
         "command": "liveTestRunner.showOutput",
         "title": "Show Test Output",
         "category": "Live Test Runner"
@@ -149,7 +159,15 @@
         "liveTestRunner.projectRoot": {
           "type": "string",
           "default": "",
-          "description": "Project root directory for testing"
+          "description": "Pin Live Test Runner to one project root (absolute path). Leave empty to detect every test project in the workspace (monorepo packages, workspace folders) and switch between them in the Explorer."
+        },
+        "liveTestRunner.maxRunningProjects": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "default": "auto",
+          "description": "How many projects of a monorepo / multi-root workspace may run at the same time. \"auto\": 2, or 1 on machines with 4 or fewer CPU cores or less than 4 GB free memory. A number (1 or more) sets the limit. Starting one more asks you to stop a running project first."
         },
         "liveTestRunner.jestCommand": {
           "type": "string",

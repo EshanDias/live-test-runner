@@ -28,6 +28,12 @@ export interface IFrameworkAdapter {
   /** Discover all test file paths in the project. */
   discoverTests(projectRoot: string, log: (msg: string) => void): Promise<string[]>;
 
+  /**
+   * {@link discoverTests} plus the framework's own grouping of the files
+   * (Vitest: `test.projects` names, D12). Optional — without it there are no groups.
+   */
+  listTestFiles?(projectRoot: string, log: (msg: string) => void): Promise<{ files: string[]; groups?: Record<string, string> }>;
+
   /** Glob pattern for watching test files on save (e.g. `{**\/*.test.*,**\/*.spec.*}`). */
   getFileGlob(): string;
 

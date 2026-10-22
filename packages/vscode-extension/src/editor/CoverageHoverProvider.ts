@@ -18,10 +18,17 @@ const BRANCH_TYPE_LABEL: Record<string, string> = {
 const MAX_TESTS_SHOWN = 5;
 
 export class CoverageHoverProvider implements vscode.HoverProvider {
+  /** Shows another project's coverage and covering tests (phase 7). */
+  bind(traceStore: ExecutionTraceStore, resultStore: ResultStore, coverageStore: CoverageStore): void {
+    this._traceStore = traceStore;
+    this._resultStore = resultStore;
+    this._coverageStore = coverageStore;
+  }
+
   constructor(
-    private readonly _traceStore: ExecutionTraceStore,
-    private readonly _resultStore: ResultStore,
-    private readonly _coverageStore: CoverageStore,
+    private _traceStore: ExecutionTraceStore,
+    private _resultStore: ResultStore,
+    private _coverageStore: CoverageStore,
     /** Why a file has no per-test trace by design (e.g. "covering tests are not available for Vitest yet"), else undefined. */
     private readonly _noTraceReason: (filePath: string) => string | undefined = () => undefined,
   ) {}

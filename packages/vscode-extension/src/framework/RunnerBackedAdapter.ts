@@ -62,6 +62,13 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
     return runner.discoverTests(projectRoot);
   }
 
+  async listTestFiles(
+    projectRoot: string,
+    rawLog: (msg: string) => void,
+  ): Promise<{ files: string[]; groups?: Record<string, string> }> {
+    return this._createRunner(projectRoot, rawLog).listTestFiles(projectRoot);
+  }
+
   // ── File identification ────────────────────────────────────────────────────
 
   getFileGlob(): string {

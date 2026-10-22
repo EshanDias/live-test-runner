@@ -40,6 +40,8 @@
         // Cache shared state so new views get it on mount
         if (data.type === 'init') {
           this._sharedPayload = Object.assign(this._sharedPayload, data);
+        } else if (data.type === 'projects') {
+          this._sharedPayload.projects = data.projects;
         } else if (data.type === 'coverage-updated') {
           this._sharedPayload.coverageTotals = data.totals;
           this._sharedPayload.coverageFiles  = data.files ?? [];

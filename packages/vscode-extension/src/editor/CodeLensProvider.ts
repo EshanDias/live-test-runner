@@ -12,7 +12,13 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this._onDidChange.event;
 
-  constructor(private readonly store: ResultStore) {}
+  constructor(private store: ResultStore) {}
+
+  /** Shows another project's lenses (phase 7). */
+  bind(store: ResultStore): void {
+    this.store = store;
+    this.refresh();
+  }
 
   refresh(): void {
     this._onDidChange.fire();

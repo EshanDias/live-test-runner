@@ -14,9 +14,10 @@ export class CoverageDecorationManager implements IResultObserver {
   private readonly _soleCov:   vscode.TextEditorDecorationType;
 
   private readonly _disposables: vscode.Disposable[] = [];
+  private _storeSub: vscode.Disposable | undefined;
 
   constructor(
-    private readonly _store: CoverageStore,
+    private _store: CoverageStore,
   ) {
     // ▌ before pseudo-element — thin coloured bar at start of text content.
     // Applied to all executable lines so the shift is uniform (no misalignment).
@@ -52,8 +53,16 @@ export class CoverageDecorationManager implements IResultObserver {
     this._disposables.push(
       vscode.window.onDidChangeVisibleTextEditors(() => this._refreshAll()),
       vscode.window.onDidChangeActiveTextEditor(() => this._refreshAll()),
-      this._store.onDidChange.event(() => this._refreshAll()),
     );
+    this._storeSub = this._store.onDidChange.event(() => this._refreshAll());
+  }
+
+  /** Shows another project's coverage (phase 7). */
+  bind(store: CoverageStore): void {
+    this._storeSub?.dispose();
+    this._store = store;
+    this._storeSub = this._store.onDidChange.event(() => this._refreshAll());
+    this._refreshAll();
   }
 
   // ── IResultObserver ────────────────────────────────────────────────────────
@@ -74,6 +83,7 @@ export class CoverageDecorationManager implements IResultObserver {
     this._stale.dispose();
     this._soleCov.dispose();
     for (const d of this._disposables) { d.dispose(); }
+    this._storeSub?.dispose();
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

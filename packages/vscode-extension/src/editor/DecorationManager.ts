@@ -16,10 +16,16 @@ export class DecorationManager implements IResultObserver {
   private readonly _decorations: Map<string, vscode.TextEditorDecorationType> = new Map();
 
   constructor(
-    private readonly store: ResultStore,
+    private store: ResultStore,
     private readonly context: vscode.ExtensionContext,
   ) {
     this._ensureDecorations();
+  }
+
+  /** Shows another project's results (phase 7): every visible editor is redrawn. */
+  bind(store: ResultStore): void {
+    this.store = store;
+    this._refreshAll();
   }
 
   // ── IResultObserver ────────────────────────────────────────────────────────

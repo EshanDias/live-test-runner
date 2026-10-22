@@ -76,6 +76,11 @@ export interface FileResult {
   rootNodeIds: string[];
   /** Set when the project's Jest config never runs this file (why, for display). */
   excluded?: string;
+  /**
+   * The framework's own group of the file — Vitest's `test.projects` name
+   * (D12); the Explorer groups files by it. Undefined: no groups.
+   */
+  group?: string;
 }
 
 // ── Node ID helper ─────────────────────────────────────────────────────────────
@@ -455,6 +460,19 @@ export class ResultStore {
    * Marks a file the project's Jest config never runs (testMatch,
    * testPathIgnorePatterns, …): it and its tests show as skipped.
    */
+  /**
+   * Sets every file's group from `groups` (file path → label, matched like
+   * findFileKey); files not in it lose theirs. Undefined clears all groups.
+   */
+  setFileGroups(groups: Record<string, string> | undefined): void {
+    const byKey = new Map<string, string>();
+    for (const [fp, g] of Object.entries(groups ?? {})) {
+      const key = this.findFileKey(fp);
+      if (key) { byKey.set(key, g); }
+    }
+    for (const file of this.files.values()) { file.group = byKey.get(file.fileId); }
+  }
+
   markFileExcluded(fileId: string, reason: string): void {
     const file = this.files.get(fileId);
     if (!file) { return; }
@@ -984,6 +1002,7 @@ export class ResultStore {
       status: f.status,
       duration: f.duration,
       excluded: f.excluded,
+      group: f.group,
       rootNodeIds: f.rootNodeIds,
       nodes: this._serialiseNodes(f.fileId),
     };

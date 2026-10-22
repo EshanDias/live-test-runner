@@ -26,6 +26,8 @@ export interface DiagnosticInput {
   summary: { total: number; passed: number; failed: number; running: number };
   logLevel: string;
   recentLogLines: string[];
+  /** Every detected test project, one line each (name · framework · state · root). */
+  projects?: string[];
 }
 
 function safe<T>(fn: () => T, fallback: string): T | string {
@@ -68,7 +70,10 @@ export function buildDiagnosticReport(input: DiagnosticInput): string {
   add('| Item | Value |');
   add('|---|---|');
   const root = input.projectRoot;
-  row('Project root', root ?? '(none — multi-root workspace without liveTestRunner.projectRoot?)');
+  row('Project root', root ?? '(none — no test project found in the workspace)');
+  if (input.projects && input.projects.length > 1) {
+    row('Projects', input.projects.join('<br>'));
+  }
   if (root) {
     const pkg = readJson(path.join(root, 'package.json'));
     row('package.json', pkg ? 'found' : 'MISSING');

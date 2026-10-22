@@ -98,17 +98,24 @@ export class SessionManager {
   /** `jest --listTests` answers kept between sessions (see RunnableFiles). */
   private readonly _runnableCache = new RunnableFilesCache(LTR_BASE_TMP_DIR);
 
+  /** The framework's file groups (Vitest project names) from the last runnable-files answer. */
+  private _groups: Record<string, string> | undefined;
+
   constructor(
+    /** The project this manager runs (one SessionManager per project, phase 7). */
+    private readonly _projectRoot: string,
     /** The framework bundle (adapter, batch runner, config, …) for each file / project root. */
     private readonly _services: IFrameworkServicesProvider,
     private readonly _store: ResultStore,
     private readonly _traceStore: ExecutionTraceStore,
     private readonly _coverageStore: CoverageStore,
     private readonly _selection: SelectionState,
-    private readonly _resultsView: ResultsView,
+    /** Refreshes the Results view's scoped logs (a no-op while the project is in the background). */
+    private readonly _resultsView: Pick<ResultsView, 'sendScopedData'>,
     private readonly _observers: IResultObserver[],
     private readonly _outputChannel: vscode.OutputChannel,
-    private readonly _statusBar: vscode.StatusBarItem,
+    /** Where the status text goes — the project's slot in the status bar (ProjectRegistry renders it). */
+    private readonly _statusBar: { text: string },
     private readonly _discovery: TestDiscoveryService,
   ) {}
 
@@ -131,17 +138,6 @@ export class SessionManager {
 
   async start(): Promise<void> {
     const projectRoot = this._getProjectRoot();
-    if (!projectRoot) {
-      log.warn('Start Testing: no project root — open a single folder or set liveTestRunner.projectRoot');
-      const pick = await vscode.window.showErrorMessage(
-        'No project root found. Open a single folder or configure liveTestRunner.projectRoot.',
-        'Select Project Root',
-      );
-      if (pick) {
-        await this.selectProjectRoot();
-      }
-      return;
-    }
 
     if (this._session) {
       log.debug('Restarting: stopping the existing session first');
@@ -201,6 +197,8 @@ export class SessionManager {
       }
       const testFiles = discovered.filter((fp) => this._isRunnable(fp));
       this._markExcluded(discovered.filter((fp) => !this._isRunnable(fp)));
+      // D12: a config with several Vitest projects groups the Explorer by project name.
+      this._store.setFileGroups(runnableList ? this._groups : undefined);
       log.info(`Session started — ${testFiles.length} test file(s) · framework: ${framework} · root: ${projectRoot}`);
 
       if (testFiles.length === 0) {
@@ -271,27 +269,22 @@ export class SessionManager {
     return !!this._session?.isTestingActive();
   }
 
-  // ── Commands ───────────────────────────────────────────────────────────────
-
-  async selectProjectRoot(): Promise<void> {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders?.length) {
-      vscode.window.showErrorMessage('No workspace folders are open.');
-      return;
-    }
-    const selected =
-      folders.length === 1
-        ? folders[0].uri.fsPath
-        : await vscode.window.showQuickPick(
-            folders.map((f: vscode.WorkspaceFolder) => f.uri.fsPath),
-            { placeHolder: 'Select project root' },
-          );
-    if (selected) {
-      await vscode.workspace
-        .getConfiguration('liveTestRunner')
-        .update('projectRoot', selected, vscode.ConfigurationTarget.Workspace);
-    }
+  /** A run is in flight (full suite, save, ▶ Run …). */
+  isRunning(): boolean {
+    return this._activeRuns > 0;
   }
+
+  /** Files finished / scheduled across the runs in flight. */
+  progress(): { completed: number; total: number; failed: number } {
+    return { ...this._progress };
+  }
+
+  /** The project this manager runs. */
+  get projectRoot(): string {
+    return this._projectRoot;
+  }
+
+  // ── Commands ───────────────────────────────────────────────────────────────
 
   async rerunScope(args: {
     scope: string;
@@ -1060,7 +1053,13 @@ export class SessionManager {
   private async _listRunnableFiles(projectRoot: string): Promise<string[] | undefined> {
     const startedAt = Date.now();
     try {
-      const files = await this._adapterFor(projectRoot).discoverTests(projectRoot, (msg) => this._outputChannel.appendLine(msg));
+      const adapter = this._adapterFor(projectRoot);
+      const rawLog = (msg: string) => this._outputChannel.appendLine(msg);
+      const listed = adapter.listTestFiles
+        ? await adapter.listTestFiles(projectRoot, rawLog)
+        : { files: await adapter.discoverTests(projectRoot, rawLog), groups: undefined };
+      const files = listed.files;
+      this._groups = listed.groups;
       if (files.length === 0) { return undefined; }
       log.debug(`${this._terms(projectRoot).listCommand}: ${files.length} file(s) in ${secondsSince(startedAt)}`);
       return files;
@@ -1078,8 +1077,10 @@ export class SessionManager {
    */
   private async _runnableFiles(projectRoot: string, discovered: string[]): Promise<string[] | undefined> {
     const key = runnableCacheKey(projectRoot, discovered, this._runnerSettings(projectRoot));
-    const cached = this._runnableCache.read(projectRoot, key);
-    if (cached) {
+    const entry = this._runnableCache.readEntry(projectRoot, key);
+    if (entry) {
+      const cached = entry.files;
+      this._groups = entry.groups;
       log.debug(`Runnable test files: ${cached.length} remembered from the last session (no test or config file changed)`);
       // Lists saved by older versions may hold Jest's realpath'd spelling.
       return cached.map(fromRunnerPath);
@@ -1093,7 +1094,7 @@ export class SessionManager {
     const files = await this._listRunnableFiles(projectRoot);
     if (!files) { return undefined; }
     try {
-      this._runnableCache.write(projectRoot, key, files);
+      this._runnableCache.write(projectRoot, key, files, this._groups);
     } catch (err) {
       log.debug(`Could not remember the runnable test files — the next Start asks ${this._terms(projectRoot).name} again (${(err as Error).message})`);
     }
@@ -1206,24 +1207,9 @@ export class SessionManager {
     }
   }
 
-  private _getProjectRoot(): string | undefined {
-    const root = this._configuredProjectRoot();
-    if (root) { registerProjectRoot(root); }
-    return root;
-  }
-
-  private _configuredProjectRoot(): string | undefined {
-    const configured = vscode.workspace
-      .getConfiguration('liveTestRunner')
-      .get<string>('projectRoot');
-    if (configured?.trim()) {
-      return configured.trim();
-    }
-    const folders = vscode.workspace.workspaceFolders;
-    if (folders?.length === 1) {
-      return folders[0].uri.fsPath;
-    }
-    return undefined;
+  private _getProjectRoot(): string {
+    registerProjectRoot(this._projectRoot);
+    return this._projectRoot;
   }
 
   private _updateStatusBar(text: string): void {

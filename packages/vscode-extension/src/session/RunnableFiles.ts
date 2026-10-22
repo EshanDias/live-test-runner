@@ -68,19 +68,25 @@ export class RunnableFilesCache {
 
   /** The remembered list, or undefined when there is none for this key. */
   read(projectRoot: string, key: string): string[] | undefined {
+    return this.readEntry(projectRoot, key)?.files;
+  }
+
+  /** The remembered list and the framework's file groups (Vitest project names), if any. */
+  readEntry(projectRoot: string, key: string): { files: string[]; groups?: Record<string, string> } | undefined {
     try {
-      const data = JSON.parse(fs.readFileSync(this._file(projectRoot), 'utf8')) as { key?: string; files?: unknown };
+      const data = JSON.parse(fs.readFileSync(this._file(projectRoot), 'utf8')) as { key?: string; files?: unknown; groups?: unknown };
       if (data.key !== key || !Array.isArray(data.files)) { return undefined; }
-      return data.files.filter((f): f is string => typeof f === 'string');
+      const groups = data.groups && typeof data.groups === 'object' ? data.groups as Record<string, string> : undefined;
+      return { files: data.files.filter((f): f is string => typeof f === 'string'), groups };
     } catch {
       return undefined; // none yet, or unreadable — ask Jest
     }
   }
 
   /** @throws when the file cannot be written (the next Start then asks Jest again) */
-  write(projectRoot: string, key: string, files: string[]): void {
+  write(projectRoot: string, key: string, files: string[], groups?: Record<string, string>): void {
     fs.mkdirSync(this._dir, { recursive: true });
-    fs.writeFileSync(this._file(projectRoot), JSON.stringify({ key, files }), 'utf8');
+    fs.writeFileSync(this._file(projectRoot), JSON.stringify(groups ? { key, files, groups } : { key, files }), 'utf8');
   }
 
   private _file(projectRoot: string): string {

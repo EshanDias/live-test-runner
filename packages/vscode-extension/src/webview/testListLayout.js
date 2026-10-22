@@ -45,7 +45,14 @@ class TestListLayout {
     this.failuresOnly = false;
     this.folderView = false;
     this.statusFilter = 'all';
+    /** Group labels seen so far (Vitest project names, D12) — expanded the first time. */
+    this._knownGroups = new Set();
     this._render();
+  }
+
+  /** True when files carry a framework group (a config with several Vitest projects). */
+  _isGrouped() {
+    return this.data.some((f) => f.group);
   }
 
   // ── Helpers to build a nodeMap from a file's flat nodes array ─────────────
@@ -99,7 +106,7 @@ class TestListLayout {
     // Targeted DOM update: only replace the wrapper for this one file instead
     // of re-rendering the entire list. Falls back to a full render when the
     // file isn't in the DOM yet or when folder-view is active.
-    if (!this.folderView && !this.query && !this.failuresOnly) {
+    if (!this.folderView && !this.query && !this.failuresOnly && !(fileData.group && !this.container.querySelector(`[data-group-children="${CSS.escape('group:' + fileData.group)}"]`))) {
       const wrapper = this.container.querySelector(
         `[data-file-wrapper="${CSS.escape(fileData.fileId)}"]`,
       );
@@ -122,8 +129,8 @@ class TestListLayout {
   appendFiles(filesData) {
     if (!filesData || filesData.length === 0) { return; }
 
-    // Folder-view / search / failures-only modes need structural re-render
-    if (this.folderView || this.query || this.failuresOnly) {
+    // Folder-view / search / failures-only / grouped modes need structural re-render
+    if (this.folderView || this.query || this.failuresOnly || this._isGrouped() || filesData.some((f) => f.group)) {
       for (const fileData of filesData) {
         const idx = this.data.findIndex((f) => f.fileId === fileData.fileId);
         if (idx >= 0) { this.data[idx] = fileData; } else { this.data.push(fileData); }
@@ -192,6 +199,7 @@ class TestListLayout {
   }
 
   expandAll() {
+    for (const g of this._knownGroups) { this.expanded.add(`group:${g}`); }
     for (const file of this.data) {
       this.expanded.add(file.fileId);
       const nodeMap = this._buildNodeMap(file);
@@ -421,14 +429,38 @@ class TestListLayout {
 
     const savedScroll = this.container.scrollTop;
 
-    // Use folder view only when not searching (search always shows flat list)
-    if (this.folderView && !this.query) {
-      const tree = this._buildFolderTree(filtered);
-      this.container.innerHTML = this._renderFolderTree(tree);
+    const renderFiles = (files) =>
+      // Use folder view only when not searching (search always shows flat list)
+      this.folderView && !this.query
+        ? this._renderFolderTree(this._buildFolderTree(files))
+        : files.map((f) => `<div data-file-wrapper="${esc(f.fileId)}">${this._renderFile(f)}</div>`).join('');
+
+    if (this._isGrouped() && !this.query) {
+      // D12: one collapsible section per Vitest project; ungrouped files last.
+      const groups = new Map();
+      for (const f of filtered) {
+        const g = f.group || '';
+        if (!groups.has(g)) { groups.set(g, []); }
+        groups.get(g).push(f);
+      }
+      const names = [...groups.keys()].sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
+      this.container.innerHTML = names.map((g) => {
+        const files = groups.get(g);
+        if (!g) { return renderFiles(files); }
+        const id = `group:${g}`;
+        if (!this._knownGroups.has(g)) { this._knownGroups.add(g); this.expanded.add(id); }
+        const isExpanded = this.expanded.has(id);
+        const failed = files.filter((f) => f.status === 'failed').length;
+        return `
+      <div class="test-row level-group" data-id="${esc(id)}" data-scope="folder" title="Vitest project ${esc(g)}">
+        <span class="row-toggle ${isExpanded ? 'expanded' : ''}">▶</span>
+        <span class="row-name">${esc(g)}</span>
+        <span class="row-group-count">${files.length} file${files.length === 1 ? '' : 's'}${failed ? ` · <span class="status-failed">✗${failed}</span>` : ''}</span>
+      </div>
+      <div class="children ${isExpanded ? 'expanded' : ''}" data-children="${esc(id)}" data-group-children="${esc(id)}">${renderFiles(files)}</div>`;
+      }).join('');
     } else {
-      this.container.innerHTML = filtered
-        .map((f) => `<div data-file-wrapper="${esc(f.fileId)}">${this._renderFile(f)}</div>`)
-        .join('');
+      this.container.innerHTML = renderFiles(filtered);
     }
     this._attachListeners();
 
