@@ -279,6 +279,8 @@ Done (2026-10-21) → **M2b reached** (Vitest live progress). e2e `vitest-batch`
 
 **5.1 Coverage run (2 d)** — `--coverage.enabled --coverage.reporter=json --coverage.reporter=json-summary --coverage.reportsDirectory=<session>/cov`; provider detection (`@vitest/coverage-v8`/`-istanbul` present?) → if missing, an actionable message (“install @vitest/coverage-v8”) instead of a failed run; set `coverage.include` to the source globs so uncovered files show; handle v5 root-relative include/exclude.
 **5.2 Map into `CoverageStore`/`CoverageMap` (1 d)** — normalise paths; confirm json is istanbul-shaped for both providers; thresholds and gutter/hover unchanged (they read the store).
+Done (2026-10-21, 5.1 + 5.2 together — the run and the mapping only make sense as one change; branch `feat/vitest-coverage`): spike on the real repos — only vueuse has a provider (`@vitest/coverage-v8` 4.1.11); unplugin / slidev have none; with `--coverage.reporter=json --coverage.reportsDirectory=<dir>` Vitest writes `coverage-final.json` only there (istanbul shape: `statementMap/fnMap/branchMap/s/f/b`); vueuse's `coverage.include` reports all 361 included files (untested ones at 0 — fine, they are measured). **5.1:** the project probe also prints `coverage.provider`; `vitestConfigInfo()` (cached with the projects) + `vitestCoverageInstalled()`; `VitestRunner.liveCommand(files, { coverageDir })` adds `--coverage.enabled=true --coverage.reporter=json --coverage.reportsDirectory=<session>/vitest-coverage/<batch> --coverage.reportOnFailure=true` (`reportOnFailure`: older Vitest writes no coverage when a test fails) and `--coverage.all=false` below 4 (v3 defaults `all: true` → would instrument the whole project); missing provider → one INFO "coverage is off … npm i -D @vitest/coverage-<provider>". `coverage.include` is left to the config (untested files come from the extension's source scan). Thresholds in the config may fail the exit code — results are unaffected. The unused full-suite coverage run now writes into the session dir. **5.2:** `vscode-extension/src/coverage/istanbulCoverage.ts` — `toManifest()` (statements → start/end, branches → type / line / arms, functions → name / decl line / end line) + manifest per file version in `<session>/vitest-manifests/<sha1(path + maps)>.json`, counters max-merged when the manifest is the same, `calculate()` for the pct, exclusions shared with Jest (`coverage/coverageRules.ts`, moved verbatim from `JestBatchRunner`). `VitestBatchRunner` gets the CoverageStore + session dir and applies the batch's coverage when it ends (not after Stop). Also: `SourceCounter` (untested files' 0-hit counts) needed the project's Babel too → `utils/babel.ts` (`loadBabelParser`, `loadTraverse`, minimal `walk` with node / parent / parentKey); the hover's "trace data unavailable" → "covering tests are not available for Vitest yet" (`features.trace`, deferred here from 2.6) and partial-branch detail without a trace. Unit: `runner/test/vitestCoverageArgs.test.ts` (4; seam `_setVitestConfigReader`). e2e: `vitest-coverage` (10 checks: math.js measured 100 % with manifest, untested.js counted, no Babel warning, test files not measured, totals, hover text, no `coverage/` in the project). Matrix: coverage ✅ (needs the provider package).
+
 **5.3 Tests (1.5 d)** — `vitest-coverage` e2e, missing-provider path, unit tests on the mapping.
 Gate → **M3a**.
 
@@ -437,8 +439,10 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 **Phase 5 (branch `feat/vitest-coverage`, from `feat/vitest-live`)**
 
+- 5.1 + 5.2 done (2026-10-21) — see the task note. Gate: build + lint OK; unit 177 runner + 29 extension; e2e 24/24; real repos all PASS (jest-dom, vscode-jest, CRA, unplugin, slidev, vueuse).
+
 **Next**
-1. Task 5.1 — Vitest coverage run (provider detection, json reporters into the session dir, include globs).
+1. Task 5.3 — coverage on the real repos (vueuse measured, unplugin / slidev "coverage is off") → milestone M3a.
 
 ## Progress tracker
 
@@ -462,8 +466,8 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 3.1 Output capture
 - [x] 3.2 Failure details & diagnostics
 - [x] 3.3 Tests
-- [ ] 5.1 Coverage run
-- [ ] 5.2 Coverage mapping
+- [x] 5.1 Coverage run
+- [x] 5.2 Coverage mapping
 - [ ] 5.3 Tests
 - [ ] 11.1 Feature matrix + guide
 - [ ] 11.2 Real-repo validation

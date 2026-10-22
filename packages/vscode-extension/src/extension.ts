@@ -155,7 +155,7 @@ export function activate(context: vscode.ExtensionContext) {
   const frameworks = new DetectingFrameworkProvider(
     {
       jest: () => createJestServices({ sessionDir: LTR_SESSION_TMP_DIR, coverageStore, rawLog }),
-      vitest: () => createVitestServices({ sessionDir: LTR_SESSION_TMP_DIR, rawLog }),
+      vitest: () => createVitestServices({ sessionDir: LTR_SESSION_TMP_DIR, rawLog, coverageStore }),
     },
     () => _resolveProjectRoot(),
   );
@@ -338,7 +338,10 @@ export function activate(context: vscode.ExtensionContext) {
   _releaseDiscoveryLock = () => discoveryCache?.releaseLock();
 
   // ── Coverage hover provider ────────────────────────────────────────────────
-  const coverageHoverProvider = new CoverageHoverProvider(traceStore, store, coverageStore);
+  const coverageHoverProvider = new CoverageHoverProvider(traceStore, store, coverageStore, (filePath) => {
+    const services = frameworks.servicesFor(filePath);
+    return services.features.trace ? undefined : `covering tests are not available for ${services.displayName} yet`;
+  });
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(
       { scheme: 'file', pattern: '**/*.{ts,js,tsx,jsx}' },

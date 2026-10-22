@@ -21,6 +21,7 @@ import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
+import { isExcludedFromCoverage as _isExcludedFromCoverage, mergeCounters as _mergeCounters } from '../coverage/coverageRules';
 import { logger } from '../utils/logger';
 import { IProjectConfig } from './IProjectConfig';
 import { sourceTransformPattern, upperDrive } from './JestProjectConfig';
@@ -890,22 +891,6 @@ module.exports = _projects
   }
 }
 
-function _mergeCounters(a: LiveCov, b: FileCov): LiveCov {
-  return {
-    s: Object.fromEntries(
-      Object.keys({ ...a.s, ...b.s }).map((id) => [id, Math.max(a.s[id] ?? 0, b.s[id] ?? 0)]),
-    ),
-    b: Object.fromEntries(
-      Object.keys({ ...a.b, ...b.b }).map((id) => [
-        id,
-        (a.b[id] ?? []).map((v, i) => Math.max(v, (b.b[id] as number[] | undefined)?.[i] ?? 0)),
-      ]),
-    ),
-    f: Object.fromEntries(
-      Object.keys({ ...a.f, ...b.f }).map((id) => [id, Math.max(a.f[id] ?? 0, b.f[id] ?? 0)]),
-    ),
-  };
-}
 
 /** A batch with no finished file for this long gets a "still running" warning. */
 const SLOW_BATCH_WARN_MS = 60_000;
@@ -919,18 +904,7 @@ function _extractSuiteName(fullTestName: string): string {
   return lastSep !== -1 ? fullTestName.slice(0, lastSep) : fullTestName;
 }
 
-const _COVERAGE_EXCLUDE_RE = [
-  /[/\\]node_modules[/\\]/,
-  /\.(test|spec)\.(js|ts|jsx|tsx)$/,
-  /[/\\](__tests__|__mocks__|tests?|specs?)[/\\]/,
-  /\.config\.(js|ts|mjs|cjs)$/,
-  /\.d\.ts$/,
-  /[/\\](dist|build|out|\.next|coverage)[/\\]/,
-];
 
-function _isExcludedFromCoverage(filePath: string): boolean {
-  return _COVERAGE_EXCLUDE_RE.some((re) => re.test(filePath));
-}
 
 /** A source path from Jest in the editor's spelling (symlinks, drive-letter case). */
 function _normPath(filePath: string): string {
