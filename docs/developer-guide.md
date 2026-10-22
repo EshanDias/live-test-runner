@@ -150,6 +150,7 @@ Since phase 7 a window holds one `ProjectContext` per test project (`src/project
 
 - Detection rules are pure and unit-tested in the runner (`framework/projectDiscovery.ts`, `test/projectDiscovery.test.ts`): a folder with its own test config is one project; a monorepo root without one is split into its workspace packages that have tests; nested projects are dropped.
 - New per-project state goes into `ProjectContext`, never a window-wide singleton; anything a view shows must be re-bindable.
+- The Explorer, Results panel and status bar follow the selected project; **editor features** (gutter icons, inline durations, CodeLens, coverage bars, coverage hover) resolve each file to **its own project** (`editor/FileStores.ts`, `ProjectRegistry.forFile`) and hear every project's events (`editorObservers` — the gate forwards to them regardless of selection).
 - Commands act on the selected project; commands that get a file (`rerunScope`, `rerunFromEditor`, `debugFromEditor`, `openTimelineDebugger`, saves) go to the file's project (`ProjectRegistry.forFile`).
 - Try it: `node e2e/run.js monorepo-select monorepo-run monorepo-stop` (fixtures `monorepo-jest`, `monorepo-vitest`).
 
@@ -633,8 +634,6 @@ engine.jumpTo(stepId)
 | Debug config hardcoded path | `getDebugConfig` in `JestAdapter` uses `${workspaceFolder}/node_modules/.bin/jest`; non-standard layouts may need the `liveTestRunner.jestCommand` override |
 | CRA config cache is in-memory | Lost when the session ends; recomputed (~2–3s) on next Start Testing |
 | Projects inside a project | A folder with its own test config is one project even when its packages have their own configs; nested workspaces (a package that is itself a monorepo root) are not split further |
-| Editor follows the selected project | Gutter icons / CodeLens show only the selected project's files; open a file of another project and switch to it in the Explorer |
-| `maxRunningProjects: auto` on macOS | `os.freemem()` counts only free pages (not cache), so Macs often report < 4 GB free and `auto` allows 1 project — set a number to run more |
 | Gutter icon animation | `animateTransform` in the running SVG is rendered statically by VS Code — the spinner does not spin in the gutter |
 | `location` not always present | Some Jest setups (CRA) and Vitest 1–2 do not emit `location` in JSON; gutter icons won't appear for those files (Vitest ≥ 3 gets it via `--includeTaskLocation`) |
 | Timeline transform: regex-based injection | `traceTransform.js` injects trace calls using Babel AST. It handles assignments, function calls, and common statement patterns, but may miss complex patterns such as multi-line destructuring or chained optional calls inside expressions. |

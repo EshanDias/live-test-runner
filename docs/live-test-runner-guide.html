@@ -272,9 +272,9 @@
     <tr><td>A multi-root workspace</td><td>Each folder, by the rules above</td></tr>
   </table></div>
   <ul>
-    <li><b>Project switcher</b>: the row at the top of the Explorer (<code>web ▾ ● running ✓120 ✗2</code>) lists every project with its state. Pick one and the tree, Results panel, gutter, CodeLens and status bar switch to it. Also: <b>Select Project</b> in the Command Palette.</li>
+    <li><b>Project switcher</b>: the row at the top of the Explorer (<code>web ▾ ● running ✓120 ✗2</code>) lists every project with its state. Pick one and the tree, Results panel and status bar switch to it. Gutter icons, inline durations, CodeLens and coverage bars always show <b>each file's own project</b> — open a file of another package and you see its results; <b>▶ Run</b> / <b>▷ Debug</b> there run in that package. Also: <b>Select Project</b> in the Command Palette.</li>
     <li><b>Start / Stop act on the project shown.</b> The others keep running — and rerunning on save — in the background; switch back to see their progress.</li>
-    <li><b>How many at once</b>: <code>maxRunningProjects</code> (<code>auto</code> = 2, or 1 on machines with ≤ 4 CPU cores or less than 4 GB free memory). Starting one more asks you to stop a running project first and names the running ones. <b>Stop All Projects</b> stops them all.</li>
+    <li><b>How many at once</b>: <code>maxRunningProjects</code> (<code>auto</code> = 2, or 1 on machines with ≤ 4 CPU cores or less than 8 GB of memory (total RAM)). Starting one more asks you to stop a running project first and names the running ones. <b>Stop All Projects</b> stops them all.</li>
     <li><b>Vitest projects</b>: a package whose config has <code>test.projects</code> is one project; its files are grouped by Vitest project name in the tree.</li>
     <li><b>Pin one root</b>: <b>Select Project Root</b> (or <code>liveTestRunner.projectRoot</code>) limits Live Test Runner to that folder, exactly as before 3.1; choose "Detect all projects" to go back.</li>
     <li>The status bar shows the selected project and how many run: <code>Live Tests: web · ✅ 12 passed · 2 running</code>.</li>
@@ -325,7 +325,7 @@
   <div class="table-wrap"><table>
     <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
     <tr><td><code>projectRoot</code></td><td><code>""</code></td><td>Pin to one project folder. Empty: every test project in the workspace is detected.</td></tr>
-    <tr><td><code>maxRunningProjects</code></td><td><code>"auto"</code></td><td>Projects running at once: <code>auto</code> = 2 (1 on ≤ 4 cores or &lt; 4 GB free memory), or a number</td></tr>
+    <tr><td><code>maxRunningProjects</code></td><td><code>"auto"</code></td><td>Projects running at once: <code>auto</code> = 2 (1 on ≤ 4 cores or &lt; 8 GB total memory), or a number</td></tr>
     <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code> (Jest only).</td></tr>
     <tr><td><code>jestCommand</code></td><td><code>""</code></td><td>Override the Jest binary or command.</td></tr>
     <tr><td><code>vitestCommand</code></td><td><code>""</code></td><td>Override the Vitest command (e.g. <code>npx vitest</code>). Empty = the project's own Vitest.</td></tr>
