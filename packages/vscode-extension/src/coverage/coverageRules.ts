@@ -16,7 +16,9 @@ const COVERAGE_EXCLUDE_RE = [
 
 /** True for a project-relative path that never counts toward coverage. */
 export function isExcludedFromCoverage(filePath: string): boolean {
-  return COVERAGE_EXCLUDE_RE.some((re) => re.test(filePath));
+  // A leading separator so top-level folders (`test/…`, `dist/…`) match the folder rules too.
+  const p = /^[/\\]/.test(filePath) ? filePath : `/${filePath}`;
+  return COVERAGE_EXCLUDE_RE.some((re) => re.test(p));
 }
 
 /** Two counter snapshots of the same file version merged: the higher count wins (runs accumulate). */

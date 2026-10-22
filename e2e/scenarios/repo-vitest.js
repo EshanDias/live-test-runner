@@ -3,12 +3,20 @@
  * A real Vitest project (LTR_E2E_VITEST_REPO — unplugin, slidev, vueuse via
  * e2e/real-repos.js): the full run matches a plain `vitest run`
  * (LTR_E2E_VITEST_BASELINE) test for test, discovery finds the tests before
- * Start, ▶ Run on one test works, a saved test file reruns, and Stop ends
+ * Start, coverage is measured when the provider package is installed (else
+ * one "coverage is off" line), ▶ Run on one test works, a saved test file reruns, and Stop ends
  * every Vitest process. A saved file is restored to its exact content.
  */
 const fs = require('fs');
 const path = require('path');
 const h = require('../lib/harness');
+
+/** True when the project can load a Vitest coverage provider package. */
+function hasCoverageProvider(workspace) {
+  return ['@vitest/coverage-v8', '@vitest/coverage-istanbul'].some((p) => {
+    try { require.resolve(`${p}/package.json`, { paths: [workspace] }); return true; } catch { return false; }
+  });
+}
 
 async function waitIdle(api) {
   await h.sleep(1200);
@@ -25,6 +33,7 @@ module.exports = {
     const discovered = h.allNodes(api).filter((n) => n.type === 'test').length;
     t.check(`static discovery found tests before Start (${discovered})`, discovered > 0);
 
+    const hadCoverageDir = fs.existsSync(path.join(workspace, 'coverage'));
     const rec = h.recordEvents(api);
     const since = h.isoNow();
     const started = Date.now();
@@ -37,6 +46,20 @@ module.exports = {
     t.eq('one run-finished', rec.of('run-finished').length, 1);
     const fallback = logs.filter((l) => /falling back to plain|retrying it with plain/.test(l));
     t.check('no single-file fallback', fallback.length === 0, fallback.slice(0, 10).join('\n'));
+
+    // Coverage: measured when the project has its provider package, else one "coverage is off" line and nothing measured.
+    const measured = [...api.coverageStore.getAllEntries()].filter(([, e]) => e.state === 'measured');
+    const off = logs.filter((l) => /Vitest coverage is off/.test(l));
+    if (hasCoverageProvider(workspace)) {
+      t.check(`coverage measured (${measured.length} files)`, measured.length > 0);
+      t.eq('…no "coverage is off" line', off, []);
+      const inProject = measured.filter(([f]) => !f.startsWith(workspace) && !f.startsWith(fs.realpathSync(workspace)));
+      t.eq('…only project files measured', inProject.map(([f]) => f).slice(0, 5), []);
+    } else {
+      t.check('no coverage provider: says so once', off.length === 1, off.join('\n'));
+      t.eq('…and nothing measured', measured.length, 0);
+    }
+    t.check('no coverage/ folder written into the project', hadCoverageDir || !fs.existsSync(path.join(workspace, 'coverage')));
 
     const baseline = process.env.LTR_E2E_VITEST_BASELINE;
     if (baseline && fs.existsSync(baseline)) {

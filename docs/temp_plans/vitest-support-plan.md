@@ -16,6 +16,12 @@
 | D6 | Mixed-framework projects are a later bonus feature, built only after monorepo support is confirmed. |
 | D7 | Every feature PR updates a **framework feature matrix** (README table) and the HTML guide. |
 | D8 | Real Vitest test projects live in `/Users/eshandias/Projects/test/vitest-projects` (read-only, like the Jest ones). |
+| D9 | (2026-10-22) Work continues through phases 5.3 → 11 → 6 → 7 → 8 → 9, one `feat/*` branch per phase, chained on the previous one; every branch is committed and pushed to origin — **no PRs are opened by the agent**, the owner opens/merges them. Phase 10 (Vitest Timeline) is **out of scope** — a separate later release (the Jest timeline does not do what the owner needs either). |
+| D10 | (Q5) The HTML guide is published with GitHub Pages, linked from the README, and an "Open Guide" command opens it — task 11.4, part of 3.0.0. |
+| D11 | Monorepos (phase 7): every project in the workspace is **detected, none is run** automatically. A **project switcher row at the top of the Explorer** (`name ▾ ● running ✓120 ✗2`) lists all projects with their live state; selecting one switches Explorer, Results, gutter and status bar to it. Start/Stop act on the selected project; several may run at once and keep running in the background while another is viewed. Limit: setting `liveTestRunner.maxRunningProjects`, default `auto` = 2, or 1 on machines with ≤ 4 CPU cores or < 4 GB free memory; starting one more shows "Stop a running project first" and names the running ones. |
+| D12 | A package whose single Vitest config has `test.projects` (vueuse, slidev) is **one** switcher entry, run once from its root; the Explorer groups its files by Vitest project name. |
+| D13 | Mixed frameworks (phase 8): a file both frameworks claim with no hint (no `vitest` / `@jest/globals` import, no `vi.` / `jest.`) runs with the project's primary framework + one WARN naming the override setting. |
+| D14 | Vitest execution trace (phase 9) is **on by default** like Jest's session trace — it powers "covering tests" and precise source-file on-save reruns; falls back to plain runs when the wrapper config cannot load. |
 
 ### Release roadmap
 
@@ -26,7 +32,7 @@
 | 3.1.0 | Monorepos / multi-project workspaces | 7 |
 | 3.2.0 | Mixed-framework projects | 8 |
 | 3.3.0 | Execution trace for Vitest | 9 |
-| 3.4.0 | Timeline debugger for Vitest | 10 |
+| ~~3.4.0~~ | ~~Timeline debugger for Vitest~~ — deferred to a separate release (D9) | 10 |
 
 ---
 
@@ -283,6 +289,7 @@ Done (2026-10-21, 5.1 + 5.2 together — the run and the mapping only make sense
 
 **5.3 Tests (1.5 d)** — `vitest-coverage` e2e, missing-provider path, unit tests on the mapping.
 Gate → **M3a**.
+Done (2026-10-22, branch `feat/vitest-coverage-tests` from `release/3.0.0` after PR #39) → **M3a reached** (Vitest coverage). `vitest-coverage` e2e was written with 5.1/5.2; the missing-provider path is unit-tested in the runner (`vitestCoverageArgs.test.ts`) and now checked on the real repos: `repo-vitest` asserts coverage measured when the clone can resolve `@vitest/coverage-v8`/`-istanbul` (vueuse: 361 files, only project files, no "coverage is off"), otherwise exactly one "coverage is off" line and nothing measured (unplugin, slidev), and no `coverage/` folder appears. Mapping unit tests `vscode-extension/test/istanbulCoverage.test.ts` (9: manifest incl. entries without `decl` / branch `loc`, pct, max-merge per file version, changed file starts over, scan count replaced, exclusions, key fallback); the extension's unit tests now map `vscode` to `test/vscodeStub.ts` (EventEmitter, LogLevel) so store / coverage modules load. **Found:** `isExcludedFromCoverage` got a project-relative path while its folder rules need a leading separator → top-level `test/`, `__tests__/`, `dist/`, `coverage/` … files were measured as source (Jest too) — fixed (leading `/` added before matching).
 
 ### Phase 6 — Related tests & on-save (3 d) — *Feature V5*
 
@@ -349,7 +356,8 @@ Prerequisite: phase 7 confirmed. Principle: **a test file's framework decides it
 - Same table (kept in one source, `docs/framework-features.md`, copied into both) in `docs/live-test-runner-guide.html`, plus a Vitest section and the mixed/monorepo behaviour as they land. Each later feature PR flips its cell.
 - Update `docs/architecture.md`, `developer-guide.md` (“Adding a framework” + conformance), `ai-context.md`, runner/core READMEs, both CHANGELOGs; `[TODO: USER_INPUT_NEEDED]` gif placeholders for Vitest run and coverage.
 **11.2 Real-repo validation & fixes (3 d buffer, per release)** — Jest and Vitest repos; findings into `docs/bugs-and-issues.md`.
-**11.3 Release prep (0.5–1 d per release)** — version check, e2e against the packed `.vsix` (`LTR_E2E_EXTENSION_DIR`), PR `release/x` → `main`.
+**11.3 Release prep (0.5–1 d per release)** — version check, e2e against the packed `.vsix` (`LTR_E2E_EXTENSION_DIR`), PR `release/x` → `main` (the PR is opened by the owner, D9).
+**11.4 Guide on GitHub Pages + "Open Guide" command (1 d, part of 3.0.0, D10)** — Pages workflow publishing `docs/live-test-runner-guide.html` as the docs site; README link; command `liveTestRunner.openGuide` opening the guide.
 
 ## 7. Totals
 
@@ -389,7 +397,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 ## 9. Remaining open questions
 
-- **Q5** — HTML guide (`docs/live-test-runner-guide.html`): my suggestion is to publish it with GitHub Pages as the project’s docs site, link it from the marketplace README, and add a “Open Guide” command that opens it in a webview — it is clearer than a long README. Want that as a task?
+- None. (Q5 answered → D10 / task 11.4; phase 7/8/9 questions answered → D11–D14.)
 
 ## Handoff — where work stopped (2026-10-20)
 
@@ -441,8 +449,10 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 5.1 + 5.2 done (2026-10-21) — see the task note. Gate: build + lint OK; unit 177 runner + 29 extension; e2e 24/24; real repos all PASS (jest-dom, vscode-jest, CRA, unplugin, slidev, vueuse).
 
+- 5.3 done (2026-10-22) → **M3a**. Phase 5 complete. Gate: build, lint, 180 runner + 38 extension unit tests, `e2e/run.js --all` (24/24: 21 pass, 3 repo scenarios skipped), `e2e/real-repos.js --fresh` (6/6 PASS: jest-dom, vscode-jest, sample-react-project, unplugin, slidev, vueuse).
+
 **Next**
-1. Task 5.3 — coverage on the real repos (vueuse measured, unplugin / slidev "coverage is off") → milestone M3a.
+1. Phase 11 (11.1 matrix + guide, 11.2 real-repo validation, 11.3 release prep, 11.4 guide on Pages + Open Guide) on `feat/vitest-release-docs`, then phase 6 → 7 → 8 → 9 (D9).
 
 ## Progress tracker
 
@@ -468,13 +478,14 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 3.3 Tests
 - [x] 5.1 Coverage run
 - [x] 5.2 Coverage mapping
-- [ ] 5.3 Tests
+- [x] 5.3 Tests (M3a)
 - [ ] 11.1 Feature matrix + guide
 - [ ] 11.2 Real-repo validation
 - [ ] 11.3 Release prep → **3.0.0**
+- [ ] 11.4 Guide on GitHub Pages + Open Guide command (D10)
 - [x] 4.1–4.3 Live streaming (3.0.x)
 - [ ] 6.1–6.3 Related/on-save (3.0.x)
 - [ ] 7.1–7.7 Monorepos (3.1)
 - [ ] 8.1–8.6 Mixed (3.2)
 - [ ] 9.1–9.4 Trace (3.3)
-- [ ] 10.1–10.3 Timeline (3.4)
+- [ ] ~~10.1–10.3 Timeline~~ — deferred, separate release (D9)

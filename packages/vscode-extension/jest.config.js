@@ -4,4 +4,6 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['<rootDir>/test/**/*.test.ts'],
   transform: { '\\.[jt]s$': '<rootDir>/../../jest.esbuild.js' },
+  // Store / coverage modules import `vscode` for an EventEmitter only.
+  moduleNameMapper: { '^vscode$': '<rootDir>/test/vscodeStub.ts' },
 };
