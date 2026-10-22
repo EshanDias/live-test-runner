@@ -2,8 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Jest resolves its rootDir to the *real* path (`fs.realpathSync.native`), so
- * it reports — and only accepts — file paths spelled that way. VS Code keeps
+ * Test runners resolve their root to the *real* path (Jest: rootDir via
+ * `fs.realpathSync.native`), so they report — and only accept — file paths
+ * spelled that way. VS Code keeps
  * the path the folder was opened by, which can differ:
  *  - macOS: the temp folder /var/folders/… is a symlink to /private/var/…;
  *    any checkout opened through a symlink differs the same way.
@@ -14,8 +15,8 @@ import * as path from 'path';
  * file, and every path we pass matches nothing ("No files found").
  *
  * Each project root registers both spellings. Paths sent to Jest use the real
- * one (`toJestPath`), paths read back from Jest use the editor's
- * (`fromJestPath`). Roots whose spellings agree pass through unchanged. On
+ * one (`toRunnerPath`), paths read back from Jest use the editor's
+ * (`fromRunnerPath`). Roots whose spellings agree pass through unchanged. On
  * Windows, comparisons ignore case and slash direction; drive-letter case is
  * still normalised by `toJestPathArg`.
  */
@@ -52,8 +53,8 @@ export function registerProjectRoot(
   differingRoots.sort((a, b) => b.link.length - a.link.length);
 }
 
-/** Editor spelling → Jest's (real) spelling. */
-export function toJestPath(filePath: string): string {
+/** Editor spelling → the runner's (real) spelling. */
+export function toRunnerPath(filePath: string): string {
   for (const r of differingRoots) {
     const p = swapPrefix(filePath, r.link, r.real);
     if (p !== undefined) { return p; }
@@ -61,14 +62,43 @@ export function toJestPath(filePath: string): string {
   return filePath;
 }
 
-/** Jest's (real) spelling → editor spelling. */
-export function fromJestPath(filePath: string): string {
+/** The runner's (real) spelling → editor spelling. */
+export function fromRunnerPath(filePath: string): string {
   for (const r of differingRoots) {
     const p = swapPrefix(filePath, r.real, r.link);
     if (p !== undefined) { return p; }
   }
   return filePath;
 }
+
+/**
+ * One spelling for every path handed to a runner that does not realpath
+ * anything itself (Vitest): its CLI entry, cwd, config and file filters.
+ * Vitest loads its own CLI from the path it was started by and the `vitest`
+ * import in test files from where Node resolves it — if the two are spelled
+ * differently (8.3 short name, drive-letter case), it runs two copies of
+ * itself and the tests register with the wrong one ("no tests"). Node's
+ * `require.resolve` keeps 8.3 names, so the native realpath is used here,
+ * with an upper-case drive letter. Paths that do not exist fall back to
+ * `toRunnerPath`.
+ */
+export function toSpawnPath(
+  p: string,
+  realpath: (p: string) => string = fs.realpathSync.native,
+): string {
+  let real: string;
+  try {
+    real = realpath(p);
+  } catch {
+    real = toRunnerPath(p);
+  }
+  return windows ? real.replace(/^([a-z]):/, (_, d: string) => `${d.toUpperCase()}:`) : real;
+}
+
+/** @deprecated Use toRunnerPath — kept for one release. */
+export const toJestPath = toRunnerPath;
+/** @deprecated Use fromRunnerPath — kept for one release. */
+export const fromJestPath = fromRunnerPath;
 
 function swapPrefix(p: string, from: string, to: string): string | undefined {
   const cp = comparable(p);

@@ -6,8 +6,9 @@ import {
   ConsoleEntry,
 } from "../types";
 import { createLogger, stripAnsi } from "../utils/logger";
-import { fromJestPath } from "../resolution/JestPaths";
+import { fromRunnerPath } from "../resolution/RunnerPaths";
 import { mergeByFile } from "./mergeFileResults";
+import { emptyRunResult, mergeRunResults } from "./runResults";
 
 const log = createLogger("ResultParser");
 
@@ -63,7 +64,7 @@ export class ResultParser {
 
           return {
             // Jest's --json output calls the file path `name`.
-            testFilePath: fromJestPath(fr.testFilePath ?? fr.name ?? ""),
+            testFilePath: fromRunnerPath(fr.testFilePath ?? fr.name ?? ""),
             status: fr.status === "passed" ? "passed" : "failed",
             failureMessage: fr.failureMessage || undefined,
             testCases,
@@ -162,26 +163,12 @@ export class ResultParser {
 
   /** Build an empty result with the given pass/fail state and error messages. */
   empty(passed: boolean, errors: string[]): RunResult {
-    return {
-      passed,
-      numPassedTests: 0,
-      numFailedTests: 0,
-      numPendingTests: 0,
-      fileResults: [],
-      errors,
-    };
+    return emptyRunResult(passed, errors);
   }
 
   /** Merge multiple RunResults into one (used for chunked multi-file runs). */
   merge(results: RunResult[]): RunResult {
-    return {
-      passed: results.every((r) => r.passed),
-      numPassedTests: results.reduce((s, r) => s + r.numPassedTests, 0),
-      numFailedTests: results.reduce((s, r) => s + r.numFailedTests, 0),
-      numPendingTests: results.reduce((s, r) => s + r.numPendingTests, 0),
-      fileResults: results.flatMap((r) => r.fileResults),
-      errors: results.flatMap((r) => r.errors),
-    };
+    return mergeRunResults(results);
   }
 
   // ── Private ─────────────────────────────────────────────────────────────────

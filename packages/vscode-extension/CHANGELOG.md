@@ -2,7 +2,35 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [Unreleased]
+## [3.0.0] - 2026-10-22
+
+### New
+
+- **Vitest support (preview)** — open a Vitest project and Start Testing: the test tree, pass/fail results, gutter icons, ▶ Run / ▷ Debug for one test or suite, and reruns of saved test files work as they do for Jest. The framework is detected automatically; files your Vitest config does not include are not run. Vitest results stream in file by file while the run goes, and coverage (gutter, hover, totals) works with Vitest's own coverage provider — install `@vitest/coverage-v8` if your project doesn't have one. With Vitest, every test shows its own console output — not just the file — and a failure shows the expected / received diff and the line it happened on; a failing `beforeAll` shows its real error.  New settings `liveTestRunner.vitestCommand` and `liveTestRunner.vitestIncludeBrowserProjects` — Vitest browser-mode projects need real browsers, so they are left out unless you turn this on (or your test script picks projects itself).
+
+### Improvements
+
+- **Vitest: saving a source file reruns the tests that import it** — live, with fresh coverage for that file.
+- **Saving your Jest or Vitest config restarts testing** — the new config is picked up right away and every test reruns.
+- **Live run timer** — elapsed time now updates every second while tests are running.
+- **Open Guide** — a new command opens the full user guide in an editor tab (also online at https://eshandias.github.io/live-test-runner/guide/).
+- **New website** — https://eshandias.github.io/live-test-runner/ with features, screenshots, quick start and links to leave a review.
+- **Test files with generated tests show up** — a file whose tests are created at runtime (no plain `test(...)` calls) is listed and shows its results.
+- **Better test discovery** — tests inside `describe.each(...)` appear under their suite before the first run, and TypeScript test files using generic arrow functions are no longer missing from the tree.
+- **A test file that cannot load shows why** — its tests are marked failed with the error (e.g. a missing import) instead of staying "not run".
+- **"Jest Output" is now "Test Output"** — the raw output channel is called "Live Test Runner: Test Output" and the command "Show Test Output", ready for more test frameworks. Nothing else changes.
+
+### Bug Fixes
+
+- **File durations no longer show decimal points** — sub-second durations use whole milliseconds; longer durations show seconds and minutes without a millisecond remainder.
+- **Coverage totals match `vitest --coverage` / `jest --coverage`** — the totals now count the files your coverage config counts (Vitest `coverage.include` / `exclude`, Jest `collectCoverageFrom` / `coveragePathIgnorePatterns`). Before, every source file in the workspace was added, including generated report and bundle files (e.g. Vitest's `.vitest/` html report), which could pull the percentage far below the CLI's. Without an include list, only files your tests load count, as on the CLI.
+- **The % / N/M toggle switches the project totals too** — it used to change only the file list.
+- **Test helpers no longer count as source in coverage** — files in top-level `test/`, `__tests__/`, `dist/` or `coverage/` folders were included in the coverage totals.
+- **`npx jest` as the Jest command works as expected** — with `liveTestRunner.jestCommand` set to `npx jest`, "jest" was passed twice.
+
+---
+
+## [2.0.4] - 2026-10-19
 
 ### Improvements
 
@@ -34,14 +62,6 @@ All notable changes to Live Test Runner are documented here.
 - **Test files show how long they took** in the test lists.
 - **New test files run when you save them**, even if you created them after clicking Start.
 - **Coverage no longer stays "stale"** after saving a source file, and those reruns now update the test tree.
-
----
-
-## [2.0.4] - 2026-10-19
-
-### Maintenance
-
-- No changes to extension behaviour; internal release tooling only.
 
 ---
 

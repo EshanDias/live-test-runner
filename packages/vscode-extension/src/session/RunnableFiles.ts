@@ -10,7 +10,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fromJestPath } from '@live-test-runner/runner';
+import { fromRunnerPath, VITEST_CONFIG_FILES, VITE_CONFIG_FILES } from '@live-test-runner/runner';
 
 /** Files in the project root that can change which tests Jest runs. */
 const CONFIG_FILES = [
@@ -21,11 +21,18 @@ const CONFIG_FILES = [
 ];
 
 /**
+ * Config files of other frameworks (Vitest). They count only when present,
+ * so adding them did not change the key — and the remembered list — of
+ * existing Jest projects.
+ */
+const OPTIONAL_CONFIG_FILES = [...VITEST_CONFIG_FILES, ...VITE_CONFIG_FILES];
+
+/**
  * Comparable spelling of a path: the editor's spelling (lists remembered by
  * older versions hold Jest's realpath'd spelling), case-insensitive on Windows.
  */
 export function runnableKey(filePath: string): string {
-  const p = path.normalize(fromJestPath(filePath));
+  const p = path.normalize(fromRunnerPath(filePath));
   return process.platform === 'win32' ? p.toLowerCase() : p;
 }
 
@@ -44,6 +51,12 @@ export function runnableCacheKey(projectRoot: string, testFiles: string[], setti
       stamp = `${st.size}:${st.mtimeMs}`;
     } catch { /* not there */ }
     h.update(`${name}=${stamp}\0`);
+  }
+  for (const name of OPTIONAL_CONFIG_FILES) {
+    try {
+      const st = fs.statSync(path.join(projectRoot, name));
+      h.update(`${name}=${st.size}:${st.mtimeMs}\0`);
+    } catch { /* not there — leaves the key unchanged */ }
   }
   for (const f of testFiles.map(runnableKey).sort()) { h.update(f).update('\0'); }
   return h.digest('hex');

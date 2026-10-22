@@ -16,7 +16,7 @@
 const path   = require('path');
 const fs     = require('fs');
 const crypto = require('crypto');
-const RUNTIME_PATH = path.resolve(__dirname, 'sessionTraceRuntime.js');
+const RUNTIME_PATH = path.resolve(__dirname, '..', 'shared', 'sessionTraceRuntime.js');
 
 // Log protocol: "[LTR:<level>] msg" lines on stderr are routed by the
 // extension's Executor into the "Live Test Runner" log at that level.

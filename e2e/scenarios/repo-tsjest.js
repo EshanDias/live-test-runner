@@ -50,7 +50,7 @@ module.exports = {
           diffs.push(`${path.basename(file)}: jest ${JSON.stringify(c)} vs extension ${JSON.stringify(got)}`);
         }
       }
-      t.check(`results match plain Jest for all ${want.size} files`, diffs.length === 0, diffs.slice(0, 15).join('\n'));
+      t.check(`results match plain Jest for all ${want.size} files`, diffs.length === 0, `${diffs.length} file(s) differ${diffs.length > 15 ? ' (first 15)' : ''}:\n` + diffs.slice(0, 15).join('\n'));
     }
 
     // Trace + coverage.
@@ -80,8 +80,10 @@ module.exports = {
     }
 
     // Save a source file that only some tests use → trace-based rerun, then restore it.
-    const candidates = mapped
-      .filter((f) => f.toLowerCase().startsWith(srcRoot) && /\.[jt]sx?$/.test(f))
+    // Prefer <root>/src; a monorepo (the jest repo) keeps its sources in packages/*.
+    const isSource = (f) => /\.[jt]sx?$/.test(f) && f.toLowerCase().startsWith(workspace.toLowerCase()) && !/[\\/](node_modules|build|dist)[\\/]/.test(f);
+    const inSrc = mapped.filter((f) => f.toLowerCase().startsWith(srcRoot) && isSource(f));
+    const candidates = (inSrc.length ? inSrc : mapped.filter(isSource))
       .map((f) => ({ f, n: api.traceStore.getAffectedTestFiles(f).length }))
       .filter((x) => x.n >= 1 && x.n <= 3)
       .sort((a, b) => a.n - b.n);

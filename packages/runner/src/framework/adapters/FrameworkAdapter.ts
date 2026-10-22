@@ -1,4 +1,5 @@
-import { Framework } from '../../types';
+import { FrameworkCapabilities, FrameworkId, RunResult } from '../../types';
+import { RunnerOptions, TestRunner } from '../../TestRunner';
 
 /**
  * A FrameworkAdapter encapsulates everything that differs between test frameworks:
@@ -7,10 +8,13 @@ import { Framework } from '../../types';
  *  - How to resolve or extract the framework config
  *  - Any framework-specific CLI args
  *
- * Adding a new framework = implementing this interface + registering it in FrameworkDetector.
+ *  - How it writes and how to read its JSON result
+ *  - Which TestRunner builds its command lines
+ *
+ * Adding a new framework = implementing this interface + registering it in FrameworkRegistry.
  */
 export interface FrameworkAdapter {
-  readonly framework: Framework;
+  readonly framework: FrameworkId;
 
   /** Returns true if this adapter handles the given project root. */
   detect(projectRoot: string): boolean;
@@ -35,4 +39,25 @@ export interface FrameworkAdapter {
    * Example: CRA may need specific env vars; Vite/Vitest needs its own flags.
    */
   getExtraArgs(projectRoot: string): string[];
+
+  /** Args that make the runner write its JSON result to `file` (Jest: `--outputFile=<file>`). */
+  outputFileArg(file: string): string[];
+
+  /**
+   * Turns the runner's raw JSON result into a RunResult.
+   *
+   * @param passed whether the process exited with code 0
+   * @param raw    the JSON text (from the output file, or stdout as a fallback)
+   * @param stderr the process's stderr (some frameworks only print console output there)
+   */
+  parseResult(passed: boolean, raw: string, stderr: string): RunResult;
+
+  /**
+   * What the framework, at the version installed in `projectRoot`, can do.
+   * Must not throw — a missing install reports the capabilities of a current version.
+   */
+  capabilities(projectRoot: string): FrameworkCapabilities;
+
+  /** The TestRunner that runs this framework's tests. */
+  createRunner(options?: RunnerOptions): TestRunner;
 }

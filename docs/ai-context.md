@@ -36,34 +36,43 @@ Framework-agnostic execution engine. VS Code layer depends only on the `TestRunn
 ```
 src/
 ├── types.ts                          Framework enum, Status enum, result types
-├── TestRunner.ts                     Interface the extension uses
-├── JestRunner.ts                     Thin orchestrator — wires the layers
+├── TestRunner.ts                     Interface the extension uses (+ RunnerOptions)
+├── CommandRunner.ts                  Generic CLI runner: binary/config/extra args, chunking, kill, coverage; abstract buildArgs(RunRequest)
+├── JestRunner.ts                     extends CommandRunner — Jest flags only
+├── VitestRunner.ts                   extends CommandRunner — `run|list|related` + files as leadingArgs; toVitestNamePattern (" " → "(?: > | )")
 ├── framework/
-│   ├── FrameworkDetector.ts          Reads package.json → picks adapter from ADAPTER_PRIORITY
+│   ├── FrameworkRegistry.ts          register(adapter, priority); default(): CRA 300 → Vitest 200 → Jest 100 (built lazily)
+│   ├── FrameworkDetector.ts          First matching registry adapter; detectWithReason(); unknown → plain Jest + one WARN
 │   └── adapters/
-│       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs
+│       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs, outputFileArg, parseResult, capabilities, createRunner
 │       ├── JestAdapter.ts            Plain Jest + Next.js + Jest
 │       ├── CRAAdapter.ts             Create React App
-│       └── ViteAdapter.ts            Vitest stub — only when the project has no Jest dep/config
+│       └── VitestAdapter.ts          Vitest: detect (no Jest marker), vitest.mjs, config, version → capabilities, Node check; runner = VitestRunner
+│   ├── UnsupportedFrameworkError.ts
+│   ├── refusingAdapter.ts            stand-in adapter a runner keeps for another framework's project
+│   ├── vitestConfig.ts               testScriptVitestArgs: config-relevant flags of the test script (follows nr/npm run/pnpm)
+│   └── vitestProjects.ts             vitestProjects(): projects + browser flag via the project's own Vitest node API (browser-mode guard)
 ├── resolution/
 │   ├── BinaryResolver.ts             Finds jest binary in project node_modules
-│   └── JestPaths.ts                  Symlinked roots: editor path ↔ Jest's realpath
+│   └── RunnerPaths.ts                Symlinked roots: editor path ↔ the test runner's realpath
 ├── execution/
-│   └── Executor.ts                   Spawns Jest, reads --outputFile JSON on exit
+│   └── Executor.ts                   Spawns the runner, reads its result file (flag from adapter.outputFileArg) on exit
 └── parsing/
-    ├── ResultParser.ts               Parses runner JSON output → RunResult
+    ├── ResultParser.ts               Parses Jest JSON output → RunResult (adapter.parseResult for Jest/CRA)
+    ├── VitestResultParser.ts         parseVitestResult: Vitest 1–5 json reporter → RunResult (fixtures: test/fixtures/vitest)
+    ├── runResults.ts                 emptyRunResult / mergeRunResults — any framework
     └── mergeFileResults.ts           Merges reports of one file run by several Jest projects
 ```
 
 **Process model:** Jest is always `node <jest/bin/jest.js>` (`BinaryResolver.resolveJestEntry`, CRA: `resolveCraJestEntry`) with **no shell** — Windows `.cmd` shims broke arguments and paths with spaces. `nodeRuntime()` prefers `node` on PATH. `Executor.kill()` kills the process tree; `timeoutMs` stops a hanging run. Path arguments: forward slashes + upper-case drive (`toJestPathArg`).
 
-**Batch run command (SessionTraceRunner — initial run and on-save file reruns):**
+**Batch run command (JestBatchRunner — initial run and on-save file reruns):**
 ```sh
 node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
      --config <ltr-temp-config.js> --cacheDirectory <per-project transform cache> \
      --maxWorkers=1 --testLocationInResults --verbose=false
 ```
-The temp config starts from the project's config as Jest resolves it (`ProjectJestConfig`: `jest --showConfig` / `react-scripts test --showConfig`, once per session, JSON in the session dir) plus:
+The temp config starts from the project's config as Jest resolves it (`JestProjectConfig`: `jest --showConfig` / `react-scripts test --showConfig`, once per session, JSON in the session dir) plus:
 - `sessionTraceTransform.js` at the front of the transform chain (light trace: line hit maps + coverage counters)
 - `ltrCoverageSetup.js` as the **first** `setupFilesAfterEnv` entry — coverage flush, per-test trace context (`beginTest` / `endTest`), test-start/end heartbeats for the hang watchdog
 - `liveReporter.js` as an extra reporter that appends a `start` record and one result record per file to a JSONL file
@@ -92,7 +101,7 @@ RunResult
       failureMessages: string[]
       ancestorTitles: string[]
 
-ConsoleEntry   // console output per file
+ConsoleEntry   // console output per file; Vitest adds scope ('file'|'suite'|'test') + scopeName
   message: string
   type: string   // 'log' | 'warn' | 'error' | 'info' | 'debug'
   origin: string
@@ -117,21 +126,36 @@ src/
 │   ├── types.ts                    Manifest, FileCov, LiveCov, CoveragePct, CoverageTotals, CoverageEntry
 │   ├── CoverageStore.ts            In-memory store: 'counted' → 'measured' → 'measured-stale' lifecycle
 │   ├── SourceCounter.ts            Background scan at session start; populates CoverageStore with 'counted' entries
+│   ├── coverageScope.ts            Which files count toward coverage, from the project's coverage config (IProjectConfig.coverageScope)
 │   └── CoverageReport.ts           Stateless metric calculation (statements/branches/functions/lines)
 ├── cache/
 │   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
 ├── session/
 │   ├── SessionManager.ts           Session lifecycle, batched run pool (CONCURRENCY=cpus/4), on-save, rerun
-│   ├── SessionTraceRunner.ts       Runs combined test+trace+coverage batches; populates ResultStore + ExecutionTraceStore + CoverageStore
-│   │   instrumentation/
-│   │   ├── liveReporter.js         Custom Jest reporter: appends one JSON record per completed file to a JSONL file
-│   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
-│   │   └── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook; flushes T/H records + __cov to JSONL on exit
+│   ├── IProjectConfig.ts           Interface: the project's resolved runner config (get / reset)
+│   ├── JestProjectConfig.ts        IProjectConfig for Jest: `jest --showConfig` once per session
+│   ├── IBatchRunner.ts             Interface: runFiles(BatchRunOptions) / kill / reset — SessionManager's only view of batch runs
+│   ├── JestBatchRunner.ts          Runs combined test+trace+coverage batches; populates ResultStore + ExecutionTraceStore + CoverageStore
+│   │   instrumentation/            (protocol: docs/architecture.md → Session instrumentation protocol)
+│   │   ├── shared/
+│   │   │   ├── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook; flushes T/H records to JSONL — framework-neutral
+│   │   │   └── testDiscovery.js        Static AST test discovery (bundled; used by TestDiscoveryService)
+│   │   └── jest/
+│   │       ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
+│   │       ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
+│   │       └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
+│   ├── VitestBatchRunner.ts        IBatchRunner for Vitest: one process per batch, results streamed per file (reporter events), per-test hang limit, Vitest coverage → CoverageStore
+│   ├── VitestProjectConfig.ts      IProjectConfig for Vitest: the config file path
 │   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
 │   │                               getAffectedTests, getDebugConfig
-│   └── JestAdapter.ts              All Jest-specific logic
+│   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all) + SingleFrameworkProvider + DetectingFrameworkProvider (Vitest or Jest per root)
+│   ├── jestServices.ts             createJestServices(): the Jest bundle (adapter, JestProjectConfig, JestBatchRunner, JestInstrumentedRunner, session runner)
+│   ├── vitestServices.ts           createVitestServices(): adapter, VitestProjectConfig, VitestBatchRunner, no instrumented runner
+│   ├── RunnerBackedAdapter.ts      Shared IFrameworkAdapter half: file / test-case / related runs, FileRunResult → ResultStore
+│   ├── JestAdapter.ts              Jest detection, JestRunner (jestCommand / runMode), debug config
+│   └── VitestAdapter.ts            Vitest detection, VitestRunner (vitestCommand), debug config (autoAttachChildProcesses)
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
 │   ├── DecorationManager.ts        Gutter icons + inline duration text
@@ -193,9 +217,9 @@ src/
 2. File list read from `store.getAllFiles()` — no second file scan needed
 3. `onRunStarted` pushed to UI with the already-populated pending tree
 4. `_runFiles` builds a batch queue: `BATCH_SIZE = clamp(ceil(N / CONCURRENCY), 5, 50)` files per batch; `CONCURRENCY = max(1, floor(cpuCount / 4))` parallel Jest processes
-5. Each batch: files marked `running` in store → single Jest process via `SessionTraceRunner.runFiles` with combined test+trace+coverage instrumentation; `liveReporter.js` streams per-file results as they complete; `onFileDone` notifies observers after each file
-6. After Jest exits: `SessionTraceRunner` parses (a) the light-trace JSONL → updates `ExecutionTraceStore`; (b) the coverage counters JSONL → promotes `CoverageStore` entries from `'counted'` to `'measured'` using manifests on disk
-7. In parallel with step 5: `SourceCounter` AST-scans every source file and populates `CoverageStore` with `'counted'` (0-hit) entries so untouched files are included in coverage denominators
+5. Each batch: files marked `running` in store → single Jest process via `JestBatchRunner.runFiles` with combined test+trace+coverage instrumentation; `liveReporter.js` streams per-file results as they complete; `onFileDone` notifies observers after each file
+6. After Jest exits: `JestBatchRunner` parses (a) the light-trace JSONL → updates `ExecutionTraceStore`; (b) the coverage counters JSONL → promotes `CoverageStore` entries from `'counted'` to `'measured'` using manifests on disk
+7. In parallel with step 5: `SourceCounter` AST-scans the source files that count toward coverage (the framework's `CoverageScope` — Vitest `coverage.include`/`exclude`, Jest `collectCoverageFrom`/`coveragePathIgnorePatterns`; built-in rules + git-ignore when the config is unreadable) and populates `CoverageStore` with `'counted'` (0-hit) entries so untouched files are included in coverage denominators. Skipped when the config has no include list (the CLI then reports only loaded files)
 7. On-save listener enabled
 
 **On save (debounced 300ms):**
@@ -254,7 +278,7 @@ ResultStore
 
 ### `ExecutionTraceStore`
 
-Derived indexes built from per-test JSONL trace files written by `SessionTraceRunner` after each instrumented run. These are read-only caches — the trace files on disk are the source of truth. All three indexes are rebuilt from traces and cleared together on session reset.
+Derived indexes built from per-test JSONL trace files written by `JestBatchRunner` after each instrumented run. These are read-only caches — the trace files on disk are the source of truth. All three indexes are rebuilt from traces and cleared together on session reset.
 
 ```
 ExecutionTraceStore
@@ -277,7 +301,7 @@ ExecutionTraceStore
             }
           }
         }
-        Populated by SessionTraceRunner after each file run.
+        Populated by JestBatchRunner after each file run.
         Used by SessionManager._runAffectedBySourceFile() to scope on-save reruns
         to the specific test cases that actually executed code from the changed file.
 ```
@@ -286,7 +310,7 @@ ExecutionTraceStore
 - `ResultStore` answers "what happened" — pass/fail, output, failure messages
 - `ExecutionTraceStore` answers "what ran and where" — which source lines executed, which tests cover which files
 - `CoverageStore` answers "how much is covered" — statement/branch/function/line percentages; includes untouched files via `SourceCounter`
-- No store writes to another; `SessionManager` and `SessionTraceRunner` coordinate all three
+- No store writes to another; `SessionManager` and `JestBatchRunner` coordinate all three
 
 ### `ScopedOutput`
 
@@ -307,6 +331,7 @@ interface OutputLine {
 - Suite/node rerun → that node's `output` set
 - Test rerun → `TestNode.output` set
 - **Never back-fill** node output from file-level output
+- Vitest attributes output (`ConsoleEntry.scope`): every test that ran gets its own lines (possibly none), suites their hooks' lines — attribution, not back-fill
 
 ### `LineMap`
 
@@ -470,8 +495,9 @@ All in `packages/vscode-extension/package.json`:
 - `liveTestRunner.startTesting`
 - `liveTestRunner.stopTesting`
 - `liveTestRunner.selectProjectRoot`
-- `liveTestRunner.showOutput` — "Show Jest Output": raw Jest output channel
+- `liveTestRunner.showOutput` — "Show Test Output": raw Jest / Vitest output channel
 - `liveTestRunner.showLogs` — "Show Logs": levelled extension log channel
+- `liveTestRunner.openGuide` — "Open Guide": the user guide shipped in `out/guide/guide.html` (copied from `docs/live-test-runner-guide.html`) in a webview tab (`views/GuidePanel.ts`); the same page is on GitHub Pages at `/guide/` (`.github/workflows/pages.yml`), next to the landing page `site/index.html` and `site/sitemap.xml`
 - `liveTestRunner.copyDiagnostics` — "Copy Diagnostic Report": versions, project setup, settings, recent logs → clipboard + untitled doc
 - `liveTestRunner.rerunFromEditor`
 - `liveTestRunner.debugFromEditor`
@@ -513,7 +539,7 @@ All in `packages/vscode-extension/package.json`:
 |-----------|--------|
 | Jest | Fully supported |
 | Create React App | Fully supported (via `--showConfig` + direct Jest invocation) |
-| Vitest | Planned — `ViteAdapter` stub in `packages/runner` |
+| Vitest | Supported since 3.0.0 (Vitest 3+; 1–2 results only) — run, pass/fail, per-test output, failures, live progress, coverage, related tests on save. Not yet: execution trace / "covering tests" (3.3), Timeline. See `docs/framework-features.md` |
 
 ---
 
@@ -536,7 +562,7 @@ All in `packages/vscode-extension/package.json`:
 | Run lifecycle | `packages/vscode-extension/src/session/SessionManager.ts` |
 | All result data | `packages/vscode-extension/src/store/ResultStore.ts` |
 | Execution trace indexes | `packages/vscode-extension/src/store/ExecutionTraceStore.ts` |
-| Per-file trace runner | `packages/vscode-extension/src/session/SessionTraceRunner.ts` |
+| Per-file trace runner | `packages/vscode-extension/src/session/JestBatchRunner.ts` |
 | Selection tracking | `packages/vscode-extension/src/store/SelectionState.ts` |
 | Jest-specific logic | `packages/vscode-extension/src/framework/JestAdapter.ts` |
 | Gutter + inline | `packages/vscode-extension/src/editor/DecorationManager.ts` |
@@ -551,6 +577,10 @@ All in `packages/vscode-extension/package.json`:
 | Extension logger (LogOutputChannel, ring buffer) | `packages/vscode-extension/src/utils/logger.ts` |
 | Runner/core logger + sink | `packages/runner/src/utils/logger.ts` |
 | Diagnostic report | `packages/vscode-extension/src/utils/diagnostics.ts` |
+| User guide tab | `packages/vscode-extension/src/views/GuidePanel.ts` |
+| Vitest coverage → CoverageStore | `packages/vscode-extension/src/coverage/istanbulCoverage.ts` |
+| Vitest batches | `packages/vscode-extension/src/session/VitestBatchRunner.ts` |
+| Vitest-specific logic | `packages/vscode-extension/src/framework/VitestAdapter.ts`, `packages/runner/src/VitestRunner.ts` |
 | Known bugs + root causes | `docs/bugs-and-issues.md` |
 | Framework detection | `packages/runner/src/framework/FrameworkDetector.ts` |
 | CRA config extraction | `packages/runner/src/framework/adapters/CRAAdapter.ts` |
@@ -576,5 +606,5 @@ All in `packages/vscode-extension/package.json`:
 13. **`TimelineDecorationManager` is separate from `DecorationManager`.** It never touches pass/fail gutter icons — completely independent decoration types.
 14. **Timeline Maps are serialised before postMessage.** `TimelineStore.variables` and `TimelineStore.logs` are `Map<number, ...>` in the extension host. They are converted to plain objects (`Object.fromEntries`) before sending to webviews, since Maps are not JSON-serialisable.
 15. **`scope-logs` and `scope-changed` are always separate messages.** They have different lifecycles.
-16. **Logging goes through the logger, never `console.*` or the Jest Output channel.** Extension: `logger.scope('Area')`. runner/core: `createLogger('Area')`. Instrumentation inside Jest: `[LTR:<level>] msg` on stderr. One `info` summary per run; per-file detail at `debug`/`trace`. See developer-guide → Logging.
+16. **Logging goes through the logger, never `console.*` or the Test Output channel.** Extension: `logger.scope('Area')`. runner/core: `createLogger('Area')`. Instrumentation inside Jest: `[LTR:<level>] msg` on stderr. One `info` summary per run; per-file detail at `debug`/`trace`. See developer-guide → Logging.
 17. **Session Jest runs pass `--verbose=false`.** Jest auto-enables verbose for single-file runs, which stops console buffering and empties `testResult.console` (Results panel shows no logs).

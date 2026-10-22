@@ -14,7 +14,9 @@
 
 > Save a file. Tests run. Results appear inline. No terminal. No config.
 
-> **Only supports `Jest` at the moment**
+> **Works with Jest (incl. Create React App) and Vitest** — see [Supported frameworks](#supported-frameworks) for what each one supports.
+
+🌐 **[Website](https://eshandias.github.io/live-test-runner/)** · 📖 **[Read the full guide](https://eshandias.github.io/live-test-runner/guide/)** — or run **Live Test Runner: Open Guide** in VS Code.
 
 <!-- [TODO: USER_INPUT_NEEDED] Replace with an updated hero gif showing the full experience (test run + coverage bars + hover) -->
 ![Demo](resources/gifs/live%20test%20runner%20demo.gif)
@@ -36,12 +38,12 @@
 
 ## Quick Start
 
-1. Open a Jest project in VS Code
+1. Open a Jest or Vitest project in VS Code
 2. Click the **beaker icon** in the Activity Bar
 3. Click **▶ Start Testing**
 4. Save any file — results update instantly
 
-> No `jest.config` changes. No extra installs.
+> No config changes. No extra installs. The framework is detected from your project.
 
 ---
 
@@ -80,9 +82,10 @@ After the first run, every source file shows per-line coverage — no separate c
 | Red `▌` | Never executed |
 | Grey `▌` | Not executable |
 
-Hover any line to see which tests cover it, their pass/fail status, and duration. When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
+Hover any line to see which tests cover it, their pass/fail status, and duration (Jest; Vitest shows coverage and branches — covering tests are coming). When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
 
 <!-- [TODO: USER_INPUT_NEEDED] Screenshot or gif of coverage bars + hover tooltip in a source file -->
+<!-- [TODO: USER_INPUT_NEEDED] Screenshot: coverage bars + hover on a Vitest project (with @vitest/coverage-v8 installed) -->
 ![Code Coverage Example](resources/images/code_coverage.png)
 
 ---
@@ -114,8 +117,9 @@ Step through any test case line by line — variable values as inline ghost text
 | `Clear Cache and Restart Testing` | Fresh restart |
 | `Select Project Root` | Pick root in multi-folder workspace |
 | `Show Logs` | Open the extension log (filter by level) |
-| `Show Jest Output` | Open raw Jest output |
+| `Show Test Output` | Open the raw test-runner output |
 | `Copy Diagnostic Report` | Copy versions, setup and recent logs for a bug report |
+| `Open Guide` | Open the user guide in an editor tab |
 
 > **Tip:** Shift-click **⏹ Stop** to stop and clear cache in one click.
 
@@ -124,7 +128,7 @@ Step through any test case line by line — variable values as inline ghost text
 ## Troubleshooting
 
 - **Output → "Live Test Runner"** — what the extension did: one line per run, warnings when something falls back. Set the level to **Debug** (⚙ in the Output panel) for details.
-- **Output → "Live Test Runner: Jest Output"** — exactly what Jest printed.
+- **Output → "Live Test Runner: Test Output"** — exactly what Jest / Vitest printed.
 - Reporting a bug? Run **Copy Diagnostic Report** and attach it.
 
 <!-- [TODO: USER_INPUT_NEEDED] Screenshot of the Output panel showing the levelled "Live Test Runner" log with a Run summary line -->
@@ -139,12 +143,14 @@ All settings under `liveTestRunner.*`.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `projectRoot` | `""` | Auto-detected for single-folder workspaces |
-| `runMode` | `"auto"` | `"auto"` calls Jest directly; `"npm"` delegates to `npm test` |
+| `runMode` | `"auto"` | `"auto"` calls Jest directly; `"npm"` delegates to `npm test` (Jest only) |
 | `jestCommand` | `""` | Override Jest binary path |
+| `vitestCommand` | `""` | Override the Vitest command (e.g. `npx vitest`); empty = the project's own Vitest |
+| `vitestIncludeBrowserProjects` | `false` | Also run Vitest browser-mode projects (need Playwright / WebdriverIO browsers) |
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
 | `testFilePatterns` | `["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]` | Which files appear in the test tree. Jest's own config still decides what runs, and files it runs are added even when no pattern matches |
-| `coverageExclude` | `[]` | Extra globs left out of the coverage totals |
+| `coverageExclude` | `[]` | Extra globs left out of the coverage totals (which otherwise follow your Vitest `coverage.include` / `exclude` or Jest `collectCoverageFrom`) |
 | `durationThresholds.testAmberMs` | `100` | Test turns amber |
 | `durationThresholds.testRedMs` | `500` | Test turns red |
 | `durationThresholds.suiteAmberMs` | `500` | Suite turns amber |
@@ -156,19 +162,34 @@ All settings under `liveTestRunner.*`.
 
 ## Supported frameworks
 
-| Framework | Status |
-|-----------|--------|
-| Jest | ✅ Fully supported |
-| Create React App (react-scripts) | ✅ Fully supported |
-| Vitest | 🗓 Planned |
+<!-- matrix:start -->
+| Feature | Jest | CRA | Vitest |
+|---|---|---|---|
+| Run & pass/fail | ✅ | ✅ | ✅ |
+| ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ |
+| Rerun a saved test file | ✅ | ✅ | ✅ |
+| Logs / console output | ✅ per file | ✅ per file | ✅ per test |
+| Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) |
+| Live per-file progress | ✅ | ✅ | ✅ |
+| Rerun tests related to a saved source file | ✅ | ✅ | ✅ whole test files (`vitest related`) |
+| Monorepo / multi-project | 🟡 | — | 🟡 Vitest `projects`, run from the root |
+| Mixed frameworks in one project | — | — | ⏳ 3.2 |
+| Execution trace / "covering tests" | ✅ | ✅ | ⏳ 3.3 |
+| Timeline debugger | ⏳ | ⏳ | ⏳ later |
+<!-- matrix:end -->
+
+<!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — the test tree fills in, results and gutter icons appear, ▶ Run on one test -->
+
+Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projects that list Vitest but configure Jest (e.g. libraries testing with both) run on Jest.
 
 ---
 
 ## Known limitations
 
 - Individual test reruns use `--testNamePattern` — tests with exactly the same full name run together
-- Console output is captured per file by Jest; it shows on a single test only when that test is rerun on its own
+- Jest captures console output per file; it shows on a single test only when that test is rerun on its own. With Vitest every test shows its own output.
 - Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
+- Vitest: saving a source file reruns the whole test files that import it (`vitest related`); per-test reruns need the execution trace, coming in a later release
 
 ---
 

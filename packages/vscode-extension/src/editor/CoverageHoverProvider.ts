@@ -22,6 +22,8 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
     private readonly _traceStore: ExecutionTraceStore,
     private readonly _resultStore: ResultStore,
     private readonly _coverageStore: CoverageStore,
+    /** Why a file has no per-test trace by design (e.g. "covering tests are not available for Vitest yet"), else undefined. */
+    private readonly _noTraceReason: (filePath: string) => string | undefined = () => undefined,
   ) {}
 
   provideHover(
@@ -58,8 +60,18 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
 
     if (!isLineCovered) {
       if (isCounterCovered) {
-        const md = new vscode.MarkdownString('$(pass) **Covered** — trace data unavailable for this run', true);
+        const md = new vscode.MarkdownString(undefined, true);
         md.supportThemeIcons = true;
+        if (missedBranches.length > 0) {
+          md.appendMarkdown('$(warning) **Partial branch coverage**\n\n');
+          for (const b of missedBranches) {
+            const label = BRANCH_TYPE_LABEL[b.type] ?? b.type;
+            const arms = b.arms.map((a) => `${a.hit ? '$(check)' : '$(x)'}\u00a0${a.label}`).join('\u2002');
+            md.appendMarkdown(`&nbsp;&nbsp;\`${label}\`\u2003${arms}\n\n`);
+          }
+          md.appendMarkdown('\n---\n\n');
+        }
+        md.appendMarkdown(`$(pass) **Covered** — ${this._noTraceReason(filePath) ?? 'trace data unavailable for this run'}`);
         return new vscode.Hover(md);
       }
       const md = new vscode.MarkdownString('$(circle-slash) **Not covered** — no test executed this line', true);

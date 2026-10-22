@@ -6,7 +6,13 @@ import { BinaryResolver, nodeRuntime } from '../resolution/BinaryResolver';
 import { createLogger, LogLevel, stripAnsi } from '../utils/logger';
 
 const log = createLogger('Executor');
-const childLog = createLogger('Jest');
+/** Structured logs from instrumentation inside the child, per process label ('jest' → scope "Jest"). */
+const childLogs = new Map<string, ReturnType<typeof createLogger>>();
+function childLog(label: string) {
+  let l = childLogs.get(label);
+  if (!l) { childLogs.set(label, (l = createLogger(label.charAt(0).toUpperCase() + label.slice(1)))); }
+  return l;
+}
 
 /**
  * Lines written by our instrumentation inside the Jest process use the form
@@ -32,6 +38,10 @@ export interface ExecutorCommand {
   extraEnv?: Record<string, string>;
   /** Kill Jest (and its children) if it runs longer than this. 0/undefined = no limit. */
   timeoutMs?: number;
+  /** Tag prefix for this process's output lines (`[jest#12]`, `[vitest#13]`). Default 'jest'. */
+  label?: string;
+  /** Also send stdout to the raw-output sink (still captured). Default false. */
+  forwardStdout?: boolean;
 }
 
 /**
@@ -82,7 +92,7 @@ export class Executor {
   private logger: (msg: string) => void;
   private readonly tmpDir: string;
 
-  /** @param logger Sink for raw Jest output lines (the "Jest Output" channel). */
+  /** @param logger Sink for raw test-runner output lines (the "Test Output" channel). */
   constructor(logger: (msg: string) => void = () => {}, tmpDir?: string) {
     this.logger = logger;
     this.tmpDir = tmpDir ?? os.tmpdir();
@@ -93,13 +103,17 @@ export class Executor {
   }
 
   /**
-   * Run Jest with JSON capture.
+   * Run the test runner with JSON capture.
    *
-   * Appends `--outputFile=<tmpfile>` to the args automatically.
+   * Appends `outputFileArg(<tmpfile>)` to the args — the framework's own flag
+   * for writing its JSON result to a file (Jest: `--outputFile=<file>`).
    * Returns the raw JSON string (from the output file or stdout fallback)
    * plus the pass/fail status and any stderr.
    */
-  async runWithJsonCapture(command: ExecutorCommand): Promise<ExecutionResult & { jsonOutput: string }> {
+  async runWithJsonCapture(
+    command: ExecutorCommand,
+    outputFileArg: (file: string) => string[],
+  ): Promise<ExecutionResult & { jsonOutput: string }> {
     if (!fs.existsSync(command.cwd)) {
       log.error(`Project root does not exist: ${command.cwd}`);
       return {
@@ -112,15 +126,15 @@ export class Executor {
 
     const tmpFile = path.join(
       this.tmpDir,
-      `ltr-jest-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+      `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
 
-    const args = [...command.args, `--outputFile=${tmpFile}`];
+    const args = [...command.args, ...outputFileArg(tmpFile)];
     const inv = this.buildInvocation(command.binary, args);
 
     this.kill();
 
-    const result = await this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs);
+    const result = await this.spawn(inv, command.cwd, command.extraEnv, command.forwardStdout ?? false, command.timeoutMs, command.label);
 
     // Prefer the output file; fall back to captured stdout for CRA edge cases.
     let jsonOutput: string;
@@ -128,16 +142,16 @@ export class Executor {
       if (fs.existsSync(tmpFile)) {
         jsonOutput = fs.readFileSync(tmpFile, 'utf8');
         if (!jsonOutput.trim()) {
-          log.debug('Jest wrote an empty --outputFile — using stdout instead');
+          log.debug('The test runner wrote an empty output file — using stdout instead');
           jsonOutput = result.stdout;
         }
       } else {
-        log.debug('Jest did not write --outputFile — using stdout instead');
+        log.debug('The test runner did not write its output file — using stdout instead');
         jsonOutput = result.stdout;
       }
       if (!jsonOutput.trim()) {
         log.error(
-          `Jest produced no JSON result (cwd: ${command.cwd}). Last stderr lines:\n${tail(result.stderr)}`,
+          `The test runner produced no JSON result (cwd: ${command.cwd}). Last stderr lines:\n${tail(result.stderr)}`,
         );
       }
     } finally {
@@ -202,7 +216,7 @@ export class Executor {
     try {
       // Stdout is forwarded here: test console output written directly by the
       // test (or by a verbose reporter) would otherwise be invisible.
-      return await this.spawn(inv, command.cwd, command.extraEnv, true);
+      return await this.spawn(inv, command.cwd, command.extraEnv, true, 0, command.label);
     } finally {
       clearInterval(interval);
       pollReporter();
@@ -229,7 +243,7 @@ export class Executor {
     const inv = this.buildInvocation(command.binary, command.args);
     this.kill();
 
-    return this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs);
+    return this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs, command.label);
   }
 
   /** Ends the running Jest process and everything it started (workers, shells). */
@@ -253,8 +267,11 @@ export class Executor {
       const node = nodeRuntime();
       return { file: node.binary, args: [binary, ...args], shell: false, env: node.env };
     }
-    // npx needs the jest subcommand first
-    const cmdArgs = /^npx(\.cmd)?$/i.test(binary) ? ['jest', ...args] : args;
+    // npx needs a package name first. The Jest fallback (BinaryResolver) passes
+    // only flags, so 'jest' is added; a user command such as "npx vitest" or
+    // "npx jest" already names it and is left alone.
+    const npxNeedsPackage = /^npx(\.cmd)?$/i.test(binary) && (args.length === 0 || args[0].startsWith('-'));
+    const cmdArgs = npxNeedsPackage ? ['jest', ...args] : args;
     const needsShell = process.platform === 'win32'
       ? /\.(cmd|bat)$/i.test(binary) || !path.isAbsolute(binary)
       : false;
@@ -267,9 +284,10 @@ export class Executor {
     extraEnv?: Record<string, string>,
     forwardStdout = false,
     timeoutMs = 0,
+    label = 'jest',
   ): Promise<ExecutionResult> {
     return new Promise((resolve) => {
-      const tag = `jest#${++Executor._seq}`;
+      const tag = `${label}#${++Executor._seq}`;
       const startedAt = Date.now();
       const binary = inv.file;
 
@@ -312,7 +330,7 @@ export class Executor {
       const errLines = new LineSplitter((line) => {
         const m = CHILD_LOG_RE.exec(line);
         if (m) {
-          childLog[m[1] as LogLevel](`${tag}: ${m[2]}`);
+          childLog(label)[m[1] as LogLevel](`${tag}: ${m[2]}`);
           return;
         }
         stderr += line + '\n';
@@ -352,7 +370,7 @@ export class Executor {
       child.on('error', (err) => {
         if (resolved) return;
         const hint = (err as NodeJS.ErrnoException).code === 'ENOENT'
-          ? ' — the Jest binary was not found. Run npm install, or set liveTestRunner.jestCommand.'
+          ? ` — the ${label === 'jest' ? 'Jest' : label} binary was not found. Run npm install, or set liveTestRunner.${label}Command.`
           : '';
         log.error(`${tag} could not start "${binary}" (cwd ${cwd})${hint}`, err);
         resolved = true;
@@ -383,7 +401,7 @@ function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Argument as shown in the "> command" line of the Jest Output channel. */
+/** Argument as shown in the "> command" line of the Test Output channel. */
 function displayArg(arg: string): string {
   return /[\s"|&^<>]/.test(arg) ? JSON.stringify(arg) : arg;
 }

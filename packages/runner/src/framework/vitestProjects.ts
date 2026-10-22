@@ -1,0 +1,177 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { Executor } from '../execution/Executor';
+import { resolvePackageDir } from '../resolution/BinaryResolver';
+import { toSpawnPath } from '../resolution/RunnerPaths';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('VitestProjects');
+
+/** One project of a Vitest config (`test.projects`). */
+export interface VitestProjectInfo {
+  /** `test.name`; '' for a config without projects. */
+  name: string;
+  /** Browser mode (Playwright / WebdriverIO) — needs a real browser to run. */
+  browser: boolean;
+}
+
+/**
+ * Lists the projects with the project's own Vitest (its node API resolves the
+ * config — functions, `extends`, globs — exactly as a run would) and prints
+ * them on one line. Vitest 1 and 2 use `workspace` files instead of
+ * `test.projects`; they report a single project, which is fine for the guard.
+ */
+const PROBE = `import { pathToFileURL } from 'node:url';
+const [nodeEntry, config] = process.argv.slice(2);
+const { createVitest } = await import(pathToFileURL(nodeEntry).href);
+const vitest = await createVitest('test', { watch: false, run: true, ...(config ? { config } : {}) }, {}, {});
+const projects = (vitest.projects || []).map((p) => ({
+  name: typeof p.getName === 'function' ? p.getName() : (p.name || ''),
+  browser: !!(p.config && p.config.browser && p.config.browser.enabled),
+}));
+const coverage = vitest.config && vitest.config.coverage;
+process.stdout.write('\\nLTR_PROJECTS ' + JSON.stringify(projects) + '\\n');
+const strings = (v) => Array.isArray(v) ? v.filter((x) => typeof x === 'string') : undefined;
+process.stdout.write('LTR_COVERAGE ' + JSON.stringify({
+  provider: (coverage && coverage.provider) || 'v8',
+  include: strings(coverage && coverage.include),
+  exclude: strings(coverage && coverage.exclude),
+  all: coverage && typeof coverage.all === 'boolean' ? coverage.all : undefined,
+  root: vitest.config && vitest.config.root,
+}) + '\\n');
+await vitest.close();
+process.exit(0);
+`;
+
+/** What the probe read from the resolved config. */
+export interface VitestConfigInfo {
+  projects: VitestProjectInfo[];
+  /** `coverage.provider`: 'v8' (Vitest's default), 'istanbul' or 'custom'. */
+  coverageProvider: string;
+  /**
+   * Which files count toward coverage (`coverage.include` / `exclude`, Vitest's
+   * defaults merged in, relative to `root`; `all` below Vitest 4 only).
+   * Undefined when the probe could not report them.
+   */
+  coverage?: { root: string; include?: string[]; exclude?: string[]; all?: boolean };
+}
+
+const cache = new Map<string, { stamp: string; info: Promise<VitestConfigInfo | undefined> }>();
+
+/**
+ * The projects of the Vitest config in `projectRoot` (undefined when they
+ * cannot be read — callers then apply no project filter). Cached until the
+ * config file or package.json changes.
+ */
+export async function vitestProjects(
+  projectRoot: string,
+  configPath: string | undefined,
+  tmpDir: string,
+  logger?: (msg: string) => void,
+): Promise<VitestProjectInfo[] | undefined> {
+  return (await vitestConfigInfo(projectRoot, configPath, tmpDir, logger))?.projects;
+}
+
+/** Projects and coverage provider of the resolved config (one probe, cached like vitestProjects). */
+export function vitestConfigInfo(
+  projectRoot: string,
+  configPath: string | undefined,
+  tmpDir: string,
+  logger?: (msg: string) => void,
+): Promise<VitestConfigInfo | undefined> {
+  const stamp = [configPath ?? '', mtime(configPath), mtime(path.join(projectRoot, 'package.json'))].join('|');
+  const hit = cache.get(projectRoot);
+  if (hit && hit.stamp === stamp) { return hit.info; }
+  const info = probe(projectRoot, configPath, tmpDir, logger);
+  cache.set(projectRoot, { stamp, info });
+  return info;
+}
+
+/**
+ * Whether Vitest can measure coverage here: the configured provider's
+ * package (`@vitest/coverage-v8` / `-istanbul`) is installed. A custom
+ * provider is assumed to be set up.
+ */
+export function vitestCoverageInstalled(projectRoot: string, provider: string): boolean {
+  if (provider !== 'v8' && provider !== 'istanbul') { return true; }
+  return !!resolvePackageDir(`@vitest/coverage-${provider}`, projectRoot);
+}
+
+/** For tests only. */
+export function _resetVitestProjects(): void {
+  cache.clear();
+}
+
+async function probe(
+  projectRoot: string,
+  configPath: string | undefined,
+  tmpDir: string,
+  logger?: (msg: string) => void,
+): Promise<VitestConfigInfo | undefined> {
+  const nodeEntry = vitestNodeEntry(projectRoot);
+  if (!nodeEntry) {
+    log.debug(`No vitest/node entry under ${projectRoot} — not reading its projects`);
+    return undefined;
+  }
+  const script = path.join(tmpDir, 'ltr-vitest-projects.mjs');
+  try {
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(script, PROBE, 'utf8');
+  } catch (err) {
+    log.warn(`Could not write the Vitest project probe to ${tmpDir}`, err);
+    return undefined;
+  }
+  const startedAt = Date.now();
+  const result = await new Executor(logger).run({
+    binary: script,
+    // One spelling, like the runs (see toSpawnPath).
+    args: [toSpawnPath(nodeEntry), configPath ? toSpawnPath(configPath) : ''],
+    cwd: toSpawnPath(projectRoot),
+    timeoutMs: 60_000,
+    label: 'vitest',
+  });
+  const line = result.stdout.split('\n').find((l) => l.startsWith('LTR_PROJECTS '));
+  if (!line) {
+    log.warn(`Could not read the Vitest projects of ${projectRoot} — running without a project filter`);
+    return undefined;
+  }
+  try {
+    const projects = JSON.parse(line.slice('LTR_PROJECTS '.length)) as VitestProjectInfo[];
+    const covLine = result.stdout.split('\n').find((l) => l.startsWith('LTR_COVERAGE '));
+    const cov = covLine
+      ? JSON.parse(covLine.slice('LTR_COVERAGE '.length)) as { provider: string; include?: string[]; exclude?: string[]; all?: boolean; root?: string }
+      : undefined;
+    const coverageProvider = cov?.provider ?? 'v8';
+    const coverage = cov ? { root: cov.root || projectRoot, include: cov.include, exclude: cov.exclude, all: cov.all } : undefined;
+    log.debug(
+      `Vitest projects of ${projectRoot} (${Date.now() - startedAt} ms): ${projects.map((p) => `${p.name || '(default)'}${p.browser ? ' [browser]' : ''}`).join(', ')}; ` +
+      `coverage provider ${coverageProvider}, include ${JSON.stringify(coverage?.include ?? [])}`,
+    );
+    return { projects, coverageProvider, coverage };
+  } catch (err) {
+    log.warn(`Could not parse the Vitest projects of ${projectRoot}`, err);
+    return undefined;
+  }
+}
+
+/** Absolute path of `vitest/node` (its `exports['./node']`) as the project resolves Vitest. */
+function vitestNodeEntry(projectRoot: string): string | undefined {
+  const dir = resolvePackageDir('vitest', projectRoot);
+  if (!dir) { return undefined; }
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')) as { exports?: Record<string, unknown> };
+    const e = pkg.exports?.['./node'] as string | { import?: string | { default?: string }; default?: string } | undefined;
+    const rel = typeof e === 'string' ? e
+      : typeof e?.import === 'string' ? e.import
+      : (e?.import as { default?: string } | undefined)?.default ?? e?.default;
+    const file = rel ? path.join(dir, rel) : path.join(dir, 'dist', 'node.js');
+    return fs.existsSync(file) ? file : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function mtime(file: string | undefined): string {
+  if (!file) { return '-'; }
+  try { return String(fs.statSync(file).mtimeMs); } catch { return '-'; }
+}

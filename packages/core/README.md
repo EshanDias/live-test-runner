@@ -6,6 +6,8 @@ Shared session and coverage logic used by the VS Code extension.
 
 ## What it does
 
+Framework-neutral: it works with whatever `TestRunner` the extension hands it (Jest's or Vitest's), and coverage data is istanbul-shaped for both.
+
 This package owns two things:
 
 1. **Session lifecycle** — start, stop, and reset a test session

@@ -19,6 +19,7 @@ pnpm test -- --watch     # Run tests in watch mode
 node e2e/run.js --all    # End-to-end: real VS Code + real Jest (build first; also runs in CI on Win/Linux/macOS)
 node e2e/run.js basic-stop basic-hang      # selected scenarios
 # Real projects (optional): LTR_E2E_TSJEST_REPO, LTR_E2E_CRA_REPO (+ LTR_E2E_CRA_FULL=1)
+node e2e/real-repos.js   # real-repo matrix on read-only copies (--all incl. the heavy jest monorepo)
 
 # Linting
 pnpm lint                # Lint all packages
@@ -81,8 +82,9 @@ Two interfaces manage framework abstraction:
 
 - **`FrameworkAdapter`** (`packages/runner/`) — binary resolution, config extraction. No VS Code dependency.
 - **`IFrameworkAdapter`** (`packages/vscode-extension/`) — adds VS Code-specific logic (test discovery, debug config, file classification).
+- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. `extension.ts` composes a `DetectingFrameworkProvider` (Jest bundle `createJestServices` or Vitest bundle `createVitestServices`, per project root). Both extension adapters extend `RunnerBackedAdapter`.
 
-Adding a framework = one class in each package. `SessionManager`, `ResultStore`, views, and observers require zero changes.
+Adding a framework = one adapter in each package + its services bundle. `SessionManager`, `ResultStore`, views, and observers require zero changes.
 
 ### 3. Two Stores, One Source of Truth Per Concern
 
@@ -125,6 +127,8 @@ On-save reruns are session-guarded: nothing runs in the background until the use
 
 Jest reports console output at the **file level only** (test runner limitation — individual console calls are not attributed to specific tests). Suite and test output exist only when that scope is individually rerun by name pattern.
 
+Vitest attributes every console call to the test or suite that made it (our reporter, `onUserConsoleLog`): `ConsoleEntry.scope` / `scopeName` are set, and every test that ran gets exactly its own lines (possibly none), suites their hooks' lines, the file all lines. That is attribution, not back-fill.
+
 **Never back-fill**: A test section never individually run shows a placeholder, not inherited file output. This is correct behavior.
 
 ---
@@ -159,7 +163,7 @@ Solution: fully custom webview UI. Gives cross-platform control and enables Wall
 |------|---------|
 | **Activity Bar** | Beaker icon → opens Explorer view |
 | **Primary sidebar** | **Explorer view** (file → node tree with search); switches to **Timeline sidebar** (State/Watch/Call Stack) in timeline mode |
-| **Panel › Output** | **Live Test Runner** — levelled extension log · **Live Test Runner: Jest Output** — raw Jest output (ANSI-stripped, `[jest#N]`-tagged) |
+| **Panel › Output** | **Live Test Runner** — levelled extension log · **Live Test Runner: Test Output** — raw Jest output (ANSI-stripped, `[jest#N]`-tagged) |
 | **Panel › Test Results** | **Results view** (3-column: test list, output, errors) in normal mode; **Timeline view** (bar + controls + console) in timeline mode |
 | **Editor gutter** | Status icons (✓ / ✗ / ⟳ / ○) per test line; active-step highlight in timeline mode |
 | **Editor inline** | Duration text after each test (normal mode); variable ghost text at current step (timeline mode) |
@@ -175,12 +179,13 @@ Solution: fully custom webview UI. Gives cross-platform control and enables Wall
 Layered architecture:
 
 ```
-JestRunner (orchestrator)
-  ├── FrameworkDetector     inspects package.json → picks adapter
-  ├── FrameworkAdapter      binary + config resolution
-  ├── BinaryResolver        finds jest in node_modules
-  ├── Executor              spawns Jest, reads --outputFile JSON on exit
-  └── ResultParser          normalises JSON → RunResult
+CommandRunner (generic orchestrator: binary/config/extra args, chunking, kill, coverage)
+  └── JestRunner            Jest flags only — buildArgs(RunRequest)
+        ├── FrameworkDetector     inspects package.json → picks adapter
+        ├── FrameworkAdapter      binary + config resolution, result-file flag, JSON parser
+        ├── BinaryResolver        finds jest in node_modules
+        ├── Executor              spawns the runner, reads its result file on exit
+        └── ResultParser          normalises Jest JSON → RunResult
 ```
 
 Each `FrameworkAdapter` implements:
@@ -188,8 +193,10 @@ Each `FrameworkAdapter` implements:
 - `resolveBinary(projectRoot)` — absolute path to test binary
 - `resolveConfig(projectRoot)` — path to config or undefined
 - `getExtraArgs(projectRoot)` — extra CLI flags
+- `outputFileArg(file)` / `parseResult(passed, raw, stderr)` — where the JSON result goes and how it is read
+- `createRunner(options)` — the framework's `TestRunner`
 
-Current adapters: Jest, Create React App.
+Current adapters: Jest, Create React App, Vitest.
 
 ### `packages/core` — Session Lifecycle & Coverage
 
@@ -208,7 +215,7 @@ Key directories:
 | Dir | Purpose |
 |-----|---------|
 | `src/extension.ts` | Entry point; instantiates all managers and observers |
-| `src/session/` | `SessionManager`, `SessionTraceRunner`, trace runtime/transform |
+| `src/session/` | `SessionManager`, `JestBatchRunner`, trace runtime/transform |
 | `src/editor/` | `DecorationManager`, CodeLens |
 | `src/views/` | Explorer view, Results view, Timeline view |
 | `src/store/` | `ResultStore`, `ExecutionTraceStore` |
@@ -227,7 +234,7 @@ Key directories:
 5. **Indexes rebuild on reset** — trace files are ground truth; indexes are derived caches
 6. **Lazy initialization** — results are never pre-fetched; observers are called when results are ready
 7. **Per-scope output** — only rerun the scope explicitly requested (test name pattern isolation)
-8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Jest Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/developer-guide.md` → Logging.
+8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Test Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/developer-guide.md` → Logging.
 
 ---
 
@@ -297,6 +304,12 @@ When making changes, update the relevant documentation files:
 | **Extension features, UI changes, new commands, or configuration options** | `packages/vscode-extension/README.md` (marketplace-facing), `CHANGELOG.md`, `docs/ai-context.md` |
 | **Dev setup, build process, or development patterns** | `docs/developer-guide.md`, `CLAUDE.md` |
 | **Any user-visible change (features, fixes, behaviour)** | `CHANGELOG.md` (full detail) + `packages/vscode-extension/CHANGELOG.md` (brief user summary) |
+| **Anything important for users or contributors** (new feature, setting, command, framework support, changed behaviour, known limitation) | `docs/live-test-runner-guide.html` (the guide — published at `/guide/` and shown by **Open Guide**) |
+| **Headline features, supported frameworks, install / review links** | `site/index.html` (landing page) — and bump `lastmod` in `site/sitemap.xml` |
+
+**For the HTML pages (`site/index.html`, `docs/live-test-runner-guide.html`):**
+- Keep them in step with the README and the changelogs — if a change is worth a README line, it is worth a guide update.
+- Every link that leaves the current page (external URLs, and the site's links to the guide) opens in a new tab: `target="_blank" rel="noopener"`. Only in-page `#anchor` links and the site's own home link stay in the same tab.
 
 **For README.md (marketplace-facing):**
 - Keep it **short and scannable** — users should understand what they get at a glance. Prefer bullet points and short tables over paragraphs. Cut any text that isn't immediately useful to a new user.
@@ -311,7 +324,8 @@ When making changes, update the relevant documentation files:
 - [docs/developer-guide.md](docs/developer-guide.md) — Dev setup, core patterns, adding frameworks, publishing
 - [docs/ai-context.md](docs/ai-context.md) — Complete AI context for full codebase understanding
 - [docs/bugs-and-issues.md](docs/bugs-and-issues.md) — Known bugs with root-cause analysis and suggested fixes
-- [docs/live-test-runner-guide.html](docs/live-test-runner-guide.html) — User & contributor guide (open in a browser)
+- [docs/live-test-runner-guide.html](docs/live-test-runner-guide.html) — User & contributor guide (open in a browser; published at `/guide/`)
+- [site/index.html](site/index.html) — Marketing landing page + `sitemap.xml` (GitHub Pages, see developer guide → Website)
 - [packages/core/README.md](packages/core/README.md) — Core API and design
 - [packages/runner/README.md](packages/runner/README.md) — Runner API, layers, CRA behavior
 - [packages/vscode-extension/README.md](packages/vscode-extension/README.md) — User guide and features (marketplace-facing)

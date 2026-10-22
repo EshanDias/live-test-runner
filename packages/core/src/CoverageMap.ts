@@ -3,7 +3,7 @@ export class CoverageMap {
 
   buildFromCoverage(coverageData: any): void {
     // Parse coverage JSON and build the map
-    // coverageData is from Jest coverage reporter
+    // coverageData is istanbul-format coverage (coverage-final.json — Jest, and Vitest's providers)
     // For each source file, collect test files that cover it
     // This is simplified; in real implementation, parse the coverage report
     // Assuming coverageData has structure like { file: { coveredBy: [tests] } }

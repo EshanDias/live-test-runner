@@ -221,9 +221,15 @@ importers:
         specifier: workspace:*
         version: link:../runner
     devDependencies:
+      '@babel/parser':
+        specifier: 7.29.2
+        version: 7.29.2
       '@types/node':
         specifier: 16.x
         version: 16.18.126
+      '@types/picomatch':
+        specifier: ^4.0.3
+        version: 4.0.3
       '@types/vscode':
         specifier: ^1.74.0
         version: 1.110.0
@@ -233,6 +239,9 @@ importers:
       eslint:
         specifier: ^10.13.0
         version: 10.13.0(supports-color@8.1.1)
+      picomatch:
+        specifier: ^4.0.7
+        version: 4.0.7
       typescript:
         specifier: ~6.0.3
         version: 6.0.3
@@ -903,6 +912,9 @@ packages:
 
   '@types/node@25.5.1':
     resolution: {integrity: sha512-lgrR3HRNQdTEeeXBnLURFO4JIIbpcVcMlLM9IG0jsNRTRNSbMkm9S2hyhxhnokke1NM25Dr9QghgeB5PQKolrw==}
+
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
 
   '@types/stack-utils@2.0.3':
     resolution: {integrity: sha512-9aEbYZ3TbYMznPdcdr3SmIrLXwC/AKZXQeCf9Pgao5CKb8CyHuEX5jzWPTkvregvhRJHcpRO6BFoGW9ycaOkYw==}
@@ -2890,6 +2902,8 @@ snapshots:
   '@types/node@25.5.1':
     dependencies:
       undici-types: 7.18.2
+
+  '@types/picomatch@4.0.3': {}
 
   '@types/stack-utils@2.0.3': {}
 

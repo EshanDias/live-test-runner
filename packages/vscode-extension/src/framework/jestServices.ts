@@ -1,0 +1,53 @@
+/**
+ * The Jest {@link FrameworkServices} bundle (plain Jest and Create React App).
+ * The only place outside the Jest classes themselves that builds them.
+ */
+import * as path from 'path';
+import * as vscode from 'vscode';
+import { FRAMEWORK_IDS, JestAdapter as JestRunnerAdapter } from '@live-test-runner/runner';
+import { CoverageStore } from '../coverage/CoverageStore';
+import { FrameworkServices } from './FrameworkServices';
+import { JestAdapter, jestCommandSetting } from './JestAdapter';
+import { JestProjectConfig } from '../session/JestProjectConfig';
+import { JestBatchRunner } from '../session/JestBatchRunner';
+import { JestInstrumentedRunner } from '../timeline/JestInstrumentedRunner';
+
+export function createJestServices(options: {
+  /** The window's session folder (temp configs, results, traces). */
+  sessionDir: string;
+  coverageStore: CoverageStore;
+  /** Sink for raw Jest output (the "Test Output" channel). */
+  rawLog: (msg: string) => void;
+}): FrameworkServices {
+  const { sessionDir, coverageStore, rawLog } = options;
+  // The project's Jest config as Jest resolves it — shared by session runs and the timeline.
+  const projectConfig = new JestProjectConfig(sessionDir, rawLog);
+  return {
+    framework: FRAMEWORK_IDS.jest,
+    displayName: 'Jest',
+    terms: {
+      name: 'Jest',
+      config: 'Jest config',
+      configRulesShort: 'testMatch / testPathIgnorePatterns',
+      configRules: 'testMatch / testRegex / testPathIgnorePatterns',
+      listCommand: 'jest --listTests',
+      relatedCommand: 'jest --findRelatedTests',
+      batchRun: 'instrumented run',
+      plainRun: 'plain Jest',
+      fallbackLoss: 'slower; no coverage or smart reruns for these files',
+    },
+    features: { trace: true, timeline: true },
+    adapter: new JestAdapter(sessionDir),
+    projectConfig,
+    batchRunner: new JestBatchRunner(sessionDir, coverageStore, projectConfig),
+    instrumentedRunner: new JestInstrumentedRunner(sessionDir, rawLog, projectConfig),
+    createSessionRunner: () =>
+      new JestRunnerAdapter().createRunner({ command: jestCommandSetting(), logger: rawLog, tmpDir: sessionDir }),
+    settingsFingerprint: () => {
+      const cfg = vscode.workspace.getConfiguration('liveTestRunner');
+      return `${cfg.get<string>('runMode') ?? ''}|${cfg.get<string>('jestCommand') ?? ''}`;
+    },
+    isConfigFile: async (filePath, projectRoot) =>
+      path.dirname(filePath) === projectRoot && /^jest\.config\.[cm]?[jt]s$/.test(path.basename(filePath)),
+  };
+}

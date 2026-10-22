@@ -30,19 +30,74 @@ let _log = {
 
 function setLogger(log) { _log = log; }
 
+/**
+ * Babel for discovery: the project's own @babel/parser / @babel/traverse when
+ * it has them (every Jest project does — the same parser its tests are
+ * compiled with), otherwise the parser shipped with the extension
+ * (out/vendor, or this package's node_modules during development) and a
+ * built-in walker. Vitest projects usually have no Babel.
+ */
 function loadBabel(rootDir) {
   if (_rootDir === rootDir && _parser) { return true; }
-  try {
-    const resolve = (id) => require.resolve(id, { paths: [rootDir, __dirname] });
-    _parser   = require(resolve('@babel/parser'));
-    _traverse = require(resolve('@babel/traverse'));
-    if (_traverse && _traverse.default) { _traverse = _traverse.default; }
-    _rootDir = rootDir;
-    return true;
-  } catch (e) {
-    _log.error(`Could not load @babel/parser / @babel/traverse for ${rootDir} — no tests can be discovered: ${e && (e.message || e)}`);
-    return false;
+  const fromProject = (id) => {
+    try { return require(require.resolve(id, { paths: [rootDir] })); } catch (_) { return undefined; }
+  };
+  let parser = fromProject('@babel/parser');
+  let traverse = parser ? fromProject('@babel/traverse') : undefined;
+  if (!parser) {
+    parser = bundledParser();
+    if (!parser) {
+      _log.error(`Could not load @babel/parser for ${rootDir} — no tests can be discovered (the project has no Babel and the extension's own copy is missing)`);
+      return false;
+    }
+    _log.debug(`${rootDir} has no @babel/parser — discovering tests with the extension's own parser`);
   }
+  if (traverse && traverse.default) { traverse = traverse.default; }
+  _parser = parser;
+  _traverse = typeof traverse === 'function' ? traverse : walkCallExpressions;
+  _rootDir = rootDir;
+  return true;
+}
+
+/** The @babel/parser shipped with the extension. */
+function bundledParser() {
+  const path = require('path');
+  const candidates = [
+    // Bundled into out/extension.js: out/vendor/ (copied by esbuild.js).
+    path.join(__dirname, 'vendor', 'babel-parser.js'),
+  ];
+  for (const file of candidates) {
+    try { return require(file); } catch (_) { /* next */ }
+  }
+  // Development / unit tests: this package's own devDependency.
+  try { return require(require.resolve('@babel/parser', { paths: [__dirname] })); } catch (_) { return undefined; }
+}
+
+/** AST keys that never hold child nodes worth visiting. */
+const SKIP_KEYS = new Set(['loc', 'start', 'end', 'range', 'extra', 'leadingComments', 'trailingComments', 'innerComments', 'comments', 'tokens', 'errors']);
+
+/**
+ * The part of @babel/traverse discovery needs: `CallExpression.enter/exit`
+ * with `path.node`, depth-first in source order.
+ */
+function walkCallExpressions(ast, visitors) {
+  const v = visitors.CallExpression || {};
+  const visit = (node) => {
+    if (!node || typeof node.type !== 'string') { return; }
+    const isCall = node.type === 'CallExpression';
+    if (isCall && v.enter) { v.enter({ node }); }
+    for (const key of Object.keys(node)) {
+      if (SKIP_KEYS.has(key)) { continue; }
+      const child = node[key];
+      if (Array.isArray(child)) {
+        for (const c of child) { if (c && typeof c === 'object') { visit(c); } }
+      } else if (child && typeof child === 'object') {
+        visit(child);
+      }
+    }
+    if (isCall && v.exit) { v.exit({ node }); }
+  };
+  visit(ast.program || ast);
 }
 
 // ---------------------------------------------------------------------------
@@ -81,59 +136,48 @@ function getStringValue(node) {
   return null;
 }
 
+/** Names of the describe and test functions in the file being parsed (see discoverTests). */
+const DEFAULT_NAMES = { describe: new Set(['describe']), test: new Set(['it', 'test']) };
+let _names = DEFAULT_NAMES;
+
+/** Curried modifiers: `test.each([...])(name, fn)`, Vitest's `.for`, `.skipIf(c)`, `.runIf(c)`. */
+const CURRIED = new Set(['each', 'for', 'skipIf', 'runIf']);
+/** Modifiers that also take a tagged template table: test.each`…`(name, fn). */
+const TAGGED = new Set(['each', 'for']);
+
+function _kindOf(name) {
+  if (!name) { return null; }
+  if (_names.describe.has(name)) { return 'describe'; }
+  if (_names.test.has(name)) { return 'test'; }
+  return null;
+}
+
 /**
  * Returns 'describe' | 'test' | null for a CallExpression node.
  *
- * Handles all common Jest calling patterns:
+ * Handles the Jest and Vitest calling patterns:
  *   describe(name, fn)                       — Identifier
- *   describe.only/skip/each(name, fn)        — MemberExpression depth 1
- *   it.concurrent.each([...])(name, fn)      — MemberExpression depth 2
- *   test.each([...])(name, fn)               — callee is itself a CallExpression (.each)
+ *   describe.only/skip/concurrent(name, fn)  — MemberExpression, any depth
+ *   test.each([...])(name, fn)               — callee is itself a CallExpression
+ *   test.for([...]) / test.skipIf(c) / test.runIf(c) (Vitest) — same shape
+ *   test.each`table`(name, fn)               — tagged template
+ * plus the file's aliases (Vitest `suite`, fixtures from `test.extend`).
  */
 function getCallType(node) {
   if (node.type !== 'CallExpression') { return null; }
   const callee = node.callee;
 
-  // ── Plain call: describe(...) / it(...) / test(...) ──────────────────────
-  if (callee.type === 'Identifier') {
-    if (callee.name === 'describe') { return 'describe'; }
-    if (callee.name === 'it' || callee.name === 'test') { return 'test'; }
-    return null;
+  if (callee.type === 'Identifier') { return _kindOf(callee.name); }
+  if (callee.type === 'MemberExpression') { return _kindOf(_memberRoot(callee)); }
+
+  // Curried: test.each([...])(name, fn) — the callee is the test.each([...]) call.
+  if (callee.type === 'CallExpression' && callee.callee.type === 'MemberExpression') {
+    if (CURRIED.has(_memberLeaf(callee.callee))) { return _kindOf(_memberRoot(callee.callee)); }
   }
 
-  // ── Member call: describe.only / it.skip / test.each / it.concurrent ─────
-  if (callee.type === 'MemberExpression') {
-    const root = _memberRoot(callee); // walk to the leftmost Identifier
-    if (root === 'describe') { return 'describe'; }
-    if (root === 'it' || root === 'test') { return 'test'; }
-    return null;
-  }
-
-  // ── Curried .each: test.each([...])(name, fn)  ────────────────────────────
-  // The outer call's callee is itself a CallExpression (the test.each([...]) part).
-  if (callee.type === 'CallExpression') {
-    const inner = callee.callee;
-    if (inner.type === 'MemberExpression') {
-      const root = _memberRoot(inner);
-      const prop = _memberLeaf(inner);
-      if (prop === 'each') {
-        if (root === 'describe') { return 'describe'; }
-        if (root === 'it' || root === 'test') { return 'test'; }
-      }
-    }
-  }
-
-  // ── Curried .each with table: test.each`table`(name, fn) ────────────────
-  if (callee.type === 'TaggedTemplateExpression') {
-    const inner = callee.tag;
-    if (inner.type === 'MemberExpression') {
-      const root = _memberRoot(inner);
-      const prop = _memberLeaf(inner);
-      if (prop === 'each') {
-        if (root === 'describe') { return 'describe'; }
-        if (root === 'it' || root === 'test') { return 'test'; }
-      }
-    }
+  // Curried with a table: test.each`table`(name, fn)
+  if (callee.type === 'TaggedTemplateExpression' && callee.tag.type === 'MemberExpression') {
+    if (TAGGED.has(_memberLeaf(callee.tag))) { return _kindOf(_memberRoot(callee.tag)); }
   }
 
   return null;
@@ -166,7 +210,17 @@ function _memberLeaf(memberExpr) {
  * If `describe`/`test`/`it` are imported from these, they ARE Jest globals
  * and should be treated normally.
  */
-const JEST_GLOBAL_PACKAGES = new Set(['@jest/globals', 'jest']);
+/** Packages whose describe / it / test are the real test functions (Jest, Vitest). */
+const JEST_GLOBAL_PACKAGES = new Set(['@jest/globals', 'jest', 'vitest']);
+
+/**
+ * A project's own module (relative path, or a path alias such as `@/…`,
+ * `~/…`, `#…`) — e.g. Vitest fixtures: `export const test = base.extend(…)`
+ * in ./fixtures.ts. Its test / it / describe are the real ones, extended.
+ */
+function _isProjectModule(source) {
+  return /^(\.{1,2}\/|\/|@\/|~\/|#)/.test(source);
+}
 
 /**
  * Scan import declarations at the top of the file and return the set of
@@ -191,7 +245,7 @@ function _collectShadowedTestGlobals(programBody) {
   for (const node of programBody) {
     if (node.type !== 'ImportDeclaration') { continue; }
     const source = typeof node.source?.value === 'string' ? node.source.value : '';
-    if (JEST_GLOBAL_PACKAGES.has(source)) { continue; } // real Jest globals — not shadowed
+    if (JEST_GLOBAL_PACKAGES.has(source) || _isProjectModule(source)) { continue; } // real (or extended) test functions
     for (const specifier of (node.specifiers || [])) {
       const localName = specifier.local?.name;
       if (localName === 'describe' || localName === 'test' || localName === 'it') {
@@ -200,6 +254,51 @@ function _collectShadowedTestGlobals(programBody) {
     }
   }
   return shadowed;
+}
+
+/**
+ * The file's describe / test names: the defaults, Vitest's `suite` when
+ * imported from vitest, and test functions made with `.extend(…)`:
+ *
+ *   const myTest = test.extend({ page: async ({}, use) => use(…) });
+ *   export const it = base.extend<Fixtures>({ … }).extend({ … });
+ */
+function _collectTestNames(programBody) {
+  const names = { describe: new Set(DEFAULT_NAMES.describe), test: new Set(DEFAULT_NAMES.test) };
+  for (const node of programBody) {
+    if (node.type !== 'ImportDeclaration' || !JEST_GLOBAL_PACKAGES.has(node.source?.value)) { continue; }
+    for (const spec of node.specifiers || []) {
+      const imported = spec.imported?.name;
+      const local = spec.local?.name;
+      if (!imported || !local) { continue; }
+      // import { test as base } / { describe as group } / Vitest's { suite }
+      if (imported === 'test' || imported === 'it') { names.test.add(local); }
+      if (imported === 'describe' || (imported === 'suite' && node.source.value === 'vitest')) { names.describe.add(local); }
+    }
+  }
+  const declarations = (node) => {
+    const decl = node.type === 'ExportNamedDeclaration' ? node.declaration : node;
+    return decl && decl.type === 'VariableDeclaration' ? decl.declarations : [];
+  };
+  // Aliases can build on each other (base → withDb → withPage): repeat until stable.
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const node of programBody) {
+      for (const d of declarations(node)) {
+        if (d.id?.type !== 'Identifier' || names.test.has(d.id.name)) { continue; }
+        let init = d.init;
+        while (init && (init.type === 'TSAsExpression' || init.type === 'TSSatisfiesExpression' || init.type === 'TSNonNullExpression')) { init = init.expression; }
+        if (init?.type !== 'CallExpression' || init.callee.type !== 'MemberExpression') { continue; }
+        if (_memberLeaf(init.callee) !== 'extend') { continue; }
+        // The object being extended: test / it / an alias, possibly an earlier .extend(…) call.
+        let obj = init.callee.object;
+        while (obj.type === 'CallExpression' && obj.callee.type === 'MemberExpression' && _memberLeaf(obj.callee) === 'extend') { obj = obj.callee.object; }
+        const root = obj.type === 'Identifier' ? obj.name : obj.type === 'MemberExpression' ? _memberRoot(obj) : null;
+        if (root && names.test.has(root)) { names.test.add(d.id.name); changed = true; }
+      }
+    }
+  }
+  return names;
 }
 
 /**
@@ -390,13 +489,18 @@ function _analyseDescribeBody(bodyStatements, fileScopeVars) {
 function discoverTests(sourceCode, sourcePath, rootDir) {
   if (!loadBabel(rootDir)) { return null; }
 
+  // .ts / .mts / .cts are not JSX: with the jsx plugin a generic arrow
+  // `<T>(x: T) => …` is read as a tag and the file fails to parse.
+  const noJsx = /\.[cm]?ts$/i.test(sourcePath);
+  const withoutJsx = (plugins) => (noJsx ? plugins.filter((p) => p !== 'jsx') : plugins);
+
   let ast;
   try {
     ast = _parser.parse(sourceCode, {
       sourceType: 'module',
       allowReturnOutsideFunction: true,
       errorRecovery: true,
-      plugins: [
+      plugins: withoutJsx([
         // Core syntax
         'jsx',
         'typescript',          // NOTE: conflicts with 'flow' — we prefer typescript
@@ -447,7 +551,7 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
         'functionSent',        // function.sent
         ['pipelineOperator', { proposal: 'minimal' }], // x |> fn
         'v8intrinsic',         // %DebugPrint()
-      ],
+      ]),
     });
   } catch (_e) {
     // Full plugin list failed — could be an older @babel/parser that doesn't support
@@ -458,7 +562,7 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
         sourceType: 'module',
         allowReturnOutsideFunction: true,
         errorRecovery: true,
-        plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator'],
+        plugins: withoutJsx(['jsx', 'typescript', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator']),
       });
     } catch (_e2) {
       _log.warn(`Could not parse ${sourcePath} — its tests will not appear until it parses: ${_e2 && (_e2.message || _e2)}`);
@@ -480,6 +584,7 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
   // Collect identifiers (describe/test/it) that are explicitly imported from
   // a non-Jest package (e.g. tstyche). Calls to these are NOT Jest tests.
   const shadowedGlobals = _collectShadowedTestGlobals(ast.program.body);
+  _names = _collectTestNames(ast.program.body);
 
   // Collect file-scope mutable variables (declared outside any describe/it).
   // These can create cross-test dependencies for every suite in the file.
@@ -491,6 +596,10 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
       ? describeStack.map((d) => d.name).join(' ')
       : null;
   }
+
+  /** Calls that opened a suite — only these close one on exit. The inner call of
+   *  describe.each([...])('name', fn) is also a "describe" call, but opens nothing. */
+  const opened = new WeakSet();
 
   _traverse(ast, {
     CallExpression: {
@@ -546,6 +655,7 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
           }
 
           describeStack.push(suite);
+          opened.add(nodePath.node);
           return;
         }
 
@@ -562,13 +672,14 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
       },
 
       exit(nodePath) {
-        if (getCallType(nodePath.node) === 'describe') {
+        if (opened.has(nodePath.node)) {
           describeStack.pop();
         }
       },
     },
   });
 
+  _names = DEFAULT_NAMES;
   return {
     suites:    rootSuites,
     rootTests,

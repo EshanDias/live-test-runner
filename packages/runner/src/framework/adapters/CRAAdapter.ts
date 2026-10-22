@@ -2,9 +2,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { execFileSync } from "child_process";
 import { LTR_BASE_CACHE_DIR } from '../../constants';
-import { Framework } from "../../types";
+import { FRAMEWORK_IDS, FrameworkCapabilities, FrameworkId, RunResult } from "../../types";
 import { FrameworkAdapter } from "./FrameworkAdapter";
-import { readPackageJson } from "./JestAdapter";
+import { createJestRunner, JEST_CAPABILITIES, jestOutputFileArg, parseJestResult, readPackageJson } from "./JestAdapter";
+import { RunnerOptions, TestRunner } from "../../TestRunner";
 import { BinaryResolver } from "../../resolution/BinaryResolver";
 import { testScriptJestArgs, toInputConfig } from "../jestConfig";
 
@@ -25,7 +26,7 @@ import { testScriptJestArgs, toInputConfig } from "../jestConfig";
  * package.json changes).
  */
 export class CRAAdapter implements FrameworkAdapter {
-  readonly framework: Framework = "cra";
+  readonly framework: FrameworkId = FRAMEWORK_IDS.cra;
 
   /** key: projectRoot, value: { configJson, pkgMtime, tmpFilePath } */
   private configCache = new Map<string, CachedConfig>();
@@ -129,6 +130,24 @@ export class CRAAdapter implements FrameworkAdapter {
   /** Behaviour flags from `react-scripts test …` (e.g. --resetMocks), as `npm test` uses them. */
   getExtraArgs(projectRoot: string): string[] {
     return testScriptJestArgs(projectRoot).filter((a, i, all) => a !== '--config' && all[i - 1] !== '--config');
+  }
+
+  // CRA runs its bundled Jest directly — same result file, JSON and runner as Jest.
+
+  outputFileArg(file: string): string[] {
+    return jestOutputFileArg(file);
+  }
+
+  parseResult(passed: boolean, raw: string, stderr: string): RunResult {
+    return parseJestResult(passed, raw, stderr);
+  }
+
+  capabilities(_projectRoot: string): FrameworkCapabilities {
+    return { ...JEST_CAPABILITIES };
+  }
+
+  createRunner(options?: RunnerOptions): TestRunner {
+    return createJestRunner(options);
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

@@ -12,7 +12,8 @@ const minify = process.argv.includes('--minify');
  * the exact path specified in the Jest config injected by the runners.
  *
  * Files from timeline/instrumentation → timeline debugger (traceTransform/traceRuntime)
- * Files from session/instrumentation  → session-wide tracing (sessionTraceTransform/Runtime)
+ * Files from session/instrumentation  → session-wide tracing, kept in shared/ (trace
+ *   runtime, framework-neutral) and jest/ (transform, reporter, setup file)
  */
 function copyInstrumentationFiles() {
   const dest = path.join(__dirname, 'out', 'instrumentation');
@@ -23,10 +24,40 @@ function copyInstrumentationFiles() {
     fs.copyFileSync(path.join(timelineSrc, file), path.join(dest, file));
   }
 
+  // Session instrumentation keeps its layout (shared/ + one folder per
+  // framework): files find each other by relative path at runtime.
   const sessionSrc = path.join(__dirname, 'src', 'session', 'instrumentation');
-  for (const file of ['sessionTraceTransform.js', 'sessionTraceRuntime.js', 'liveReporter.js', 'ltrCoverageSetup.js']) {
-    fs.copyFileSync(path.join(sessionSrc, file), path.join(dest, file));
+  const sessionFiles = {
+    shared: ['sessionTraceRuntime.js'],
+    jest: ['sessionTraceTransform.js', 'liveReporter.js', 'ltrCoverageSetup.js'],
+  };
+  for (const [dir, files] of Object.entries(sessionFiles)) {
+    fs.mkdirSync(path.join(dest, dir), { recursive: true });
+    for (const file of files) {
+      fs.copyFileSync(path.join(sessionSrc, dir, file), path.join(dest, dir, file));
+    }
   }
+}
+
+/**
+ * Ships @babel/parser (one self-contained file, MIT) in out/vendor/: static
+ * test discovery uses the project's own Babel when it has one (every Jest
+ * project does), and this copy otherwise — Vitest projects usually have no
+ * Babel. The published .vsix has no node_modules (vsce --no-dependencies).
+ */
+function copyVendorFiles() {
+  const dest = path.join(__dirname, 'out', 'vendor');
+  fs.mkdirSync(dest, { recursive: true });
+  const pkgDir = path.dirname(require.resolve('@babel/parser/package.json'));
+  fs.copyFileSync(path.join(pkgDir, 'lib', 'index.js'), path.join(dest, 'babel-parser.js'));
+  fs.copyFileSync(path.join(pkgDir, 'LICENSE'), path.join(dest, 'babel-parser.LICENSE'));
+}
+
+/** The user guide (docs/live-test-runner-guide.html) for the Open Guide command. */
+function copyGuide() {
+  const dest = path.join(__dirname, 'out', 'guide');
+  fs.mkdirSync(dest, { recursive: true });
+  fs.copyFileSync(path.join(__dirname, '..', '..', 'docs', 'live-test-runner-guide.html'), path.join(dest, 'guide.html'));
 }
 
 const config = {
@@ -48,6 +79,7 @@ if (watch) {
       build.onEnd(result => {
         if (result.errors.length === 0) {
           copyInstrumentationFiles();
+          copyVendorFiles(); copyGuide();
         }
       });
     },
@@ -56,12 +88,13 @@ if (watch) {
     .context({ ...config, plugins: [onRebuild] })
     .then(ctx => {
       copyInstrumentationFiles();
+      copyVendorFiles(); copyGuide();
       return ctx.watch();
     })
     .catch(e => { console.error(e); process.exit(1); });
 } else {
   esbuild
     .build(config)
-    .then(() => copyInstrumentationFiles())
+    .then(() => { copyInstrumentationFiles(); copyVendorFiles(); copyGuide(); })
     .catch(e => { console.error(e); process.exit(1); });
 }

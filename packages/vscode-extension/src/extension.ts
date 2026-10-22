@@ -6,27 +6,29 @@
  *  2. Register VS Code commands and event subscriptions
  *  3. Hand control to SessionManager for all run logic
  *
- * No test-running logic, no Jest imports, no status bar text — those live in
- * SessionManager and JestAdapter respectively.
+ * No test-running logic, no framework classes, no status bar text — those
+ * live in SessionManager and the framework services bundle
+ * (framework/jestServices.ts) respectively.
  */
 import * as vscode from 'vscode';
+import { openGuide } from './views/GuidePanel';
 import * as fs from 'fs';
 import * as path from 'path';
 import { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
-import { JestAdapter } from './framework/JestAdapter';
+import { DetectingFrameworkProvider } from './framework/FrameworkServices';
+import { createJestServices } from './framework/jestServices';
+import { createVitestServices } from './framework/vitestServices';
 import { CodeLensProvider } from './editor/CodeLensProvider';
 import { DecorationManager } from './editor/DecorationManager';
 import { ExplorerView } from './views/ExplorerView';
 import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
-import { ProjectJestConfig } from './session/ProjectJestConfig';
 import { TestDiscoveryService } from './session/TestDiscoveryService';
 import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
-import { JestInstrumentedRunner } from './timeline/JestInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
 import { DiscoveryCache, rotateAndCheckCapacity } from './cache/DiscoveryCache';
 import { CoverageStore } from './coverage/CoverageStore';
@@ -49,9 +51,9 @@ function isProcessAlive(pid: number): boolean {
 export function activate(context: vscode.ExtensionContext) {
   // ── Output channels (created first so every later log line has a home) ─────
   // "Live Test Runner"             — structured, levelled extension log
-  // "Live Test Runner: Jest Output" — raw Jest process output, ANSI-stripped
+  // "Live Test Runner: Test Output" — raw test-runner process output, ANSI-stripped
   const logChannel    = vscode.window.createOutputChannel('Live Test Runner', { log: true });
-  const outputChannel = vscode.window.createOutputChannel('Live Test Runner: Jest Output');
+  const outputChannel = vscode.window.createOutputChannel('Live Test Runner: Test Output');
   logger.init(logChannel);
 
   // End-to-end tests (e2e/ at the repo root) read the raw Jest output.
@@ -148,16 +150,30 @@ export function activate(context: vscode.ExtensionContext) {
     resultsView.sendScopedData(sel.fileId, sel.nodeId);
   };
 
-  // The project's Jest config as Jest resolves it — shared by session runs and the timeline.
-  const projectConfig = new ProjectJestConfig(LTR_SESSION_TMP_DIR, (msg) => outputChannel.appendLine(msg));
+  // The test framework's services (adapter, project config, batch runner,
+  // timeline runner), picked by the project's framework: Vitest or Jest (incl. CRA).
+  const rawLog = (msg: string) => outputChannel.appendLine(msg);
+  const frameworks = new DetectingFrameworkProvider(
+    {
+      jest: () => createJestServices({ sessionDir: LTR_SESSION_TMP_DIR, coverageStore, rawLog }),
+      vitest: () => createVitestServices({ sessionDir: LTR_SESSION_TMP_DIR, rawLog, coverageStore }),
+    },
+    () => _resolveProjectRoot(),
+  );
 
   // ── Timeline debugger ──────────────────────────────────────────────────────
-  // Reference typed as the interface — never as the concrete class.
-  const instrumentedRunner: IInstrumentedRunner = new JestInstrumentedRunner(
-    LTR_SESSION_TMP_DIR,
-    (msg) => outputChannel.appendLine(msg),
-    projectConfig,
-  );
+  // Reference typed as the interface — never as the concrete class. It hands
+  // each run to the project's framework, which may not have one yet.
+  const instrumentedRunner: IInstrumentedRunner = {
+    run: (options) => {
+      const services = frameworks.servicesFor(options.projectRoot);
+      if (!services.instrumentedRunner) {
+        return Promise.reject(new Error(`The Timeline debugger is not available for ${services.displayName} yet.`));
+      }
+      return services.instrumentedRunner.run(options);
+    },
+    cancel: () => { for (const s of frameworks.all()) { s.instrumentedRunner?.cancel(); } },
+  };
   const timelineDecorations = new TimelineDecorationManager();
 
   // Last timeline run context, used by the Re-run button in the sidebar.
@@ -306,7 +322,7 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   const session = new SessionManager(
-    new JestAdapter(LTR_SESSION_TMP_DIR),
+    frameworks,
     store,
     traceStore,
     coverageStore,
@@ -316,8 +332,6 @@ export function activate(context: vscode.ExtensionContext) {
     outputChannel,
     statusBar,
     discovery,
-    LTR_SESSION_TMP_DIR,
-    projectConfig,
   );
 
   // Expose cleanup so deactivate() can delete trace files on extension shutdown
@@ -325,7 +339,10 @@ export function activate(context: vscode.ExtensionContext) {
   _releaseDiscoveryLock = () => discoveryCache?.releaseLock();
 
   // ── Coverage hover provider ────────────────────────────────────────────────
-  const coverageHoverProvider = new CoverageHoverProvider(traceStore, store, coverageStore);
+  const coverageHoverProvider = new CoverageHoverProvider(traceStore, store, coverageStore, (filePath) => {
+    const services = frameworks.servicesFor(filePath);
+    return services.features.trace ? undefined : `covering tests are not available for ${services.displayName} yet`;
+  });
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(
       { scheme: 'file', pattern: '**/*.{ts,js,tsx,jsx}' },
@@ -390,6 +407,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot',  () => session.selectProjectRoot()),
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.showLogs',           () => logChannel.show()),
+    vscode.commands.registerCommand('liveTestRunner.openGuide',          () => openGuide(context.extensionUri)),
     vscode.commands.registerCommand('liveTestRunner.copyDiagnostics',    async () => {
       const report = buildDiagnosticReport({
         extensionVersion: extVersion,
@@ -649,7 +667,7 @@ async function openTimelineDebugger(
     if (store.steps.length === 0) {
       // Nothing recorded almost always means the test name pattern matched no
       // test, or the trace transform did not apply to the file.
-      tlog.warn(`Trace finished in ${secs}s but captured 0 steps for "${testFullName}" — see "Live Test Runner: Jest Output" for Jest's output`);
+      tlog.warn(`Trace finished in ${secs}s but captured 0 steps for "${testFullName}" — see "Live Test Runner: Test Output" for Jest's output`);
     } else {
       tlog.info(`Trace done in ${secs}s — ${store.steps.length} steps, ${store.errors.length} error(s)`);
     }

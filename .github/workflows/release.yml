@@ -18,18 +18,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Install pnpm (version from "packageManager" in package.json)
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node with pnpm cache
-        uses: actions/setup-node@v5
+      # pnpm (version from "packageManager" in package.json), Node 24 and the
+      # pnpm store cache. Install is skipped here: "Install deps" below only
+      # runs when there is something to release.
+      - name: Setup pnpm and Node
+        uses: pnpm/setup@v3
         with:
-          node-version: 24
-          cache: 'pnpm'
+          runtime: node@24
+          cache: true
+          install: false
 
       - name: Read version
         id: version

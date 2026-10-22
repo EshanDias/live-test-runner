@@ -7,7 +7,7 @@ import { logger } from '../utils/logger';
 
 const log = logger.scope('Discovery');
 
-const { discoverTests, setLogger: setDiscoveryLogger } = require('./instrumentation/testDiscovery.js') as {
+const { discoverTests, setLogger: setDiscoveryLogger } = require('./instrumentation/shared/testDiscovery.js') as {
   setLogger: (log: { debug(m: string): void; warn(m: string): void; error(m: string): void }) => void;
   discoverTests: (
     source: string,
@@ -186,7 +186,9 @@ export class TestDiscoveryService {
     const files: unknown[] = [];
     for (const fp of filePaths) {
       if (store.findFileKey(fp) || !JS_TS_RE.test(fp) || !fs.existsSync(fp)) { continue; }
-      const data = this._populateFile(fp, projectRoot, store, this._cache);
+      // The framework says it runs this file: list it even when no test can be
+      // found statically (tests generated at runtime) — results fill it in.
+      const data = this._populateFile(fp, projectRoot, store, this._cache, true);
       if (data) { files.push(data); }
     }
     if (files.length > 0) {
@@ -325,6 +327,8 @@ export class TestDiscoveryService {
     projectRoot: string,
     store: ResultStore,
     cache?: DiscoveryCache,
+    /** Keep the file even without static tests (the framework listed it). */
+    keepEmpty = false,
   ): unknown | null {
     // ── Try cache first (skip readFile + Babel if mtime unchanged) ────────────
     let result: ReturnType<typeof discoverTests> | null = null;
@@ -371,7 +375,7 @@ export class TestDiscoveryService {
     // If no tests were found (e.g. all describe/test calls are imported from a
     // non-Jest package like tstyche), skip this file entirely so it doesn't
     // appear as an empty entry in the test list.
-    if (result.suites.length === 0 && result.rootTests.length === 0) {
+    if (result.suites.length === 0 && result.rootTests.length === 0 && !keepEmpty) {
       this._stats.noTests++;
       log.trace(`No Jest tests in ${filePath} — skipped`);
       return null;

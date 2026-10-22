@@ -1,0 +1,55 @@
+name: Website (GitHub Pages)
+
+# Publishes the project website (https://eshandias.github.io/live-test-runner/)
+# whenever it changes on main or a release/* branch (the last deploy wins —
+# there is one site, so a release branch publishes its pre-release copy):
+#   /            site/index.html (landing page) + site/sitemap.xml
+#   /guide/      docs/live-test-runner-guide.html
+#   /images/     screenshots from packages/vscode-extension/resources/images
+# One-time setup: repository Settings → Pages → Source: "GitHub Actions", and
+# Settings → Environments → github-pages → Deployment branches: add `release/*`
+# (by default only the default branch may deploy).
+
+on:
+  push:
+    branches: [main, 'release/**']
+    paths:
+      - 'site/**'
+      - 'docs/live-test-runner-guide.html'
+      - 'packages/vscode-extension/resources/images/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build the site
+        run: |
+          mkdir -p _site/guide _site/images
+          cp site/* _site/
+          cp docs/live-test-runner-guide.html _site/guide/index.html
+          cp packages/vscode-extension/resources/images/*.png _site/images/
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v5

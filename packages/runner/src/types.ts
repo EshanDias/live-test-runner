@@ -1,6 +1,42 @@
 // ── Framework ──────────────────────────────────────────────────────────────────
 
-export type Framework = 'jest' | 'cra' | 'next' | 'vite' | 'unknown';
+/**
+ * Identifies a framework adapter. Open-ended: a new adapter brings its own id
+ * without editing a union here. The ids shipped with the runner are in
+ * {@link FRAMEWORK_IDS}.
+ */
+export type FrameworkId = string;
+
+/** Ids of the adapters shipped with the runner. */
+export const FRAMEWORK_IDS = {
+  jest: 'jest',
+  cra: 'cra',
+  vitest: 'vitest',
+  unknown: 'unknown',
+} as const;
+
+/**
+ * What a framework (at the installed version) can do through its runner.
+ * Callers check these instead of the framework id, so a feature the
+ * framework lacks degrades ("not available") instead of failing.
+ */
+export interface FrameworkCapabilities {
+  /** Runs tests and reports a JSON pass/fail result. */
+  results: boolean;
+  /** Runs one test or suite by name pattern. */
+  nameFilter: boolean;
+  /** Lists its test files without running them. */
+  listTests: boolean;
+  /** Finds the tests related to a source file. */
+  related: boolean;
+  /** Can report per-file results while a run is in progress. */
+  liveStream: boolean;
+  /** Writes istanbul-format JSON coverage. */
+  coverage: boolean;
+}
+
+/** @deprecated Use FrameworkId — kept for one release. */
+export type Framework = FrameworkId;
 export type PackageManager = 'npm' | 'yarn' | 'pnpm';
 
 // ── Simple test result (used internally for non-JSON runs) ────────────────────
@@ -34,6 +70,14 @@ export interface ConsoleEntry {
   /** Console level: 'log' | 'warn' | 'error' | 'info' | 'debug' | etc. */
   type: string;
   origin: string;
+  /**
+   * Where the framework attributes the output (Vitest does; Jest reports per
+   * file only and leaves this unset): the file itself (module scope,
+   * describe bodies), a suite (its hooks) or a test.
+   */
+  scope?: 'file' | 'suite' | 'test';
+  /** Full name of that suite or test, space-joined like TestCaseRunResult.fullName. */
+  scopeName?: string;
 }
 
 export interface FileRunResult {

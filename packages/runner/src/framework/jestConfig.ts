@@ -120,11 +120,28 @@ export function testScriptJestArgs(projectRoot: string): string[] {
   return args;
 }
 
-/** Splits a shell command line on whitespace, honouring simple quotes. */
-function tokenize(cmd: string): string[] {
+/**
+ * Splits a shell command line on whitespace. Quotes group words and may sit
+ * inside a token (`--project="browser (chromium)"` → `--project=browser (chromium)`);
+ * `&&`, `||`, `|`, `;` come out as their own tokens.
+ */
+export function tokenize(cmd: string): string[] {
   const out: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(cmd)) !== null) { out.push(m[1] ?? m[2] ?? m[3]); }
+  let cur = '';
+  let has = false;
+  let quote: '"' | "'" | undefined;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (quote) {
+      if (ch === quote) { quote = undefined; } else { cur += ch; }
+    } else if (ch === '"' || ch === "'") {
+      quote = ch; has = true;
+    } else if (/\s/.test(ch)) {
+      if (has) { out.push(cur); cur = ''; has = false; }
+    } else {
+      cur += ch; has = true;
+    }
+  }
+  if (has) { out.push(cur); }
   return out;
 }

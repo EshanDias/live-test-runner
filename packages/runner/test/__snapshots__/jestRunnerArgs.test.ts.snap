@@ -1,0 +1,201 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`JestRunner command lines (Create React App) passes the extracted config and the test-script flags (without --config) 1`] = `
+[
+  {
+    "args": [
+      "--config",
+      "<root>/cra-config.json",
+      "--resetMocks",
+      "--watchAll=false",
+      "--forceExit",
+      "--no-bail",
+      "--testLocationInResults",
+      "--maxWorkers=<n>",
+      "--json",
+      "--runTestsByPath",
+      "<root>/src/App.test.js",
+    ],
+    "binary": "<root>/node_modules/jest/bin/jest.js",
+    "cwd": "<root>",
+    "timeoutMs": 0,
+  },
+]
+`;
+
+exports[`JestRunner command lines (plain Jest) builds every run kind exactly as before 1`] = `
+[
+  {
+    "args": [
+      "--resetMocks",
+      "--watchAll=false",
+      "--forceExit",
+      "--no-bail",
+      "--testLocationInResults",
+      "--maxWorkers=<n>",
+      "--listTests",
+      "--passWithNoTests",
+    ],
+    "binary": "<root>/node_modules/jest/bin/jest.js",
+    "cwd": "<root>",
+    "timeoutMs": undefined,
+  },
+  {
+    "args": [
+      "--resetMocks",
+      "--watchAll=false",
+      "--forceExit",
+      "--no-bail",
+      "--testLocationInResults",
+      "--maxWorkers=<n>",
+      "--json",
+    ],
+    "binary": "<root>/node_modules/jest/bin/jest.js",
+    "cwd": "<root>",
+    "timeoutMs": undefined,
+  },
+  {
+    "args": [
+      "--resetMocks",
+      "--watchAll=false",
+      "--forceExit",
+      "--no-bail",
+      "--testLocationInResults",
+      "--maxWorkers=<n>",
+      "--json",
+      "--coverage",
+      "--coverageReporters=json",
+      "--coverageReporters=json-summary",
+    ],
+    "binary": "<root>/node_modules/jest/bin/jest.js",
+    "cwd": "<root>",
+    "timeoutMs": undefined,
+  },
+  {
+    "args": [
+      "--resetMocks",
+      "--watchAll=false",
+      "--forceExit",
+      "--no-bail",
+      "--testLocationInResults",
+      "--maxWorkers=<n>",
+      "--json",
+      "--runTestsByPath",
+      "<root>/src/a.test.js",
+    ],
+    "binary": "<root>/node_modules/jest/bin/jest.js",
+    "cwd": "<root>",
+    "timeoutMs": 5000,
+  },
+  {
+    "args": [
+      "--resetMocks",
+      "--watchAll=false",
+      "--forceExit",
+      "--no-bail",
+      "--testLocationInResults",
+      "--maxWorkers=<n>",
+      "--json",
+      "--runTestsByPath",
+      "<root>/src/a.test.js",
+      "<root>/src/b.test.js",
+    ],
+    "binary": "<root>/node_modules/jest/bin/jest.js",
+    "cwd": "<root>",
+    "timeoutMs": undefined,
+  },
+  {
+    "args": [
+      "--resetMocks",
+      "--watchAll=false",
+      "--forceExit",
+      "--no-bail",
+      "--testLocationInResults",
+      "--maxWorkers=<n>",
+      "--json",
+      "--runTestsByPath",
+      "<root>/src/a.test.js",
+      "--testNamePattern",
+      "^(?:Suite a|Suite b)$",
+    ],
+    "binary": "<root>/node_modules/jest/bin/jest.js",
+    "cwd": "<root>",
+    "timeoutMs": 5000,
+  },
+  {
+    "args": [
+      "--resetMocks",
+      "--watchAll=false",
+      "--forceExit",
+      "--no-bail",
+      "--testLocationInResults",
+      "--maxWorkers=<n>",
+      "--json",
+      "--runTestsByPath",
+      "<root>/src/a.test.js",
+      "--testNamePattern",
+      "^(?:Suite)(?: |$)",
+    ],
+    "binary": "<root>/node_modules/jest/bin/jest.js",
+    "cwd": "<root>",
+    "timeoutMs": 5000,
+  },
+  {
+    "args": [
+      "--resetMocks",
+      "--watchAll=false",
+      "--forceExit",
+      "--no-bail",
+      "--testLocationInResults",
+      "--maxWorkers=<n>",
+      "--json",
+      "--findRelatedTests",
+      "<root>/src/util.js",
+    ],
+    "binary": "<root>/node_modules/jest/bin/jest.js",
+    "cwd": "<root>",
+    "timeoutMs": undefined,
+  },
+]
+`;
+
+exports[`JestRunner command lines (plain Jest) puts the user command first and its extra words before the Jest args 1`] = `
+[
+  {
+    "args": [
+      "test",
+      "--",
+      "--resetMocks",
+      "--watchAll=false",
+      "--forceExit",
+      "--no-bail",
+      "--testLocationInResults",
+      "--maxWorkers=<n>",
+      "--json",
+      "--runTestsByPath",
+      "<root>/src/a.test.js",
+    ],
+    "binary": "npm",
+    "cwd": "<root>",
+    "timeoutMs": 0,
+  },
+]
+`;
+
+exports[`JestRunner command lines (plain Jest) splits long file lists into several runs 1`] = `
+{
+  "args": [
+    "--resetMocks",
+    "--watchAll=false",
+    "--forceExit",
+    "--no-bail",
+    "--testLocationInResults",
+    "--maxWorkers=<n>",
+    "--json",
+    "--runTestsByPath",
+  ],
+  "binary": "<root>/node_modules/jest/bin/jest.js",
+  "cwd": "<root>",
+  "timeoutMs": undefined,
+}
+`;

@@ -130,7 +130,7 @@ export class ExecutionTraceStore {
 
   /**
    * Merge a per-file line→test mapping into the index.
-   * Called by SessionTraceRunner after each trace parse.
+   * Called by the batch runner (JestBatchRunner) after each trace parse.
    * Accumulates across reruns — entries are added, never removed mid-session.
    */
   mergeLineToTests(
@@ -203,7 +203,7 @@ export class ExecutionTraceStore {
 
   /**
    * Clear all data. Called when a new session starts (before starting the fresh run).
-   * Trace files on disk are deleted by SessionTraceRunner / extension cleanup separately.
+   * Trace files on disk are deleted by the batch runner / extension cleanup separately.
    */
   clearAll(): void {
     this._traceIndex.clear();

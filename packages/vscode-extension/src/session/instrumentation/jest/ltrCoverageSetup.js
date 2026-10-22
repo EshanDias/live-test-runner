@@ -50,7 +50,7 @@ try {
 //   beforeEach…afterEach: 'T' context — that test (and its beforeEach hooks)
 //   between tests       : 'H' context — beforeAll / afterAll hooks
 // 'H' hits count for every test in the file.
-require(((typeof jest !== 'undefined' && jest.requireActual) ? jest.requireActual('path') : require('path')).join(__dirname, 'sessionTraceRuntime.js'));
+require(((typeof jest !== 'undefined' && jest.requireActual) ? jest.requireActual('path') : require('path')).join(__dirname, '..', 'shared', 'sessionTraceRuntime.js'));
 const _ltrTestPath = (() => {
   try { return expect.getState().testPath; } catch (_) { return undefined; }
 })();

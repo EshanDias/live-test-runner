@@ -1,5 +1,6 @@
 /**
- * ProjectJestConfig — the project's Jest config exactly as Jest resolves it.
+ * JestProjectConfig — the project's Jest config exactly as Jest resolves it
+ * (the Jest {@link IProjectConfig}).
  *
  * The instrumented runs (session batches and the timeline) write their own
  * temporary config and layer our transform / reporter / setup file on top of
@@ -17,13 +18,16 @@ import {
   BinaryResolver,
   Executor,
   FrameworkDetector,
+  FRAMEWORK_IDS,
   pickGlobalConfig,
   tail,
   testScriptJestArgs,
   toInputConfig,
-  toJestPath,
+  toRunnerPath,
 } from '@live-test-runner/runner';
 import { logger } from '../utils/logger';
+import { IProjectConfig } from './IProjectConfig';
+import { CoverageScope, JestCoverageSettings, jestCoverageScope } from '../coverage/coverageScope';
 
 const log = logger.scope('Config');
 
@@ -32,12 +36,15 @@ export interface ResolvedProjectConfig {
   configs: Record<string, unknown>[];
   global: Record<string, unknown>;
   jestVersion?: string;
+  /** Which files count toward coverage (not read by the generated configs). */
+  coverage?: JestCoverageSettings;
 }
 
 const SHOW_CONFIG_TIMEOUT_MS = 120_000;
 
-export class ProjectJestConfig {
+export class JestProjectConfig implements IProjectConfig {
   private readonly _cache = new Map<string, Promise<string | undefined>>();
+  private readonly _coverage = new Map<string, JestCoverageSettings>();
 
   /** @param _dir session folder where the resolved JSON is written */
   constructor(private readonly _dir: string, private readonly _rawLog: (msg: string) => void = () => {}) {}
@@ -45,6 +52,14 @@ export class ProjectJestConfig {
   /** Forget cached configs (a new session re-reads them — the config may have changed). */
   reset(): void {
     this._cache.clear();
+    this._coverage.clear();
+  }
+
+  /** From the same `--showConfig` read as {@link get}. */
+  async coverageScope(projectRoot: string): Promise<CoverageScope | undefined> {
+    await this.get(projectRoot);
+    const settings = this._coverage.get(projectRoot);
+    return settings ? jestCoverageScope(settings) : undefined;
   }
 
   /**
@@ -66,7 +81,7 @@ export class ProjectJestConfig {
 
   private async _resolve(projectRoot: string): Promise<string | undefined> {
     const startedAt = Date.now();
-    const isCra = new FrameworkDetector().detect(projectRoot).framework === 'cra';
+    const isCra = new FrameworkDetector().detect(projectRoot).framework === FRAMEWORK_IDS.cra;
     const scriptArgs = testScriptJestArgs(projectRoot);
 
     let binary: string | undefined;
@@ -97,6 +112,7 @@ export class ProjectJestConfig {
     fs.mkdirSync(this._dir, { recursive: true });
     const file = path.join(this._dir, `ltr-project-config-${hash(projectRoot)}.json`);
     fs.writeFileSync(file, JSON.stringify(resolved, null, 2), 'utf8');
+    if (resolved.coverage) { this._coverage.set(projectRoot, resolved.coverage); }
     log.debug(
       `Project Jest config read via ${isCra ? 'react-scripts' : 'jest'} --showConfig in ` +
       `${((Date.now() - startedAt) / 1000).toFixed(1)}s — Jest ${resolved.jestVersion ?? '?'}, ` +
@@ -114,7 +130,7 @@ export class ProjectJestConfig {
  * Built from the root's real path: Jest matches it against realpath'd files.
  */
 export function sourceTransformPattern(projectRoot: string): string {
-  const rootFwd = toJestPath(projectRoot).replace(/\\/g, '/');
+  const rootFwd = toRunnerPath(projectRoot).replace(/\\/g, '/');
   const driveMatch = rootFwd.match(/^([a-zA-Z]):(.*)/);
   const escapedRoot = driveMatch
     ? `[${driveMatch[1].toLowerCase()}${driveMatch[1].toUpperCase()}]:${escapeRegex(driveMatch[2])}`
@@ -149,6 +165,26 @@ export function parseShowConfig(stdout: string): ResolvedProjectConfig | undefin
     configs: configs.map((c) => toInputConfig(c, ['silent'])),
     global: pickGlobalConfig(raw.globalConfig),
     jestVersion: raw.version,
+    coverage: coverageSettings(configs, raw.globalConfig ?? {}),
+  };
+}
+
+/** The options Jest's `shouldInstrument` reads, merged over every project. */
+function coverageSettings(configs: Record<string, unknown>[], globalConfig: Record<string, unknown>): JestCoverageSettings {
+  const strings = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : typeof v === 'string' && v ? [v] : [];
+  const all = (key: string) => [...new Set(configs.flatMap((c) => strings(c[key])))];
+  const rootDir = typeof globalConfig.rootDir === 'string' ? globalConfig.rootDir
+    : typeof configs[0].rootDir === 'string' ? configs[0].rootDir as string : '';
+  return {
+    rootDir,
+    collectCoverageFrom: strings(globalConfig.collectCoverageFrom),
+    coveragePathIgnorePatterns: configs.some((c) => Array.isArray(c.coveragePathIgnorePatterns))
+      ? all('coveragePathIgnorePatterns')
+      : undefined,
+    testMatch: all('testMatch'),
+    testRegex: all('testRegex'),
+    setupFiles: [...all('setupFiles'), ...all('setupFilesAfterEnv'), ...all('globalSetup'), ...all('globalTeardown')],
   };
 }
 

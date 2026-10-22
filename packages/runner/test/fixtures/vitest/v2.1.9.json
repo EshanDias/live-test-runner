@@ -1,0 +1,175 @@
+{
+  "numTotalTestSuites": 7,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 7,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 10,
+  "numPassedTests": 4,
+  "numFailedTests": 2,
+  "numPendingTests": 3,
+  "numTodoTests": 1,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 0,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "Failed to load url ./does-not-exist.js (resolved id: ./does-not-exist.js) in /project/t/broken.test.js. Does the file exist?",
+      "name": "/project/t/broken.test.js"
+    },
+    {
+      "assertionResults": [],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "No test suite found in file /project/t/empty.test.js",
+      "name": "/project/t/empty.test.js"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "Hooked"
+          ],
+          "fullName": "Hooked a",
+          "status": "skipped",
+          "title": "a",
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "Hooked"
+          ],
+          "fullName": "Hooked b",
+          "status": "skipped",
+          "title": "b",
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "",
+      "name": "/project/t/hook.test.js"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "Outer",
+            "Inner"
+          ],
+          "fullName": "Outer Inner adds",
+          "status": "passed",
+          "title": "adds",
+          "duration": 2.204629000000068,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "Outer",
+            "Inner"
+          ],
+          "fullName": "Outer Inner fails",
+          "status": "failed",
+          "title": "fails",
+          "duration": 10.3051099999999,
+          "failureMessages": [
+            "AssertionError: expected { a: 1 } to deeply equal { a: 2 }\n    at /project/t/probe.test.js:5:42\n    at file:///project/node_modules/@vitest/runner/dist/index.js:146:14\n    at file:///project/node_modules/@vitest/runner/dist/index.js:533:11\n    at runWithTimeout (file:///project/node_modules/@vitest/runner/dist/index.js:39:7)\n    at runTest (file:///project/node_modules/@vitest/runner/dist/index.js:1056:17)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at runSuite (file:///project/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///project/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///project/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///project/node_modules/@vitest/runner/dist/index.js:1262:5)"
+          ],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "Outer"
+          ],
+          "fullName": "Outer adds too",
+          "status": "passed",
+          "title": "adds too",
+          "duration": 0.152541000000042,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "Outer"
+          ],
+          "fullName": "Outer later",
+          "status": "todo",
+          "title": "later",
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "Outer"
+          ],
+          "fullName": "Outer skipped",
+          "status": "skipped",
+          "title": "skipped",
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "Outer"
+          ],
+          "fullName": "Outer each 1",
+          "status": "passed",
+          "title": "each 1",
+          "duration": 0.30268599999999424,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "Outer"
+          ],
+          "fullName": "Outer each 2",
+          "status": "failed",
+          "title": "each 2",
+          "duration": 0.8352119999999559,
+          "failureMessages": [
+            "AssertionError: expected 2 to be less than 2\n    at /project/t/probe.test.js:10:51\n    at file:///project/node_modules/@vitest/runner/dist/index.js:633:57\n    at file:///project/node_modules/@vitest/runner/dist/index.js:146:14\n    at file:///project/node_modules/@vitest/runner/dist/index.js:533:11\n    at runWithTimeout (file:///project/node_modules/@vitest/runner/dist/index.js:39:7)\n    at runTest (file:///project/node_modules/@vitest/runner/dist/index.js:1056:17)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at runSuite (file:///project/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///project/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///project/node_modules/@vitest/runner/dist/index.js:1262:5)"
+          ],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "top level",
+          "status": "passed",
+          "title": "top level",
+          "duration": 0.17012099999999464,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1000,
+      "endTime": 1100,
+      "status": "failed",
+      "message": "",
+      "name": "/project/t/probe.test.js"
+    }
+  ]
+}
