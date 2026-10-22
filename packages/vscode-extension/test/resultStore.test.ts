@@ -102,3 +102,17 @@ describe('ResultStore summary and lifecycle', () => {
     expect(store.findFileKey('C:\\p\\b.test.js')).toBeUndefined();
   });
 });
+
+describe('ResultStore file groups (Vitest projects, D12)', () => {
+  it('sets, serialises and clears each file\'s group', () => {
+    const store = new ResultStore();
+    store.fileDiscovered('/p/a.test.js', '/p/a.test.js', 'a.test.js');
+    store.fileDiscovered('/p/b.test.js', '/p/b.test.js', 'b.test.js');
+    store.setFileGroups({ '/p/a.test.js': 'unit', '/p/missing.test.js': 'x' });
+    expect(store.getFile('/p/a.test.js')?.group).toBe('unit');
+    expect(store.getFile('/p/b.test.js')?.group).toBeUndefined();
+    expect((store.toJSON() as { files: { group?: string }[] }).files.map((f) => f.group)).toEqual(['unit', undefined]);
+    store.setFileGroups(undefined);
+    expect(store.getFile('/p/a.test.js')?.group).toBeUndefined();
+  });
+});

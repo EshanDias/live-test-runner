@@ -236,7 +236,7 @@ export class ProjectContext implements vscode.Disposable {
 
   /** Stops the session (kills its processes) and releases the discovery lock. */
   dispose(): void {
-    try { this.session.onWorkspaceFoldersChanged(); } catch (err) { log.debug(`Stopping "${this.name}" failed: ${(err as Error).message}`); }
+    try { this.session.dispose(); } catch (err) { log.debug(`Stopping "${this.name}" failed: ${(err as Error).message}`); }
     this.discovery.dispose();
     this.discoveryCache?.releaseLock();
     for (const d of this._disposables) { d.dispose(); }

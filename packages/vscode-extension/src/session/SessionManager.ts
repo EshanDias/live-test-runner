@@ -511,6 +511,22 @@ export class SessionManager {
     }
   }
 
+  /**
+   * The project goes away (workspace folders or projectRoot changed): stops
+   * the session and every run in flight — also explicit ▶ Run runs started
+   * without a session — and clears the store.
+   */
+  dispose(): void {
+    this._token++;
+    this._clearSaveTimers();
+    this._killBatches();
+    this._session?.stop();
+    this._session = undefined;
+    this._activeRuns = 0;
+    this._fullSuiteStartedAt = undefined;
+    this._store.clear();
+  }
+
   // ── Private: source-file affected rerun ───────────────────────────────────
 
   /**
