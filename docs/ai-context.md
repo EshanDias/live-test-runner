@@ -494,8 +494,9 @@ All in `packages/vscode-extension/package.json`:
 - `liveTestRunner.startTesting`
 - `liveTestRunner.stopTesting`
 - `liveTestRunner.selectProjectRoot`
-- `liveTestRunner.showOutput` — "Show Test Output": raw Jest output channel
+- `liveTestRunner.showOutput` — "Show Test Output": raw Jest / Vitest output channel
 - `liveTestRunner.showLogs` — "Show Logs": levelled extension log channel
+- `liveTestRunner.openGuide` — "Open Guide": the user guide shipped in `out/guide/guide.html` (copied from `docs/live-test-runner-guide.html`) in a webview tab (`views/GuidePanel.ts`); the same page is on GitHub Pages (`.github/workflows/pages.yml`)
 - `liveTestRunner.copyDiagnostics` — "Copy Diagnostic Report": versions, project setup, settings, recent logs → clipboard + untitled doc
 - `liveTestRunner.rerunFromEditor`
 - `liveTestRunner.debugFromEditor`
@@ -575,6 +576,10 @@ All in `packages/vscode-extension/package.json`:
 | Extension logger (LogOutputChannel, ring buffer) | `packages/vscode-extension/src/utils/logger.ts` |
 | Runner/core logger + sink | `packages/runner/src/utils/logger.ts` |
 | Diagnostic report | `packages/vscode-extension/src/utils/diagnostics.ts` |
+| User guide tab | `packages/vscode-extension/src/views/GuidePanel.ts` |
+| Vitest coverage → CoverageStore | `packages/vscode-extension/src/coverage/istanbulCoverage.ts` |
+| Vitest batches | `packages/vscode-extension/src/session/VitestBatchRunner.ts` |
+| Vitest-specific logic | `packages/vscode-extension/src/framework/VitestAdapter.ts`, `packages/runner/src/VitestRunner.ts` |
 | Known bugs + root causes | `docs/bugs-and-issues.md` |
 | Framework detection | `packages/runner/src/framework/FrameworkDetector.ts` |
 | CRA config extraction | `packages/runner/src/framework/adapters/CRAAdapter.ts` |

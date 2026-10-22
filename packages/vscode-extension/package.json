@@ -92,6 +92,11 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.openGuide",
+        "title": "Open Guide",
+        "category": "Live Test Runner"
+      },
+      {
         "command": "liveTestRunner.copyDiagnostics",
         "title": "Copy Diagnostic Report",
         "category": "Live Test Runner"

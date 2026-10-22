@@ -10,6 +10,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### Improvements
 
+- **Open Guide** — a new command opens the full user guide in an editor tab (also online at https://eshandias.github.io/live-test-runner/).
 - **Test files with generated tests show up** — a file whose tests are created at runtime (no plain `test(...)` calls) is listed and shows its results.
 - **Better test discovery** — tests inside `describe.each(...)` appear under their suite before the first run, and TypeScript test files using generic arrow functions are no longer missing from the tree.
 - **A test file that cannot load shows why** — its tests are marked failed with the error (e.g. a missing import) instead of staying "not run".

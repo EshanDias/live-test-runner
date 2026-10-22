@@ -530,6 +530,8 @@ Before opening the `release/*` → `main` PR:
 
 To test a package locally: `cd packages/vscode-extension && pnpm run build && vsce package` (produces a `.vsix`).
 
+**User guide site.** `.github/workflows/pages.yml` publishes `docs/live-test-runner-guide.html` to GitHub Pages (https://eshandias.github.io/live-test-runner/) when it changes on `main`. One-time setup: repository **Settings → Pages → Source: GitHub Actions**. The same file is copied to `out/guide/guide.html` by `esbuild.js` and shown by the **Open Guide** command (`views/GuidePanel.ts`), so the guide links to the other docs with absolute GitHub URLs.
+
 What goes into the `.vsix` is set by `packages/vscode-extension/.vscodeignore` (`npx @vscode/vsce ls --no-dependencies` lists it). Sources are bundled into `out/`, but the webviews load their HTML / JS / CSS from `src/webview` at runtime, so that folder must stay in the package.
 
 ---
@@ -618,7 +620,7 @@ engine.jumpTo(stepId)
 | Debug config hardcoded path | `getDebugConfig` in `JestAdapter` uses `${workspaceFolder}/node_modules/.bin/jest`; non-standard layouts may need the `liveTestRunner.jestCommand` override |
 | CRA config cache is in-memory | Lost when the session ends; recomputed (~2–3s) on next Start Testing |
 | Gutter icon animation | `animateTransform` in the running SVG is rendered statically by VS Code — the spinner does not spin in the gutter |
-| `location` not always present | Some Jest setups (CRA; Vitest needs its task-location option, plan task 2.3) may not emit `location` in JSON; gutter icons won't appear for those files |
+| `location` not always present | Some Jest setups (CRA) and Vitest 1–2 do not emit `location` in JSON; gutter icons won't appear for those files (Vitest ≥ 3 gets it via `--includeTaskLocation`) |
 | Timeline transform: regex-based injection | `traceTransform.js` injects trace calls using Babel AST. It handles assignments, function calls, and common statement patterns, but may miss complex patterns such as multi-line destructuring or chained optional calls inside expressions. |
 | Timeline: no import tracing | The transform only instruments the target test file. Imported modules are not traced; their execution does not appear as steps in the timeline. |
 | Timeline: `console.log` in tests | `traceRuntime.js` patches `console.*` to emit LOG events. If the test patches `console` before the runtime loads, log capture may be incomplete. |
@@ -627,7 +629,7 @@ engine.jumpTo(stepId)
 
 ## Roadmap
 
-- [ ] Vitest support (3.0.0) — tracked in `docs/temp_plans/vitest-support-plan.md`; the runner `VitestAdapter` + `VitestRunner` are done (tasks 2.1–2.2)
+- [x] Vitest support (3.0.0) — run, pass/fail, per-test logs, live progress, coverage; next steps (related tests on save, monorepos, mixed frameworks, trace) in `docs/temp_plans/vitest-support-plan.md`
 - [x] ~~Suite/test-case level nodes in Test Explorer~~ — completed in 1.2.0 (recursive node tree with unlimited nesting)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
 - [ ] Streaming live output during a run (message type stubbed, not wired)

@@ -11,6 +11,7 @@
  * (framework/jestServices.ts) respectively.
  */
 import * as vscode from 'vscode';
+import { openGuide } from './views/GuidePanel';
 import * as fs from 'fs';
 import * as path from 'path';
 import { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
@@ -406,6 +407,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot',  () => session.selectProjectRoot()),
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.showLogs',           () => logChannel.show()),
+    vscode.commands.registerCommand('liveTestRunner.openGuide',          () => openGuide(context.extensionUri)),
     vscode.commands.registerCommand('liveTestRunner.copyDiagnostics',    async () => {
       const report = buildDiagnosticReport({
         extensionVersion: extVersion,
