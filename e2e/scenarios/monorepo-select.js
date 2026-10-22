@@ -10,6 +10,17 @@ const h = require('../lib/harness');
 
 const norm = (p) => p.replace(/\\/g, '/');
 
+/** Gutter icons DecorationManager would draw for a document: { 'status-passed': n, … }. */
+function gutterCounts(api, doc) {
+  const keyOf = new Map([...api.decorationManager._decorations].map(([k, v]) => [v, k]));
+  const counts = {};
+  api.decorationManager.applyToEditor({
+    document: doc,
+    setDecorations: (type, ranges) => { if (ranges.length) { counts[keyOf.get(type)] = ranges.length; } },
+  });
+  return counts;
+}
+
 module.exports = {
   workspace: 'fixture:monorepo-jest',
   settings: { 'liveTestRunner.maxRunningProjects': 1 },
@@ -31,13 +42,30 @@ module.exports = {
     t.eq('the Explorer switcher gets both projects', api.explorerView._projects.map((p) => [p.name, p.selected]), [['app-a', true], ['app-b', false]]);
     t.check('no Jest process before Start', h.jestProcesses(workspace).length === 0, h.jestProcesses(workspace).join('\n'));
 
+    // ── A file of another (undiscovered) project opened while app-a is shown ─
+    const greet = path.join(workspace, 'packages', 'app-b', 'src', 'greet.test.js');
+    const greetDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(greet));
+    await vscode.window.showTextDocument(greetDoc);
+    await h.waitFor(() => reg.contexts[1].discovery.hasCompleted, { what: 'app-b discovery for its open file', timeout: 30_000 });
+    t.eq('opening an app-b file discovers app-b (still not selected, not running)', [reg.selected.name, reg.contexts[1].session.isActive()], ['app-a', false]);
+    const lenses = api.codeLensProvider.provideCodeLenses(greetDoc).filter((l) => l.command.title === '▶ Run');
+    t.eq('CodeLens on the app-b file come from app-b', lenses.length, 3);
+    t.eq('gutter on the app-b file: app-b\'s pending tests', gutterCounts(api, greetDoc), { 'status-pending': 3 });
+    // An explicit ▶ Run works without a session (§7) and runs in the file's project.
+    const seq0 = [reg.contexts[0].session._runSeq, reg.contexts[1].session._runSeq];
+    await vscode.commands.executeCommand(lenses[0].command.command, ...lenses[0].command.arguments);
+    const ran = reg.contexts[1].store.getFileNodes(reg.contexts[1].store.findFileKey(greet)).find((n) => n.fullName === lenses[0].command.arguments[0].fullName);
+    t.eq('▶ Run (no session) ran in app-b, not app-a', [reg.contexts[0].session._runSeq - seq0[0], reg.contexts[1].session._runSeq - seq0[1], ran && ran.status], [0, 1, 'passed']);
+    t.check('…and started no session anywhere', !reg.contexts[0].session.isActive() && !reg.contexts[1].session.isActive());
+    t.eq('the gutter on the app-b file shows that result', gutterCounts(api, greetDoc), { 'status-passed': 1, 'status-pending': 2 });
+
     // ── Switch to app-b and run it ─────────────────────────────────────────
     const id = await vscode.commands.executeCommand('liveTestRunner.selectProject', 'app-b');
     t.eq('Select Project switches to app-b', reg.selected.name, 'app-b');
     t.check('the command returns the project id', id === reg.selected.id, String(id));
     await h.waitForDiscovery(api);
     t.eq('the views now show app-b\'s files', files(), ['packages/app-b/src/greet.test.js']);
-    t.check('status bar follows the switch', /^Live Tests: app-b · Off$/.test(api.statusBar.text), api.statusBar.text);
+    t.check('status bar follows the switch', /^Live Tests: app-b · ✅ 1 passed$/.test(api.statusBar.text), api.statusBar.text);
 
     await vscode.commands.executeCommand('liveTestRunner.startTesting');
     await h.waitFor(() => api.session.isActive() && !api.session.isRunning() && api.store.getSummary().passed === 3,
@@ -47,8 +75,17 @@ module.exports = {
     t.eq('switcher row: app-b live with its counts',
       reg.summaries().map((p) => [p.name, p.state, p.passed, p.failed]), [['app-a', 'idle', 0, 0], ['app-b', 'watching', 3, 0]]);
 
-    // ── The limit: one running project ─────────────────────────────────────
+    // ── app-a shown, app-b's file still shows app-b's results ──────────────
     await vscode.commands.executeCommand('liveTestRunner.selectProject', 'app-a');
+    t.eq('gutter on the app-b file shows app-b results while app-a is selected', gutterCounts(api, greetDoc), { 'status-passed': 3 });
+    const runLens = api.codeLensProvider.provideCodeLenses(greetDoc).find((l) => l.command.title === '▶ Run' && l.command.arguments[0].fullName === 'greets');
+    t.check('▶ Run lens for "greets" in the app-b file', !!runLens);
+    const seq1 = [reg.contexts[0].session._runSeq, reg.contexts[1].session._runSeq];
+    await vscode.commands.executeCommand(runLens.command.command, ...runLens.command.arguments);
+    t.eq('▶ Run on the app-b file (app-a selected) runs in app-b', [reg.contexts[0].session._runSeq - seq1[0], reg.contexts[1].session._runSeq - seq1[1], reg.contexts[1].store.getSummary().passed], [0, 1, 3]);
+    t.eq('…without touching app-a (still idle, still selected)', [reg.selected.name, reg.contexts[0].session.isActive(), api.store.getAllFiles().every((f) => f.status === 'pending')], ['app-a', false, true]);
+
+    // ── The limit: one running project ─────────────────────────────────────
     const since = h.isoNow();
     await vscode.commands.executeCommand('liveTestRunner.startTesting');
     const refused = h.logsSince(api, since).filter((l) => /Stop a running project first/.test(l));

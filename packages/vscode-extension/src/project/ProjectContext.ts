@@ -7,8 +7,9 @@
  * Results still flow one way (CLAUDE.md §1): the project's SessionManager
  * notifies the project's {@link ProjectObserverGate}, which records the
  * project's live state (for the switcher row) and forwards every event to
- * the window's observers (views, decorations) only while the project is the
- * selected one. A background project keeps running; switching to it rebinds
+ * the window's views (Explorer, Results) only while the project is the
+ * selected one; editor features (gutter, CodeLens, coverage bars) hear every
+ * project, since each file is decorated from its own project. A background project keeps running; switching to it rebinds
  * the views to its stores (see ProjectRegistry).
  */
 import * as fs from 'fs';
@@ -69,8 +70,13 @@ export interface ProjectContextDeps {
   /** Shared folder for the per-project discovery caches. */
   cacheRootDir: string;
   outputChannel: vscode.OutputChannel;
-  /** The window's observers (views, decorations) — receive events only while this project is selected. */
+  /** The window's observers (Explorer, Results panel) — receive events only while this project is selected. */
   observers: IResultObserver[];
+  /**
+   * Editor features (gutter, CodeLens, coverage bars) — receive every
+   * project's events: each file is decorated from its own project.
+   */
+  editorObservers: Partial<IResultObserver>[];
   selection: SelectionState;
   /** Refreshes the Results view's scoped logs (only called for the selected project). */
   sendScopedData: (fileId: string, nodeId?: string) => void;
@@ -126,7 +132,7 @@ export class ProjectContext implements vscode.Disposable {
       },
       () => this.root,
     );
-    this.gate = new ProjectObserverGate(this, _deps.observers, () => _deps.isSelected(this), () => _deps.onStateChanged(this));
+    this.gate = new ProjectObserverGate(this, _deps.observers, _deps.editorObservers, () => _deps.isSelected(this), () => _deps.onStateChanged(this));
 
     const statusSink = { text: '' };
     Object.defineProperty(statusSink, 'text', {
@@ -258,11 +264,16 @@ export class ProjectObserverGate implements IResultObserver {
   constructor(
     private readonly _ctx: ProjectContext,
     private readonly _observers: IResultObserver[],
+    private readonly _editorObservers: Partial<IResultObserver>[],
     private readonly _isSelected: () => boolean,
     private readonly _changed: () => void,
   ) {}
 
   private _forward(method: keyof IResultObserver, args: unknown[]): void {
+    for (const o of this._editorObservers) {
+      const fn = o[method] as unknown;
+      if (typeof fn === 'function') { (fn as (...a: unknown[]) => void).apply(o, args); }
+    }
     if (!this._isSelected()) { return; }
     for (const o of this._observers) {
       const fn = o[method] as unknown;

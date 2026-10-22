@@ -8,22 +8,23 @@ import * as os from 'os';
 const GB = 1024 ** 3;
 
 /**
- * `auto`: 2, or 1 on a machine with ≤ 4 CPU cores or < 4 GB free memory —
+ * `auto`: 2, or 1 on a machine with ≤ 4 CPU cores or < 8 GB total memory —
  * every running project keeps its own test processes and on-save reruns.
- * Read at each Start (free memory changes).
+ * Total, not free memory (owner decision 2026-10-22): macOS reports most
+ * memory as cached, so "free" memory would almost always say 1.
  */
-export function autoMaxRunningProjects(cpuCount: number = os.cpus().length, freeMemBytes: number = os.freemem()): number {
-  return cpuCount <= 4 || freeMemBytes < 4 * GB ? 1 : 2;
+export function autoMaxRunningProjects(cpuCount: number = os.cpus().length, totalMemBytes: number = os.totalmem()): number {
+  return cpuCount <= 4 || totalMemBytes < 8 * GB ? 1 : 2;
 }
 
 /** The limit for a setting value; anything that is not a number ≥ 1 means `auto`. */
 export function resolveMaxRunningProjects(
   setting: unknown,
   cpuCount: number = os.cpus().length,
-  freeMemBytes: number = os.freemem(),
+  totalMemBytes: number = os.totalmem(),
 ): number {
   const n = typeof setting === 'number' ? setting : typeof setting === 'string' && /^\d+$/.test(setting.trim()) ? Number(setting) : NaN;
-  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : autoMaxRunningProjects(cpuCount, freeMemBytes);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : autoMaxRunningProjects(cpuCount, totalMemBytes);
 }
 
 /**

@@ -1,32 +1,43 @@
 import * as vscode from 'vscode';
-import { ResultStore } from '../store/ResultStore';
+import { FileStoresResolver } from './FileStores';
 
 /**
  * CodeLensProvider — shows inline Run / Debug / Results actions for
  * every test and suite in the active editor.
  *
  * Uses the same LineMap as DecorationManager. Each line entry maps to a
- * node in the ResultStore's flat node pool.
+ * node in the ResultStore's flat node pool — of the file's own project
+ * (phase 7), so ▶ Run / ▷ Debug run in that project. It hears every
+ * project's events to refresh the lenses.
  */
 export class CodeLensProvider implements vscode.CodeLensProvider {
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this._onDidChange.event;
 
-  constructor(private store: ResultStore) {}
+  private _timer: ReturnType<typeof setTimeout> | undefined;
 
-  /** Shows another project's lenses (phase 7). */
-  bind(store: ResultStore): void {
-    this.store = store;
-    this.refresh();
-  }
+  constructor(private readonly _resolve: FileStoresResolver) {}
 
   refresh(): void {
     this._onDidChange.fire();
   }
 
+  /** Coalesces the refreshes driven by results and discovery. */
+  private _refreshSoon(): void {
+    if (this._timer) { return; }
+    this._timer = setTimeout(() => { this._timer = undefined; this.refresh(); }, 200);
+  }
+
+  // Observer hooks (any project): the line maps changed.
+  onDiscoveryComplete(): void { this._refreshSoon(); }
+  onDiscoveryProgress(): void { this._refreshSoon(); }
+  onRunFinished(): void { this._refreshSoon(); }
+  onSessionStopped(): void { this._refreshSoon(); }
+
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
-    const lineMap = this.store.getLineMap(document.uri.fsPath);
-    if (lineMap.size === 0) {
+    const store = this._resolve(document.uri.fsPath)?.store;
+    const lineMap = store?.getLineMap(document.uri.fsPath);
+    if (!store || !lineMap || lineMap.size === 0) {
       return [];
     }
 
@@ -35,7 +46,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
 
     for (const [line, entry] of lineMap) {
       const range = new vscode.Range(line - 1, 0, line - 1, 0);
-      const node = this.store.getNode(entry.nodeId);
+      const node = store.getNode(entry.nodeId);
       if (!node) {
         continue;
       }
@@ -79,6 +90,7 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
   }
 
   dispose(): void {
+    if (this._timer) { clearTimeout(this._timer); }
     this._onDidChange.dispose();
   }
 }

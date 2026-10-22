@@ -25,6 +25,7 @@ import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
 import { ProjectRegistry } from './project/ProjectRegistry';
 import { ProjectContext } from './project/ProjectContext';
+import { FileStores } from './editor/FileStores';
 import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
@@ -130,9 +131,15 @@ export function activate(context: vscode.ExtensionContext) {
   // ── Views and editor providers ─────────────────────────────────────────────
   const explorerView      = new ExplorerView(context.extensionUri, emptyStore, selection, emptyCoverage);
   const resultsView       = new ResultsView(context.extensionUri, emptyStore, selection);
-  const decorationManager = new DecorationManager(emptyStore, context);
-  const codeLensProvider  = new CodeLensProvider(emptyStore);
-  const observers: IResultObserver[] = [explorerView, resultsView, decorationManager];
+  // Explorer + Results follow the selected project; editor features decorate
+  // every file from its own project and hear every project's events.
+  const observers: IResultObserver[] = [explorerView, resultsView];
+  const editorObservers: Partial<IResultObserver>[] = [];
+  // Called only after the registry below exists (never during construction).
+  const storesOf = (filePath: string): FileStores | undefined => projects.forFile(filePath);
+  const decorationManager = new DecorationManager(storesOf, context);
+  const codeLensProvider  = new CodeLensProvider(storesOf);
+  editorObservers.push(decorationManager, codeLensProvider);
 
   // Register CodeLens immediately so ▶ Run / ▷ Debug appear as soon as
   // discovery populates the line map — no need to click Start Testing first.
@@ -152,8 +159,8 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   // ── Coverage decoration manager ───────────────────────────────────────────
-  const coverageDecoMgr = new CoverageDecorationManager(emptyCoverage);
-  observers.push(coverageDecoMgr);
+  const coverageDecoMgr = new CoverageDecorationManager(storesOf);
+  editorObservers.push(coverageDecoMgr);
   context.subscriptions.push(emptyCoverage, coverageDecoMgr);
 
   // ── Projects ───────────────────────────────────────────────────────────────
@@ -163,6 +170,7 @@ export function activate(context: vscode.ExtensionContext) {
     cacheRootDir: LTR_BASE_CACHE_DIR,
     outputChannel,
     observers,
+    editorObservers,
     selection,
     sendScopedData: (fileId, nodeId) => resultsView.sendScopedData(fileId, nodeId),
     statusBar,
@@ -284,7 +292,7 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   // ── Coverage hover provider ────────────────────────────────────────────────
-  const coverageHoverProvider = new CoverageHoverProvider(emptyTrace, emptyStore, emptyCoverage, (filePath) => {
+  const coverageHoverProvider = new CoverageHoverProvider(storesOf, (filePath) => {
     const ctx = owner(filePath);
     if (!ctx) { return undefined; }
     const services = ctx.services.servicesFor(filePath);
@@ -313,10 +321,10 @@ export function activate(context: vscode.ExtensionContext) {
       explorerView.setProjects(projects.summaries());
       explorerView.bindProject(state);
       resultsView.bindProject(state);
-      decorationManager.bind(state.store);
-      codeLensProvider.bind(state.store);
-      coverageDecoMgr.bind(state.coverageStore);
-      coverageHoverProvider.bind(state.traceStore, state.store, state.coverageStore);
+      // Editor features are per file, not per selection — only the project list may have changed.
+      coverageDecoMgr.watch(projects.contexts.map((c) => c.coverageStore));
+      decorationManager.refresh();
+      codeLensProvider.refresh();
       // Coverage badge / tab of the newly shown project.
       explorerView.onCoverageUpdated(state.coverageStore.getTotals(), state.coverageStore.getFileRows());
     }),
@@ -557,11 +565,15 @@ export function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-      if (editor) { codeLensProvider.refresh(); }
+      if (!editor) { return; }
+      // A file of a project not discovered yet: discover it so its gutter / CodeLens appear (nothing runs).
+      projects.forFile(editor.document.uri.fsPath)?.ensureDiscovery();
+      codeLensProvider.refresh();
     }),
 
     vscode.window.onDidChangeVisibleTextEditors((editors) => {
       for (const editor of editors) {
+        projects.forFile(editor.document.uri.fsPath)?.ensureDiscovery();
         decorationManager.applyToEditor(editor);
       }
     }),
@@ -591,7 +603,7 @@ export function activate(context: vscode.ExtensionContext) {
       get discovery() { return sel()?.discovery; },
       get sessionDir() { return sel()?.sessionDir ?? LTR_SESSION_TMP_DIR; },
       projects,
-      observers, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
+      observers, editorObservers, decorationManager, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
       explorerView,
     };
   }

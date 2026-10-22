@@ -72,6 +72,14 @@ module.exports = {
 
     // ── A background project reruns on save ────────────────────────────────
     t.eq('web is shown', reg.selected.name, 'web');
+    // Editor features decorate each file from its own project, not the selected one.
+    const mathDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(workspace, 'packages', 'lib', 'src', 'math.test.js')));
+    await vscode.window.showTextDocument(mathDoc);
+    const keyOf = new Map([...api.decorationManager._decorations].map(([k, v]) => [v, k]));
+    const gutter = {};
+    api.decorationManager.applyToEditor({ document: mathDoc, setDecorations: (type, r) => { if (r.length) { gutter[keyOf.get(type)] = r.length; } } });
+    t.eq('a lib file shows lib\'s results while web is selected', gutter, { 'status-passed': 2 });
+    t.eq('…and lib\'s CodeLens', api.codeLensProvider.provideCodeLenses(mathDoc).filter((l) => l.command.title === '▶ Run').length, 2);
     const flow = path.join(workspace, 'packages', 'lib', 'test', 'flow.test.js');
     await h.editAndSave(vscode, flow, (s) => s.replace('toBe(3)', 'toBe(2)'));
     await h.waitFor(() => lib.store.getSummary().failed === 0 && !lib.session.isRunning(), { what: 'lib to rerun flow.test.js in the background', timeout: 60_000 });

@@ -28,6 +28,8 @@ export interface ProjectRegistryDeps {
   cacheRootDir: string;
   outputChannel: vscode.OutputChannel;
   observers: IResultObserver[];
+  /** Editor features — every project's events (see ProjectContextDeps). */
+  editorObservers: Partial<IResultObserver>[];
   selection: SelectionState;
   sendScopedData: (fileId: string, nodeId?: string) => void;
   statusBar: vscode.StatusBarItem;
@@ -89,6 +91,7 @@ export class ProjectRegistry implements vscode.Disposable {
       cacheRootDir: this._deps.cacheRootDir,
       outputChannel: this._deps.outputChannel,
       observers: this._deps.observers,
+      editorObservers: this._deps.editorObservers,
       selection: this._deps.selection,
       sendScopedData: this._deps.sendScopedData,
       isSelected: (ctx) => ctx === this._selected,

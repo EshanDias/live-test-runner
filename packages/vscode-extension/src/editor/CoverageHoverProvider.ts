@@ -1,8 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
-import { ResultStore } from '../store/ResultStore';
-import { CoverageStore } from '../coverage/CoverageStore';
+import { FileStoresResolver } from './FileStores';
 import { Manifest } from '../coverage/types';
 
 const BRANCH_TYPE_LABEL: Record<string, string> = {
@@ -18,17 +16,9 @@ const BRANCH_TYPE_LABEL: Record<string, string> = {
 const MAX_TESTS_SHOWN = 5;
 
 export class CoverageHoverProvider implements vscode.HoverProvider {
-  /** Shows another project's coverage and covering tests (phase 7). */
-  bind(traceStore: ExecutionTraceStore, resultStore: ResultStore, coverageStore: CoverageStore): void {
-    this._traceStore = traceStore;
-    this._resultStore = resultStore;
-    this._coverageStore = coverageStore;
-  }
-
+  /** The hovered file's own project's stores (phase 7). */
   constructor(
-    private _traceStore: ExecutionTraceStore,
-    private _resultStore: ResultStore,
-    private _coverageStore: CoverageStore,
+    private readonly _resolve: FileStoresResolver,
     /** Why a file has no per-test trace by design (e.g. "covering tests are not available for Vitest yet"), else undefined. */
     private readonly _noTraceReason: (filePath: string) => string | undefined = () => undefined,
   ) {}
@@ -39,8 +29,12 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
   ): vscode.Hover | undefined {
     const filePath = document.uri.fsPath;
     const line = position.line + 1; // VS Code is 0-indexed; our stores are 1-based
+    const stores = this._resolve(filePath);
+    if (!stores) { return undefined; }
+    const traceStore = stores.traceStore;
+    const resultStore = stores.store;
 
-    const entry = this._coverageStore.getEntry(filePath);
+    const entry = stores.coverageStore.getEntry(filePath);
     if (!entry) { return undefined; }
 
     if (entry.state === 'measured-stale') {
@@ -52,7 +46,7 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
     if (entry.state !== 'measured') { return undefined; }
 
     const manifest = _readManifest(entry.manifestPath);
-    const traceLines = this._traceStore.getCoveredLines(filePath);
+    const traceLines = traceStore.getCoveredLines(filePath);
     const isLineCovered = traceLines.has(line);
 
     // Fallback: trace store may be empty (e.g. Jest exited before flushing trace).
@@ -86,7 +80,7 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
       return new vscode.Hover(md);
     }
 
-    const tests = this._traceStore.getTestsForLine(filePath, line);
+    const tests = traceStore.getTestsForLine(filePath, line);
     const md = new vscode.MarkdownString(undefined, true);
     md.isTrusted = true;
     md.supportThemeIcons = true;
@@ -108,7 +102,7 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
 
     const shown = tests.slice(0, MAX_TESTS_SHOWN);
     for (const { testFileId, fullName } of shown) {
-      const node = this._resultStore.findNodeByFullName(testFileId, fullName);
+      const node = resultStore.findNodeByFullName(testFileId, fullName);
       const status = node?.status ?? 'pending';
       const statusIcon = status === 'passed' ? '$(testing-passed-icon)' : status === 'failed' ? '$(testing-failed-icon)' : '$(testing-queued-icon)';
       const duration = node?.duration != null ? ` \u2002$(clock) ${node.duration}ms` : '';

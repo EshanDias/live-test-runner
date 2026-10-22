@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResultObserver';
 import { CoverageStore } from '../coverage/CoverageStore';
+import { FileStoresResolver } from './FileStores';
 import { Manifest, LiveCov } from '../coverage/types';
 
 export class CoverageDecorationManager implements IResultObserver {
@@ -14,10 +15,11 @@ export class CoverageDecorationManager implements IResultObserver {
   private readonly _soleCov:   vscode.TextEditorDecorationType;
 
   private readonly _disposables: vscode.Disposable[] = [];
-  private _storeSub: vscode.Disposable | undefined;
+  private _storeSubs: vscode.Disposable[] = [];
 
+  /** Every file shows its own project's coverage (phase 7). */
   constructor(
-    private _store: CoverageStore,
+    private readonly _resolve: FileStoresResolver,
   ) {
     // ▌ before pseudo-element — thin coloured bar at start of text content.
     // Applied to all executable lines so the shift is uniform (no misalignment).
@@ -54,21 +56,20 @@ export class CoverageDecorationManager implements IResultObserver {
       vscode.window.onDidChangeVisibleTextEditors(() => this._refreshAll()),
       vscode.window.onDidChangeActiveTextEditor(() => this._refreshAll()),
     );
-    this._storeSub = this._store.onDidChange.event(() => this._refreshAll());
   }
 
-  /** Shows another project's coverage (phase 7). */
-  bind(store: CoverageStore): void {
-    this._storeSub?.dispose();
-    this._store = store;
-    this._storeSub = this._store.onDidChange.event(() => this._refreshAll());
+  /** Redraws on changes of any of these stores (every project's; replaced when projects are re-detected). */
+  watch(stores: CoverageStore[]): void {
+    for (const d of this._storeSubs) { d.dispose(); }
+    this._storeSubs = stores.map((s) => s.onDidChange.event(() => this._refreshAll()));
     this._refreshAll();
   }
 
   // ── IResultObserver ────────────────────────────────────────────────────────
 
-  onSessionStarted(): void                      { this._clearAll(); }
-  onSessionStopped(): void                      { this._clearAll(); }
+  // Session changes clear that project's store, which redraws through watch().
+  onSessionStarted(): void                      { /* driven by store.onDidChange */ }
+  onSessionStopped(): void                      { /* driven by store.onDidChange */ }
   onRunStarted(_p: RunStartedPayload): void     { /* driven by store.onDidChange */ }
   onFilesRerunning(_ids: string[]): void        { /* driven by store.onDidChange */ }
   onFileResult(_fp: string): void               { /* driven by store.onDidChange */ }
@@ -83,7 +84,7 @@ export class CoverageDecorationManager implements IResultObserver {
     this._stale.dispose();
     this._soleCov.dispose();
     for (const d of this._disposables) { d.dispose(); }
-    this._storeSub?.dispose();
+    for (const d of this._storeSubs) { d.dispose(); }
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
@@ -110,7 +111,7 @@ export class CoverageDecorationManager implements IResultObserver {
 
   private _refreshEditor(editor: vscode.TextEditor): void {
     const filePath = editor.document.uri.fsPath;
-    const entry = this._store.getEntry(filePath);
+    const entry = this._resolve(filePath)?.coverageStore.getEntry(filePath);
 
     if (!entry || entry.state === 'counted') {
       this._clearEditor(editor);
