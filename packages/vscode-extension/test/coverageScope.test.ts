@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { defaultCoverageScope, jestCoverageScope, vitestCoverageScope } from '../src/coverage/coverageScope';
 import { parseShowConfig } from '../src/session/JestProjectConfig';
@@ -115,5 +117,33 @@ describe('parseShowConfig coverage settings', () => {
       testRegex: [],
       setupFiles: [abs('a.js'), abs('b.js')],
     });
+  });
+});
+
+describe('coverage scope regressions', () => {
+  it("ignores Vite's virtual-module markers ('**/\\0*' matched every file)", () => {
+    const scope = vitestCoverageScope({ root, exclude: ['**/\u0000*', '**/__x00__*', '**/*.test.js'], all: true });
+    expect(scope.counts(abs('src/math.js'))).toBe(true);
+    expect(scope.counts(abs('src/math.test.js'))).toBe(false);
+  });
+
+  it('Vitest 3 (all: true, no include) counts untouched files', () => {
+    expect(vitestCoverageScope({ root, exclude: [], all: true }).includesUntouched).toBe(true);
+  });
+
+  it("matches a file under the config's real root when the editor's path goes through a symlink", () => {
+    const real = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-scope-')));
+    const link = `${real}-link`;
+    try {
+      fs.mkdirSync(path.join(real, 'src'));
+      fs.writeFileSync(path.join(real, 'src', 'math.js'), '');
+      fs.symlinkSync(real, link, 'junction');
+      const viaLink = path.join(link, 'src', 'math.js');
+      expect(vitestCoverageScope({ root: real, include: ['src/**'] }).counts(viaLink)).toBe(true);
+      expect(jestCoverageScope({ rootDir: real, collectCoverageFrom: ['src/**/*.js'] }).counts(viaLink)).toBe(true);
+    } finally {
+      try { fs.unlinkSync(link); } catch { try { fs.rmdirSync(link); } catch { /* not created */ } }
+      fs.rmSync(real, { recursive: true, force: true });
+    }
   });
 });

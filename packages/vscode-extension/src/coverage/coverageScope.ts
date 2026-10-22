@@ -6,6 +6,7 @@
  * Built per framework from its resolved config; when the config cannot be
  * read, {@link defaultCoverageScope} applies the built-in rules.
  */
+import * as fs from 'fs';
 import * as path from 'path';
 import picomatch from 'picomatch';
 import { isExcludedFromCoverage } from './coverageRules';
@@ -64,7 +65,9 @@ export function vitestCoverageScope(s: VitestCoverageSettings): CoverageScope {
   const isExcluded = globMatcher(s.exclude ?? [], false);
   return {
     source: 'Vitest coverage.include / exclude',
-    includesUntouched: include.length > 0 && s.all !== false,
+    // Vitest < 4: `all` (default true) counts untouched files even without an include list.
+    // Vitest 4+: no `all` — only an include list does.
+    includesUntouched: include.length > 0 ? s.all !== false : s.all === true,
     isDefault: false,
     counts: (fp) => {
       const rel = relativePosix(s.root, fp);
@@ -102,11 +105,12 @@ export function jestCoverageScope(s: JestCoverageSettings): CoverageScope {
     isDefault: false,
     counts: (fp) => {
       const posix = fp.replace(/\\/g, '/');
-      // Jest's spelling has an upper-case drive; VS Code's a lower-case one.
-      const spellings = [fp, fp.replace(/^[a-z]:/, (d) => d.toUpperCase()), posix];
+      // Jest's spelling has an upper-case drive and symlinks resolved; VS Code's neither.
+      const real = realpath(fp);
+      const spellings = [...new Set([fp, fp.replace(/^[a-z]:/, (d) => d.toUpperCase()), posix, real, real.replace(/\\/g, '/')])];
       if (/\/node_modules\//.test(posix) || /\/__mocks__\//.test(posix)) { return false; }
-      if (isTestByGlob(posix) || spellings.some((p) => testRegex.some((re) => re.test(p)))) { return false; }
-      if (setupFiles.has(pathKey(fp))) { return false; }
+      if (spellings.some((p) => isTestByGlob(p.replace(/\\/g, '/'))) || spellings.some((p) => testRegex.some((re) => re.test(p)))) { return false; }
+      if (setupFiles.has(pathKey(fp)) || setupFiles.has(pathKey(real))) { return false; }
       const rel = relativePosix(s.rootDir, fp);
       if (collectFrom.length > 0 && (rel === undefined || !isCollected(rel))) { return false; }
       return !spellings.some((p) => ignore.some((re) => re.test(p)));
@@ -120,6 +124,9 @@ export function jestCoverageScope(s: JestCoverageSettings): CoverageScope {
  * negations matches everything they do not exclude.
  */
 function globMatcher(patterns: string[], emptyMatchesAll = true): (p: string) => boolean {
+  // Vite's virtual-module markers ('**/\0*') never match a file on disk, but picomatch
+  // matches them against every path — drop patterns with control characters.
+  patterns = patterns.filter((p) => ![...p].some((c) => c.charCodeAt(0) < 0x20));
   const positive = patterns.filter((p) => !p.startsWith('!'));
   const negative = patterns.filter((p) => p.startsWith('!')).map((p) => p.slice(1));
   if (positive.length === 0 && negative.length === 0) { return () => emptyMatchesAll; }
@@ -136,11 +143,24 @@ function compileRegexes(patterns: string[] | undefined): RegExp[] {
   return out;
 }
 
-/** `file` relative to `root` with forward slashes; undefined when outside it. */
+/**
+ * `file` relative to `root` with forward slashes; undefined when outside it.
+ * The framework's root is often the real path (macOS `/private/var/…`, Windows
+ * upper-case drive / long names) while the editor's file path is not, so the
+ * real paths are compared too.
+ */
 function relativePosix(root: string, file: string): string | undefined {
-  const rel = path.relative(root, file);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) { return undefined; }
-  return rel.replace(/\\/g, '/');
+  const inside = (r: string, f: string) => {
+    const rel = path.relative(r, f);
+    return !rel || rel.startsWith('..') || path.isAbsolute(rel) ? undefined : rel.replace(/\\/g, '/');
+  };
+  return inside(root, file)
+    ?? (process.platform === 'win32' ? inside(root.toLowerCase(), file.toLowerCase()) : undefined)
+    ?? inside(realpath(root), realpath(file));
+}
+
+function realpath(p: string): string {
+  try { return fs.realpathSync.native(p); } catch { return p; }
 }
 
 function pathKey(p: string): string {
