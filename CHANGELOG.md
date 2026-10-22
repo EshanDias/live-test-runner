@@ -6,6 +6,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### Bug Fixes
 
+- **Live run timer updates every second** — the running file-count timer now advances while files are running, and displays elapsed time in the correct units.
 - **File durations use whole milliseconds** — fractional millisecond values are rounded; durations of a second or more omit the millisecond remainder.
 
 ### Framework decoupling (Vitest support, phase 1)
