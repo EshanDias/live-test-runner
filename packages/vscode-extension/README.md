@@ -150,7 +150,7 @@ All settings under `liveTestRunner.*`.
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
 | `testFilePatterns` | `["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]` | Which files appear in the test tree. Jest's own config still decides what runs, and files it runs are added even when no pattern matches |
-| `coverageExclude` | `[]` | Extra globs left out of the coverage totals |
+| `coverageExclude` | `[]` | Extra globs left out of the coverage totals (which otherwise follow your Vitest `coverage.include` / `exclude` or Jest `collectCoverageFrom`) |
 | `durationThresholds.testAmberMs` | `100` | Test turns amber |
 | `durationThresholds.testRedMs` | `500` | Test turns red |
 | `durationThresholds.suiteAmberMs` | `500` | Suite turns amber |

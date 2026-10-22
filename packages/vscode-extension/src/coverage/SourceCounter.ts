@@ -1,10 +1,17 @@
 /**
  * SourceCounter — background scan at session start.
  *
- * AST-parses every source file in the workspace and counts statements,
- * branches, functions, and executable lines. Populates CoverageStore with
- * 'counted' entries (state = 0 hits) so untouched files are included in the
- * denominator, giving correct aggregate percentages.
+ * AST-parses the source files that count toward coverage but no test has
+ * loaded yet, and counts statements, branches, functions, and executable
+ * lines. Populates CoverageStore with 'counted' entries (state = 0 hits) so
+ * untouched files are included in the denominator, giving correct aggregate
+ * percentages.
+ *
+ * Which files count comes from the project's coverage settings
+ * ({@link CoverageScope}), so the totals match the framework's CLI report:
+ * when the config does not list the files to cover (no Vitest
+ * `coverage.include` / Jest `collectCoverageFrom`), the CLI reports only the
+ * files the tests loaded, and so there is nothing to scan.
  *
  * Mirrors TestDiscoveryService — fires and is forgotten, runs in parallel
  * with the first test run.
@@ -12,9 +19,12 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
+import { spawn } from 'child_process';
 import { loadBabelParser, loadTraverse } from '../utils/babel';
 import { EventEmitter } from 'events';
 import { CoverageStore } from './CoverageStore';
+import { CoverageScope } from './coverageScope';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Coverage');
@@ -25,15 +35,26 @@ export class SourceCounter extends EventEmitter {
   constructor(
     private readonly _projectRoot: string,
     private readonly _store: CoverageStore,
+    /** Which files count — awaited, so the scan can start before the config is read. */
+    private readonly _scope: CoverageScope | Promise<CoverageScope>,
   ) {
     super();
   }
 
   async run(): Promise<void> {
     const startedAt = Date.now();
+    const scope = await this._scope;
+    if (!scope.includesUntouched) {
+      log.debug(`Coverage counts only the files the tests load (${scope.source} — no include list) — no source scan`);
+      this._store.markScanComplete();
+      this.emit('done');
+      return;
+    }
+
     const include = new vscode.RelativePattern(this._projectRoot, '**/*.{js,ts,jsx,tsx}');
-    // Flattened — no nested braces, VS Code glob doesn't support them reliably
-    const defaultExcludeParts = [
+    // Flattened — no nested braces, VS Code glob doesn't support them reliably.
+    // With the project's own rules, only what can never count is left out here; the scope decides the rest.
+    const defaultExcludeParts = scope.isDefault ? [
       '**/node_modules/**',
       '**/*.test.js', '**/*.test.ts', '**/*.test.jsx', '**/*.test.tsx',
       '**/*.spec.js', '**/*.spec.ts', '**/*.spec.jsx', '**/*.spec.tsx',
@@ -42,7 +63,7 @@ export class SourceCounter extends EventEmitter {
       '**/*.config.js', '**/*.config.ts', '**/*.config.mjs', '**/*.config.cjs',
       '**/*.d.ts',
       'dist/**', 'build/**', 'out/**', '.next/**', 'coverage/**',
-    ];
+    ] : ['**/node_modules/**', '**/.git/**'];
     const userExclude = vscode.workspace
       .getConfiguration('liveTestRunner')
       .get<string[]>('coverageExclude', []);
@@ -51,22 +72,32 @@ export class SourceCounter extends EventEmitter {
       : defaultExcludeParts;
     const excludeGlob = `{${allExcludeParts.join(',')}}`;
 
-    let uris: vscode.Uri[];
+    let files: string[];
     try {
-      uris = await vscode.workspace.findFiles(include, excludeGlob);
+      const uris = await vscode.workspace.findFiles(include, excludeGlob);
+      files = uris.map((u) => u.fsPath).filter((fp) => scope.counts(fp));
     } catch (err) {
       log.error('Source file scan failed — coverage totals will only include files touched by tests', err);
       this._store.markScanComplete();
       this.emit('done');
       return;
     }
+    if (scope.isDefault) {
+      // No project rules to go by: generated output (reports, bundles) is usually git-ignored.
+      const ignored = await gitIgnored(this._projectRoot, files);
+      if (ignored.size > 0) {
+        files = files.filter((fp) => !ignored.has(pathKey(fp)));
+        log.debug(`Source scan: ${ignored.size} git-ignored file(s) left out`);
+      }
+    }
+    log.debug(`Source scan: ${files.length} file(s) count toward coverage (${scope.source})`);
 
-    const total = uris.length;
+    const total = files.length;
     let scanned = 0;
 
-    for (const uri of uris) {
-      const counts = this._countFile(uri.fsPath);
-      this._store.setCountedEntry(uri.fsPath, counts);
+    for (const filePath of files) {
+      const counts = this._countFile(filePath);
+      this._store.setCountedEntry(filePath, counts);
       this.emit('progress', ++scanned, total);
 
       if (scanned % YIELD_EVERY === 0) {
@@ -193,4 +224,27 @@ function _countStmt(node: any, lines: Set<number>): void {
 function _countLogicalLeaves(node: any): number {
   if (node?.type !== 'LogicalExpression') { return 1; }
   return _countLogicalLeaves(node.left) + _countLogicalLeaves(node.right);
+}
+
+/** The files git ignores (as {@link pathKey}s); empty when git is missing or this is not a repo. */
+function gitIgnored(cwd: string, files: string[]): Promise<Set<string>> {
+  return new Promise((resolve) => {
+    if (files.length === 0) { resolve(new Set()); return; }
+    let out = '';
+    const child = spawn('git', ['check-ignore', '-z', '--stdin'], { cwd, windowsHide: true });
+    child.stdout.on('data', (d: Buffer) => { out += d.toString('utf8'); });
+    child.on('error', () => resolve(new Set()));
+    child.on('close', (code) => {
+      // 0: some files ignored, 1: none, 128: not a repo / git error.
+      if (code !== 0) { resolve(new Set()); return; }
+      resolve(new Set(out.split('\0').filter(Boolean).map((rel) => pathKey(path.resolve(cwd, rel)))));
+    });
+    child.stdin.on('error', () => { /* git exited early — reported by 'close' */ });
+    child.stdin.end(files.map((f) => path.relative(cwd, f)).join('\0') + '\0');
+  });
+}
+
+function pathKey(p: string): string {
+  const n = path.normalize(p);
+  return process.platform === 'win32' ? n.toLowerCase() : n;
 }

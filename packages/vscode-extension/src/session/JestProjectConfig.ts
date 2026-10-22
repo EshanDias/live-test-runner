@@ -27,6 +27,7 @@ import {
 } from '@live-test-runner/runner';
 import { logger } from '../utils/logger';
 import { IProjectConfig } from './IProjectConfig';
+import { CoverageScope, JestCoverageSettings, jestCoverageScope } from '../coverage/coverageScope';
 
 const log = logger.scope('Config');
 
@@ -35,12 +36,15 @@ export interface ResolvedProjectConfig {
   configs: Record<string, unknown>[];
   global: Record<string, unknown>;
   jestVersion?: string;
+  /** Which files count toward coverage (not read by the generated configs). */
+  coverage?: JestCoverageSettings;
 }
 
 const SHOW_CONFIG_TIMEOUT_MS = 120_000;
 
 export class JestProjectConfig implements IProjectConfig {
   private readonly _cache = new Map<string, Promise<string | undefined>>();
+  private readonly _coverage = new Map<string, JestCoverageSettings>();
 
   /** @param _dir session folder where the resolved JSON is written */
   constructor(private readonly _dir: string, private readonly _rawLog: (msg: string) => void = () => {}) {}
@@ -48,6 +52,14 @@ export class JestProjectConfig implements IProjectConfig {
   /** Forget cached configs (a new session re-reads them — the config may have changed). */
   reset(): void {
     this._cache.clear();
+    this._coverage.clear();
+  }
+
+  /** From the same `--showConfig` read as {@link get}. */
+  async coverageScope(projectRoot: string): Promise<CoverageScope | undefined> {
+    await this.get(projectRoot);
+    const settings = this._coverage.get(projectRoot);
+    return settings ? jestCoverageScope(settings) : undefined;
   }
 
   /**
@@ -100,6 +112,7 @@ export class JestProjectConfig implements IProjectConfig {
     fs.mkdirSync(this._dir, { recursive: true });
     const file = path.join(this._dir, `ltr-project-config-${hash(projectRoot)}.json`);
     fs.writeFileSync(file, JSON.stringify(resolved, null, 2), 'utf8');
+    if (resolved.coverage) { this._coverage.set(projectRoot, resolved.coverage); }
     log.debug(
       `Project Jest config read via ${isCra ? 'react-scripts' : 'jest'} --showConfig in ` +
       `${((Date.now() - startedAt) / 1000).toFixed(1)}s — Jest ${resolved.jestVersion ?? '?'}, ` +
@@ -152,6 +165,26 @@ export function parseShowConfig(stdout: string): ResolvedProjectConfig | undefin
     configs: configs.map((c) => toInputConfig(c, ['silent'])),
     global: pickGlobalConfig(raw.globalConfig),
     jestVersion: raw.version,
+    coverage: coverageSettings(configs, raw.globalConfig ?? {}),
+  };
+}
+
+/** The options Jest's `shouldInstrument` reads, merged over every project. */
+function coverageSettings(configs: Record<string, unknown>[], globalConfig: Record<string, unknown>): JestCoverageSettings {
+  const strings = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : typeof v === 'string' && v ? [v] : [];
+  const all = (key: string) => [...new Set(configs.flatMap((c) => strings(c[key])))];
+  const rootDir = typeof globalConfig.rootDir === 'string' ? globalConfig.rootDir
+    : typeof configs[0].rootDir === 'string' ? configs[0].rootDir as string : '';
+  return {
+    rootDir,
+    collectCoverageFrom: strings(globalConfig.collectCoverageFrom),
+    coveragePathIgnorePatterns: configs.some((c) => Array.isArray(c.coveragePathIgnorePatterns))
+      ? all('coveragePathIgnorePatterns')
+      : undefined,
+    testMatch: all('testMatch'),
+    testRegex: all('testRegex'),
+    setupFiles: [...all('setupFiles'), ...all('setupFilesAfterEnv'), ...all('globalSetup'), ...all('globalTeardown')],
   };
 }
 

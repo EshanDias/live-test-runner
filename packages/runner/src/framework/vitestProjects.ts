@@ -31,7 +31,14 @@ const projects = (vitest.projects || []).map((p) => ({
 }));
 const coverage = vitest.config && vitest.config.coverage;
 process.stdout.write('\\nLTR_PROJECTS ' + JSON.stringify(projects) + '\\n');
-process.stdout.write('LTR_COVERAGE ' + JSON.stringify({ provider: (coverage && coverage.provider) || 'v8' }) + '\\n');
+const strings = (v) => Array.isArray(v) ? v.filter((x) => typeof x === 'string') : undefined;
+process.stdout.write('LTR_COVERAGE ' + JSON.stringify({
+  provider: (coverage && coverage.provider) || 'v8',
+  include: strings(coverage && coverage.include),
+  exclude: strings(coverage && coverage.exclude),
+  all: coverage && typeof coverage.all === 'boolean' ? coverage.all : undefined,
+  root: vitest.config && vitest.config.root,
+}) + '\\n');
 await vitest.close();
 process.exit(0);
 `;
@@ -41,6 +48,12 @@ export interface VitestConfigInfo {
   projects: VitestProjectInfo[];
   /** `coverage.provider`: 'v8' (Vitest's default), 'istanbul' or 'custom'. */
   coverageProvider: string;
+  /**
+   * Which files count toward coverage (`coverage.include` / `exclude`, Vitest's
+   * defaults merged in, relative to `root`; `all` below Vitest 4 only).
+   * Undefined when the probe could not report them.
+   */
+  coverage?: { root: string; include?: string[]; exclude?: string[]; all?: boolean };
 }
 
 const cache = new Map<string, { stamp: string; info: Promise<VitestConfigInfo | undefined> }>();
@@ -125,9 +138,16 @@ async function probe(
   try {
     const projects = JSON.parse(line.slice('LTR_PROJECTS '.length)) as VitestProjectInfo[];
     const covLine = result.stdout.split('\n').find((l) => l.startsWith('LTR_COVERAGE '));
-    const coverageProvider = covLine ? (JSON.parse(covLine.slice('LTR_COVERAGE '.length)) as { provider: string }).provider : 'v8';
-    log.debug(`Vitest projects of ${projectRoot} (${Date.now() - startedAt} ms): ${projects.map((p) => `${p.name || '(default)'}${p.browser ? ' [browser]' : ''}`).join(', ')}; coverage provider ${coverageProvider}`);
-    return { projects, coverageProvider };
+    const cov = covLine
+      ? JSON.parse(covLine.slice('LTR_COVERAGE '.length)) as { provider: string; include?: string[]; exclude?: string[]; all?: boolean; root?: string }
+      : undefined;
+    const coverageProvider = cov?.provider ?? 'v8';
+    const coverage = cov ? { root: cov.root || projectRoot, include: cov.include, exclude: cov.exclude, all: cov.all } : undefined;
+    log.debug(
+      `Vitest projects of ${projectRoot} (${Date.now() - startedAt} ms): ${projects.map((p) => `${p.name || '(default)'}${p.browser ? ' [browser]' : ''}`).join(', ')}; ` +
+      `coverage provider ${coverageProvider}, include ${JSON.stringify(coverage?.include ?? [])}`,
+    );
+    return { projects, coverageProvider, coverage };
   } catch (err) {
     log.warn(`Could not parse the Vitest projects of ${projectRoot}`, err);
     return undefined;

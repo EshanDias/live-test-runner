@@ -21,7 +21,8 @@ import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
-import { isExcludedFromCoverage as _isExcludedFromCoverage, mergeCounters as _mergeCounters } from '../coverage/coverageRules';
+import { mergeCounters as _mergeCounters } from '../coverage/coverageRules';
+import { CoverageScope, coverageScopeOf } from '../coverage/coverageScope';
 import { logger } from '../utils/logger';
 import { IProjectConfig } from './IProjectConfig';
 import { sourceTransformPattern, upperDrive } from './JestProjectConfig';
@@ -213,6 +214,7 @@ export class JestBatchRunner implements IBatchRunner {
 
     // The project's config as Jest resolved it (any format) — see JestProjectConfig.
     const resolvedConfigPath = await this._projectConfig.get(projectRoot);
+    const coverageScope = await coverageScopeOf(this._projectConfig, projectRoot);
     // Jest's spelling: the real path (symlinks resolved), upper-case drive.
     const jestRoot = upperDrive(toRunnerPath(projectRoot));
 
@@ -589,7 +591,7 @@ module.exports = _projects
 
     // Parse coverage counters and promote CoverageStore entries.
     try {
-      this._parseCoverage(covCountersFile, projectRoot, batch);
+      this._parseCoverage(covCountersFile, projectRoot, batch, coverageScope);
     } catch (err) {
       covLog.error(`${batch}: could not parse coverage counters`, err);
     }
@@ -620,7 +622,7 @@ module.exports = _projects
 
   // ── Private: parse light-trace JSONL and update ExecutionTraceStore ──────────
 
-  private _parseCoverage(covCountersFile: string, projectRoot: string, batch: string): void {
+  private _parseCoverage(covCountersFile: string, projectRoot: string, batch: string, scope: CoverageScope): void {
     if (!fs.existsSync(covCountersFile)) {
       // Normal when the batch imported no instrumented source files (or was killed).
       covLog.debug(`${batch}: no coverage counters written`);
@@ -692,8 +694,7 @@ module.exports = _projects
       }
 
       const normalizedFilePath = _normPath(manifest.filePath);
-      const relPath = path.relative(projectRoot, normalizedFilePath);
-      if (_isExcludedFromCoverage(relPath)) {
+      if (!scope.counts(normalizedFilePath)) {
         excluded++;
         continue;
       }

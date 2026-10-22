@@ -126,6 +126,7 @@ src/
 │   ├── types.ts                    Manifest, FileCov, LiveCov, CoveragePct, CoverageTotals, CoverageEntry
 │   ├── CoverageStore.ts            In-memory store: 'counted' → 'measured' → 'measured-stale' lifecycle
 │   ├── SourceCounter.ts            Background scan at session start; populates CoverageStore with 'counted' entries
+│   ├── coverageScope.ts            Which files count toward coverage, from the project's coverage config (IProjectConfig.coverageScope)
 │   └── CoverageReport.ts           Stateless metric calculation (statements/branches/functions/lines)
 ├── cache/
 │   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
@@ -218,7 +219,7 @@ src/
 4. `_runFiles` builds a batch queue: `BATCH_SIZE = clamp(ceil(N / CONCURRENCY), 5, 50)` files per batch; `CONCURRENCY = max(1, floor(cpuCount / 4))` parallel Jest processes
 5. Each batch: files marked `running` in store → single Jest process via `JestBatchRunner.runFiles` with combined test+trace+coverage instrumentation; `liveReporter.js` streams per-file results as they complete; `onFileDone` notifies observers after each file
 6. After Jest exits: `JestBatchRunner` parses (a) the light-trace JSONL → updates `ExecutionTraceStore`; (b) the coverage counters JSONL → promotes `CoverageStore` entries from `'counted'` to `'measured'` using manifests on disk
-7. In parallel with step 5: `SourceCounter` AST-scans every source file and populates `CoverageStore` with `'counted'` (0-hit) entries so untouched files are included in coverage denominators
+7. In parallel with step 5: `SourceCounter` AST-scans the source files that count toward coverage (the framework's `CoverageScope` — Vitest `coverage.include`/`exclude`, Jest `collectCoverageFrom`/`coveragePathIgnorePatterns`; built-in rules + git-ignore when the config is unreadable) and populates `CoverageStore` with `'counted'` (0-hit) entries so untouched files are included in coverage denominators. Skipped when the config has no include list (the CLI then reports only loaded files)
 7. On-save listener enabled
 
 **On save (debounced 300ms):**
