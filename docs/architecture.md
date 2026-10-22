@@ -67,7 +67,7 @@ Owns session lifecycle and the coverage map.
 | `CoverageMap.ts` | `Map<SourcePath, Set<TestPath>>` built from Jest coverage output |
 | `SelectionPolicy.ts` | Legacy; minimal use |
 
-**Coverage map:** built once during the warm-up run (full suite with coverage), updated incrementally on each on-save run. When a source file is saved, this map is checked first before falling back to `jest --findRelatedTests`.
+**Coverage map:** core's `CoverageMap` (`IFrameworkAdapter.getAffectedTests`) is not consulted by on-save reruns — the execution trace is (Jest), then the framework's related run (`jest --findRelatedTests`, `vitest related`).
 
 ---
 
@@ -533,7 +533,7 @@ Adding a new framework = one file implementing `IFrameworkAdapter`, plus that fr
 |---|---|---|---|
 | `adapter` | `IFrameworkAdapter` | `framework/JestAdapter.ts` | `framework/VitestAdapter.ts` |
 | `projectConfig` | `IProjectConfig` (`get(root)`, `reset()`) | `session/JestProjectConfig.ts` (`jest --showConfig`) | `session/VitestProjectConfig.ts` (the config file path) |
-| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` (results + trace + coverage, streamed) | `session/VitestBatchRunner.ts` (results streamed per file from the runner's Vitest reporter; per-test hang limit + no-progress fallback; Vitest's own coverage → `coverage/istanbulCoverage.ts` → CoverageStore) |
+| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, optional `runRelated(RelatedRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` (results + trace + coverage, streamed) | `session/VitestBatchRunner.ts` (results streamed per file from the runner's Vitest reporter; per-test hang limit + no-progress fallback; Vitest's own coverage → `coverage/istanbulCoverage.ts` → CoverageStore) |
 | `instrumentedRunner` | `IInstrumentedRunner` (Timeline), optional | `timeline/JestInstrumentedRunner.ts` | — (phase 10) |
 | `createSessionRunner()` | runner `TestRunner` for core's `TestSession` | runner `JestAdapter.createRunner()` → `JestRunner` | runner `VitestAdapter.createRunner()` → `VitestRunner` |
 
@@ -731,6 +731,8 @@ User clicks "Start Testing"
 
 User saves a file
   → SessionManager.onSave(filePath)            debounced 300ms
+      → services.isConfigFile(filePath)?  (jest.config.* / vitest.config.* / vite.config.* / the script's --config)
+          → Yes: restart the session — config, runnable files and every result re-read
       → isTestFile(filePath)?
           → Yes: run that file
           → No:  _runAffectedBySourceFile(filePath)
@@ -739,8 +741,11 @@ User saves a file
                          isSharedVars:true  → run whole test file
                          isSharedVars:false → run individual test cases
                                               (combined --testNamePattern, one Jest process per file)
-                     → No trace data:
-                         CoverageMap lookup → fallback jest --findRelatedTests → run whole files
+                     → No trace data (always for Vitest until phase 9):
+                         batchRunner.runRelated?  (Vitest: `vitest related <src> --run` as a live batch —
+                                                  files claimed on file-start, results streamed, coverage measured,
+                                                  started-without-result files retried through _runFiles)
+                         else adapter.runRelatedTests (plain `jest --findRelatedTests`) → whole files
 
 User clicks "▶ Run" CodeLens
   → liveTestRunner.rerunFromEditor(filePath, lineNumber)

@@ -2,7 +2,7 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [3.0.0] - Unreleased
+## [3.0.0] - 2026-10-22
 
 ### New
 
@@ -10,6 +10,8 @@ All notable changes to Live Test Runner are documented here.
 
 ### Improvements
 
+- **Vitest: saving a source file reruns the tests that import it** — live, with fresh coverage for that file.
+- **Saving your Jest or Vitest config restarts testing** — the new config is picked up right away and every test reruns.
 - **Live run timer** — elapsed time now updates every second while tests are running.
 - **Open Guide** — a new command opens the full user guide in an editor tab (also online at https://eshandias.github.io/live-test-runner/guide/).
 - **New website** — https://eshandias.github.io/live-test-runner/ with features, screenshots, quick start and links to leave a review.

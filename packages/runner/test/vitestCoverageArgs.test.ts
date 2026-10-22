@@ -73,3 +73,16 @@ it('adds nothing without a coverage folder', async () => {
   expect(r.command.args.some((a) => a.startsWith('--coverage'))).toBe(false);
   expect(r.coverageFile).toBeUndefined();
 });
+
+it('builds a live related run: `related <src> --run`, with the batch flags and coverage', async () => {
+  project('5.0.5', ['v8']);
+  const runner = new VitestRunner();
+  runner.setProjectRoot(root);
+  const src = path.join(root, 'src', 'math.js');
+  const r = await runner.liveCommand([path.join(root, 'ignored.test.ts')], { coverageDir: '/tmp/cov', related: src });
+  expect(r.command.args.slice(0, 2)).toEqual(['related', src]);
+  expect(r.command.args).toContain('--run');
+  expect(r.command.args.some((a) => a.includes('ignored.test.ts'))).toBe(false);
+  expect(r.command.args).toContain('--coverage.enabled=true');
+  expect(r.eventsFile).toBeTruthy();
+});

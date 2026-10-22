@@ -539,7 +539,7 @@ All in `packages/vscode-extension/package.json`:
 |-----------|--------|
 | Jest | Fully supported |
 | Create React App | Fully supported (via `--showConfig` + direct Jest invocation) |
-| Vitest | In progress (3.0.0) — runner package done for runs (`VitestAdapter` + `VitestRunner`); Vitest-specific parsing and extension wiring follow (plan tasks 2.3–2.8) |
+| Vitest | Supported since 3.0.0 (Vitest 3+; 1–2 results only) — run, pass/fail, per-test output, failures, live progress, coverage, related tests on save. Not yet: execution trace / "covering tests" (3.3), Timeline. See `docs/framework-features.md` |
 
 ---
 

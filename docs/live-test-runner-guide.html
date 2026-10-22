@@ -263,7 +263,8 @@
     <li><b>Failures</b>: the expected / received diff and the source-mapped line. A failing <code>beforeAll</code> shows its real error and marks the file failed.</li>
     <li><b>Coverage</b> uses Vitest's own provider. Install <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>, whichever your config names); without it the log says once that coverage is off. Nothing is written into your project's <code>coverage/</code> folder.</li>
     <li><b>Projects</b>: a config with <code>test.projects</code> runs once from the root; Vitest runs every project. Browser-mode projects need real browsers, so they are left out unless you turn on <code>vitestIncludeBrowserProjects</code> or your test script picks projects itself.</li>
-    <li><b>Not yet</b>: "covering tests" in the hover and precise source-file reruns (they need the execution trace; saving a source file runs <code>vitest related</code> instead), the Timeline Debugger, and monorepos with several packages.</li>
+    <li><b>Saving a source file</b> reruns the test files that import it (<code>vitest related</code>), live and with fresh coverage. Saving <code>vitest.config.*</code> restarts the session.</li>
+    <li><b>Not yet</b>: "covering tests" in the hover and per-test source-file reruns (they need the execution trace), the Timeline Debugger, and monorepos with several packages.</li>
   </ul>
   <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — tree fills in, results, coverage bars -->
 </section>
@@ -356,14 +357,14 @@
   <h3>Common warnings</h3>
   <div class="table-wrap"><table>
     <tr><th>Message</th><th>Meaning / what to do</th></tr>
-    <tr><td><code>instrumented Jest run returned no results … Jest said:</code></td><td>Jest failed before running tests (config, transform, environment). The lines after it are Jest's own error. Often a config format we don't read yet (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-07">BUG-07</a>).</td></tr>
+    <tr><td><code>instrumented Jest run returned no results … Jest said:</code></td><td>Jest failed before running tests (config, transform, environment). The lines after it are Jest's own error. Often a config format we don't read yet (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-07" target="_blank" rel="noopener">BUG-07</a>).</td></tr>
     <tr><td><code>falling back to plain Jest, one file at a time</code></td><td>Tests still run, but more slowly and without coverage or smart reruns for those files.</td></tr>
     <tr><td><code>&lt;file&gt; failed to run — …</code></td><td>The test file could not execute (syntax error, missing module, setup crash).</td></tr>
     <tr><td><code>could not instrument &lt;file&gt;</code></td><td>That source file runs without coverage. Set the level to Debug to see the parse error.</td></tr>
     <tr><td><code>falling back to "npx jest"</code></td><td>No local Jest found. Run <code>npm install</code> or set <code>jestCommand</code>.</td></tr>
-    <tr><td><code>no file has finished in 60s — … currently on X</code></td><td>A batch made no progress. If the next warning names a <i>different</i> file, tests are just slow. If it names the <i>same</i> file, a test there is probably hanging (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-23">BUG-23</a>).</td></tr>
+    <tr><td><code>no file has finished in 60s — … currently on X</code></td><td>A batch made no progress. If the next warning names a <i>different</i> file, tests are just slow. If it names the <i>same</i> file, a test there is probably hanging (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-23" target="_blank" rel="noopener">BUG-23</a>).</td></tr>
     <tr><td><code>… was still running in b3 — cancelling b3</code></td><td>A save reran a file that a bigger batch was running. That batch's unfinished files are retried, more slowly.</td></tr>
-    <tr><td><code>Trace finished … captured 0 steps</code></td><td>The timeline matched no test, or the transform didn't apply (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-12">BUG-12</a>).</td></tr>
+    <tr><td><code>Trace finished … captured 0 steps</code></td><td>The timeline matched no test, or the transform didn't apply (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-12" target="_blank" rel="noopener">BUG-12</a>).</td></tr>
   </table></div>
 
   <h3>Reporting a bug</h3>
@@ -387,7 +388,7 @@
     <tr><td>Logs / console output</td><td>✅ per file</td><td>✅ per file</td><td>✅ per test</td></tr>
     <tr><td>Coverage (gutter, hover)</td><td>✅</td><td>✅</td><td>✅ needs <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>)</td></tr>
     <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td></tr>
-    <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>⏳ 3.0.x</td></tr>
+    <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ whole test files (<code>vitest related</code>)</td></tr>
     <tr><td>Monorepo / multi-project</td><td>🟡</td><td>—</td><td>🟡 Vitest <code>projects</code>, run from the root</td></tr>
     <tr><td>Mixed frameworks in one project</td><td>—</td><td>—</td><td>⏳ 3.2</td></tr>
     <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>⏳ 3.3</td></tr>
@@ -442,16 +443,16 @@
     <li><b>One source of truth</b>: <code>ResultStore</code> for results, trace files on disk for trace indexes.</li>
     <li><b>Isolation</b>: each VS Code window gets its own <code>session-&lt;pid&gt;-&lt;ts&gt;</code> temp folder.</li>
   </ul>
-  <p class="muted">More detail: <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/architecture.md">architecture.md</a> · <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/developer-guide.md">developer-guide.md</a></p>
+  <p class="muted">More detail: <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/architecture.md" target="_blank" rel="noopener">architecture.md</a> · <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/developer-guide.md" target="_blank" rel="noopener">developer-guide.md</a></p>
 </section>
 
 <!-- ───────────────────────── Known issues ───────────────────────── -->
 <section id="known-issues">
   <h2>Known issues</h2>
-  <p>All known bugs, with root-cause analysis and suggested fixes, are tracked in <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md"><b>bugs-and-issues.md</b></a>. The open ones:</p>
+  <p>All known bugs, with root-cause analysis and suggested fixes, are tracked in <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md" target="_blank" rel="noopener"><b>bugs-and-issues.md</b></a>. The open ones:</p>
   <ul>
-    <li>In the Jest monorepo, jest-runtime's own tests fail under the session run though they pass with plain Jest (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-43">BUG-43</a>).</li>
-    <li>Tests that write files into the project can race with batches running at the same time; the batch is retried file by file, so results are right but slower (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-44">BUG-44</a>).</li>
+    <li>In the Jest monorepo, jest-runtime's own tests fail under the session run though they pass with plain Jest (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-43" target="_blank" rel="noopener">BUG-43</a>).</li>
+    <li>Tests that write files into the project can race with batches running at the same time; the batch is retried file by file, so results are right but slower (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-44" target="_blank" rel="noopener">BUG-44</a>).</li>
   </ul>
 </section>
 

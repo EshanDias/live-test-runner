@@ -2,6 +2,7 @@
  * The Vitest {@link FrameworkServices} bundle. The only place outside the
  * Vitest classes themselves that builds them.
  */
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { CommandRunner, FRAMEWORK_IDS, VitestAdapter as VitestRunnerAdapter } from '@live-test-runner/runner';
 import { FrameworkServices } from './FrameworkServices';
@@ -52,6 +53,12 @@ export function createVitestServices(options: {
     settingsFingerprint: () => {
       const cfg = vscode.workspace.getConfiguration('liveTestRunner');
       return `vitest|${cfg.get<string>('vitestCommand') ?? ''}|${cfg.get<boolean>('vitestIncludeBrowserProjects') ? 'browser' : ''}`;
+    },
+    // vitest.config.* / vite.config.* / vitest.workspace.* in the root, or the config the test script names.
+    isConfigFile: async (filePath, projectRoot) => {
+      if (path.dirname(filePath) === projectRoot && /^vite(st)?\.(config|workspace)\.[cm]?[jt]s$/.test(path.basename(filePath))) { return true; }
+      const config = await projectConfig.get(projectRoot).catch(() => undefined);
+      return !!config && path.resolve(projectRoot, config) === filePath;
     },
   };
 }

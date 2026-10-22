@@ -33,6 +33,11 @@ export interface BatchRunOptions {
   log?: (msg: string) => void;
 }
 
+/** A run of the tests that depend on changed source files — the framework finds them (e.g. `vitest related`). */
+export interface RelatedRunOptions extends Omit<BatchRunOptions, 'filePaths'> {
+  sourceFiles: string[];
+}
+
 export interface IBatchRunner {
   /**
    * Run a batch. Calls applyFileResult / onFileDone per file as results
@@ -40,6 +45,14 @@ export interface IBatchRunner {
    * mid-batch). Result paths are always the caller's own keys (`filePaths`).
    */
   runFiles(options: BatchRunOptions): Promise<{ missing: string[] }>;
+
+  /**
+   * Optional: run the tests related to `sourceFiles` in one process, streamed
+   * like runFiles (onFileStart before a file's result; coverage measured).
+   * Returns the test files that ran and those that started without a result.
+   * Without it, SessionManager uses the adapter's plain related run.
+   */
+  runRelated?(options: RelatedRunOptions): Promise<{ ran: string[]; missing: string[] }>;
 
   /** Stop every running batch; results from batches started before this are dropped. Final until reset(). */
   kill(): void;

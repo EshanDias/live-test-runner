@@ -21,6 +21,10 @@
  * per-batch folder of the session dir, mapped into the CoverageStore when
  * the batch ends. Off when the provider package is not installed (the
  * runner says so once). No execution trace (phase 9).
+ *
+ * runRelated: `vitest related <src> --run` through the same live path — the
+ * test files are only known when Vitest starts them, so each is claimed on
+ * its `file-start`.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -35,7 +39,7 @@ import {
   liveFileResult,
   tail,
 } from '@live-test-runner/runner';
-import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
+import { BatchRunOptions, IBatchRunner, RelatedRunOptions } from './IBatchRunner';
 import { runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { applyIstanbulCoverage } from '../coverage/istanbulCoverage';
@@ -82,8 +86,29 @@ export class VitestBatchRunner implements IBatchRunner {
   }
 
   async runFiles(options: BatchRunOptions): Promise<{ missing: string[] }> {
-    const { filePaths, projectRoot, applyFileResult, onFileDone } = options;
-    if (filePaths.length === 0 || this._killed) { return { missing: [] }; }
+    if (options.filePaths.length === 0 || this._killed) { return { missing: [] }; }
+    return this._run(options);
+  }
+
+  async runRelated(options: RelatedRunOptions): Promise<{ ran: string[]; missing: string[] }> {
+    if (options.sourceFiles.length === 0 || this._killed) { return { ran: [], missing: [] }; }
+    const ran: string[] = [];
+    let missing: string[] = [];
+    // One process per source file: `vitest related` takes several, but a single file keeps the log readable and is the common case.
+    for (const src of options.sourceFiles) {
+      if (this._killed) { break; }
+      const r = await this._run({ ...options, filePaths: [] }, src);
+      ran.push(...r.ran);
+      missing = [...missing, ...r.missing];
+    }
+    return { ran: [...new Set(ran)], missing: [...new Set(missing)] };
+  }
+
+  /** A batch of `filePaths`, or (with `related`) of whatever test files depend on that source file. */
+  private async _run(options: BatchRunOptions, related?: string): Promise<{ ran: string[]; missing: string[] }> {
+    const { projectRoot, applyFileResult, onFileDone } = options;
+    /** The batch's files: given up front, or claimed as Vitest starts them (related). */
+    const filePaths = [...options.filePaths];
     const batch = `v${++VitestBatchRunner._batchSeq}`;
     const generation = this._generation;
     const startedAt = Date.now();
@@ -96,22 +121,29 @@ export class VitestBatchRunner implements IBatchRunner {
       this._owner.set(fp, batch);
     }
     const owns = (fp: string) => this._owner.get(fp) === batch;
+    const claim = (fp: string) => {
+      if (!related || filePaths.includes(fp)) { return; }
+      filePaths.push(fp);
+      this._owner.set(fp, batch);
+    };
     const release = () => { for (const fp of filePaths) { if (owns(fp)) { this._owner.delete(fp); } } };
 
     // Vitest reports real paths — map them back to the caller's keys.
     const keyByNorm = new Map(filePaths.map((fp) => [runnableKey(fp), fp]));
-    const toKey = (p: string) => keyByNorm.get(runnableKey(p)) ?? path.normalize(fromRunnerPath(p));
+    const toKey = (p: string) => keyByNorm.get(runnableKey(p))
+      ?? options.store.findFileKey(fromRunnerPath(p))
+      ?? path.normalize(fromRunnerPath(p));
 
     const runner = this._createRunner(rawLog) as VitestRunner;
     let live: Awaited<ReturnType<VitestRunner['liveCommand']>>;
     try {
       runner.setProjectRoot(projectRoot);
       const coverageDir = this._coverage ? path.join(this._coverage.sessionDir, 'vitest-coverage', batch) : undefined;
-      live = await runner.liveCommand(filePaths, { coverageDir });
+      live = await runner.liveCommand(filePaths, { coverageDir, related });
     } catch (err) {
       log.error(`${batch}: could not build the Vitest command for ${projectRoot}`, err);
       release();
-      return { missing: [] };
+      return { ran: [], missing: [] };
     }
 
     const received = new Set<string>();
@@ -133,6 +165,7 @@ export class VitestBatchRunner implements IBatchRunner {
       try {
         switch (ev.ev) {
           case 'file-start':
+            claim(fp);
             if (owns(fp)) { options.onFileStart?.(fp); }
             break;
           case 'test-start':
@@ -149,6 +182,7 @@ export class VitestBatchRunner implements IBatchRunner {
             break;
           }
           case 'file-end': {
+            claim(fp);
             runningTests.delete(fp);
             const fr = liveFileResult(ev);
             if (!fr) { break; }
@@ -220,7 +254,9 @@ export class VitestBatchRunner implements IBatchRunner {
       );
     }, 2_000);
 
-    log.debug(`${batch}: running ${filePaths.length} file(s) — ${filePaths.map((p) => path.basename(p)).join(', ')}`);
+    log.debug(related
+      ? `${batch}: running the tests related to ${path.basename(related)}`
+      : `${batch}: running ${filePaths.length} file(s) — ${filePaths.map((p) => path.basename(p)).join(', ')}`);
     this._running.add(executor);
     let stderr = '';
     try {
@@ -253,14 +289,17 @@ export class VitestBatchRunner implements IBatchRunner {
       }
     } else if (stalled) {
       log.debug(`${batch}: stopped after ${seconds(startedAt)} — no progress`);
+    } else if (received.size === 0 && related) {
+      log.debug(`${batch}: no test depends on ${path.basename(related)} (${seconds(startedAt)})`);
     } else if (received.size === 0) {
       log.warn(`${batch}: Vitest returned no results for ${filePaths.length} file(s). Vitest said:\n${tail(stderr)}`);
     } else {
       log.debug(`${batch}: done in ${seconds(startedAt)} — ${received.size}/${filePaths.length} file(s) reported`);
     }
     const missing = stopped ? [] : filePaths.filter((fp) => owns(fp) && !received.has(fp));
+    const ran = filePaths.filter((fp) => received.has(fp));
     release();
-    return { missing };
+    return { ran, missing };
   }
 
   private _applyCoverage(coverageFile: string, projectRoot: string, batch: string, scope: CoverageScope): void {
