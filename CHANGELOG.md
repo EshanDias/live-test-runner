@@ -66,6 +66,7 @@ All notable changes to Live Test Runner are documented here.
 ### CI
 
 - Workflows use `pnpm/setup@v3` (pnpm from `packageManager`, Node 24, pnpm store cache and install in one step) instead of `pnpm/action-setup` + `actions/setup-node`. The release job keeps the install conditional (`install: false`).
+- GitHub Actions on their current majors (all Node 24): `actions/checkout` v5 → v7, `actions/cache` v4 → v6, `actions/upload-artifact` v4 → v7, and in the Pages workflow `configure-pages` v5 → v6, `upload-pages-artifact` v3 → v5, `deploy-pages` v4 → v5 (+ `actions: read` permission; the `.nojekyll` marker is dropped — `upload-pages-artifact` ≥ 4 leaves dotfiles out, and an Actions-deployed site is not built with Jekyll anyway). No workflow uses `pull_request_target`, so checkout v7's fork-PR block does not apply.
 
 ---
 
