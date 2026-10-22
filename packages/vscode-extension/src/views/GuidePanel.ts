@@ -12,7 +12,7 @@ import { logger } from '../utils/logger';
 const log = logger.scope('Guide');
 
 /** The guide published with GitHub Pages. */
-export const GUIDE_URL = 'https://eshandias.github.io/live-test-runner/';
+export const GUIDE_URL = 'https://eshandias.github.io/live-test-runner/guide/';
 
 let panel: vscode.WebviewPanel | undefined;
 

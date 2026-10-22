@@ -318,7 +318,8 @@ When making changes, update the relevant documentation files:
 - [docs/developer-guide.md](docs/developer-guide.md) — Dev setup, core patterns, adding frameworks, publishing
 - [docs/ai-context.md](docs/ai-context.md) — Complete AI context for full codebase understanding
 - [docs/bugs-and-issues.md](docs/bugs-and-issues.md) — Known bugs with root-cause analysis and suggested fixes
-- [docs/live-test-runner-guide.html](docs/live-test-runner-guide.html) — User & contributor guide (open in a browser)
+- [docs/live-test-runner-guide.html](docs/live-test-runner-guide.html) — User & contributor guide (open in a browser; published at `/guide/`)
+- [site/index.html](site/index.html) — Marketing landing page + `sitemap.xml` (GitHub Pages, see developer guide → Website)
 - [packages/core/README.md](packages/core/README.md) — Core API and design
 - [packages/runner/README.md](packages/runner/README.md) — Runner API, layers, CRA behavior
 - [packages/vscode-extension/README.md](packages/vscode-extension/README.md) — User guide and features (marketplace-facing)
