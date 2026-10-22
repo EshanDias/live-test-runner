@@ -196,6 +196,37 @@
           "default": "",
           "description": "Override the Vitest command for Vitest projects (e.g. 'npx vitest'). Leave empty to run the project's own Vitest install. Live Test Runner adds its own subcommand and flags (run, --reporter=json, …) after it."
         },
+        "liveTestRunner.frameworks": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "jest",
+                  "vitest"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "framework": {
+                    "type": "string",
+                    "enum": [
+                      "jest",
+                      "vitest"
+                    ]
+                  }
+                },
+                "required": [
+                  "framework"
+                ]
+              }
+            ]
+          },
+          "markdownDescription": "Projects that use **both Jest and Vitest**: which framework runs which test files. Keys are globs relative to the workspace folder (a glob without `/` matches the file name anywhere), values `\"jest\"` or `\"vitest\"`; the first matching glob wins. Example: `{ \"packages/new/**\": \"vitest\", \"**/*.jest.js\": \"jest\" }`. Without it, a project with a Jest config and its own `vitest.config.*` runs each file with the framework whose config lists it; a file both list runs with Vitest when it imports from `vitest` or calls `vi.`, with Jest when it imports `@jest/globals` or calls `jest.`, otherwise with the project's main framework (Jest)."
+        },
         "liveTestRunner.vitestIncludeBrowserProjects": {
           "type": "boolean",
           "default": false,

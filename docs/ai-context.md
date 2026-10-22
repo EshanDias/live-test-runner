@@ -118,7 +118,7 @@ src/
 ├── extension.ts                    Entry point — wires views + ProjectRegistry, registers commands
 ├── project/                        Monorepos & multi-root workspaces (phase 7)
 │   ├── ProjectRegistry.ts          Detects the projects (runner findTestProjects / projectRoot setting), owns one ProjectContext each, the selected one, status bar text, start limit
-│   ├── ProjectContext.ts           Per project: ResultStore / ExecutionTraceStore / CoverageStore, TestDiscoveryService + DiscoveryCache, DetectingFrameworkProvider, SessionManager, session dir; ProjectObserverGate (forwards events only while selected)
+│   ├── ProjectContext.ts           Per project: ResultStore / ExecutionTraceStore / CoverageStore, TestDiscoveryService + DiscoveryCache, FrameworkRouter, SessionManager, session dir; ProjectObserverGate (forwards events only while selected)
 │   └── projectLimits.ts            maxRunningProjects: auto (2, or 1 with ≤ 4 cores / < 8 GB total memory) and the refusal message (pure)
 ├── IResultObserver.ts              Interface: onSessionStart/Stop, onRunStart, onFileResult,
 │                                   onDiscoveryStarted/Progress/Complete (optional)
@@ -154,7 +154,8 @@ src/
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
 │   │                               getAffectedTests, getDebugConfig
-│   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all) + SingleFrameworkProvider + DetectingFrameworkProvider (Vitest or Jest per root)
+│   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all / prepare / listTestFiles / restore / fileChanged / fingerprint / isMixed) + SingleFrameworkProvider
+│   ├── FrameworkRouter.ts          Per project: one bundle, or Jest + Vitest in a mixed project — places each test file (setting → configs' lists → imports / calls → main framework + WARN)
 │   ├── jestServices.ts             createJestServices(): the Jest bundle (adapter, JestProjectConfig, JestBatchRunner, JestInstrumentedRunner, session runner)
 │   ├── vitestServices.ts           createVitestServices(): adapter, VitestProjectConfig, VitestBatchRunner, no instrumented runner
 │   ├── RunnerBackedAdapter.ts      Shared IFrameworkAdapter half: file / test-case / related runs, FileRunResult → ResultStore
@@ -207,7 +208,7 @@ src/
 
 ## Session lifecycle
 
-**Projects (phase 7):** on activate `ProjectRegistry.refresh()` detects the test projects (one per workspace folder with its own test config; one per workspace package with tests under a monorepo root without one; the `liveTestRunner.projectRoot` setting pins one root) and builds a `ProjectContext` each — none is started (D11). The first (or remembered / active-editor) project is selected; the views show it, Start / Stop act on it, and only its discovery runs now (the others on first selection or Start). Everything below happens **per project**. Several projects may run at once, up to `liveTestRunner.maxRunningProjects`; a background project keeps running and rerunning on save, its events held back from the Explorer / Results by its `ProjectObserverGate` until it is selected again. Editor features (gutter, inline durations, CodeLens, coverage bars, hover) always resolve each file to its own project (`editor/FileStores.ts`) and get every project's events (`editorObservers`).
+**Projects (phase 7):** on activate `ProjectRegistry.refresh()` detects the test projects (one per workspace folder with its own test config; one per workspace package with tests under a monorepo root without one; the `liveTestRunner.projectRoot` setting pins one root) and builds a `ProjectContext` each — none is started (D11). The first (or remembered / active-editor) project is selected; the views show it, Start / Stop act on it, and only its discovery runs now (the others on first selection or Start). Everything below happens **per project**. Several projects may run at once, up to `liveTestRunner.maxRunningProjects`; a background project keeps running and rerunning on save, its events held back from the Explorer / Results by its `ProjectObserverGate` until it is selected again. **Mixed projects (phase 8):** a project with a Jest config and its own `vitest.config.*` lists with both frameworks at Start and its `FrameworkRouter` places each test file with one of them; batches, plain runs, ▶ Run / ▷ Debug and on-save reruns use the file's framework, and a source-file save reruns both frameworks' dependents. Editor features (gutter, inline durations, CodeLens, coverage bars, hover) always resolve each file to its own project (`editor/FileStores.ts`) and get every project's events (`editorObservers`).
 
 **On extension activate (before any user action):**
 1. `DiscoveryCache` loaded from `globalStorageUri/cache/<folderName>-<hash8>/discovery-cache.json` (if exists). A `session.lock` PID file is written.
@@ -535,6 +536,7 @@ All in `packages/vscode-extension/package.json`:
 |---------|---------|-------------|
 | `liveTestRunner.projectRoot` | `""` | Pin the window to one project root; empty = detect every test project |
 | `liveTestRunner.maxRunningProjects` | `"auto"` | Projects running at once: `auto` = 2, or 1 with ≤ 4 CPU cores or < 8 GB total memory; or a number ≥ 1 |
+| `liveTestRunner.frameworks` | `{}` | Jest + Vitest projects: glob (relative to the workspace folder) → `"jest"` / `"vitest"`; first match wins; also makes a Jest project mixed when it sends a file to Vitest |
 | `liveTestRunner.runMode` | `"auto"` | `"auto"`: extension calls Jest directly (full structured output). `"npm"`: delegates to `npm test --` from your package.json scripts (limited structured output — see below). |
 | `liveTestRunner.jestCommand` | `""` | Override Jest binary/command. Only used when `runMode` is `"auto"`. |
 | `liveTestRunner.onSaveDebounceMs` | `300` | Debounce delay (ms) |
@@ -554,6 +556,7 @@ All in `packages/vscode-extension/package.json`:
 | Jest | Fully supported |
 | Create React App | Fully supported (via `--showConfig` + direct Jest invocation) |
 | Vitest | Supported since 3.0.0 (Vitest 3+; 1–2 results only) — run, pass/fail, per-test output, failures, live progress, coverage, related tests on save. Not yet: execution trace / "covering tests" (3.3), Timeline. See `docs/framework-features.md` |
+| Jest + Vitest in one project | Unreleased (phase 8) — a Jest root with its own `vitest.config.*` (or a `liveTestRunner.frameworks` rule) runs each test file with its own framework; `FrameworkRouter` |
 
 ---
 
@@ -563,6 +566,7 @@ All in `packages/vscode-extension/package.json`:
 |---------|------|
 | Wire everything | `packages/vscode-extension/src/extension.ts` |
 | Projects of the workspace (detection rules) | `packages/runner/src/framework/projectDiscovery.ts` |
+| Which framework runs a test file (mixed projects) | `packages/runner/src/framework/frameworkRouting.ts` (rules), `packages/vscode-extension/src/framework/FrameworkRouter.ts` |
 | Per-project state, selected project, gate | `packages/vscode-extension/src/project/ProjectRegistry.ts`, `ProjectContext.ts` |
 | Timeline contracts | `packages/vscode-extension/src/timeline/IInstrumentedRunner.ts` |
 | Timeline data model | `packages/vscode-extension/src/timeline/TimelineStore.ts` |

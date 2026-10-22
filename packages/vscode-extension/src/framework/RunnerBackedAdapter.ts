@@ -159,6 +159,7 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
     sourceFilePath: string,
     projectRoot: string,
     rawLog: (msg: string) => void,
+    accept?: (testFilePath: string) => boolean,
   ): Promise<string[]> {
     const runner = this._createRunner(projectRoot, rawLog);
     let jsonResult: Awaited<ReturnType<typeof runner.runRelatedTestsJson>>;
@@ -173,6 +174,8 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
       // Jest reports its own spelling of the path (e.g. C:\ vs c:\) — use the
       // store's key, or the result would create a duplicate file entry.
       const fileId = store.findFileKey(fileResult.testFilePath) ?? fileResult.testFilePath;
+      // Mixed project: a file of the other framework this one also lists keeps its own results.
+      if (accept && !accept(fileId)) { continue; }
       try {
         store.markFileRunning(fileId);
         this._applyFileResult(store, fileId, fileResult);

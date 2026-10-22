@@ -103,6 +103,20 @@ Hover any line to see which tests cover it, their pass/fail status, and duration
 
 ---
 
+### Jest and Vitest in one project
+
+Migrating from Jest to Vitest? A project with a Jest config **and** its own `vitest.config.*` runs **each test file with its own framework**:
+
+- Only one config lists the file → that framework.
+- Both list it → Vitest if it imports from `vitest` or calls `vi.`, Jest if it imports `@jest/globals` or calls `jest.`; otherwise Jest, with one warning in the log.
+- Override with `liveTestRunner.frameworks`, e.g. `{ "packages/new/**": "vitest" }`.
+
+The tree groups files by framework, saves rerun both frameworks' related tests, and coverage merges both.
+
+<!-- [TODO: USER_INPUT_NEEDED] screenshot: Explorer of a mixed Jest + Vitest project grouped by framework, status bar showing "Jest 5 · Vitest 3" -->
+
+---
+
 ### Results panel
 
 3-column view: test tree with search · console output tabbed by level · failure messages and stack traces.
@@ -162,6 +176,7 @@ All settings under `liveTestRunner.*`.
 | `runMode` | `"auto"` | `"auto"` calls Jest directly; `"npm"` delegates to `npm test` (Jest only) |
 | `jestCommand` | `""` | Override Jest binary path |
 | `vitestCommand` | `""` | Override the Vitest command (e.g. `npx vitest`); empty = the project's own Vitest |
+| `frameworks` | `{}` | Jest + Vitest projects: glob → `"jest"` / `"vitest"` for those test files |
 | `vitestIncludeBrowserProjects` | `false` | Also run Vitest browser-mode projects (need Playwright / WebdriverIO browsers) |
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
@@ -189,14 +204,14 @@ All settings under `liveTestRunner.*`.
 | Live per-file progress | ✅ | ✅ | ✅ |
 | Rerun tests related to a saved source file | ✅ | ✅ | ✅ whole test files (`vitest related`) |
 | Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name |
-| Mixed frameworks in one project | — | — | ⏳ 3.2 |
+| Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ |
 | Execution trace / "covering tests" | ✅ | ✅ | ⏳ 3.3 |
 | Timeline debugger | ⏳ | ⏳ | ⏳ later |
 <!-- matrix:end -->
 
 <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — the test tree fills in, results and gutter icons appear, ▶ Run on one test -->
 
-Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projects that list Vitest but configure Jest (e.g. libraries testing with both) run on Jest.
+Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projects that list Vitest but configure only Jest run on Jest; with a `vitest.config.*` of their own they run each file with its framework (see [Jest and Vitest in one project](#jest-and-vitest-in-one-project)).
 
 ---
 

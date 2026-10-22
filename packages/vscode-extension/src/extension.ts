@@ -189,7 +189,8 @@ export function activate(context: vscode.ExtensionContext) {
     run: (options) => {
       const ctx = projects.forFile(options.filePath) ?? projects.contexts.find((c) => c.root === options.projectRoot) ?? sel();
       if (!ctx) { return Promise.reject(new Error('No test project for this file.')); }
-      const services = ctx.services.servicesFor(options.projectRoot);
+      // The test file's own framework (a mixed project has two).
+      const services = ctx.services.servicesFor(options.filePath);
       if (!services.instrumentedRunner) {
         return Promise.reject(new Error(`The Timeline debugger is not available for ${services.displayName} yet.`));
       }
@@ -453,7 +454,7 @@ export function activate(context: vscode.ExtensionContext) {
         summary:          currentStore().getSummary(),
         logLevel:         logger.level,
         recentLogLines:   logger.recentLines(),
-        projects:         projects.contexts.map((c) => `${c.name} · ${c.framework} · ${c.runState} · ${c.root}`),
+        projects:         projects.contexts.map((c) => `${c.name} · ${c.frameworkLabel} · ${c.runState} · ${c.root}`),
       });
       await vscode.env.clipboard.writeText(report);
       const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: report });

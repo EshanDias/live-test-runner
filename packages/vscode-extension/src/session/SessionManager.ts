@@ -8,7 +8,7 @@ import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver } from '../IResultObserver';
 import { IFrameworkAdapter } from '../framework/IFrameworkAdapter';
-import { FrameworkTerms, IFrameworkServicesProvider } from '../framework/FrameworkServices';
+import { FrameworkServices, FrameworkTerms, IFrameworkServicesProvider } from '../framework/FrameworkServices';
 import { PLAIN_RUN_HANG_FACTOR } from '../constants';
 import { DecorationManager } from '../editor/DecorationManager';
 import { ResultsView } from '../views/ResultsView';
@@ -101,6 +101,8 @@ export class SessionManager {
 
   /** The framework's file groups (Vitest project names) from the last runnable-files answer. */
   private _groups: Record<string, string> | undefined;
+  /** Mixed projects: each listed file's framework (remembered with the list). */
+  private _frameworks: Record<string, string> | undefined;
 
   constructor(
     /** The project this manager runs (one SessionManager per project, phase 7). */
@@ -157,7 +159,9 @@ export class SessionManager {
 
     vscode.commands.executeCommand('liveTestRunner.results.focus');
 
-    // Bootstrap a session with the framework's runner to hold the coverage map
+    // Which framework(s) the project runs, re-read every Start (phase 8: a mixed project has two).
+    this._services.prepare(projectRoot);
+    // Bootstrap a session with the main framework's runner to hold the coverage map
     const services = this._services.servicesFor(projectRoot);
     this._session = new TestSession(services.createSessionRunner());
 
@@ -186,6 +190,11 @@ export class SessionManager {
       void services.projectConfig.get(projectRoot);
       const runnableList = await this._runnableFiles(projectRoot, discovered);
       if (token !== this._token) { return; }
+      // A mixed project's second framework: its config is re-read too.
+      for (const s of this._services.all()) {
+        if (s !== services) { s.projectConfig.reset(); void s.projectConfig.get(projectRoot); }
+      }
+      if (this._services.isMixed()) { framework = `${framework} + ${services.framework === 'vitest' ? 'jest' : 'vitest'}`; }
       this._runnable = toRunnableSet(runnableList);
       if (runnableList) {
         // Files Jest runs that the glob patterns missed (custom testMatch / testRegex).
@@ -438,13 +447,16 @@ export class SessionManager {
         return;
       }
 
-      // The framework's config changed: which files run, and how, may differ — start over.
-      if (await this._services.servicesFor(projectRoot).isConfigFile(filePath, projectRoot)) {
+      // A framework's config changed: which files run, and how, may differ — start over.
+      const changedConfig = await this._configFileOf(filePath, projectRoot);
+      if (changedConfig) {
         if (token !== this._token) { return; }
-        log.info(`Saved ${path.basename(filePath)} — the ${this._terms(projectRoot).config} changed, restarting the session (every test reruns)`);
+        log.info(`Saved ${path.basename(filePath)} — the ${changedConfig.terms.config} changed, restarting the session (every test reruns)`);
         await this.start();
         return;
       }
+      // Mixed project: what the file uses (vitest / @jest/globals imports) may have changed.
+      this._services.fileChanged(filePath);
 
       // Jest's own list also knows tests named by a custom testRegex/testMatch.
       const isTestFile = this._adapterFor(filePath).isTestFile(filePath) || !!this._runnable?.has(runnableKey(filePath));
@@ -455,7 +467,7 @@ export class SessionManager {
         log.debug(`Saved ${path.basename(filePath)} — not in ${name}'s file list yet, asking ${name} again`);
         const files = this._store.getAllFiles().map((f) => f.filePath);
         if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
-        this._runnable = toRunnableSet(await this._askForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings(projectRoot))));
+        this._runnable = toRunnableSet(await this._askForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings(projectRoot)), files));
         if (token !== this._token) { return; }
         if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
       }
@@ -547,26 +559,50 @@ export class SessionManager {
     projectRoot: string,
     token: number,
   ): Promise<string[]> {
+    if (!this._services.isMixed()) {
+      return this._runAffectedWith(this._services.servicesFor(projectRoot), sourceFilePath, projectRoot, token);
+    }
+    // Mixed project: each framework reruns its own test files that depend on
+    // the source file (Jest by its trace, Vitest with `vitest related`).
+    const bundles = this._services.all();
+    const ran = await Promise.all(bundles.map((s) =>
+      this._runAffectedWith(s, sourceFilePath, projectRoot, token, (fp) => this._services.servicesFor(fp) === s)));
+    return [...new Set(ran.flat())];
+  }
+
+  /**
+   * {@link _runAffectedBySourceFile} for one framework. `owns` (mixed
+   * projects) keeps the run to that framework's test files: results for
+   * others — a related run may start them too — are ignored.
+   */
+  private async _runAffectedWith(
+    services: FrameworkServices,
+    sourceFilePath: string,
+    projectRoot: string,
+    token: number,
+    owns?: (filePath: string) => boolean,
+  ): Promise<string[]> {
     const affectedTestFiles = this._traceStore
       .getAffectedTestFiles(sourceFilePath)
-      .filter((fp) => this._isRunnable(fp));
+      .filter((fp) => this._isRunnable(fp) && (!owns || owns(fp)));
 
     if (affectedTestFiles.length === 0) {
       // No trace data — use jest --findRelatedTests as fallback. This runs Jest's
       // own static import-graph analysis: it finds test files that (transitively)
       // import the changed source file and reruns them whole. Less precise than
       // trace (whole file, not individual test cases) but correct as a safety net.
-      log.debug(`No trace data for ${path.basename(sourceFilePath)} — using ${this._terms(sourceFilePath).relatedCommand}`);
-      const batchRunner = this._services.servicesFor(projectRoot).batchRunner;
+      log.debug(`No trace data for ${path.basename(sourceFilePath)} — using ${services.terms.relatedCommand}`);
+      const batchRunner = services.batchRunner;
       if (batchRunner.runRelated) {
-        return this._runRelatedBatch(batchRunner.runRelated.bind(batchRunner), sourceFilePath, projectRoot, token);
+        return this._runRelatedBatch(batchRunner.runRelated.bind(batchRunner), sourceFilePath, projectRoot, token, owns);
       }
       this._addPlanned(1);
-      const affectedPaths = await this._adapterFor(sourceFilePath).runRelatedTests(
+      const affectedPaths = await services.adapter.runRelatedTests(
         this._store,
         sourceFilePath,
         projectRoot,
         (msg) => this._outputChannel.appendLine(msg),
+        owns,
       );
       this._fileFinished('passed');
       if (token !== this._token) { return affectedPaths; }
@@ -646,8 +682,10 @@ export class SessionManager {
     sourceFilePath: string,
     projectRoot: string,
     token: number,
+    owns?: (filePath: string) => boolean,
   ): Promise<string[]> {
     const live = () => token === this._token;
+    const mine = (fp: string) => !owns || owns(fp);
     const rawLog = (msg: string) => this._outputChannel.appendLine(msg);
     const hangTimeoutMs = 1000 * (vscode.workspace.getConfiguration('liveTestRunner').get<number>('hangTimeoutSeconds') ?? 300);
     const planned = new Set<string>();
@@ -658,12 +696,14 @@ export class SessionManager {
       this._addPlanned(1);
     };
     const markRunning = (fp: string) => {
+      if (!mine(fp)) { return; }
       plan(fp);
       if (this._store.getFile(fp)?.status === 'running') { return; }
       this._store.markFileRunning(fp);
       this._notify('onFilesRerunning', [fp]);
     };
     const onFileDone = (fp: string, status: 'passed' | 'failed') => {
+      if (!mine(fp)) { return; }
       plan(fp);
       this._fileFinished(status);
       this._notify('onFileResult', fp);
@@ -677,12 +717,14 @@ export class SessionManager {
         traceStore: this._traceStore,
         store: this._store,
         applyFileResult: (fp, fr) => {
+          if (!mine(fp)) { return; }
           if (this._store.getFile(fp)?.status !== 'running') { this._store.markFileRunning(fp); }
           this._adapterFor(fp).applyFileResult(this._store, fp, fr);
         },
         onFileDone,
         onFileStart: markRunning,
         onFileTimedOut: (fp, seconds) => {
+          if (!mine(fp)) { return; }
           this._store.failFile(fp, hangMessage(seconds));
           onFileDone(fp, 'failed');
         },
@@ -693,14 +735,15 @@ export class SessionManager {
       log.error(`Running the tests related to ${path.basename(sourceFilePath)} failed`, err);
       return [];
     }
-    if (!live()) { return r.ran; }
+    const ran = r.ran.filter(mine);
+    if (!live()) { return ran; }
     // Started but no result (crash, stalled batch): the normal batch path retries them. Their planned count moves there.
-    const missing = r.missing.filter((fp) => this._isRunnable(fp) || this._store.getFile(fp));
+    const missing = r.missing.filter((fp) => mine(fp) && (this._isRunnable(fp) || this._store.getFile(fp)));
     if (missing.length > 0) {
       this._progress.total -= missing.length;
       await this._runFiles(missing, projectRoot, token);
     }
-    return [...new Set([...r.ran, ...missing])];
+    return [...new Set([...ran, ...missing])];
   }
 
   // ── Private: run test cases (parallel, one Jest invocation per file) ────────
@@ -918,7 +961,8 @@ export class SessionManager {
       if (batch.length === 1) { markRunning(batch[0]); }
       let missing: string[];
       try {
-        const r = await this._services.servicesFor(projectRoot).batchRunner.runFiles({
+        // Batches never mix frameworks (see the queue below): the first file's is the batch's.
+        const r = await this._services.servicesFor(batch[0]).batchRunner.runFiles({
           filePaths: batch,
           projectRoot,
           traceStore: this._traceStore,
@@ -958,7 +1002,7 @@ export class SessionManager {
       // the same CONCURRENCY limit used by the main queue — do NOT run all
       // files in parallel, which would flood the machine with jest processes.
       if (missing.length === batch.length) {
-        const terms = this._terms(projectRoot);
+        const terms = this._terms(batch[0]);
         log.warn(
           `No results from the ${terms.batchRun} for ${batch.length} file(s) — falling back to ${terms.plainRun}, one file at a time ` +
           `(${terms.fallbackLoss}). Files: ${shortList(batch)}`,
@@ -979,7 +1023,7 @@ export class SessionManager {
       // Partial miss: some files produced results so remaining ones likely
       // crashed mid-batch. Split and retry with smaller batches.
       if (missing.length === 1) {
-        log.warn(`No result for ${path.basename(missing[0])} — retrying it with ${this._terms(projectRoot).plainRun}`);
+        log.warn(`No result for ${path.basename(missing[0])} — retrying it with ${this._terms(missing[0]).plainRun}`);
         await runPlain(missing[0]);
         return;
       }
@@ -989,10 +1033,19 @@ export class SessionManager {
       await runBatch(missing.slice(half));
     };
 
-    // Build batch queue up-front and drain it with CONCURRENCY workers.
+    // Build batch queue up-front and drain it with CONCURRENCY workers. In a
+    // mixed project each batch holds one framework's files (phase 8).
+    const byFramework = new Map<FrameworkServices, string[]>();
+    for (const fp of filePaths) {
+      const s = this._services.servicesFor(fp);
+      const list = byFramework.get(s);
+      if (list) { list.push(fp); } else { byFramework.set(s, [fp]); }
+    }
     const batchQueue: string[][] = [];
-    for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
-      batchQueue.push(filePaths.slice(i, i + BATCH_SIZE));
+    for (const files of byFramework.values()) {
+      for (let i = 0; i < files.length; i += BATCH_SIZE) {
+        batchQueue.push(files.slice(i, i + BATCH_SIZE));
+      }
     }
     const batchCount = batchQueue.length;
 
@@ -1046,12 +1099,24 @@ export class SessionManager {
       totalDuration,
       sessionActive: this.isActive(),
     });
+    const split = this._services.isMixed() ? this._frameworkSplit() : '';
     this._updateStatusBar(
-      summary.failed > 0
+      (summary.failed > 0
         ? `❌ ${summary.failed} failed, ${summary.passed} passed`
-        : `✅ ${summary.passed} passed`,
+        : `✅ ${summary.passed} passed`) + split,
     );
     this._discovery.pruneGhostFiles();
+  }
+
+  /** Mixed projects: " · Jest 12 · Vitest 8" — tests per framework (files not run excluded). */
+  private _frameworkSplit(): string {
+    const counts = new Map<string, number>();
+    for (const f of this._store.getAllFiles()) {
+      if (f.excluded) { continue; }
+      const name = this._services.servicesFor(f.filePath).displayName;
+      counts.set(name, (counts.get(name) ?? 0) + this._store.getTestNodesForFiles([f.fileId]).length);
+    }
+    return [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([n, c]) => ` · ${n} ${c}`).join('');
   }
 
   private _clearSaveTimers(): void {
@@ -1067,16 +1132,14 @@ export class SessionManager {
    * config excludes (e2e specs, ignored folders, .mjs) — running those only
    * produced "No tests found" and spinners (BUG-24).
    */
-  private async _listRunnableFiles(projectRoot: string): Promise<string[] | undefined> {
+  private async _listRunnableFiles(projectRoot: string, discovered: string[]): Promise<string[] | undefined> {
     const startedAt = Date.now();
     try {
-      const adapter = this._adapterFor(projectRoot);
       const rawLog = (msg: string) => this._outputChannel.appendLine(msg);
-      const listed = adapter.listTestFiles
-        ? await adapter.listTestFiles(projectRoot, rawLog)
-        : { files: await adapter.discoverTests(projectRoot, rawLog), groups: undefined };
+      const listed = await this._services.listTestFiles(projectRoot, discovered, rawLog);
       const files = listed.files;
       this._groups = listed.groups;
+      this._frameworks = listed.frameworks;
       if (files.length === 0) { return undefined; }
       log.debug(`${this._terms(projectRoot).listCommand}: ${files.length} file(s) in ${secondsSince(startedAt)}`);
       return files;
@@ -1098,20 +1161,22 @@ export class SessionManager {
     if (entry) {
       const cached = entry.files;
       this._groups = entry.groups;
+      this._frameworks = entry.frameworks;
+      this._services.restore(entry);
       log.debug(`Runnable test files: ${cached.length} remembered from the last session (no test or config file changed)`);
       // Lists saved by older versions may hold Jest's realpath'd spelling.
       return cached.map(fromRunnerPath);
     }
     this._updateStatusBar(`Asking ${this._services.servicesFor(projectRoot).displayName} which files it runs…`);
-    return this._askForRunnable(projectRoot, key);
+    return this._askForRunnable(projectRoot, key, discovered);
   }
 
-  /** Asks the framework for the runnable files and remembers the answer under `key`. */
-  private async _askForRunnable(projectRoot: string, key: string): Promise<string[] | undefined> {
-    const files = await this._listRunnableFiles(projectRoot);
+  /** Asks the framework(s) for the runnable files and remembers the answer under `key`. */
+  private async _askForRunnable(projectRoot: string, key: string, discovered: string[]): Promise<string[] | undefined> {
+    const files = await this._listRunnableFiles(projectRoot, discovered);
     if (!files) { return undefined; }
     try {
-      this._runnableCache.write(projectRoot, key, files, this._groups);
+      this._runnableCache.write(projectRoot, key, files, this._groups, this._frameworks);
     } catch (err) {
       log.debug(`Could not remember the runnable test files — the next Start asks ${this._terms(projectRoot).name} again (${(err as Error).message})`);
     }
@@ -1120,7 +1185,15 @@ export class SessionManager {
 
   /** Settings that change how the framework is called, and so which files it lists. */
   private _runnerSettings(projectRoot: string): string {
-    return this._services.servicesFor(projectRoot).settingsFingerprint();
+    return this._services.fingerprint(projectRoot);
+  }
+
+  /** The framework whose config file `filePath` is, if any (every framework of the project). */
+  private async _configFileOf(filePath: string, projectRoot: string): Promise<FrameworkServices | undefined> {
+    for (const s of this._services.all()) {
+      if (await s.isConfigFile(filePath, projectRoot)) { return s; }
+    }
+    return undefined;
   }
 
   private _isRunnable(filePath: string): boolean {

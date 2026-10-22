@@ -21,7 +21,7 @@ import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
-import { mergeCounters as _mergeCounters } from '../coverage/coverageRules';
+import { combineWithEntry } from '../coverage/coverageRules';
 import { CoverageScope, coverageScopeOf } from '../coverage/coverageScope';
 import { logger } from '../utils/logger';
 import { IProjectConfig } from './IProjectConfig';
@@ -300,12 +300,18 @@ if (!_resolvedPath && (!_baseConfigLoaded || !baseConfig.testEnvironment)) {
 }
 
 // Our transform / setup file on top of one project's config. Test files are
-// passed explicitly (--runTestsByPath, already filtered by jest --listTests),
-// so testMatch / testRegex are dropped.
+// passed explicitly (--runTestsByPath, already filtered by jest --listTests
+// with this config), and Jest still checks them against the test patterns —
+// so the project's own pattern stays (dropping both made Jest use its default
+// testMatch and skip e.g. *.jest.js). Only one of the two may be set
+// (--showConfig can fill in both); ts-jest reads them too.
 function _overlay(cfg) {
   const c = { ...cfg };
-  delete c.testMatch;
-  delete c.testRegex;
+  const hasRegex = Array.isArray(c.testRegex) ? c.testRegex.length > 0 : !!c.testRegex;
+  const hasMatch = Array.isArray(c.testMatch) && c.testMatch.length > 0;
+  if (hasRegex) { delete c.testMatch; }
+  else if (hasMatch) { delete c.testRegex; }
+  else { delete c.testMatch; delete c.testRegex; }
 
   const baseTransformObj = Array.isArray(c.transform)
     ? Object.fromEntries(c.transform.map(([p, t, o]) => o ? [p, [t, o]] : [p, t]))
@@ -699,12 +705,11 @@ module.exports = _projects
         continue;
       }
 
+      // Merge with counters of the same file version (same manifest); with a
+      // Vitest-measured entry (mixed project) by line.
+      // A stale entry (its source was saved) starts over, as before.
       const existing = this._coverageStore.getEntry(normalizedFilePath);
-      // Merge only with counters of the same file version (same manifest).
-      const merged: LiveCov =
-        existing?.state === 'measured' && existing.manifestPath === manifestPath
-          ? _mergeCounters(existing.counters, counters)
-          : counters;
+      const merged: LiveCov = existing?.state === 'measured-stale' ? counters : combineWithEntry(existing, manifestPath, manifest, counters);
 
       const pct = calcCoverage(manifest, merged);
       this._coverageStore.setMeasuredEntry(normalizedFilePath, { manifestPath, counters: merged, pct });

@@ -86,12 +86,14 @@ export interface IFrameworkAdapter {
    * Use the framework's own static-analysis fallback (e.g. jest --findRelatedTests)
    * to find and run tests related to the changed source file.
    * Called when no trace data exists for the changed file.
+   * @param accept mixed projects: only this framework's test files get results (others are ignored)
    */
   runRelatedTests(
     store: ResultStore,
     sourceFilePath: string,
     projectRoot: string,
     log: (msg: string) => void,
+    accept?: (testFilePath: string) => boolean,
   ): Promise<string[]>;
 
   /**

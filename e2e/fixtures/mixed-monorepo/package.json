@@ -1,0 +1,9 @@
+{
+  "name": "ltr-fixture-mixed-monorepo",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "devDependencies": {
+    "jest": "29.7.0",
+    "vitest": "3.2.4"
+  }
+}

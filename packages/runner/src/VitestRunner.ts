@@ -4,6 +4,8 @@ import { ExecutionResult, ExecutorCommand, tail } from './execution/Executor';
 import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { refusingAdapter } from './framework/refusingAdapter';
+import { FrameworkRegistry } from './framework/FrameworkRegistry';
+import { isFrameworkAllowedAt } from './framework/allowedFrameworks';
 import type { VitestAdapter } from './framework/adapters/VitestAdapter';
 import { VitestConfigInfo, vitestConfigInfo, vitestCoverageInstalled, vitestProjects } from './framework/vitestProjects';
 import { VITEST_EVENTS_ENV, applyVitestEvents, readVitestEvents, vitestReporterFile } from './framework/vitestReporter';
@@ -167,6 +169,13 @@ export class VitestRunner extends CommandRunner {
   protected detectAdapter(projectRoot: string): FrameworkAdapter {
     const adapter = this.detector.detect(projectRoot);
     if (adapter.framework === FRAMEWORK_IDS.vitest) { return adapter; }
+    if (isFrameworkAllowedAt(projectRoot, 'vitest')) {
+      const vitest = FrameworkRegistry.default().get(FRAMEWORK_IDS.vitest);
+      if (vitest) {
+        log.debug(`${projectRoot} is a "${adapter.framework}" project — running its Vitest files with Vitest (mixed frameworks)`);
+        return vitest;
+      }
+    }
     log.debug(`${projectRoot} is a "${adapter.framework}" project — the Vitest runner will refuse to run it`);
     return refusingAdapter(adapter);
   }

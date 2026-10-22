@@ -18,7 +18,7 @@ Cells: ✅ supported · 🟡 partial · ⏳ planned (target release) · — not 
 | Live per-file progress | ✅ | ✅ | ✅ |
 | Rerun tests related to a saved source file | ✅ | ✅ | ✅ whole test files (`vitest related`) |
 | Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name |
-| Mixed frameworks in one project | — | — | ⏳ 3.2 |
+| Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ |
 | Execution trace / "covering tests" | ✅ | ✅ | ⏳ 3.3 |
 | Timeline debugger | ⏳ | ⏳ | ⏳ later |
 <!-- matrix:end -->

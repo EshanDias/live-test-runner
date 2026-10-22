@@ -284,7 +284,7 @@ A window holds one **`ProjectContext`** per test project (`src/project/`). Every
 |---|---|
 | `ResultStore`, `ExecutionTraceStore`, `CoverageStore` | `SelectionState`, the views, decorations, CodeLens, hover (these resolve each file to its project) |
 | `TestDiscoveryService` + `DiscoveryCache` (keyed by root) | Output channels, status bar item |
-| framework services (`DetectingFrameworkProvider` → Jest / Vitest bundle with its own batch runner) | Timeline decorations |
+| framework services (`FrameworkRouter` → Jest / Vitest bundle(s), each with its own batch runner) | Timeline decorations |
 | `SessionManager` (fixed `projectRoot`), runnable-files cache entry (keyed by root) | |
 | session folder (`session-<pid>-<ts>/p<N>-<name>`; the folder itself when there is one project) | |
 
@@ -564,7 +564,14 @@ Adding a new framework = one file implementing `IFrameworkAdapter`, plus that fr
 
 Both adapters extend `framework/RunnerBackedAdapter.ts`, which holds everything that only needs a runner's `RunResult`: single-file, test-case and related runs, and mapping `FileRunResult`s into the `ResultStore` (suites, `.each` templates, scoped reruns, output, and a file's own failure — its tests are failed with `failureMessage` when nothing ran). The adapters add detection, their runner (with the user's command setting) and the debug launch config.
 
-Each `ProjectContext` composes its own `DetectingFrameworkProvider` (phase 7 — one per project, so two projects never share a batch runner): it detects the project root's framework (runner `FrameworkDetector`) and builds the Vitest bundle (`createVitestServices`) for a Vitest project, the Jest bundle (`createJestServices`) otherwise, on first use. The Timeline command goes through a delegating `IInstrumentedRunner` that reports "not available for Vitest yet". Stop kills the batch runners of `all()` bundles. Mixed-framework projects (phase 8) replace the provider with a router; nothing in `SessionManager` changes.
+Each `ProjectContext` composes its own `FrameworkRouter` (`framework/FrameworkRouter.ts`; one per project, so two projects never share a batch runner). `prepare()` (every Start) detects the root's main framework (runner `FrameworkDetector`) and whether the root is **mixed** (runner `projectFrameworks`: a Jest marker plus a `vitest.config.*` / `vitest.workspace.*` of its own), and reads `liveTestRunner.frameworks`. A single-framework project gets one bundle (`createJestServices` or `createVitestServices`) and lists its files as before. A mixed project (or one where a setting glob sends a discovered file to the other framework) lists with both frameworks in parallel and places every file once — runner `assignFrameworks` (ADR-8):
+
+1. `liveTestRunner.frameworks` (first matching glob);
+2. only one framework's list holds the file → that one (also when the other listing failed);
+3. both list it → an import from `vitest` / a `vi.` call → Vitest, `@jest/globals` / a `jest.` call → Jest (`frameworkHint`);
+4. nothing says → the main framework, one WARN naming the setting (D13).
+
+`servicesFor(file)` then returns the file's bundle (source files and the root: the main framework). The placement is stored with the runnable-files cache (`frameworks: { file: "vitest:hint" }`); placements that came from a file's content are read again on restore and on save (`fileChanged`). Each runner refuses a root detected as the other framework (BUG-37) unless the router called `allowFrameworkAt(root, fw)`. In `SessionManager` batches are queued per framework (never mixed), a source-file save reruns each framework's dependents (`owns` filter: results of the other framework's files are ignored), and any framework's config file restarts the session. A source file loaded by tests of both frameworks gets its coverage merged by line (`coverageRules.combineWithEntry`). The Timeline command goes through a delegating `IInstrumentedRunner` that asks the test file's framework (Vitest: "not available yet"). Stop kills the batch runners of `all()` bundles.
 
 Static discovery (`instrumentation/shared/testDiscovery.js`) uses the project's own `@babel/parser` / `@babel/traverse` when it has them (every Jest project), else `out/vendor/babel-parser.js` (shipped by `esbuild.js`) with a built-in call-expression walker.
 

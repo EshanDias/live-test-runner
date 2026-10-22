@@ -132,6 +132,7 @@
     <a href="#debugging">Debugging</a>
     <a href="#vitest">Vitest</a>
     <a href="#monorepos">Monorepos</a>
+    <a href="#mixed">Jest + Vitest</a>
     <a href="#timeline">Timeline Debugger</a>
     <div class="group">Reference</div>
     <a href="#commands">Commands</a>
@@ -291,6 +292,27 @@
   <!-- [TODO: USER_INPUT_NEEDED] gif: the project switcher in a pnpm monorepo — start two packages, switch while both run -->
 </section>
 
+<!-- ───────────────────────── Mixed frameworks ───────────────────────── -->
+<section id="mixed">
+  <h2>Jest and Vitest in one project</h2>
+  <p>A project with a Jest config <b>and its own</b> <code>vitest.config.*</code> (e.g. while migrating) runs <b>each test file with its own framework</b> — binary, config, flags, coverage. A <code>vitest</code> dependency alone, or a <code>vite.config.*</code>, does not count: such projects stay Jest.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Which framework runs a file</th><th></th></tr>
+    <tr><td>1. <code>liveTestRunner.frameworks</code></td><td>The first matching glob wins, e.g. <code>{ "packages/new/**": "vitest" }</code>. Also makes a Jest project without a Vitest config mixed.</td></tr>
+    <tr><td>2. The configs</td><td>Only the Jest config lists it → Jest; only the Vitest config → Vitest.</td></tr>
+    <tr><td>3. The file</td><td>Both list it: an import from <code>vitest</code> or a <code>vi.</code> call → Vitest; <code>@jest/globals</code> or a <code>jest.</code> call → Jest. Read again when you save the file.</td></tr>
+    <tr><td>4. Nothing says</td><td>The project's main framework (Jest), with one warning in the log naming the setting.</td></tr>
+  </table></div>
+  <ul>
+    <li>The Explorer groups the files by framework; the switcher shows <code>jest + vitest</code>; the status bar splits the counts: <code>✅ 8 passed · Jest 5 · Vitest 3</code>.</li>
+    <li><b>Saving a source file</b> reruns the dependent tests of both frameworks (Jest by its trace, Vitest with <code>vitest related</code>). Saving either config restarts the session.</li>
+    <li><b>Coverage</b>: a source file tested by both shows the lines either framework ran.</li>
+    <li>Stop kills both frameworks' processes. The Timeline debugger and "covering tests" on hover work for the Jest files only.</li>
+    <li>In a monorepo each package is still its own project; only a package with both configs is mixed.</li>
+  </ul>
+  <!-- [TODO: USER_INPUT_NEEDED] screenshot: Explorer of a mixed project grouped into Jest and Vitest, status bar with the split -->
+</section>
+
 <!-- ───────────────────────── Timeline ───────────────────────── -->
 <section id="timeline">
   <h2>Timeline Debugger <span class="muted">(preview)</span></h2>
@@ -338,6 +360,7 @@
     <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code> (Jest only).</td></tr>
     <tr><td><code>jestCommand</code></td><td><code>""</code></td><td>Override the Jest binary or command.</td></tr>
     <tr><td><code>vitestCommand</code></td><td><code>""</code></td><td>Override the Vitest command (e.g. <code>npx vitest</code>). Empty = the project's own Vitest.</td></tr>
+    <tr><td><code>frameworks</code></td><td><code>{}</code></td><td>Jest + Vitest projects: glob → <code>"jest"</code> / <code>"vitest"</code>, which framework runs those test files (see <a href="#mixed">Jest and Vitest in one project</a>).</td></tr>
     <tr><td><code>vitestIncludeBrowserProjects</code></td><td><code>false</code></td><td>Also run Vitest browser-mode projects. They need real browsers, so they are left out by default (unless the test script picks projects itself).</td></tr>
     <tr><td><code>onSaveDebounceMs</code></td><td><code>300</code></td><td>Wait after a save before running.</td></tr>
     <tr><td><code>durationThresholds.*</code></td><td>100 / 500 ms …</td><td>When test, suite and file durations turn amber or red.</td></tr>
@@ -415,7 +438,7 @@
     <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td></tr>
     <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ whole test files (<code>vitest related</code>)</td></tr>
     <tr><td>Monorepo / multi-project (project switcher)</td><td>✅ one project per package; a root <code>projects</code> config stays one</td><td>🟡 a CRA app is detected as a package (not e2e-tested)</td><td>✅ one project per package; <code>test.projects</code> stays one, grouped by name</td></tr>
-    <tr><td>Mixed frameworks in one project</td><td>—</td><td>—</td><td>⏳ 3.2</td></tr>
+    <tr><td>Mixed Jest + Vitest in one project</td><td>✅ each test file runs with its own framework</td><td>—</td><td>✅</td></tr>
     <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>⏳ 3.3</td></tr>
     <tr><td>Timeline debugger</td><td>⏳</td><td>⏳</td><td>⏳ later</td></tr>
   </table></div>

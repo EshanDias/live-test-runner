@@ -29,6 +29,9 @@ describe('runnable-files cache (jest --listTests answers kept between sessions)'
     expect(cache.readEntry(root, key)).toEqual({ files: tests(), groups: { [tests()[0]]: 'unit', [tests()[1]]: 'integration' } });
     cache.write(root, key, tests());
     expect(cache.readEntry(root, key)).toEqual({ files: tests(), groups: undefined });
+    // Mixed projects also remember each file's framework.
+    cache.write(root, key, tests(), undefined, { [tests()[0]]: 'vitest:hint' });
+    expect(cache.readEntry(root, key)).toEqual({ files: tests(), frameworks: { [tests()[0]]: 'vitest:hint' } });
   });
 
   it('asks again when a test file is added or removed', () => {

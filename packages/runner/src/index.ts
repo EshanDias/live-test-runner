@@ -62,6 +62,24 @@ export {
 } from './framework/vitestReporter';
 export { refusingAdapter } from './framework/refusingAdapter';
 export {
+  RoutedFramework,
+  ProjectFrameworks,
+  projectFrameworks,
+  frameworkHint,
+  FrameworkRule,
+  FrameworkRuleSetting,
+  globToRegExp,
+  parseFrameworkRules,
+  matchFrameworkRule,
+  AssignmentRule,
+  FrameworkAssignment,
+  AssignInput,
+  AssignOutput,
+  assignFrameworks,
+  allowFrameworkAt,
+  isFrameworkAllowedAt,
+} from './framework/frameworkRouting';
+export {
   DetectedProject,
   findTestProjects,
   projectsInFolder,

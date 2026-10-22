@@ -347,6 +347,17 @@ Prerequisite: phase 7 confirmed. Principle: **a test file's framework decides it
 **8.5 UI (1.5 d)** — framework badge, status bar “Jest 12 · Vitest 8”, settings docs.
 **8.6 Tests (2.5 d)** — fixtures `mixed-same-package`, `mixed-monorepo`; e2e `mixed-full-run`, `mixed-on-save`, `mixed-stop`.
 
+**ADR-8 (2026-10-22, branch `feat/mixed-frameworks`) — mixed Jest + Vitest projects.**
+- *When is a project mixed?* A root detected as Jest (jest dependency, `jest.config.*`, `package.json#jest`, CRA) that **also** has a `vitest.config.*` / `vitest.workspace.*` of its own — or one where a `liveTestRunner.frameworks` glob sends a discovered file of it to the other framework. A `vitest` dependency or a `vite.config.*` alone never makes a root mixed (jest-dom, many Jest projects built with Vite). A Vitest-detected root is mixed only through the setting. In a monorepo each package stays its own project (phase 7); only a package with both configs is mixed.
+- *Resolution order* (runner `assignFrameworks`, pure): (1) setting, first matching glob; (2) single-framework project → its framework; (3) ownership — the framework whose own list (`jest --listTests`, `vitest list`) holds the file; when one listing failed the other's list decides; (4) listed by both → `frameworkHint` (imports `vitest` / `@vitest/*` vs `@jest/globals` first, then `vi.` / `jest.` calls; comments stripped); (5) nothing says → primary (Jest) + one WARN naming the setting (D13).
+- *Where it lives:* `FrameworkRouter` (extension) replaces `DetectingFrameworkProvider` — one per project; single-framework projects behave exactly as before. Placements are kept in the runnable-files cache and re-read for content-based rules on restore / save.
+- *Runner guard:* each runner still refuses a root of the other framework (BUG-37) unless the router allowed it (`allowFrameworkAt`).
+- *Runs:* batches are per framework; on a source-file save each framework reruns its own dependents (Jest by trace, Vitest `vitest related`), results for the other framework's files are dropped (`owns` / `accept`).
+- *Coverage (8.4):* a source file's counters merge by line when its entry came from the other framework (statement ids differ between Jest's babel instrumentation and Vitest's v8 → istanbul); same framework unchanged; totals stay per project.
+- *UI (8.5):* instead of a per-file badge the Explorer groups a mixed project by framework (reuses the D12 grouping — `Jest`, `Vitest`, `Vitest · <project>`); switcher / Select Project label `jest + vitest`; status bar `✅ 8 passed · Jest 5 · Vitest 3`.
+- *Not done (deliberately):* per-glob `config` / `root` in the setting (would need per-rule runner bundles; reported at WARN). Discovery (8.3) needed no change: static discovery is framework-neutral and the union of both lists feeds the runnable filter.
+Done (2026-10-22, 8.1–8.6 together, branch `feat/mixed-frameworks` from `feat/monorepo` after merging released `release/3.0.0`). Found/fixed on the way: Jest batches dropped the project's `testMatch` / `testRegex`, so Jest's *default* testMatch silently skipped files like `*.jest.js` and they fell back to plain Jest — the overlay now keeps the project's own pattern (`testRegex` if set, else `testMatch`). (A first attempt, `testMatch: ['**/*']`, broke vscode-jest: ts-jest reads testMatch / testRegex to tell test files from sources — caught by the real-repo gate.) Unit: runner `frameworkRouting.test.ts` (25), extension `frameworkRouter.test.ts` (7), `coverageMerge.test.ts` (2), runnable cache (+1). e2e: `mixed-full-run` (22 checks), `mixed-on-save` (20), `mixed-stop` (6), `mixed-monorepo` (7).
+
 ### Phase 9 — Execution trace for Vitest (10 d) — *3.3.0, Feature V8*
 
 **9.1 Spike (2 d)** — wrapper config: generate `ltr.vitest.config.mjs` in the session dir that loads the user's config (`loadConfigFromFile`; function/async/TS safe), `mergeConfig`s our plugin + `setupFiles` + live reporter, passed with `--config`. Handle `projects`, v5 no-parent-config rule, `root`.
@@ -486,8 +497,13 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - 7.1–7.7 done (2026-10-22) → **M4**. Gate: build, lint (clean), 194 runner + 44 extension unit tests, `e2e/run.js --all` 30/30 (27 pass incl. `monorepo-select` / `monorepo-run` / `monorepo-stop`, 3 repo scenarios skipped), `e2e/real-repos.js` 6/6 PASS (jest-dom, vscode-jest, sample-react-project, unplugin, slidev, vueuse — each still one project), `e2e/real-repos.js jest`: only BUG-43 (23 files, the same jest-runtime set + `intro.test.js` + flaky `watch.test.js`), every other check passes. ADR-7 items (i)–(v) resolved by the owner (D11a): (i) and (ii) implemented the same day — see the follow-up below.
 - Follow-up (2026-10-22, D11a): editor features per file's own project + `auto` from total memory. Gate: build, lint (clean), 194 runner + 44 extension unit tests, `e2e/run.js --all` 30/30 (27 pass, 3 repo scenarios skipped; `monorepo-select` now 37 checks incl. an app-b file opened while app-a is selected → app-b discovered, its CodeLens and gutter, ▶ Run without a session runs in app-b only; `monorepo-run` checks a lib file's gutter / CodeLens while web is selected), `e2e/real-repos.js` 6/6 PASS.
 
+**Release 3.0.0 published (2026-10-22)** — `release/3.0.0` (phases 0–6, 11 + website) merged to `main`. `feat/monorepo` and `feat/mixed-frameworks` were brought up to it (merge of `release/3.0.0`; only conflict: this tracker). The monorepo CHANGELOG entries moved from `[3.0.0]` to `[Unreleased]`.
+
+**Phase 8 (branch `feat/mixed-frameworks`, from `feat/monorepo`)**
+- 8.1–8.6 done (2026-10-22) → **M5**, see ADR-8 and the task note. Gate: build, lint (clean), 219 runner + 71 extension unit tests, `e2e/run.js --all` 34/34 (incl. `mixed-full-run` / `mixed-on-save` / `mixed-stop` / `mixed-monorepo`), `e2e/real-repos.js` 6/6 PASS (jest-dom, vscode-jest, sample-react-project, unplugin, slidev, vueuse — none is mixed; vscode-jest caught the first testMatch fix). The heavy `jest` monorepo was not rerun.
+
 **Next**
-1. Phase 8 (mixed-framework projects, D13) on a branch from `feat/monorepo`, then 9 (D9). Note for 8: the per-project `DetectingFrameworkProvider` is where the `FrameworkRouter` goes.
+1. Phase 9 (Vitest execution trace, D14) on a branch from `feat/mixed-frameworks`.
 
 ## Progress tracker
 
@@ -521,6 +537,6 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 4.1–4.3 Live streaming (pulled into 3.0.0)
 - [x] 6.1–6.3 Related/on-save (pulled into 3.0.0) (M3b)
 - [x] 7.1–7.7 Monorepos (3.1) (M4)
-- [ ] 8.1–8.6 Mixed (3.2)
+- [x] 8.1–8.6 Mixed (3.2) (M5)
 - [ ] 9.1–9.4 Trace (3.3)
 - [ ] ~~10.1–10.3 Timeline~~ — deferred, separate release (D9)

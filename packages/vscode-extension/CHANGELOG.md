@@ -7,6 +7,11 @@ All notable changes to Live Test Runner are documented here.
 ### New
 
 - **Monorepos & multi-root workspaces** — every package with tests is detected as its own project; nothing runs until you start it. A project switcher at the top of the Explorer shows each project's state and counts; pick one and the tree, results and status bar switch to it, while gutter icons, CodeLens and coverage bars always show each file's own project. Start and Stop act on the project shown, and several projects can run at once in the background (new setting `liveTestRunner.maxRunningProjects`, default `auto`). A root config that covers its packages (Jest `projects`, Vitest `test.projects`) stays one project, and Vitest projects are grouped by name. New commands **Select Project** and **Stop All Projects**; `liveTestRunner.projectRoot` / **Select Project Root** pin one folder as before.
+- **Jest and Vitest in one project** — a project with a Jest config and its own `vitest.config.*` (e.g. mid-migration) runs each test file with its own framework: the one whose config lists it, else what the file imports or calls (`vitest` / `vi.` or `@jest/globals` / `jest.`), else Jest with a warning. New setting `liveTestRunner.frameworks` (glob → `"jest"` / `"vitest"`) decides explicitly. The tree groups files by framework, saving a source file reruns both frameworks' related tests, and coverage shows the lines either framework ran.
+
+### Fixes
+
+- Jest projects whose `testMatch` / `testRegex` names files the default patterns miss (e.g. `*.jest.js`) ran those files one by one in a slower fallback, without coverage. They now run in the normal batches.
 
 ## [3.0.0] - 2026-10-22
 

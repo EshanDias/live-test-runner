@@ -23,7 +23,7 @@ import { CoverageStore } from '../coverage/CoverageStore';
 import { TestDiscoveryService, DiscoveryCallbacks } from '../session/TestDiscoveryService';
 import { SessionManager } from '../session/SessionManager';
 import { DiscoveryCache } from '../cache/DiscoveryCache';
-import { DetectingFrameworkProvider } from '../framework/FrameworkServices';
+import { FrameworkRouter } from '../framework/FrameworkRouter';
 import { createJestServices } from '../framework/jestServices';
 import { createVitestServices } from '../framework/vitestServices';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload, CoverageFileRow } from '../IResultObserver';
@@ -102,7 +102,8 @@ export class ProjectContext implements vscode.Disposable {
   readonly traceStore = new ExecutionTraceStore();
   readonly coverageStore = new CoverageStore();
   readonly discovery = new TestDiscoveryService();
-  readonly services: DetectingFrameworkProvider;
+  /** Which framework runs each file (one, or Jest + Vitest in a mixed project — phase 8). */
+  readonly services: FrameworkRouter;
   readonly session: SessionManager;
   readonly gate: ProjectObserverGate;
   discoveryCache: DiscoveryCache | undefined;
@@ -125,13 +126,15 @@ export class ProjectContext implements vscode.Disposable {
     }
 
     const rawLog = (msg: string) => _deps.outputChannel.appendLine(msg);
-    this.services = new DetectingFrameworkProvider(
+    this.services = new FrameworkRouter(
       {
         jest: () => createJestServices({ sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog }),
         vitest: () => createVitestServices({ sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog }),
       },
-      () => this.root,
+      this.root,
     );
+    // Mixed by its configs is known now (switcher label); the setting and listing refine it at Start.
+    this.services.prepare();
     this.gate = new ProjectObserverGate(this, _deps.observers, _deps.editorObservers, () => _deps.isSelected(this), () => _deps.onStateChanged(this));
 
     const statusSink = { text: '' };
@@ -200,6 +203,12 @@ export class ProjectContext implements vscode.Disposable {
     this.traceStore.clearAll();
   }
 
+  /** "jest", "vitest", or "jest + vitest" once a Start found a mixed project. */
+  get frameworkLabel(): string {
+    if (!this.services.isMixed()) { return this.framework; }
+    return this.framework === 'vitest' ? 'vitest + jest' : `${this.framework} + vitest`;
+  }
+
   /** Run state for the switcher row. */
   get runState(): ProjectRunState {
     if (this.session.isRunning()) { return 'running'; }
@@ -216,7 +225,7 @@ export class ProjectContext implements vscode.Disposable {
       id: this.id,
       name: this.name,
       relPath: this.relPath,
-      framework: this.framework,
+      framework: this.frameworkLabel,
       state: this.runState,
       total: s.total,
       passed: s.passed,
