@@ -304,6 +304,12 @@ When making changes, update the relevant documentation files:
 | **Extension features, UI changes, new commands, or configuration options** | `packages/vscode-extension/README.md` (marketplace-facing), `CHANGELOG.md`, `docs/ai-context.md` |
 | **Dev setup, build process, or development patterns** | `docs/developer-guide.md`, `CLAUDE.md` |
 | **Any user-visible change (features, fixes, behaviour)** | `CHANGELOG.md` (full detail) + `packages/vscode-extension/CHANGELOG.md` (brief user summary) |
+| **Anything important for users or contributors** (new feature, setting, command, framework support, changed behaviour, known limitation) | `docs/live-test-runner-guide.html` (the guide — published at `/guide/` and shown by **Open Guide**) |
+| **Headline features, supported frameworks, install / review links** | `site/index.html` (landing page) — and bump `lastmod` in `site/sitemap.xml` |
+
+**For the HTML pages (`site/index.html`, `docs/live-test-runner-guide.html`):**
+- Keep them in step with the README and the changelogs — if a change is worth a README line, it is worth a guide update.
+- Every link that leaves the current page (external URLs, and the site's links to the guide) opens in a new tab: `target="_blank" rel="noopener"`. Only in-page `#anchor` links and the site's own home link stay in the same tab.
 
 **For README.md (marketplace-facing):**
 - Keep it **short and scannable** — users should understand what they get at a glance. Prefer bullet points and short tables over paragraphs. Cut any text that isn't immediately useful to a new user.
