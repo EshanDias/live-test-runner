@@ -18,6 +18,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### Bug Fixes
 
+- **File durations no longer show decimal points** — sub-second durations use whole milliseconds; longer durations show seconds and minutes without a millisecond remainder.
 - **Test helpers no longer count as source in coverage** — files in top-level `test/`, `__tests__/`, `dist/` or `coverage/` folders were included in the coverage totals.
 - **`npx jest` as the Jest command works as expected** — with `liveTestRunner.jestCommand` set to `npx jest`, "jest" was passed twice.
 

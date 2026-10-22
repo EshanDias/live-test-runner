@@ -35,8 +35,9 @@ export function getThresholds(): DurationThresholds {
 }
 
 export function durationLabel(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const sec = Math.floor(ms / 1000);
+  const durationMs = Math.round(ms);
+  if (durationMs < 1000) return `${durationMs}ms`;
+  const sec = Math.floor(durationMs / 1000);
   const min = Math.floor(sec / 60);
   const hr  = Math.floor(min / 60);
   const parts: string[] = [];
