@@ -20,7 +20,7 @@ export function createVitestServices(options: {
 }): FrameworkServices {
   const { sessionDir, rawLog, coverageStore } = options;
   const runnerAdapter = new VitestRunnerAdapter();
-  const projectConfig = new VitestProjectConfig();
+  const projectConfig = new VitestProjectConfig(sessionDir);
   const newRunner = (logger: (msg: string) => void) =>
     runnerAdapter.createRunner({
       command: vitestCommandSetting(),
@@ -46,7 +46,7 @@ export function createVitestServices(options: {
     features: { trace: false, timeline: false },
     adapter: new VitestAdapter(sessionDir),
     projectConfig,
-    batchRunner: new VitestBatchRunner(newRunner, { store: coverageStore, sessionDir }),
+    batchRunner: new VitestBatchRunner(newRunner, { store: coverageStore, sessionDir, projectConfig }),
     // The Timeline debugger needs the Vite trace plugin (phase 10).
     instrumentedRunner: undefined,
     createSessionRunner: () => newRunner(rawLog),

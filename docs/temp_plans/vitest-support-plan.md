@@ -176,6 +176,7 @@ Sketch (`.github/workflows/pr-checks.yml` ×2 jobs, `release.yml`):
 - Verify on all three OSes (the e2e matrix) — Windows runner is the risk.
 Findings: `pnpm runtime` installs **only `node`** (verified locally: no `npm`/`npx` in the bin dir). The e2e job (`npm install` in fixtures) and the release job (`npx vsce/ovsx`) therefore rely on the runner image's own npm; confirm on the first CI run. Fallback if CI shows otherwise: keep `actions/setup-node` in those two jobs only.
 Done when: PR Checks (3 OSes) is green; Release is verified by the first real release.
+Follow-up (2026-10-22, owner request, branch `bugfix/ci-action-versions` from `feat/vitest-release-docs`): every action bumped to its current major — `checkout@v7`, `cache@v6`, `upload-artifact@v7`, Pages: `configure-pages@v6`, `upload-pages-artifact@v5`, `deploy-pages@v5` (+ `actions: read`, `.nojekyll` dropped: v4+ of the upload action excludes dotfiles). `pnpm/setup@v3` is current. Verified by the next PR Checks run (3 OSes).
 
 **0.3 Baseline + real-repo harness (1.5 d)**
 Sketch:

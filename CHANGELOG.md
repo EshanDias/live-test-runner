@@ -4,6 +4,18 @@ All notable changes to Live Test Runner are documented here.
 
 ## [3.0.0] - Unreleased
 
+### Bug Fixes
+
+- **Live run timer updates every second** — the running file-count timer now advances while files are running, and displays elapsed time in the correct units.
+- **File durations use whole milliseconds** — fractional millisecond values are rounded; durations of a second or more omit the millisecond remainder.
+- **Coverage totals follow the project's coverage config** — the totals (and the source scan that adds untouched files at 0%) used fixed built-in rules over every `*.{js,ts,jsx,tsx}` in the workspace, ignoring the project's own settings. Generated files such as Vitest's html-reporter bundle (`.vitest/ui/assets/index-*.js`, ~14k statements) and `public/` scripts landed in the denominator, roughly halving the percentage against `vitest run --coverage`. New `coverage/coverageScope.ts`: a `CoverageScope` per framework, exposed as `IProjectConfig.coverageScope(root)`:
+  - **Vitest** — the resolved `coverage.include` / `exclude` (Vitest's defaults merged) and, below Vitest 4, `all`, read by the existing config probe (`vitestConfigInfo` now also returns `coverage`).
+  - **Jest** — `collectCoverageFrom`, `coveragePathIgnorePatterns`, test files (`testMatch` / `testRegex`), setup files and `__mocks__` — the rules of Jest's `shouldInstrument` — from the `--showConfig` read the session already does (`ResolvedProjectConfig.coverage`).
+  - Untouched files are added only when the config lists the files to cover (Vitest `include`, Jest `collectCoverageFrom`); otherwise, like the CLI, only loaded files count and the scan is skipped.
+  - The same scope filters measured files in both batch runners (`applyIstanbulCoverage` takes a `counts` predicate). When the config cannot be read, the built-in rules apply as before, and the scan also skips git-ignored files (`git check-ignore`).
+  - Glob matching uses `picomatch` (bundled), with micromatch-style `!` negation.
+- **Coverage % / N/M toggle updates the totals** — the toggle re-rendered only the file table; the Project totals row (and the Tests-panel badge) kept the old format until the next coverage update. `testListView.js` now keeps the last totals and re-renders them on toggle.
+
 ### Framework decoupling (Vitest support, phase 1)
 
 - **Neutral naming and open framework ids (task 1.1)** — `Framework` (closed union `'jest' | 'cra' | 'next' | 'vite' | 'unknown'`) is now `FrameworkId = string` with the shipped ids in `FRAMEWORK_IDS`; `Framework` stays as a deprecated alias. `toJestPath` / `fromJestPath` → `toRunnerPath` / `fromRunnerPath` (`resolution/JestPaths.ts` → `RunnerPaths.ts`; old names kept as deprecated aliases for one release). `PLAIN_RUN_HANG_FACTOR` moved from the Jest adapter to the extension's `constants.ts`. `ProjectJestConfig` → `JestProjectConfig` implementing the new `IProjectConfig` interface, which `SessionManager`, `SessionTraceRunner` and `JestInstrumentedRunner` now depend on.
@@ -22,6 +34,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### Docs, guide & release prep (phase 11)
 
+- **Marketing website + SEO** — new landing page `site/index.html` (hero with install buttons for the VS Code Marketplace and Open VSX, feature grid, screenshots, quick start, framework table, review links, FAQ) served at https://eshandias.github.io/live-test-runner/; the guide moves to `/guide/` (`GuidePanel.GUIDE_URL` and the README link updated). SEO: meta description, canonical, Open Graph / Twitter cards, JSON-LD `SoftwareApplication` + `FAQPage`, `site/sitemap.xml`; the guide gets a description, canonical and OG tags. The Pages workflow now assembles `_site/` from `site/`, the guide and `resources/images/*.png`, and also runs when those change, on `main` and on `release/*` branches. Reviews link to each marketplace's review page (posting needs sign-in there). Extension `package.json` gains `keywords`, `homepage` and `bugs` for marketplace search.
 - **Open Guide command + guide on GitHub Pages (task 11.4)** — new command **Live Test Runner: Open Guide** (`liveTestRunner.openGuide`, `views/GuidePanel.ts`) shows the user guide in an editor tab: `esbuild.js` copies `docs/live-test-runner-guide.html` to `out/guide/guide.html` (shipped in the .vsix, works offline, matches the installed version); the page's scripts run under a nonce CSP; a missing copy (dev build) opens the online guide instead. `.github/workflows/pages.yml` publishes the same file to GitHub Pages (https://eshandias.github.io/live-test-runner/) when it changes on `main` — needs Settings → Pages → Source "GitHub Actions" once. The guide's links to `bugs-and-issues.md` / `architecture.md` / `developer-guide.md` are absolute GitHub URLs so they work on Pages and in the tab. README links the guide. Unit test `test/guidePanel.test.ts`, e2e `guide-open`.
 - **Guide refresh (task 11.1)** — new *Vitest* section (detection, versions, config flags, per-test output, failures, coverage provider, projects / browser guard, what is not there yet); Jest-only wording made framework-neutral (overview, quick start, Stop, Test Output); Debugging describes the Vitest launch and drops the BUG-05 / BUG-06 warning (both fixed); hover and Timeline say what Vitest lacks; *Known issues* lists the open bugs (BUG-43, BUG-44) instead of fixed ones; Open Guide in the commands table. Matrix: the Vitest Timeline cell is "⏳ later" (deferred, plan D9). README: guide link, Open Guide command, Vitest coverage note and screenshot placeholder; core README says the package is framework-neutral; developer guide (Pages setup, roadmap, known limitations), ai-context (command, key files) updated.
 - **Release checks (tasks 11.2, 11.3)** — version 3.0.0 in both package.json files; the e2e suite runs against the packed `.vsix` (`vsce package --no-dependencies`, unpacked, `LTR_E2E_EXTENSION_DIR`); real-repo matrix incl. the Jest monorepo.
@@ -72,6 +85,7 @@ All notable changes to Live Test Runner are documented here.
 ### CI
 
 - Workflows use `pnpm/setup@v3` (pnpm from `packageManager`, Node 24, pnpm store cache and install in one step) instead of `pnpm/action-setup` + `actions/setup-node`. The release job keeps the install conditional (`install: false`).
+- GitHub Actions on their current majors (all Node 24): `actions/checkout` v5 → v7, `actions/cache` v4 → v6, `actions/upload-artifact` v4 → v7, and in the Pages workflow `configure-pages` v5 → v6, `upload-pages-artifact` v3 → v5, `deploy-pages` v4 → v5 (+ `actions: read` permission; the `.nojekyll` marker is dropped — `upload-pages-artifact` ≥ 4 leaves dotfiles out, and an Actions-deployed site is not built with Jekyll anyway). No workflow uses `pull_request_target`, so checkout v7's fork-PR block does not apply.
 
 ---
 
