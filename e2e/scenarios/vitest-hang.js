@@ -1,9 +1,11 @@
 'use strict';
 /**
- * Hanging Vitest tests: an infinite loop blocks a worker, so its batch is
- * stopped after hangTimeoutSeconds × 3; the files are then retried one by
- * one and only the hanging one is failed as hung. A never-resolving promise
- * fails on Vitest's own test timeout. Every other file gets its result.
+ * Hanging Vitest tests: an infinite loop never ends its test, so the batch
+ * is stopped once that test has run for hangTimeoutSeconds (the reporter's
+ * test heartbeats) — or, when the blocked worker never reported the test
+ * start, after hangTimeoutSeconds × 3 without progress — and only the
+ * hanging file is failed; the batch's other unfinished files are retried. A never-resolving promise fails on Vitest's
+ * own test timeout. Every other file gets its result.
  */
 const fs = require('fs');
 const path = require('path');
@@ -32,7 +34,10 @@ module.exports = {
     const loop = h.nodeByName(api, 'src/loop.test.js', 'spins forever');
     t.eq('infinite loop is marked failed', loop?.status, 'failed');
     t.check('its failure says it hung', (loop?.failureMessages[0] || '').includes('hangs'), JSON.stringify(loop?.failureMessages));
-    t.check('the log says a batch was stopped for running too long', logs.some((l) => /ran for \d+s without finishing/.test(l)),
+    // A synchronous loop can block the worker before it reports "test started":
+    // then the batch is stopped for lack of progress and the files retried one by one.
+    t.check('the log names the hang (per test, or no progress from the batch)',
+      logs.some((l) => /loop\.test\.js has run for \d+s without finishing|no progress from Vitest for \d+s/.test(l)),
       logs.filter((l) => /warn/.test(l)).join('\n'));
     t.check('the wording names Vitest, not Jest', !logs.some((l) => /plain Jest|instrumented run/.test(l)),
       logs.filter((l) => /Jest/.test(l)).join('\n'));

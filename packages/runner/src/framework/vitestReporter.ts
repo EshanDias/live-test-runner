@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConsoleEntry } from '../types';
+import { ConsoleEntry, FileRunResult, RunResult } from '../types';
+import { VITEST_FILE_FAILURE, VITEST_HOOK_FAILURE, parseVitestResult } from '../parsing/VitestResultParser';
 import { fromRunnerPath } from '../resolution/RunnerPaths';
 import { createLogger } from '../utils/logger';
 
@@ -16,6 +17,13 @@ export const VITEST_EVENTS_ENV = 'LTR_VITEST_EVENTS';
  *
  *   { "ev": "log", "file", "scope": "file"|"suite"|"test", "names": [...], "type": "stdout"|"stderr", "content" }
  *   { "ev": "error", "file", "scope", "names", "errors": [{ "name", "message", "diff", "stack", "stacks" }] }
+ *   { "ev": "file-start", "file" }                      a test file starts running
+ *   { "ev": "test-start", "file", "name" } / { "ev": "test-end", "file" }   heartbeats (hang limit)
+ *   { "ev": "file-end", "file", "result" }              the file's result, in the json reporter's shape
+ *
+ * Live events use the reporter API of Vitest 3+ (onTestModuleStart / End,
+ * onTestCaseReady / Result) and onTaskUpdate before (Vitest 2 already has
+ * part of the new API but not those hooks, so the choice is by version).
  *
  * Failures come from the finished task tree (`onTestRunEnd` on Vitest 3+,
  * `onFinished` before — 4+ dropped it): the json report has no diffs, no
@@ -51,6 +59,42 @@ function chain(idMap, id) {
   return find(file) ? path : undefined;
 }
 
+const STATUS = { fail: 'failed', only: 'pending', pass: 'passed', run: 'pending', skip: 'skipped', todo: 'todo', queued: 'pending' };
+
+/** A finished file task as the json reporter writes it (testResults[]). */
+function fileResult(file) {
+  const tests = [];
+  const walk = (task, ancestors) => {
+    for (const t of task.tasks || []) {
+      if (t.type === 'suite') { walk(t, t.name ? [...ancestors, t.name] : ancestors); continue; }
+      const r = t.result || {};
+      tests.push({
+        ancestorTitles: ancestors, title: t.name, fullName: [...ancestors, t.name].join(' '),
+        status: STATUS[r.state || t.mode] || 'pending',
+        duration: typeof r.duration === 'number' ? r.duration : null,
+        failureMessages: (r.errors || []).map((e) => (e && (e.stack || e.message)) || String(e)),
+        location: t.location || null,
+      });
+    }
+  };
+  walk(file, []);
+  const fr = file.result || {};
+  const failed = fr.state === 'fail' || tests.some((t) => t.status === 'failed');
+  const startTime = fr.startTime || Date.now();
+  return {
+    name: file.filepath, status: failed ? 'failed' : 'passed',
+    message: (fr.errors && fr.errors[0] && fr.errors[0].message) || '',
+    startTime, endTime: startTime + (fr.duration || 0),
+    assertionResults: tests,
+  };
+}
+
+function fileOf(task) {
+  let t = task;
+  while (t && t.suite) { t = t.suite; }
+  return t && (t.filepath || (t.file && t.file.filepath));
+}
+
 function failures(file) {
   const filepath = file.filepath;
   const walk = (task, chain) => {
@@ -74,18 +118,55 @@ function failures(file) {
 }
 
 export default class LtrReporter {
-  onInit(ctx) { this.ctx = ctx; }
+  onInit(ctx) {
+    this.ctx = ctx;
+    this.modern = parseInt(String(ctx && ctx.version), 10) >= 3;
+    this.ended = new Set();   // files whose result was written
+    this.started = new Set();
+  }
 
+  /** A file is done: its result and failures (once). */
+  endFile(file) {
+    if (!file || this.ended.has(file.id)) { return; }
+    this.ended.add(file.id);
+    failures(file); // before file-end: a live reader applies the result on file-end
+    write({ ev: 'file-end', file: file.filepath, result: fileResult(file) });
+  }
+
+  // ── Vitest 3+ ──
+  onTestModuleStart(m) { if (this.modern && m) { write({ ev: 'file-start', file: m.moduleId }); } }
+  onTestCaseReady(tc) { if (this.modern && tc) { write({ ev: 'test-start', file: tc.module && tc.module.moduleId, name: tc.name }); } }
+  onTestCaseResult(tc) { if (this.modern && tc) { write({ ev: 'test-end', file: tc.module && tc.module.moduleId }); } }
+  onTestModuleEnd(m) { if (this.modern && m && m.task) { this.endFile(m.task); } }
+
+  // ── Vitest 1 – 2 ──
+  onTaskUpdate(packs) {
+    if (this.modern) { return; }
+    const idMap = this.ctx && this.ctx.state && this.ctx.state.idMap;
+    for (const [id, result] of packs || []) {
+      const task = idMap && idMap.get(id);
+      if (!task || !result) { continue; }
+      // Only file tasks carry a filepath (suites have no parent link on Vitest 2).
+      const isFile = task.type === 'suite' && typeof task.filepath === 'string';
+      const state = result.state;
+      if (isFile) {
+        if (!this.started.has(id)) { this.started.add(id); write({ ev: 'file-start', file: task.filepath }); }
+        if (state === 'pass' || state === 'fail' || state === 'skip') { this.endFile(task); }
+      } else if (task.type !== 'suite') {
+        const file = (task.file && task.file.filepath) || fileOf(task);
+        if (state === 'run') { write({ ev: 'test-start', file, name: task.name }); }
+        else if (state) { write({ ev: 'test-end', file }); }
+      }
+    }
+  }
+
+  // ── Run end: anything not reported yet (crashed files, older hooks) ──
   onTestRunEnd(modules) {
-    if (this.done) { return; }
-    this.done = true;
-    for (const m of modules || []) { if (m && m.task) { failures(m.task); } }
+    for (const m of modules || []) { if (m && m.task) { this.endFile(m.task); } }
   }
 
   onFinished(files) {
-    if (this.done) { return; }
-    this.done = true;
-    for (const f of files || []) { failures(f); }
+    for (const f of files || []) { this.endFile(f); }
   }
 
   onUserConsoleLog(entry) {
@@ -122,7 +203,17 @@ export function vitestReporterFile(dir: string): string {
 }
 
 /** One event the reporter wrote. */
-export type VitestEvent = VitestLogEvent | VitestErrorEvent;
+export type VitestEvent = VitestLogEvent | VitestErrorEvent | VitestLiveEvent;
+
+/** Progress while the run is going: a file / test started, a test ended, a file's result. */
+export interface VitestLiveEvent {
+  ev: 'file-start' | 'test-start' | 'test-end' | 'file-end';
+  file?: string;
+  /** test-start: the test's own name. */
+  name?: string;
+  /** file-end: the file's result in the json reporter's shape (one testResults[] entry). */
+  result?: unknown;
+}
 
 export interface VitestLogEvent {
   ev: 'log';
@@ -221,4 +312,60 @@ export function formatVitestError(e: VitestReportedError, projectRoot: string): 
 const ANSI = /\x1B\[[0-9;]*[A-Za-z]/g;
 function stripAnsiText(s: string): string {
   return s.replace(ANSI, '');
+}
+
+/**
+ * Adds what the reporter saw to a RunResult: console output per file with
+ * its scope, and failures with diff and location (a failing beforeAll /
+ * afterAll included — the json report leaves it out).
+ */
+export function applyVitestEvents(result: RunResult, events: VitestEvent[], projectRoot: string): RunResult {
+  const logs = new Map<string, ReturnType<typeof toConsoleEntry>[]>();
+  const errors = new Map<string, VitestErrorEvent[]>();
+  for (const e of events) {
+    if (!e.file) { continue; }
+    const key = fileKey(e.file);
+    if (e.ev === 'log') {
+      const list = logs.get(key) ?? [];
+      list.push(toConsoleEntry(e));
+      logs.set(key, list);
+    } else if (e.ev === 'error') {
+      const list = errors.get(key) ?? [];
+      list.push(e);
+      errors.set(key, list);
+    }
+  }
+  for (const fr of result.fileResults) {
+    const key = fileKey(fr.testFilePath);
+    const entries = logs.get(key);
+    if (entries) { fr.consoleOutput = [...fr.consoleOutput, ...entries]; }
+
+    const outside: string[] = [];
+    for (const ev of errors.get(key) ?? []) {
+      const messages = ev.errors.map((err) => formatVitestError(err, projectRoot));
+      if (ev.scope === 'test') {
+        const name = ev.names.join(' ');
+        const tc = fr.testCases.find((c) => c.fullName === name && c.status === 'failed');
+        if (tc) { tc.failureMessages = messages; }
+      } else {
+        const where = ev.scope === 'suite' ? `In "${ev.names.join(' > ')}" (a beforeAll / afterAll hook or the suite itself):\n` : '';
+        outside.push(...messages.map((m) => where + m));
+      }
+    }
+    if (outside.length) {
+      const known = fr.failureMessage && fr.failureMessage !== VITEST_HOOK_FAILURE && fr.failureMessage !== VITEST_FILE_FAILURE;
+      // A load error is already in the json report's message; the reporter adds its location.
+      fr.failureMessage = known && !outside.some((m) => m.startsWith(fr.failureMessage!.split('\n')[0]))
+        ? [fr.failureMessage!, ...outside].join('\n\n')
+        : outside.join('\n\n');
+      fr.status = 'failed';
+    }
+  }
+  return result;
+}
+
+/** A file-end event as a FileRunResult (parsed like the json report). */
+export function liveFileResult(ev: VitestLiveEvent): FileRunResult | undefined {
+  if (ev.ev !== 'file-end' || !ev.result) { return undefined; }
+  return parseVitestResult(true, JSON.stringify({ testResults: [ev.result] }), '').fileResults[0];
 }

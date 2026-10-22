@@ -57,3 +57,18 @@ it('attaches the events of a run to its files and cleans up the events file', as
   ]);
   expect(fs.existsSync(eventsFile)).toBe(false);
 });
+
+it('reads a live file-end event like a json report entry', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { liveFileResult } = require('../src/framework/vitestReporter');
+  const fr = liveFileResult({ ev: 'file-end', file: '/p/a.test.ts', result: {
+    name: '/p/a.test.ts', status: 'failed', message: '', startTime: 1000, endTime: 1250,
+    assertionResults: [
+      { ancestorTitles: ['s'], title: 'ok', fullName: 's ok', status: 'passed', duration: 2.4, failureMessages: [], location: { line: 3, column: 5 } },
+      { ancestorTitles: ['s'], title: 'bad', fullName: 's bad', status: 'failed', duration: 1, failureMessages: ['Error: x\n    at /p/a.test.ts:4:1'], location: null },
+    ],
+  } });
+  expect(fr).toMatchObject({ testFilePath: '/p/a.test.ts', status: 'failed', duration: 250 });
+  expect(fr.testCases.map((c: { status: string; duration: number }) => [c.status, c.duration])).toEqual([['passed', 2], ['failed', 1]]);
+  expect(liveFileResult({ ev: 'file-start', file: '/p/a.test.ts' })).toBeUndefined();
+});

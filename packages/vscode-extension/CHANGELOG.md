@@ -6,7 +6,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### New
 
-- **Vitest support (preview)** — open a Vitest project and Start Testing: the test tree, pass/fail results, gutter icons, ▶ Run / ▷ Debug for one test or suite, and reruns of saved test files work as they do for Jest. The framework is detected automatically; files your Vitest config does not include are not run. With Vitest, every test shows its own console output — not just the file — and a failure shows the expected / received diff and the line it happened on; a failing `beforeAll` shows its real error. Coverage for Vitest follows in this release. New settings `liveTestRunner.vitestCommand` and `liveTestRunner.vitestIncludeBrowserProjects` — Vitest browser-mode projects need real browsers, so they are left out unless you turn this on (or your test script picks projects itself).
+- **Vitest support (preview)** — open a Vitest project and Start Testing: the test tree, pass/fail results, gutter icons, ▶ Run / ▷ Debug for one test or suite, and reruns of saved test files work as they do for Jest. The framework is detected automatically; files your Vitest config does not include are not run. Vitest results stream in file by file while the run goes. With Vitest, every test shows its own console output — not just the file — and a failure shows the expected / received diff and the line it happened on; a failing `beforeAll` shows its real error. Coverage for Vitest follows in this release. New settings `liveTestRunner.vitestCommand` and `liveTestRunner.vitestIncludeBrowserProjects` — Vitest browser-mode projects need real browsers, so they are left out unless you turn this on (or your test script picks projects itself).
 
 ### Improvements
 
