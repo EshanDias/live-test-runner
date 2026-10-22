@@ -496,7 +496,7 @@ All in `packages/vscode-extension/package.json`:
 - `liveTestRunner.selectProjectRoot`
 - `liveTestRunner.showOutput` — "Show Test Output": raw Jest / Vitest output channel
 - `liveTestRunner.showLogs` — "Show Logs": levelled extension log channel
-- `liveTestRunner.openGuide` — "Open Guide": the user guide shipped in `out/guide/guide.html` (copied from `docs/live-test-runner-guide.html`) in a webview tab (`views/GuidePanel.ts`); the same page is on GitHub Pages (`.github/workflows/pages.yml`)
+- `liveTestRunner.openGuide` — "Open Guide": the user guide shipped in `out/guide/guide.html` (copied from `docs/live-test-runner-guide.html`) in a webview tab (`views/GuidePanel.ts`); the same page is on GitHub Pages at `/guide/` (`.github/workflows/pages.yml`), next to the landing page `site/index.html` and `site/sitemap.xml`
 - `liveTestRunner.copyDiagnostics` — "Copy Diagnostic Report": versions, project setup, settings, recent logs → clipboard + untitled doc
 - `liveTestRunner.rerunFromEditor`
 - `liveTestRunner.debugFromEditor`
