@@ -179,6 +179,7 @@
   let _sortCol          = 'lines'; // 'statements'|'branches'|'functions'|'lines'
   let _sortAsc          = true;
   let _lastCovFiles     = [];
+  let _lastCovTotals    = null;
   let _covSearchQuery   = '';
   let _covFolderView    = false;
   let _covExpandedFolders = new Set();
@@ -336,6 +337,7 @@
   }
 
   function updateCoverage(totals, files) {
+    _lastCovTotals = totals ?? null;
     _lastCovFiles = files ?? [];
 
     // ── compact badge in Tests panel ────────────────────────────────────────
@@ -372,6 +374,11 @@
     }
 
     _renderCovFiles(_lastCovFiles);
+  }
+
+  /** Re-draws the totals and the file list after a display change (% ↔ N/M). */
+  function _rerenderCoverage() {
+    if (_lastCovTotals) { updateCoverage(_lastCovTotals, _lastCovFiles); } else { _renderCovFiles(_lastCovFiles); }
   }
 
   function _esc(str) {
@@ -507,6 +514,7 @@
       _sortCol          = 'lines';
       _sortAsc          = true;
       _lastCovFiles     = [];
+      _lastCovTotals    = null;
       _statusFilter     = 'all';
       _covSearchQuery   = '';
       _covFolderView    = false;
@@ -561,13 +569,13 @@
         _metricMode = 'pct';
         _q('covTogglePct').dataset.active = 'true';
         _q('covToggleNM').dataset.active  = 'false';
-        _renderCovFiles(_lastCovFiles);
+        _rerenderCoverage();
       });
       _q('covToggleNM').addEventListener('click', () => {
         _metricMode = 'nm';
         _q('covTogglePct').dataset.active = 'false';
         _q('covToggleNM').dataset.active  = 'true';
-        _renderCovFiles(_lastCovFiles);
+        _rerenderCoverage();
       });
 
       // ── Coverage search + folder view ────────────────────────────────────────
@@ -716,6 +724,7 @@
             const el = _q(id); if (el) { el.textContent = '—'; el.className = 'value'; }
           });
           _lastCovFiles = [];
+          _lastCovTotals = null;
           _renderCovFiles([]);
           break;
 

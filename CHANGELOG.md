@@ -8,6 +8,13 @@ All notable changes to Live Test Runner are documented here.
 
 - **Live run timer updates every second** — the running file-count timer now advances while files are running, and displays elapsed time in the correct units.
 - **File durations use whole milliseconds** — fractional millisecond values are rounded; durations of a second or more omit the millisecond remainder.
+- **Coverage totals follow the project's coverage config** — the totals (and the source scan that adds untouched files at 0%) used fixed built-in rules over every `*.{js,ts,jsx,tsx}` in the workspace, ignoring the project's own settings. Generated files such as Vitest's html-reporter bundle (`.vitest/ui/assets/index-*.js`, ~14k statements) and `public/` scripts landed in the denominator, roughly halving the percentage against `vitest run --coverage`. New `coverage/coverageScope.ts`: a `CoverageScope` per framework, exposed as `IProjectConfig.coverageScope(root)`:
+  - **Vitest** — the resolved `coverage.include` / `exclude` (Vitest's defaults merged) and, below Vitest 4, `all`, read by the existing config probe (`vitestConfigInfo` now also returns `coverage`).
+  - **Jest** — `collectCoverageFrom`, `coveragePathIgnorePatterns`, test files (`testMatch` / `testRegex`), setup files and `__mocks__` — the rules of Jest's `shouldInstrument` — from the `--showConfig` read the session already does (`ResolvedProjectConfig.coverage`).
+  - Untouched files are added only when the config lists the files to cover (Vitest `include`, Jest `collectCoverageFrom`); otherwise, like the CLI, only loaded files count and the scan is skipped.
+  - The same scope filters measured files in both batch runners (`applyIstanbulCoverage` takes a `counts` predicate). When the config cannot be read, the built-in rules apply as before, and the scan also skips git-ignored files (`git check-ignore`).
+  - Glob matching uses `picomatch` (bundled), with micromatch-style `!` negation.
+- **Coverage % / N/M toggle updates the totals** — the toggle re-rendered only the file table; the Project totals row (and the Tests-panel badge) kept the old format until the next coverage update. `testListView.js` now keeps the last totals and re-renders them on toggle.
 
 ### Framework decoupling (Vitest support, phase 1)
 

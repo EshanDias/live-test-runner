@@ -21,6 +21,8 @@ All notable changes to Live Test Runner are documented here.
 ### Bug Fixes
 
 - **File durations no longer show decimal points** — sub-second durations use whole milliseconds; longer durations show seconds and minutes without a millisecond remainder.
+- **Coverage totals match `vitest --coverage` / `jest --coverage`** — the totals now count the files your coverage config counts (Vitest `coverage.include` / `exclude`, Jest `collectCoverageFrom` / `coveragePathIgnorePatterns`). Before, every source file in the workspace was added, including generated report and bundle files (e.g. Vitest's `.vitest/` html report), which could pull the percentage far below the CLI's. Without an include list, only files your tests load count, as on the CLI.
+- **The % / N/M toggle switches the project totals too** — it used to change only the file list.
 - **Test helpers no longer count as source in coverage** — files in top-level `test/`, `__tests__/`, `dist/` or `coverage/` folders were included in the coverage totals.
 - **`npx jest` as the Jest command works as expected** — with `liveTestRunner.jestCommand` set to `npx jest`, "jest" was passed twice.
 

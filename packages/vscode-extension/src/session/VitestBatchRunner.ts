@@ -39,6 +39,8 @@ import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
 import { runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { applyIstanbulCoverage } from '../coverage/istanbulCoverage';
+import { CoverageScope, coverageScopeOf, defaultCoverageScope } from '../coverage/coverageScope';
+import { IProjectConfig } from './IProjectConfig';
 import { PLAIN_RUN_HANG_FACTOR } from '../constants';
 import { logger } from '../utils/logger';
 
@@ -59,11 +61,12 @@ export class VitestBatchRunner implements IBatchRunner {
 
   /**
    * @param _createRunner a fresh VitestRunner for the project (reads the settings)
-   * @param _coverage where measured coverage goes, and the session dir for its files (none: no coverage)
+   * @param _coverage where measured coverage goes, the session dir for its files, and the
+   *   project config whose coverage settings decide which files count (none: no coverage)
    */
   constructor(
     private readonly _createRunner: (rawLog: (msg: string) => void) => CommandRunner,
-    private readonly _coverage?: { store: CoverageStore; sessionDir: string },
+    private readonly _coverage?: { store: CoverageStore; sessionDir: string; projectConfig?: IProjectConfig },
   ) {}
 
   kill(): void {
@@ -233,7 +236,10 @@ export class VitestBatchRunner implements IBatchRunner {
 
     // Coverage of whatever ran (not after Stop — those results are dropped too).
     if (live.coverageFile && this._coverage && generation === this._generation) {
-      this._applyCoverage(live.coverageFile, projectRoot, batch);
+      const scope = this._coverage.projectConfig
+        ? await coverageScopeOf(this._coverage.projectConfig, projectRoot)
+        : defaultCoverageScope(projectRoot);
+      if (generation === this._generation) { this._applyCoverage(live.coverageFile, projectRoot, batch, scope); }
     }
 
     const stopped = generation !== this._generation;
@@ -257,7 +263,7 @@ export class VitestBatchRunner implements IBatchRunner {
     return { missing };
   }
 
-  private _applyCoverage(coverageFile: string, projectRoot: string, batch: string): void {
+  private _applyCoverage(coverageFile: string, projectRoot: string, batch: string, scope: CoverageScope): void {
     const dir = path.dirname(coverageFile);
     try {
       if (!fs.existsSync(coverageFile)) {
@@ -267,6 +273,7 @@ export class VitestBatchRunner implements IBatchRunner {
       const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
       const { measured, excluded } = applyIstanbulCoverage(
         coverage, this._coverage!.store, path.join(this._coverage!.sessionDir, 'vitest-manifests'), projectRoot,
+        (fp) => scope.counts(fp),
       );
       log.debug(`${batch}: coverage — ${measured} file(s) measured, ${excluded} excluded`);
     } catch (err) {

@@ -16,6 +16,7 @@ import { TestDiscoveryService } from './TestDiscoveryService';
 import { RunnableFilesCache, runnableCacheKey, runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
+import { coverageScopeOf } from '../coverage/coverageScope';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Session');
@@ -215,7 +216,7 @@ export class SessionManager {
 
       // Background source scan — runs in parallel with test execution.
       this._coverageStore.clear();
-      const sourceCounter = new SourceCounter(projectRoot, this._coverageStore);
+      const sourceCounter = new SourceCounter(projectRoot, this._coverageStore, coverageScopeOf(services.projectConfig, projectRoot));
       sourceCounter.on('progress', (scanned: number, total: number) => {
         this._observers.forEach((o) => o.onSourceScanProgress?.(scanned, total));
       });
