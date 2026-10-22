@@ -20,10 +20,10 @@ Cells: ✅ supported · 🟡 partial · ⏳ planned (target release) · — not 
 | Monorepo / multi-project | 🟡 | — | 🟡 Vitest `projects`, run from the root |
 | Mixed frameworks in one project | — | — | ⏳ 3.2 |
 | Execution trace / "covering tests" | ✅ | ✅ | ⏳ 3.3 |
-| Timeline debugger | ⏳ | ⏳ | ⏳ 3.4 |
+| Timeline debugger | ⏳ | ⏳ | ⏳ later |
 <!-- matrix:end -->
 
 Vitest: version 3 or newer is fully supported; 1.x and 2.x run with results
 only (no test listing, related tests or line numbers). Coverage uses Vitest's
 own provider package; the hover cannot list the covering tests yet (that needs
-the execution trace, planned for 3.3).
+the execution trace, planned for 3.3). The Timeline debugger for Vitest is planned for a later release.

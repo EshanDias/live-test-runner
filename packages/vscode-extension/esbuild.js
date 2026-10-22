@@ -53,6 +53,13 @@ function copyVendorFiles() {
   fs.copyFileSync(path.join(pkgDir, 'LICENSE'), path.join(dest, 'babel-parser.LICENSE'));
 }
 
+/** The user guide (docs/live-test-runner-guide.html) for the Open Guide command. */
+function copyGuide() {
+  const dest = path.join(__dirname, 'out', 'guide');
+  fs.mkdirSync(dest, { recursive: true });
+  fs.copyFileSync(path.join(__dirname, '..', '..', 'docs', 'live-test-runner-guide.html'), path.join(dest, 'guide.html'));
+}
+
 const config = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
@@ -72,7 +79,7 @@ if (watch) {
       build.onEnd(result => {
         if (result.errors.length === 0) {
           copyInstrumentationFiles();
-          copyVendorFiles();
+          copyVendorFiles(); copyGuide();
         }
       });
     },
@@ -81,13 +88,13 @@ if (watch) {
     .context({ ...config, plugins: [onRebuild] })
     .then(ctx => {
       copyInstrumentationFiles();
-      copyVendorFiles();
+      copyVendorFiles(); copyGuide();
       return ctx.watch();
     })
     .catch(e => { console.error(e); process.exit(1); });
 } else {
   esbuild
     .build(config)
-    .then(() => { copyInstrumentationFiles(); copyVendorFiles(); })
+    .then(() => { copyInstrumentationFiles(); copyVendorFiles(); copyGuide(); })
     .catch(e => { console.error(e); process.exit(1); });
 }

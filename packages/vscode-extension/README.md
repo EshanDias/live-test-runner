@@ -16,6 +16,8 @@
 
 > **Works with Jest (incl. Create React App) and Vitest** — see [Supported frameworks](#supported-frameworks) for what each one supports.
 
+📖 **[Read the full guide](https://eshandias.github.io/live-test-runner/)** — or run **Live Test Runner: Open Guide** in VS Code.
+
 <!-- [TODO: USER_INPUT_NEEDED] Replace with an updated hero gif showing the full experience (test run + coverage bars + hover) -->
 ![Demo](resources/gifs/live%20test%20runner%20demo.gif)
 
@@ -80,9 +82,10 @@ After the first run, every source file shows per-line coverage — no separate c
 | Red `▌` | Never executed |
 | Grey `▌` | Not executable |
 
-Hover any line to see which tests cover it, their pass/fail status, and duration. When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
+Hover any line to see which tests cover it, their pass/fail status, and duration (Jest; Vitest shows coverage and branches — covering tests are coming). When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
 
 <!-- [TODO: USER_INPUT_NEEDED] Screenshot or gif of coverage bars + hover tooltip in a source file -->
+<!-- [TODO: USER_INPUT_NEEDED] Screenshot: coverage bars + hover on a Vitest project (with @vitest/coverage-v8 installed) -->
 ![Code Coverage Example](resources/images/code_coverage.png)
 
 ---
@@ -116,6 +119,7 @@ Step through any test case line by line — variable values as inline ghost text
 | `Show Logs` | Open the extension log (filter by level) |
 | `Show Test Output` | Open the raw test-runner output |
 | `Copy Diagnostic Report` | Copy versions, setup and recent logs for a bug report |
+| `Open Guide` | Open the user guide in an editor tab |
 
 > **Tip:** Shift-click **⏹ Stop** to stop and clear cache in one click.
 
@@ -124,7 +128,7 @@ Step through any test case line by line — variable values as inline ghost text
 ## Troubleshooting
 
 - **Output → "Live Test Runner"** — what the extension did: one line per run, warnings when something falls back. Set the level to **Debug** (⚙ in the Output panel) for details.
-- **Output → "Live Test Runner: Test Output"** — exactly what Jest printed.
+- **Output → "Live Test Runner: Test Output"** — exactly what Jest / Vitest printed.
 - Reporting a bug? Run **Copy Diagnostic Report** and attach it.
 
 <!-- [TODO: USER_INPUT_NEEDED] Screenshot of the Output panel showing the levelled "Live Test Runner" log with a Run summary line -->
@@ -171,7 +175,7 @@ All settings under `liveTestRunner.*`.
 | Monorepo / multi-project | 🟡 | — | 🟡 Vitest `projects`, run from the root |
 | Mixed frameworks in one project | — | — | ⏳ 3.2 |
 | Execution trace / "covering tests" | ✅ | ✅ | ⏳ 3.3 |
-| Timeline debugger | ⏳ | ⏳ | ⏳ 3.4 |
+| Timeline debugger | ⏳ | ⏳ | ⏳ later |
 <!-- matrix:end -->
 
 <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — the test tree fills in, results and gutter icons appear, ▶ Run on one test -->
@@ -185,6 +189,7 @@ Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projec
 - Individual test reruns use `--testNamePattern` — tests with exactly the same full name run together
 - Jest captures console output per file; it shows on a single test only when that test is rerun on its own. With Vitest every test shows its own output.
 - Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
+- Vitest: saving a source file reruns `vitest related` for it (precise per-test reruns need the execution trace, coming in a later release)
 
 ---
 

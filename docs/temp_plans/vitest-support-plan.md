@@ -355,9 +355,13 @@ Prerequisite: phase 7 confirmed. Principle: **a test file's framework decides it
   | Debug (▷) | ✅ | ✅ | ✅ 3.0 |
 - Same table (kept in one source, `docs/framework-features.md`, copied into both) in `docs/live-test-runner-guide.html`, plus a Vitest section and the mixed/monorepo behaviour as they land. Each later feature PR flips its cell.
 - Update `docs/architecture.md`, `developer-guide.md` (“Adding a framework” + conformance), `ai-context.md`, runner/core READMEs, both CHANGELOGs; `[TODO: USER_INPUT_NEEDED]` gif placeholders for Vitest run and coverage.
+Done (2026-10-22, branch `feat/vitest-release-docs` from `feat/vitest-coverage-tests`): the matrix (`docs/framework-features.md` → README + guide) already existed from 2.4; this task: guide *Vitest* section (detection, versions, config flags, per-test output, failures, coverage provider, projects / browser guard, what is missing), Jest-only wording made neutral, Debugging section without the fixed BUG-05/06 warning, *Known issues* = the open bugs (BUG-43/44) instead of fixed ones, guide links to the .md docs as absolute GitHub URLs (they must work on Pages and in the Open Guide tab); Timeline cell for Vitest "⏳ later" (D9). README: guide link, Open Guide command, Vitest coverage note + screenshot placeholder, Vitest source-save limitation. Core README (framework-neutral), developer guide (Pages setup, roadmap, limitation row), ai-context (command, key files). `architecture.md` / runner README already covered Vitest (phases 1–5).
 **11.2 Real-repo validation & fixes (3 d buffer, per release)** — Jest and Vitest repos; findings into `docs/bugs-and-issues.md`.
+Done (2026-10-22): `e2e/real-repos.js --all`: jest-dom, vscode-jest, sample-react-project, unplugin, slidev, vueuse PASS; the heavy `jest` monorepo FAILS only the results comparison, exactly BUG-43 (23 files, all jest-runtime's own tests + `intro.test.js` + one flaky `watch.test.js` test; extension 4149/1126 vs plain 4273/1002 — phase-1 gate had 4141/1122, plain Jest flakes ±1) — every other check passes (trace, coverage, ▶ Run, save via trace, debug, timeline, Stop). Found in 5.3: the coverage exclusion bug (fixed). BUG-43 note updated.
 **11.3 Release prep (0.5–1 d per release)** — version check, e2e against the packed `.vsix` (`LTR_E2E_EXTENSION_DIR`), PR `release/x` → `main` (the PR is opened by the owner, D9).
+Done (2026-10-22): version 3.0.0 in root + extension `package.json`, both CHANGELOGs under `[3.0.0] - Unreleased` (owner sets the date when releasing); `vsce package --no-dependencies` → 37 files / 281 KB (out/extension.js, out/guide, out/instrumentation, out/vendor, src/webview); unpacked and `LTR_E2E_EXTENSION_DIR=<unpacked>/extension node e2e/run.js --all` → 25/25 (22 pass, 3 repo scenarios skipped). Left to the owner: merge the feature branches into `release/3.0.0`, open the `release/3.0.0` → `main` PR, enable GitHub Pages (Settings → Pages → Source: GitHub Actions).
 **11.4 Guide on GitHub Pages + "Open Guide" command (1 d, part of 3.0.0, D10)** — Pages workflow publishing `docs/live-test-runner-guide.html` as the docs site; README link; command `liveTestRunner.openGuide` opening the guide.
+Done (2026-10-22): `.github/workflows/pages.yml` (push to `main` touching the guide, or manual: copies it to `_site/index.html`, `configure-pages@v5` / `upload-pages-artifact@v3` / `deploy-pages@v4`) → https://eshandias.github.io/live-test-runner/ once Pages is enabled with source "GitHub Actions". Command **Open Guide** (`views/GuidePanel.ts`): `esbuild.js` copies the guide to `out/guide/guide.html` (in the .vsix, offline, version-matched), shown in a webview with a nonce CSP so its theme toggle / nav script runs; one tab (reveals on repeat); no copy (dev build) → opens the online guide. Unit `test/guidePanel.test.ts`, e2e `guide-open` (also passes on the packed .vsix).
 
 ## 7. Totals
 
@@ -451,8 +455,11 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 
 - 5.3 done (2026-10-22) → **M3a**. Phase 5 complete. Gate: build, lint, 180 runner + 38 extension unit tests, `e2e/run.js --all` (24/24: 21 pass, 3 repo scenarios skipped), `e2e/real-repos.js --fresh` (6/6 PASS: jest-dom, vscode-jest, sample-react-project, unplugin, slidev, vueuse).
 
+**Phase 11 (branch `feat/vitest-release-docs`, from `feat/vitest-coverage-tests`)**
+- 11.1–11.4 done (2026-10-22) → **3.0.0 ready for the owner's release PR**. Gate: build, lint, 180 runner + 39 extension unit tests, e2e on the packed .vsix 25/25, `e2e/real-repos.js --all` 6/7 PASS (jest monorepo: BUG-43 only, unchanged).
+
 **Next**
-1. Phase 11 (11.1 matrix + guide, 11.2 real-repo validation, 11.3 release prep, 11.4 guide on Pages + Open Guide) on `feat/vitest-release-docs`, then phase 6 → 7 → 8 → 9 (D9).
+1. Phase 6 (related tests on save) on `feat/vitest-related`, then 7 → 8 → 9 (D9).
 
 ## Progress tracker
 
@@ -479,10 +486,10 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 5.1 Coverage run
 - [x] 5.2 Coverage mapping
 - [x] 5.3 Tests (M3a)
-- [ ] 11.1 Feature matrix + guide
-- [ ] 11.2 Real-repo validation
-- [ ] 11.3 Release prep → **3.0.0**
-- [ ] 11.4 Guide on GitHub Pages + Open Guide command (D10)
+- [x] 11.1 Feature matrix + guide
+- [x] 11.2 Real-repo validation
+- [x] 11.3 Release prep → **3.0.0** (release PR by the owner)
+- [x] 11.4 Guide on GitHub Pages + Open Guide command (D10)
 - [x] 4.1–4.3 Live streaming (3.0.x)
 - [ ] 6.1–6.3 Related/on-save (3.0.x)
 - [ ] 7.1–7.7 Monorepos (3.1)

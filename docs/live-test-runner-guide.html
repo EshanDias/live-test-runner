@@ -121,6 +121,7 @@
     <a href="#results">Results panel</a>
     <a href="#coverage">Code coverage</a>
     <a href="#debugging">Debugging</a>
+    <a href="#vitest">Vitest</a>
     <a href="#timeline">Timeline Debugger</a>
     <div class="group">Reference</div>
     <a href="#commands">Commands</a>
@@ -140,7 +141,7 @@
 <!-- ───────────────────────── Overview ───────────────────────── -->
 <section id="overview">
   <h1>Live Test Runner</h1>
-  <p class="lead">Save a file → the affected Jest tests run → results show up in the editor. You don't need a terminal or any config changes.</p>
+  <p class="lead">Save a file → the affected Jest or Vitest tests run → results show up in the editor. You don't need a terminal or any config changes.</p>
 
   <div class="cards">
     <div class="card"><span class="ico">⚡</span><b>Reruns on save</b><span>Only the tests affected by the file you saved.</span></div>
@@ -156,7 +157,7 @@
 <section id="quick-start">
   <h2>Quick start</h2>
   <ol class="steps">
-    <li>Open a Jest project (a single folder, or set <code>liveTestRunner.projectRoot</code>).</li>
+    <li>Open a Jest or Vitest project (a single folder, or set <code>liveTestRunner.projectRoot</code>).</li>
     <li>Click the <b>beaker</b> icon in the Activity Bar. Tests are discovered right away.</li>
     <li>Click <b>▶ Start Testing</b>. The full suite runs once.</li>
     <li>Edit and save. The affected tests rerun automatically.</li>
@@ -230,7 +231,7 @@
   </table></div>
   <ul>
     <li><b>Badge</b>: <code>Stmts · Branch · Fns · Lines</code> in the Explorer.</li>
-    <li><b>Hover</b> a line to see the covering tests and which branch arms were missed.</li>
+    <li><b>Hover</b> a line to see the covering tests and which branch arms were missed. With Vitest the hover shows coverage and branches, but not the covering tests yet.</li>
     <li><b>Stale overlay</b>: a grey tint on a saved file until its rerun finishes.</li>
     <li>Files no test imports count as 0%, so totals cover the whole project.</li>
   </ul>
@@ -239,14 +240,29 @@
 <!-- ───────────────────────── Debugging ───────────────────────── -->
 <section id="debugging">
   <h2>Debugging</h2>
-  <p><code>▷ Debug</code> starts a VS Code Node debug session that runs Jest in band for that test or suite. Breakpoints in tests and source files work as usual.</p>
-  <div class="note warn">Known issues: CodeLens Debug currently debugs the whole file, and the launch config fails on Windows. See <a href="bugs-and-issues.md#bug-05">BUG-05</a> and <a href="bugs-and-issues.md#bug-06">BUG-06</a>.</div>
+  <p><code>▷ Debug</code> starts a VS Code Node debug session for exactly that test or suite: Jest runs in band, Vitest runs with <code>--no-file-parallelism</code> and no timeouts (child processes attach automatically). Breakpoints in tests and source files work as usual.</p>
+</section>
+
+<!-- ───────────────────────── Vitest ───────────────────────── -->
+<section id="vitest">
+  <h2>Vitest</h2>
+  <p>Vitest projects work like Jest ones: open the folder, click <b>▶ Start Testing</b>. The framework is detected from the project (a <code>vitest</code> dependency or a <code>vitest.config.*</code>, and no Jest config).</p>
+  <ul>
+    <li><b>Versions</b>: Vitest 3 or newer is fully supported. Vitest 1–2 run with results only (no test listing, related tests or line numbers). Vitest 5 needs Node ≥ 22.12 on your <code>PATH</code>.</li>
+    <li><b>Your config wins</b>: the extension runs the project's own Vitest with its config, plus the config flags from your <code>test</code> script (<code>--config</code>, <code>--project</code>, <code>--root</code>, …). Files outside <code>include</code> are not run.</li>
+    <li><b>Console output per test</b>: Vitest says which test or suite printed each line, so every test shows its own output after any run.</li>
+    <li><b>Failures</b>: the expected / received diff and the source-mapped line. A failing <code>beforeAll</code> shows its real error and marks the file failed.</li>
+    <li><b>Coverage</b> uses Vitest's own provider. Install <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>, whichever your config names); without it the log says once that coverage is off. Nothing is written into your project's <code>coverage/</code> folder.</li>
+    <li><b>Projects</b>: a config with <code>test.projects</code> runs once from the root; Vitest runs every project. Browser-mode projects need real browsers, so they are left out unless you turn on <code>vitestIncludeBrowserProjects</code> or your test script picks projects itself.</li>
+    <li><b>Not yet</b>: "covering tests" in the hover and precise source-file reruns (they need the execution trace; saving a source file runs <code>vitest related</code> instead), the Timeline Debugger, and monorepos with several packages.</li>
+  </ul>
+  <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — tree fills in, results, coverage bars -->
 </section>
 
 <!-- ───────────────────────── Timeline ───────────────────────── -->
 <section id="timeline">
   <h2>Timeline Debugger <span class="muted">(preview)</span></h2>
-  <p>Re-runs one test with full instrumentation, then lets you replay it step by step.</p>
+  <p>Re-runs one test with full instrumentation, then lets you replay it step by step. Jest only — not available for Vitest yet.</p>
   <ul>
     <li>Play / step / scrub through each executed line.</li>
     <li>Variable values shown as ghost text in the editor.</li>
@@ -263,12 +279,13 @@
   <div class="table-wrap"><table>
     <tr><th>Command</th><th>Does</th></tr>
     <tr><td>Start Testing</td><td>Runs everything and starts watching for saves</td></tr>
-    <tr><td>Stop Testing</td><td>Ends the session and kills running Jest processes</td></tr>
+    <tr><td>Stop Testing</td><td>Ends the session and kills running Jest / Vitest processes</td></tr>
     <tr><td>Stop Testing and Clear Cache</td><td>Stop, then wipe the discovery cache (<kbd>Shift</kbd>+<kbd>Delete</kbd> in the views)</td></tr>
     <tr><td>Clear Cache and Restart Testing</td><td>Wipe the cache and rediscover tests</td></tr>
     <tr><td>Select Project Root</td><td>Pick the root folder in multi-folder workspaces</td></tr>
     <tr><td>Show Logs</td><td>Opens the <b>Live Test Runner</b> log (levelled)</td></tr>
-    <tr><td>Show Test Output</td><td>Opens the raw Jest output</td></tr>
+    <tr><td>Show Test Output</td><td>Opens the raw Jest / Vitest output</td></tr>
+    <tr><td>Open Guide</td><td>Opens this guide in an editor tab</td></tr>
     <tr><td>Copy Diagnostic Report</td><td>Copies versions, project setup, settings and recent logs for a bug report</td></tr>
     <tr><td>Open Timeline Debugger</td><td>Traces a single test</td></tr>
     <tr><td>Show All Covering Tests</td><td>Quick Pick of every test that ran a line</td></tr>
@@ -330,14 +347,14 @@
   <h3>Common warnings</h3>
   <div class="table-wrap"><table>
     <tr><th>Message</th><th>Meaning / what to do</th></tr>
-    <tr><td><code>instrumented Jest run returned no results … Jest said:</code></td><td>Jest failed before running tests (config, transform, environment). The lines after it are Jest's own error. Often a config format we don't read yet (<a href="bugs-and-issues.md#bug-07">BUG-07</a>).</td></tr>
+    <tr><td><code>instrumented Jest run returned no results … Jest said:</code></td><td>Jest failed before running tests (config, transform, environment). The lines after it are Jest's own error. Often a config format we don't read yet (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-07">BUG-07</a>).</td></tr>
     <tr><td><code>falling back to plain Jest, one file at a time</code></td><td>Tests still run, but more slowly and without coverage or smart reruns for those files.</td></tr>
     <tr><td><code>&lt;file&gt; failed to run — …</code></td><td>The test file could not execute (syntax error, missing module, setup crash).</td></tr>
     <tr><td><code>could not instrument &lt;file&gt;</code></td><td>That source file runs without coverage. Set the level to Debug to see the parse error.</td></tr>
     <tr><td><code>falling back to "npx jest"</code></td><td>No local Jest found. Run <code>npm install</code> or set <code>jestCommand</code>.</td></tr>
-    <tr><td><code>no file has finished in 60s — … currently on X</code></td><td>A batch made no progress. If the next warning names a <i>different</i> file, tests are just slow. If it names the <i>same</i> file, a test there is probably hanging (<a href="bugs-and-issues.md#bug-23">BUG-23</a>).</td></tr>
+    <tr><td><code>no file has finished in 60s — … currently on X</code></td><td>A batch made no progress. If the next warning names a <i>different</i> file, tests are just slow. If it names the <i>same</i> file, a test there is probably hanging (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-23">BUG-23</a>).</td></tr>
     <tr><td><code>… was still running in b3 — cancelling b3</code></td><td>A save reran a file that a bigger batch was running. That batch's unfinished files are retried, more slowly.</td></tr>
-    <tr><td><code>Trace finished … captured 0 steps</code></td><td>The timeline matched no test, or the transform didn't apply (<a href="bugs-and-issues.md#bug-12">BUG-12</a>).</td></tr>
+    <tr><td><code>Trace finished … captured 0 steps</code></td><td>The timeline matched no test, or the transform didn't apply (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-12">BUG-12</a>).</td></tr>
   </table></div>
 
   <h3>Reporting a bug</h3>
@@ -365,7 +382,7 @@
     <tr><td>Monorepo / multi-project</td><td>🟡</td><td>—</td><td>🟡 Vitest <code>projects</code>, run from the root</td></tr>
     <tr><td>Mixed frameworks in one project</td><td>—</td><td>—</td><td>⏳ 3.2</td></tr>
     <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>⏳ 3.3</td></tr>
-    <tr><td>Timeline debugger</td><td>⏳</td><td>⏳</td><td>⏳ 3.4</td></tr>
+    <tr><td>Timeline debugger</td><td>⏳</td><td>⏳</td><td>⏳ later</td></tr>
   </table></div>
   <!-- matrix:end -->
   <ul>
@@ -416,17 +433,16 @@
     <li><b>One source of truth</b>: <code>ResultStore</code> for results, trace files on disk for trace indexes.</li>
     <li><b>Isolation</b>: each VS Code window gets its own <code>session-&lt;pid&gt;-&lt;ts&gt;</code> temp folder.</li>
   </ul>
-  <p class="muted">More detail: <a href="architecture.md">architecture.md</a> · <a href="developer-guide.md">developer-guide.md</a></p>
+  <p class="muted">More detail: <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/architecture.md">architecture.md</a> · <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/developer-guide.md">developer-guide.md</a></p>
 </section>
 
 <!-- ───────────────────────── Known issues ───────────────────────── -->
 <section id="known-issues">
   <h2>Known issues</h2>
-  <p>All known bugs, with root-cause analysis and suggested fixes, are tracked in <a href="bugs-and-issues.md"><b>bugs-and-issues.md</b></a>. The top ones:</p>
+  <p>All known bugs, with root-cause analysis and suggested fixes, are tracked in <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md"><b>bugs-and-issues.md</b></a>. The open ones:</p>
   <ul>
-    <li><b>Windows</b>: test-name patterns are mangled by <code>cmd.exe</code> (<a href="bugs-and-issues.md#bug-03">BUG-03</a>), and Stop doesn't kill Jest (<a href="bugs-and-issues.md#bug-08">BUG-08</a>).</li>
-    <li>Per-test trace is never recorded, so smart reruns fall back to <code>--findRelatedTests</code> (<a href="bugs-and-issues.md#bug-04">BUG-04</a>).</li>
-    <li><code>jest.config.ts</code> and other formats are not read by instrumented runs (<a href="bugs-and-issues.md#bug-07">BUG-07</a>).</li>
+    <li>In the Jest monorepo, jest-runtime's own tests fail under the session run though they pass with plain Jest (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-43">BUG-43</a>).</li>
+    <li>Tests that write files into the project can race with batches running at the same time; the batch is retried file by file, so results are right but slower (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-44">BUG-44</a>).</li>
   </ul>
 </section>
 
