@@ -85,7 +85,9 @@ export class VitestAdapter implements FrameworkAdapter {
     const deps = { ...pkg.dependencies, ...pkg.devDependencies } as Record<string, string>;
     const hasVitest =
       'vitest' in deps ||
-      [...VITEST_CONFIG_FILES, ...VITEST_WORKSPACE_FILES].some((f) => fs.existsSync(path.join(projectRoot, f)));
+      [...VITEST_CONFIG_FILES, ...VITEST_WORKSPACE_FILES].some((f) => fs.existsSync(path.join(projectRoot, f))) ||
+      // A workspace package whose test script runs Vitest installed in the monorepo root (phase 7).
+      /(^|[\s;&|(])vitest(\s|$)/.test(String(pkg.scripts?.test ?? ''));
     return hasVitest && !new JestAdapter().detect(projectRoot);
   }
 
