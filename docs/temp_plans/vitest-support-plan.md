@@ -327,6 +327,8 @@ Today a session has **one** `projectRoot`. Goal: a user can open a monorepo or a
 **7.6 Coverage per project, merged view (1.5 d)**.
 **7.7 Tests (2.5 d)** — fixtures `monorepo-jest`, `monorepo-vitest`; real repos `jest`, `slidev`, `vueuse`; e2e `monorepo-select`, `monorepo-run`, `monorepo-stop`.
 
+Done (2026-10-22, 7.1–7.7 together, branch `feat/monorepo` from `feat/vitest-related`) → **M4** (3.1.0 scope). **7.1:** ADR-7 above. **7.2:** `src/project/ProjectContext.ts` (per-project stores, discovery + cache, `DetectingFrameworkProvider`, `SessionManager`, session dir, `ProjectObserverGate`) and `ProjectRegistry.ts` (detection, selection, `forFile`, start limit, status bar); `SessionManager` takes a fixed `projectRoot` and a status sink (`selectProjectRoot` / `_configuredProjectRoot` moved out; `isRunning()`, `progress()`, `dispose()` added); views / decorations / CodeLens / coverage bars / hover got `bindProject` / `bind`; `extension.ts` rebuilt around the registry (e2e API: selected-project getters + `projects`). Deviation from the sketch: no "file ids namespaced by project" — each project has its own store, so ids need no prefix; no `liveTestRunner.projects` setting / enable-disable — D11's switcher + "none runs automatically" replaces it. **7.3:** discovery, `DiscoveryCache` and the runnable-files cache were already keyed by root; per project now, discovery lazy for non-selected projects. **7.4:** switcher row (`testListView.js`, `projects` / `select-project` messages, `init.running`), status bar `name · status · N running`, commands `selectProject` / `stopAllProjects`, setting `maxRunningProjects` (`projectLimits.ts`). **7.5:** D12 groups (`CommandRunner.listTestFiles`, `VitestRunner.parseTestGroups`, `RunnableFilesCache` groups, `FileResult.group`, grouped rendering in `testListLayout.js`); Jest root `projects` stays one project (no grouping). **Found/fixed:** a workspace package configured only by `"test": "vitest run"` (Vitest hoisted in the root) was detected as Jest and refused by `VitestRunner` → `VitestAdapter.detect` also reads the test script. **7.6:** coverage per project falls out of the model (each context's `CoverageStore` + `SourceCounter(root)`); the view shows the selected project's; no merged total (ADR-7 (v)). **7.7:** unit — runner `projectDiscovery.test.ts` (11), groups in `vitestRunnerArgs.test.ts` (1), detector (1); extension `projectLimits.test.ts` (3), store groups (1), runnable-cache groups (1). e2e fixtures `monorepo-jest` / `monorepo-vitest`, scenarios `monorepo-select` (29 checks), `monorepo-run` (24), `monorepo-stop` (13) incl. the limit message, switching six times while two projects run, results per project vs plain Vitest, D12 groups, a background on-save rerun, no processes left. Real repos: all stay a single project and pass (jest only BUG-43).
+
 ### Phase 8 — Mixed-framework projects (13 d) — *3.2.0, Feature V7*
 
 Prerequisite: phase 7 confirmed. Principle: **a test file's framework decides its binary, config, flags, runner, reporter and coverage settings.** Frameworks run as separate processes per batch; results merge into one `ResultStore`.
@@ -478,8 +480,11 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 **Phase 6 (branch `feat/vitest-related`, from `feat/vitest-release-docs`)**
 - 6.1–6.3 done (2026-10-22) → **M3b**. Gate: build, lint (clean), 181 runner + 39 extension unit tests, `e2e/run.js --all` 27/27 (24 pass, 3 repo scenarios skipped), `e2e/real-repos.js` 6/6 PASS.
 
+**Phase 7 (branch `feat/monorepo`, from `feat/vitest-related`)**
+- 7.1–7.7 done (2026-10-22) → **M4**. Gate: build, lint (clean), 194 runner + 44 extension unit tests, `e2e/run.js --all` 30/30 (27 pass incl. `monorepo-select` / `monorepo-run` / `monorepo-stop`, 3 repo scenarios skipped), `e2e/real-repos.js` 6/6 PASS (jest-dom, vscode-jest, sample-react-project, unplugin, slidev, vueuse — each still one project), `e2e/real-repos.js jest`: only BUG-43 (23 files, the same jest-runtime set + `intro.test.js` + flaky `watch.test.js`), every other check passes. Owner to confirm ADR-7 items (i)–(v).
+
 **Next**
-1. Phase 7 (monorepos / multi-project, D11/D12) on `feat/monorepo` from `feat/vitest-related`, then 8 → 9 (D9).
+1. Phase 8 (mixed-framework projects, D13) on a branch from `feat/monorepo`, then 9 (D9). Note for 8: the per-project `DetectingFrameworkProvider` is where the `FrameworkRouter` goes.
 
 ## Progress tracker
 
@@ -512,7 +517,7 @@ M1 (inside 3.0.0) = phases 0–2: Vitest runs and shows pass/fail (≈ 26 d).
 - [x] 11.4 Guide on GitHub Pages + Open Guide command (D10)
 - [x] 4.1–4.3 Live streaming (3.0.x)
 - [x] 6.1–6.3 Related/on-save (3.0.x) (M3b)
-- [ ] 7.1–7.7 Monorepos (3.1)
+- [x] 7.1–7.7 Monorepos (3.1) (M4)
 - [ ] 8.1–8.6 Mixed (3.2)
 - [ ] 9.1–9.4 Trace (3.3)
 - [ ] ~~10.1–10.3 Timeline~~ — deferred, separate release (D9)
