@@ -65,7 +65,7 @@ export { refusingAdapter } from './framework/refusingAdapter';
 // Lower-level layers — exposed for testing and advanced usage
 export { BinaryResolver, nodeRuntime, nodeRuntimeVersion, NodeRuntime } from './resolution/BinaryResolver';
 export { parseVersion, compareVersions, satisfies } from './utils/semver';
-export { registerProjectRoot, toRunnerPath, fromRunnerPath, toJestPath, fromJestPath } from './resolution/RunnerPaths';
+export { registerProjectRoot, toRunnerPath, fromRunnerPath, toSpawnPath, toJestPath, fromJestPath } from './resolution/RunnerPaths';
 export { Executor, tail } from './execution/Executor';
 
 // Logging — the extension installs a sink so runner/core logs reach its log channel

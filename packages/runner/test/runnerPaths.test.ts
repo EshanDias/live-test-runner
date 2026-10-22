@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { _resetProjectRoots, fromJestPath, fromRunnerPath, registerProjectRoot, toJestPath, toRunnerPath } from '../src/resolution/RunnerPaths';
+import { _resetProjectRoots, fromJestPath, fromRunnerPath, registerProjectRoot, toJestPath, toRunnerPath, toSpawnPath } from '../src/resolution/RunnerPaths';
 import { toJestPathArg } from '../src/JestRunner';
 import { ResultParser } from '../src/parsing/ResultParser';
 
@@ -106,6 +106,32 @@ describe('RunnerPaths — Windows 8.3 short names (simulated)', () => {
   it('maps file paths in Jest JSON results', () => {
     const json = JSON.stringify({ testResults: [{ name: `${long}\\src\\a.test.js`, status: 'passed', assertionResults: [] }] });
     expect(new ResultParser().parse(true, json, '').fileResults[0].testFilePath).toBe(`${short}\\src\\a.test.js`);
+  });
+});
+
+describe('toSpawnPath — one spelling for Vitest (Windows)', () => {
+  const short = 'c:\\Users\\RUNNER~1\\proj';
+  const long = 'C:\\Users\\runneradmin\\proj';
+  // GetFinalPathNameByHandle: long names, upper-case drive.
+  const nativeRealpath = (p: string) => {
+    if (!p.toLowerCase().startsWith(short.toLowerCase())) { throw new Error('ENOENT'); }
+    return long + p.slice(short.length);
+  };
+
+  beforeEach(() => _resetProjectRoots(true));
+  afterAll(() => _resetProjectRoots());
+
+  it('expands 8.3 names of existing files, e.g. the vitest entry that require.resolve left short', () => {
+    expect(toSpawnPath(`${short}\\node_modules\\vitest\\vitest.mjs`, nativeRealpath))
+      .toBe(`${long}\\node_modules\\vitest\\vitest.mjs`);
+    expect(toSpawnPath(short, nativeRealpath)).toBe(long);
+  });
+
+  it('falls back to the registered root for missing paths, with an upper-case drive', () => {
+    registerProjectRoot(short, nativeRealpath);
+    expect(toSpawnPath('c:\\Users\\RUNNER~1\\proj\\gone.test.js', () => { throw new Error('ENOENT'); }))
+      .toBe(`${long}\\gone.test.js`);
+    expect(toSpawnPath('d:\\elsewhere\\a.js', () => { throw new Error('ENOENT'); })).toBe('D:\\elsewhere\\a.js');
   });
 });
 

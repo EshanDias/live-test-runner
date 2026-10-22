@@ -128,7 +128,8 @@ describe('vitest list output', () => {
       runner.setProjectRoot(link);
       await runner.runTestFileJson(path.join(link, 'src', 'a.test.ts'));
       const [cmd] = calls;
-      // cwd (Vitest's root), config and file filter all spelled the same way.
+      // CLI entry, cwd (Vitest's root), config and file filter all spelled the same way.
+      expect(cmd.binary).toBe(path.join(root, 'node_modules', 'vitest', 'vitest.mjs'));
       expect(cmd.cwd).toBe(root);
       expect(cmd.args).toContain(path.join(root, 'vitest.config.ts'));
       expect(cmd.args).toContain(path.join(root, 'src', 'a.test.ts').replace(/\\/g, '/'));
@@ -136,6 +137,7 @@ describe('vitest list output', () => {
       // The live batch command too.
       const live = await runner.liveCommand([path.join(link, 'src', 'a.test.ts')]);
       expect(live.command.cwd).toBe(root);
+      expect(live.command.binary).toBe(path.join(root, 'node_modules', 'vitest', 'vitest.mjs'));
       expect(live.command.args.join(' ')).not.toContain(link);
     } finally {
       fs.rmSync(link, { recursive: true, force: true });

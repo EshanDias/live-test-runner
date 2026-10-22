@@ -53,7 +53,9 @@ module.exports = {
     t.info(`program: ${config.program}`);
     t.info(`args: ${JSON.stringify(config.args)}`);
     t.check('program is Vitest\'s CLI entry and exists', /vitest\.mjs$/.test(config.program) && fs.existsSync(config.program), config.program);
-    t.eq('cwd is the project root', config.cwd.toLowerCase(), workspace.toLowerCase());
+    // The real path (8.3 names expanded, symlinks resolved), like the runs.
+    const real = (p) => fs.realpathSync.native(p).toLowerCase();
+    t.eq('cwd is the project root', real(config.cwd), real(workspace));
     t.eq('child processes are auto-attached (tests run in workers)', config.autoAttachChildProcesses, true);
     t.check('runs one file at a time without timeouts', ['--no-file-parallelism', '--test-timeout=0'].every((a) => config.args.includes(a)), JSON.stringify(config.args));
     await h.waitFor(() => terminated.length > 0, { what: 'the debug session to end', timeout: 90_000 });

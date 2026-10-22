@@ -11,7 +11,7 @@ import { RunResult } from './types';
 import * as os from 'os';
 import { FRAMEWORK_IDS } from './types';
 import { createLogger } from './utils/logger';
-import { fromRunnerPath, toRunnerPath } from './resolution/RunnerPaths';
+import { fromRunnerPath, toSpawnPath } from './resolution/RunnerPaths';
 
 const log = createLogger('VitestRunner');
 
@@ -33,10 +33,10 @@ export function toVitestNamePattern(testFullName: string, isTestSuite: boolean):
 /**
  * A file path as a Vitest positional filter. Vitest resolves filters against
  * its cwd and matches by path, so an absolute path selects exactly that file.
- * Real path under a symlinked root (see RunnerPaths), forward slashes.
+ * Spelled like Vitest's root and CLI entry (toSpawnPath), forward slashes.
  */
 export function toVitestPathArg(filePath: string): string {
-  return toRunnerPath(filePath).replace(/\\/g, '/');
+  return toSpawnPath(filePath).replace(/\\/g, '/');
 }
 
 /**
@@ -131,7 +131,7 @@ export class VitestRunner extends CommandRunner {
     const coverage = options.coverageDir ? await this.coverageArgs(root, options.coverageDir) : undefined;
     if (coverage) { args.push(...coverage); }
     return {
-      command: { binary: this.resolveBinary(), args, cwd: this.spawnPath(root), extraEnv: env, label: this.processLabel, forwardStdout: true },
+      command: { binary: this.spawnPath(this.resolveBinary()), args, cwd: this.spawnPath(root), extraEnv: env, label: this.processLabel, forwardStdout: true },
       eventsFile: env[VITEST_EVENTS_ENV],
       resultFile,
       coverageFile: coverage ? path.join(options.coverageDir!, 'coverage-final.json') : undefined,
@@ -203,12 +203,12 @@ export class VitestRunner extends CommandRunner {
 
   /**
    * Vitest's root is its cwd as given (no realpath): on Windows an 8.3 name
-   * like C:\Users\RUNNER~1 stays short, and the real-path file filters
-   * (toVitestPathArg) would then match nothing. Running from the real path
-   * keeps root, config and filters in one spelling.
+   * like C:\Users\RUNNER~1 stays short. Its CLI entry, cwd, config and file
+   * filters must all be spelled the same way, or nothing matches / Vitest
+   * loads twice (see toSpawnPath).
    */
   protected override spawnPath(p: string): string {
-    return toRunnerPath(p);
+    return toSpawnPath(p);
   }
 
   protected override leadingArgs(request: RunRequest): string[] {
