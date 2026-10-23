@@ -2,7 +2,7 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [Unreleased]
+## [3.1.0] - Unreleased
 
 ### New
 

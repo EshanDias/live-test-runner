@@ -73,8 +73,11 @@ export function combineWithEntry(
 /**
  * `next`'s counters, plus what `prev` (another framework's instrumentation
  * of the same file) ran: a statement counts once a covered statement of
- * `prev` starts on its line, a function once a called one starts there,
- * a branch arm once the same arm of a branch on that line (same arm count) ran.
+ * `prev` starts on its line — or a function `prev` called starts or ends
+ * there (Vitest's v8 coverage has a statement for the `function f() {` and
+ * `}` lines, Jest's babel instrumentation only for the body) —, a function
+ * once a called one starts there, a branch arm once the same arm of a branch
+ * on that line (same arm count) ran.
  */
 export function mergeByLine(prev: Manifest, prevCov: LiveCov, next: Manifest, nextCov: FileCov): LiveCov {
   const ranLines = new Set<number>();
@@ -83,7 +86,11 @@ export function mergeByLine(prev: Manifest, prevCov: LiveCov, next: Manifest, ne
   }
   const calledLines = new Set<number>();
   for (const [id, fn] of Object.entries(prev.functions)) {
-    if ((prevCov.f[id] ?? 0) > 0) { calledLines.add(fn.start.line); }
+    if ((prevCov.f[id] ?? 0) > 0) {
+      calledLines.add(fn.start.line);
+      ranLines.add(fn.start.line);
+      ranLines.add(fn.end.line);
+    }
   }
   const armsByLine = new Map<string, number[]>();
   for (const [id, br] of Object.entries(prev.branches)) {

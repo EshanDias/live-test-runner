@@ -70,6 +70,15 @@ module.exports = {
       const math = api.coverageStore.getEntry(key(path.join(workspace, 'src', 'math.js')));
       t.eq('math.js measured', math?.state, 'measured');
       t.check('…add (Jest) and mul (Vitest) both covered, neverCalled not', math && math.pct.functions.covered === 2 && math.pct.functions.total === 3, JSON.stringify(math?.pct.functions));
+      // Line by line, as the gutter shows it: add (lines 2–4, Jest) and mul (6–8, Vitest) fully covered, neverCalled (10–12) not.
+      const manifest = math && JSON.parse(require('fs').readFileSync(math.manifestPath, 'utf8'));
+      const lineState = {};
+      for (const [id, stmt] of Object.entries(manifest?.statements ?? {})) {
+        const l = stmt.start.line;
+        lineState[l] = (lineState[l] ?? false) || (math.counters.s[id] ?? 0) > 0;
+      }
+      const wrong = [2, 3, 4, 6, 7, 8].filter((l) => lineState[l] === false).concat([10, 11, 12].filter((l) => lineState[l] === true));
+      t.check('…every line of add and mul covered, neverCalled\'s not', wrong.length === 0, `wrong lines: ${wrong} · ${JSON.stringify(lineState)}`);
 
       // ── ▶ Run one test: its file's framework ──
       const mark = h.rawMark(api);

@@ -2,7 +2,7 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [Unreleased]
+## [3.1.0] - Unreleased
 
 ### Monorepos & multi-project workspaces (phase 7)
 
@@ -28,8 +28,14 @@ All notable changes to Live Test Runner are documented here.
 - **New setting `liveTestRunner.frameworks`** — `{ "<glob>": "jest" | "vitest" }` (or `{ "framework": … }`), globs relative to the workspace folder, first match wins; it also makes a Jest project without a Vitest config mixed when it sends one of its files to Vitest. Per-glob `config` / `root` are not supported (reported at WARN).
 - e2e: fixtures `mixed-same-package` (Jest `*.test.js` + `*.jest.js`, Vitest `*.test.js` + `*.vitest.js`, one shared source file) and `mixed-monorepo` (Jest, Vitest and mixed packages); scenarios `mixed-full-run` (placement, results that only pass under the right framework, groups, the D13 WARN, status split, merged coverage, ▶ Run), `mixed-on-save` (test-file saves, a source-file save rerunning both frameworks without cross-applying results, a file moving to Vitest, config restart), `mixed-stop` (both frameworks' processes killed, nothing restarts), `mixed-monorepo`.
 
+### Website & screenshots
+
+- **The website deploys from `main` only** (`pages.yml`): release branches no longer publish a pre-release copy. Hero badge: "New in 3.1 — Monorepos · Jest and Vitest in one project"; framework table rows for monorepos and mixed projects.
+- README / guide screenshots of the project switcher and a mixed Jest + Vitest project (Explorer grouped by framework, merged coverage) — captured from the real UI by the opt-in `e2e/scenarios/diag-screenshots*.js` (`LTR_E2E_CDP_PORT` + `LTR_E2E_SHOTS_DIR`: VS Code gets a DevTools port and the scenario captures its own window; `diag-` scenarios never run in `--all`).
+
 ### Bug Fixes
 
+- **Mixed-project coverage: a function's first and last line stayed red** when the other framework had called it — Vitest's v8 coverage has a statement for the `function f() {` and `}` lines, Jest's instrumentation only for the body; `mergeByLine` now counts the start and end line of a called function too (found in the screenshot; `mixed-full-run` checks every line of the shared file).
 - **Jest batches skipped files of a custom `testMatch` / `testRegex`** — the batch config dropped both (files are passed by path), so Jest applied its *default* `testMatch` and silently left out e.g. `*.jest.js`; those files fell back to plain Jest one by one (slower, no coverage, no trace). The overlay now keeps the project's own pattern (`testRegex` when set, else `testMatch`; only one of the two, as `--showConfig` may fill in both) — the passed files come from `jest --listTests` with that config, and ts-jest, which reads the patterns too, sees the real ones.
 
 ## [3.0.0] - 2026-10-22

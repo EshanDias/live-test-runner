@@ -36,6 +36,25 @@ describe('coverage across frameworks', () => {
     });
   });
 
+  it('mergeByLine: a function the other framework called covers its header and closing lines', () => {
+    // v8 (Vitest): one statement per line of add (lines 1–3); Jest's babel: only the body (line 2).
+    const v8: Manifest = {
+      filePath: '/p/a.ts',
+      statements: { 0: st(1), 1: st(2), 2: st(3) },
+      functions: { 0: { name: 'add', start: { line: 1 }, end: { line: 3 } } },
+      branches: {},
+    };
+    const babel: Manifest = {
+      filePath: '/p/a.ts',
+      statements: { a: st(2) },
+      functions: { fa: { name: 'add', start: { line: 1 }, end: { line: 3 } } },
+      branches: {},
+    };
+    // Jest called add, Vitest did not: the v8 entry gets all three lines.
+    expect(mergeByLine(babel, { s: { a: 1 }, f: { fa: 1 }, b: {} }, v8, { s: { 0: 0, 1: 0, 2: 0 }, f: { 0: 0 }, b: {} }).s)
+      .toEqual({ 0: 1, 1: 1, 2: 1 });
+  });
+
   it('combineWithEntry: same manifest merges, a newer version of the same framework replaces, the other framework merges by line', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr covmerge '));
     try {

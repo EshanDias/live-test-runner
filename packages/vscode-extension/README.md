@@ -99,7 +99,9 @@ Hover any line to see which tests cover it, their pass/fail status, and duration
 - A root config that already covers its packages (Jest `projects`, Vitest `test.projects`) stays one project; Vitest projects are grouped by name in the tree.
 - `maxRunningProjects` limits how many run at once.
 
-<!-- [TODO: USER_INPUT_NEEDED] gif: a pnpm monorepo — open the switcher, start two packages, switch between them while both run -->
+![Project switcher in a monorepo](resources/images/monorepo-switcher.png)
+
+<!-- [TODO: USER_INPUT_NEEDED] optional gif: open the switcher, start two packages, switch between them while both run -->
 
 ---
 
@@ -113,7 +115,9 @@ Migrating from Jest to Vitest? A project with a Jest config **and** its own `vit
 
 The tree groups files by framework, saves rerun both frameworks' related tests, and coverage merges both.
 
-<!-- [TODO: USER_INPUT_NEEDED] screenshot: Explorer of a mixed Jest + Vitest project grouped by framework, status bar showing "Jest 5 · Vitest 3" -->
+![A Jest + Vitest project: files grouped by framework, status bar split](resources/images/mixed-explorer.png)
+
+![Coverage of a file tested by both Jest and Vitest](resources/images/mixed-coverage.png)
 
 ---
 

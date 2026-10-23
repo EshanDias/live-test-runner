@@ -172,6 +172,8 @@ function runScenario(name, exe) {
     ...(process.platform === 'linux' ? ['--no-sandbox', '--disable-gpu-sandbox', '--disable-gpu'] : []),
     // LTR_E2E_DEBUG=1: debug-level logs (also inside Jest via LTR_LOG_LEVEL).
     ...(process.env.LTR_E2E_DEBUG ? ['--log', 'debug'] : []),
+    // LTR_E2E_CDP_PORT: the window's DevTools port — diag-screenshots captures itself through it.
+    ...(process.env.LTR_E2E_CDP_PORT ? [`--remote-debugging-port=${process.env.LTR_E2E_CDP_PORT}`] : []),
   ];
 
   const timeoutMs = (scenario.timeoutMs || 5 * 60_000) + 60_000;
