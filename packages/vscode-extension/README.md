@@ -83,10 +83,10 @@ After the first run, every source file shows per-line coverage — no separate c
 | Red `▌` | Never executed |
 | Grey `▌` | Not executable |
 
-Hover any line to see which tests cover it, their pass/fail status, and duration (Jest; Vitest shows coverage and branches — covering tests are coming). When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
+Hover any line to see which tests cover it, their pass/fail status, and duration (Jest and Vitest). When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
 
 <!-- [TODO: USER_INPUT_NEEDED] Screenshot or gif of coverage bars + hover tooltip in a source file -->
-<!-- [TODO: USER_INPUT_NEEDED] Screenshot: coverage bars + hover on a Vitest project (with @vitest/coverage-v8 installed) -->
+<!-- [TODO: USER_INPUT_NEEDED] Screenshot: coverage bars + hover listing the covering tests on a Vitest project (with @vitest/coverage-v8 installed) -->
 ![Code Coverage Example](resources/images/code_coverage.png)
 
 ---
@@ -181,6 +181,7 @@ All settings under `liveTestRunner.*`.
 | `jestCommand` | `""` | Override Jest binary path |
 | `vitestCommand` | `""` | Override the Vitest command (e.g. `npx vitest`); empty = the project's own Vitest |
 | `frameworks` | `{}` | Jest + Vitest projects: glob → `"jest"` / `"vitest"` for those test files |
+| `vitestTrace` | `true` | Vitest execution trace: covering tests on hover, and saves rerun only the tests that ran the file |
 | `vitestIncludeBrowserProjects` | `false` | Also run Vitest browser-mode projects (need Playwright / WebdriverIO browsers) |
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
@@ -206,10 +207,10 @@ All settings under `liveTestRunner.*`.
 | Logs / console output | ✅ per file | ✅ per file | ✅ per test |
 | Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) |
 | Live per-file progress | ✅ | ✅ | ✅ |
-| Rerun tests related to a saved source file | ✅ | ✅ | ✅ whole test files (`vitest related`) |
+| Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off |
 | Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name |
 | Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ |
-| Execution trace / "covering tests" | ✅ | ✅ | ⏳ 3.3 |
+| Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3; not in a `vitest.workspace` file or browser mode |
 | Timeline debugger | ⏳ | ⏳ | ⏳ later |
 <!-- matrix:end -->
 
@@ -224,7 +225,7 @@ Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projec
 - Individual test reruns use `--testNamePattern` — tests with exactly the same full name run together
 - Jest captures console output per file; it shows on a single test only when that test is rerun on its own. With Vitest every test shows its own output.
 - Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
-- Vitest: saving a source file reruns the whole test files that import it (`vitest related`); per-test reruns need the execution trace, coming in a later release
+- Vitest: the execution trace needs Vitest ≥ 3 and is off for projects with a `vitest.workspace` file and for browser-mode projects — saving a source file then reruns the test files that import it (`vitest related`)
 
 ---
 

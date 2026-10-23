@@ -51,7 +51,8 @@ src/
 │   ├── UnsupportedFrameworkError.ts
 │   ├── refusingAdapter.ts            stand-in adapter a runner keeps for another framework's project
 │   ├── vitestConfig.ts               testScriptVitestArgs: config-relevant flags of the test script (follows nr/npm run/pnpm)
-│   └── vitestProjects.ts             vitestProjects(): projects + browser flag via the project's own Vitest node API (browser-mode guard)
+│   ├── vitestProjects.ts             vitestProjects(): projects + browser flag via the project's own Vitest node API (browser-mode guard)
+│   └── vitestTrace.ts                viteEntryFor / vitestDirFor: the project's own Vite for the trace wrapper config
 ├── resolution/
 │   ├── BinaryResolver.ts             Finds jest binary in project node_modules
 │   └── RunnerPaths.ts                Symlinked roots: editor path ↔ the test runner's realpath
@@ -144,11 +145,18 @@ src/
 │   │   ├── shared/
 │   │   │   ├── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook; flushes T/H records to JSONL — framework-neutral
 │   │   │   └── testDiscovery.js        Static AST test discovery (bundled; used by TestDiscoveryService)
-│   │   └── jest/
-│   │       ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
-│   │       ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
-│   │       └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
-│   ├── VitestBatchRunner.ts        IBatchRunner for Vitest: one process per batch, results streamed per file (reporter events), per-test hang limit, Vitest coverage → CoverageStore
+│   │   ├── jest/
+│   │   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
+│   │   │   ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
+│   │   │   └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
+│   │   └── vitest/                    Vitest execution trace (ADR-9)
+│   │       ├── vitestTraceConfig.js      wrapper-config helper: project config via its own Vite + plugin into every test.projects entry
+│   │       ├── vitestTracePlugin.js      Vite plugin: setup file first, enforce:'post' transform of project sources
+│   │       ├── vitestTraceTransform.js   splices globalThis.__strace?.step(L,F) (lines via the incoming source map); withoutTrace()
+│   │       └── vitestTraceSetup.mjs      per-test context (beforeEach/afterEach), F record, Function.prototype.toString without the calls
+│   ├── VitestBatchRunner.ts        IBatchRunner for Vitest: one process per batch, results streamed per file (reporter events), per-test hang limit, Vitest coverage → CoverageStore, execution trace (per-worker trace files → traceRecords)
+│   ├── VitestTrace.ts              Vitest trace on/off per root + the wrapper config (ltr.vitest.config.mjs → instrumentation/vitest/)
+│   ├── traceRecords.ts             applyTraceRecords: T/H/F trace records → ExecutionTraceStore (Jest and Vitest)
 │   ├── VitestProjectConfig.ts      IProjectConfig for Vitest: the config file path
 │   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
 ├── framework/
@@ -157,7 +165,7 @@ src/
 │   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all / prepare / listTestFiles / restore / fileChanged / fingerprint / isMixed) + SingleFrameworkProvider
 │   ├── FrameworkRouter.ts          Per project: one bundle, or Jest + Vitest in a mixed project — places each test file (setting → configs' lists → imports / calls → main framework + WARN)
 │   ├── jestServices.ts             createJestServices(): the Jest bundle (adapter, JestProjectConfig, JestBatchRunner, JestInstrumentedRunner, session runner)
-│   ├── vitestServices.ts           createVitestServices(): adapter, VitestProjectConfig, VitestBatchRunner, no instrumented runner
+│   ├── vitestServices.ts           createVitestServices(): adapter, VitestProjectConfig, VitestBatchRunner (+ VitestTrace), features.trace, traceOffReason, no instrumented runner
 │   ├── RunnerBackedAdapter.ts      Shared IFrameworkAdapter half: file / test-case / related runs, FileRunResult → ResultStore
 │   ├── JestAdapter.ts              Jest detection, JestRunner (jestCommand / runMode), debug config
 │   └── VitestAdapter.ts            Vitest detection, VitestRunner (vitestCommand), debug config (autoAttachChildProcesses)
@@ -536,6 +544,7 @@ All in `packages/vscode-extension/package.json`:
 |---------|---------|-------------|
 | `liveTestRunner.projectRoot` | `""` | Pin the window to one project root; empty = detect every test project |
 | `liveTestRunner.maxRunningProjects` | `"auto"` | Projects running at once: `auto` = 2, or 1 with ≤ 4 CPU cores or < 8 GB total memory; or a number ≥ 1 |
+| `liveTestRunner.vitestTrace` | `true` | Vitest execution trace (covering tests, precise source-file reruns); off → Vitest runs as configured, saves use `vitest related` |
 | `liveTestRunner.frameworks` | `{}` | Jest + Vitest projects: glob (relative to the workspace folder) → `"jest"` / `"vitest"`; first match wins; also makes a Jest project mixed when it sends a file to Vitest |
 | `liveTestRunner.runMode` | `"auto"` | `"auto"`: extension calls Jest directly (full structured output). `"npm"`: delegates to `npm test --` from your package.json scripts (limited structured output — see below). |
 | `liveTestRunner.jestCommand` | `""` | Override Jest binary/command. Only used when `runMode` is `"auto"`. |
@@ -555,7 +564,7 @@ All in `packages/vscode-extension/package.json`:
 |-----------|--------|
 | Jest | Fully supported |
 | Create React App | Fully supported (via `--showConfig` + direct Jest invocation) |
-| Vitest | Supported since 3.0.0 (Vitest 3+; 1–2 results only) — run, pass/fail, per-test output, failures, live progress, coverage, related tests on save. Not yet: execution trace / "covering tests" (3.3), Timeline. See `docs/framework-features.md` |
+| Vitest | Supported since 3.0.0 (Vitest 3+; 1–2 results only) — run, pass/fail, per-test output, failures, live progress, coverage, related tests on save. Execution trace / "covering tests" + precise source-file reruns: unreleased (phase 9, ADR-9 — `VitestTrace` wrapper config + `instrumentation/vitest/` Vite plugin; setting `liveTestRunner.vitestTrace`). Not yet: Timeline. See `docs/framework-features.md` |
 | Jest + Vitest in one project | Unreleased (phase 8) — a Jest root with its own `vitest.config.*` (or a `liveTestRunner.frameworks` rule) runs each test file with its own framework; `FrameworkRouter` |
 
 ---

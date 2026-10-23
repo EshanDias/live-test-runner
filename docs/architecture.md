@@ -67,7 +67,7 @@ Owns session lifecycle and the coverage map.
 | `CoverageMap.ts` | `Map<SourcePath, Set<TestPath>>` built from Jest coverage output |
 | `SelectionPolicy.ts` | Legacy; minimal use |
 
-**Coverage map:** core's `CoverageMap` (`IFrameworkAdapter.getAffectedTests`) is not consulted by on-save reruns — the execution trace is (Jest), then the framework's related run (`jest --findRelatedTests`, `vitest related`).
+**Coverage map:** core's `CoverageMap` (`IFrameworkAdapter.getAffectedTests`) is not consulted by on-save reruns — the execution trace is (Jest, Vitest), then the framework's related run (`jest --findRelatedTests`, `vitest related`).
 
 ---
 
@@ -558,7 +558,7 @@ Adding a new framework = one file implementing `IFrameworkAdapter`, plus that fr
 |---|---|---|---|
 | `adapter` | `IFrameworkAdapter` | `framework/JestAdapter.ts` | `framework/VitestAdapter.ts` |
 | `projectConfig` | `IProjectConfig` (`get(root)`, `reset()`) | `session/JestProjectConfig.ts` (`jest --showConfig`) | `session/VitestProjectConfig.ts` (the config file path) |
-| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, optional `runRelated(RelatedRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` (results + trace + coverage, streamed) | `session/VitestBatchRunner.ts` (results streamed per file from the runner's Vitest reporter; per-test hang limit + no-progress fallback; Vitest's own coverage → `coverage/istanbulCoverage.ts` → CoverageStore) |
+| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, optional `runRelated(RelatedRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` (results + trace + coverage, streamed) | `session/VitestBatchRunner.ts` (results streamed per file from the runner's Vitest reporter; per-test hang limit + no-progress fallback; Vitest's own coverage → `coverage/istanbulCoverage.ts` → CoverageStore; execution trace through `VitestTrace`'s wrapper config → `traceRecords.ts`) |
 | `instrumentedRunner` | `IInstrumentedRunner` (Timeline), optional | `timeline/JestInstrumentedRunner.ts` | — (phase 10) |
 | `createSessionRunner()` | runner `TestRunner` for core's `TestSession` | runner `JestAdapter.createRunner()` → `JestRunner` | runner `VitestAdapter.createRunner()` → `VitestRunner` |
 
@@ -586,12 +586,17 @@ The files that run **inside the test process** live in `src/session/instrumentat
 | `jest/` | `sessionTraceTransform.js` | Jest transform: Babel-instruments source files with `__strace.step()` calls and `__cov` counters, writes coverage manifests |
 | `jest/` | `ltrCoverageSetup.js` | `setupFilesAfterEnv`: opens/closes the trace context around each test, flushes `__cov` on exit, test heartbeats |
 | `jest/` | `liveReporter.js` | Reporter: one JSONL record per finished file (`start` record when a file begins) |
+| `vitest/` | `vitestTraceConfig.js` | Helper of the wrapper config (`--config`): loads the project's config with its own Vite, adds the plugin to every `test.projects` entry, writes per-project wrappers, reports to `LTR_VITEST_TRACE_MARKER` |
+| `vitest/` | `vitestTracePlugin.js` | Vite plugin `live-test-runner:trace`: setup file first in `test.setupFiles`, `server.fs.allow`, `resolveId('vitest')` for the setup file, `enforce: 'post'` transform |
+| `vitest/` | `vitestTraceTransform.js` | Pure: parse (`@babel/parser`), splice `globalThis.__strace?.step(L, F)` calls, source map; `withoutTrace()` undoes it |
+| `vitest/` | `vitestTraceSetup.mjs` | Setup file: per-test trace context (`beforeAll` / `beforeEach` / `afterEach` / `afterAll`), `F` record, `Function.prototype.toString` without the inserted calls |
 
-A framework other than Jest implements the `jest/` column for itself (Vitest: a Vite plugin transform, a setup file, a reporter) and reuses `shared/`. The contract it must keep:
+Vitest's results come from the runner's reporter (`framework/vitestReporter.ts`) and its coverage from Vitest's own provider; only the trace uses `vitest/` (ADR-9 in the Vitest plan). The contract a framework keeps:
 
 - **`globalThis.__strace`** (defined once per worker by `sessionTraceRuntime.js`): `beginFile(testFile)` — module-level code of the test file starts; `beginTest(name, testFile)` / `endTest(testFile)` — around each test body (between tests the context is `hook`); `enterTest` / `exitTest` / `enterHook(type, testFile)` / `exitHook` — injected wrappers, nest into the open context; `step(line, file)` — instrumented code hit a line; `finish()` — flush the last context. `var()` / `log()` are no-ops here (Timeline only).
-- **Trace records** — JSONL appended to `SESSION_TRACE_FILE`, one per test body / hook block: `{"type":"T","tf":"<test file>","tn":"<full test name>","fh":{"<source file>":[lines…]}}` and `{"type":"H","tf":…,"hk":"file"|"hook"|<hook name>,"fh":{…}}`. Paths are the runner's real paths; the batch runner maps them back (`fromRunnerPath`).
-- **Coverage** — instrumented code counts into `globalThis.__cov[<file hash>].s/b/f`; on exit each worker appends `{"workerPid":…, "cov":{…}}` to `COVERAGE_OUTPUT_FILE`; the transform writes a manifest per file (statement / branch / function locations) to `LTR_MANIFEST_DIR`, named by path + content hash.
+- **Trace records** — JSONL appended to `SESSION_TRACE_FILE`, one per test body / hook block: `{"type":"T","tf":"<test file>","tn":"<full test name>","fh":{"<source file>":[lines…]}}` and `{"type":"H","tf":…,"hk":"file"|"hook"|<hook name>,"fh":{…}}`; Vitest's setup adds `{"type":"F","tf":…}` when it ran for a test file. With `LTR_TRACE_PER_WORKER` (Vitest's parallel workers) each worker appends to `<SESSION_TRACE_FILE>.<pid>-<threadId>`. `tn` is the space-joined full name (`ResultStore`'s). Paths are the runner's real paths; `session/traceRecords.ts` (`applyTraceRecords`, both frameworks) maps them back (`fromRunnerPath`) and builds the `ExecutionTraceStore` indexes.
+- **Vitest trace on/off** — `VitestTrace` (extension) writes the wrapper per root and session, or keeps it off with a reason (`liveTestRunner.vitestTrace`, Vitest < 3, no Vite, a `vitest.workspace.*` file, the marker's `ok: false`, a traced batch with no result → rerun as configured, a result without an `F` record). `FrameworkServices.traceOffReason(root)` exposes it to `SessionManager` (saves use `vitest related`) and the hover.
+- **Coverage** (Jest) — instrumented code counts into `globalThis.__cov[<file hash>].s/b/f`; on exit each worker appends `{"workerPid":…, "cov":{…}}` to `COVERAGE_OUTPUT_FILE`; the transform writes a manifest per file (statement / branch / function locations) to `LTR_MANIFEST_DIR`, named by path + content hash.
 - **Per-file results** — JSONL appended to `LTR_REPORTER_FILE`: `{"ltrEvent":"start","testFilePath","at"}` when a file begins, then the file's result (`testFilePath`, `status`, `testResults[]`, `console[]`, `startTime`/`endTime`) when it ends; the batch runner polls this file every 200 ms.
 - **Logging** — `[LTR:<level>] message` lines on stderr, filtered by `LTR_LOG_LEVEL` (see developer guide → Logging).
 
@@ -775,7 +780,9 @@ User saves a file
                          isSharedVars:true  → run whole test file
                          isSharedVars:false → run individual test cases
                                               (combined --testNamePattern, one Jest process per file)
-                     → No trace data (always for Vitest until phase 9):
+                         (a file where every non-skipped test is affected runs whole, as a batch)
+                     → No trace data, or the framework's trace is off for the root
+                       (services.traceOffReason — Vitest: see VitestTrace):
                          batchRunner.runRelated?  (Vitest: `vitest related <src> --run` as a live batch —
                                                   files claimed on file-start, results streamed, coverage measured,
                                                   started-without-result files retried through _runFiles)

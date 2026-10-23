@@ -2,6 +2,12 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [Unreleased]
+
+### New
+
+- **Vitest: covering tests and precise reruns** — the coverage hover now lists the tests that ran each line, and saving a source file reruns only the tests that ran it (not every test file that imports it), as with Jest. On by default; turn it off with `liveTestRunner.vitestTrace`. Needs Vitest 3 or newer; projects using a `vitest.workspace` file and browser-mode projects run as before.
+
 ## [3.1.0] - Unreleased
 
 ### New

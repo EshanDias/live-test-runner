@@ -198,7 +198,7 @@ Rules:
 - Never write extension diagnostics to the Test Output channel. It holds only Jest's output, plus `──── Run #N ────` separators.
 - Correlation tags: `Run #N` (SessionManager), `bN` (JestBatchRunner batch), `jest#N` (Executor process).
 
-**Logging from inside the Jest process** (instrumentation `.js` files): write `[LTR:<level>] message\n` to stderr. `Executor` routes those lines to the log at that level and strips them from captured stderr. `LTR_LOG_LEVEL` (set from the channel level) lets the scripts skip debug/trace writes:
+**Logging from inside the Jest / Vitest process** (instrumentation `.js` / `.mjs` files, incl. the Vitest trace's wrapper-config helper and plugin): write `[LTR:<level>] message\n` to stderr. `Executor` routes those lines to the log at that level and strips them from captured stderr. `LTR_LOG_LEVEL` (set from the channel level) lets the scripts skip debug/trace writes:
 
 ```js
 const _LTR_RANK = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 };
@@ -223,8 +223,8 @@ On-save runs are debounced at 300ms (configurable). Rapid successive saves only 
 
 When a **source file** (non-test) is saved, the rerun scope is determined by `_runAffectedBySourceFile`:
 
-1. **Trace data available** (after at least one full run): `ExecutionTraceStore.sourceToTests` is queried. For each affected test file, suites with `isSharedVars: false` rerun only their specific affected test cases (single Jest process with a combined `--testNamePattern`). Suites with `isSharedVars: true` rerun the whole file.
-2. **No trace data yet** (always for Vitest until its trace lands): the framework's related run reruns whole test files. A batch runner with `runRelated` (Vitest) runs it as a live batch — `vitest related <src> --run`, files show running as Vitest starts them, coverage of the saved file is measured again; otherwise the adapter's plain `runRelatedTests` (`jest --findRelatedTests`).
+1. **Trace data available** (after at least one full run, Jest and Vitest): `ExecutionTraceStore.sourceToTests` is queried. For each affected test file, suites with `isSharedVars: false` rerun only their specific affected test cases (one process per file with a combined `--testNamePattern` / `-t`); a file where every test that is not skipped is affected reruns whole (a batch, coverage measured again). Suites with `isSharedVars: true` rerun the whole file.
+2. **No trace data yet, or the trace is off for the root** (`FrameworkServices.traceOffReason` — Vitest: setting off, Vitest < 3, a `vitest.workspace` file, a failed wrapper; see `session/VitestTrace.ts`): the framework's related run reruns whole test files. A batch runner with `runRelated` (Vitest) runs it as a live batch — `vitest related <src> --run`, files show running as Vitest starts them, coverage of the saved file is measured again; otherwise the adapter's plain `runRelatedTests` (`jest --findRelatedTests`).
 
 When the framework's **config file** is saved (`FrameworkServices.isConfigFile`: `jest.config.*`, `vitest.config.*`, `vite.config.*`, `vitest.workspace.*` in the root, or the config the test script names), the session restarts: config, runnable files and every result are re-read.
 
@@ -645,7 +645,7 @@ engine.jumpTo(stepId)
 
 ## Roadmap
 
-- [x] Vitest support (3.0.0) — run, pass/fail, per-test logs, live progress, coverage; next steps (related tests on save, monorepos, mixed frameworks, trace) in `docs/temp_plans/vitest-support-plan.md`
+- [x] Vitest support (3.0.0) — run, pass/fail, per-test logs, live progress, coverage; related tests on save, monorepos, mixed frameworks (3.1), execution trace (unreleased) — see `docs/temp_plans/vitest-support-plan.md`
 - [x] ~~Suite/test-case level nodes in Test Explorer~~ — completed in 1.2.0 (recursive node tree with unlimited nesting)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
 - [ ] Streaming live output during a run (message type stubbed, not wired)
