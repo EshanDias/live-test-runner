@@ -1,8 +1,10 @@
 'use strict';
 /**
  * Stop in a mixed-framework project (phase 8): with a slow Jest file and a
- * slow Vitest file running at once, Stop kills both frameworks' processes,
- * nothing keeps spinning, and no retry or fallback starts afterwards.
+ * slow Vitest file, Stop kills whatever runs (both frameworks at once on a
+ * machine with enough cores; one batch at a time on small CI runners), the
+ * other framework's queued batch never starts, nothing keeps spinning, and no
+ * retry or fallback starts afterwards.
  */
 const fs = require('fs');
 const path = require('path');
@@ -21,9 +23,11 @@ module.exports = {
     try {
       await h.waitForDiscovery(api);
       void vscode.commands.executeCommand('liveTestRunner.startTesting');
-      await h.waitFor(() => h.jestProcesses(ctx.sessionDir).length > 0 && h.vitestProcesses(workspace).length > 0,
-        { what: 'Jest and Vitest to run', timeout: 120_000 });
-      t.check('both frameworks run at once', true);
+      // Batch concurrency is cores / 4: on small CI runners one batch runs at a time.
+      await h.waitFor(() => h.jestProcesses(ctx.sessionDir).length > 0 || h.vitestProcesses(workspace).length > 0,
+        { what: 'Jest or Vitest to run', timeout: 120_000 });
+      const both = h.jestProcesses(ctx.sessionDir).length > 0 && h.vitestProcesses(workspace).length > 0;
+      t.check(`a framework runs (${both ? 'both at once' : 'one batch at a time'})`, true);
 
       await vscode.commands.executeCommand('liveTestRunner.stopTesting');
       await h.sleep(4000);
