@@ -25,7 +25,10 @@ async function devtools(port) {
   return { send, close: () => ws.close() };
 }
 
-/** `shot(name, clip?)`: waits for the UI to settle, writes <out>/<name>.png (1440×900 at 2×; `clip` in CSS px). */
+/**
+ * `shot(name, clip?)`: waits for the UI to settle, writes <out>/<name>.png (1440×900 at 2×; `clip` in CSS px).
+ * Clips start at y = 36 to leave out the title bar ("[Extension Development Host]", Sign In).
+ */
 async function shooter(cdp, out, t) {
   fs.mkdirSync(out, { recursive: true });
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });

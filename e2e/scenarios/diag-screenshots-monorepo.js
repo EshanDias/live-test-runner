@@ -46,7 +46,7 @@ module.exports = {
       const doc = await vscode.workspace.openTextDocument(path.join(workspace, 'packages', 'shared', 'src', 'new.vitest.js'));
       await vscode.window.showTextDocument(doc, { preview: false });
       await vscode.commands.executeCommand('workbench.action.closeAuxiliaryBar').then(undefined, () => {});
-      await shot('monorepo-switcher', { x: 0, y: 0, width: 760, height: 900 });
+      await shot('monorepo-switcher', { x: 0, y: 36, width: 760, height: 864 });
     } finally {
       cdp.close();
       await vscode.commands.executeCommand('liveTestRunner.stopAllProjects');

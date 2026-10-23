@@ -235,6 +235,8 @@ Key directories:
 6. **Lazy initialization** — results are never pre-fetched; observers are called when results are ready
 7. **Per-scope output** — only rerun the scope explicitly requested (test name pattern isolation)
 8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Test Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/developer-guide.md` → Logging.
+9. **Never touch the user's project** — never install packages into it (or its environment) and never edit its code, config or files. Everything the tool needs ships inside the extension; anything we write is a temporary file in our session folder, and the user's own terminal runs must keep working side by side. Zero configuration: install, click Start.
+10. **Never overuse the machine** — every kind of parallelism (batches, frameworks, projects, workers) stays within one budget from the free resources (cores, memory); when the budget is 1, things run one at a time. Whatever else the user does must stay responsive.
 
 ---
 
