@@ -337,7 +337,7 @@ export class VitestBatchRunner implements IBatchRunner {
       log.debug(`${batch}: done in ${seconds(startedAt)} — ${received.size}/${filePaths.length} file(s) reported`);
     }
     if (trace) {
-      const outcome = this._readTrace(trace, { projectRoot, batch, options, toKey, received, stopped: stopped || !!timedOut || stalled });
+      const outcome = this._readTrace(trace, { projectRoot, batch, options, toKey, received, stopped, cutShort: !!timedOut || stalled });
       if (outcome === 'rerun' && !this._killed && generation === this._generation) {
         // The wrapper itself broke the run: the same batch as configured.
         release();
@@ -359,7 +359,11 @@ export class VitestBatchRunner implements IBatchRunner {
     trace: { base: string; marker: string },
     ctx: {
       projectRoot: string; batch: string; options: BatchRunOptions; toKey: (p: string) => string;
-      received: Set<string>; stopped: boolean;
+      received: Set<string>;
+      /** Stopped by the user: nothing is applied. */
+      stopped: boolean;
+      /** Stopped by the hang limit: what finished is applied, nothing is judged. */
+      cutShort: boolean;
     },
   ): 'ok' | 'rerun' {
     const files = workerTraceFiles(trace.base);
@@ -368,7 +372,7 @@ export class VitestBatchRunner implements IBatchRunner {
     try {
       if (ctx.stopped) { return 'ok'; }
       const vt = this._trace!.trace;
-      if (ctx.received.size === 0) {
+      if (ctx.received.size === 0 && !ctx.cutShort) {
         // Nothing ran. With the wrapper's own report missing or failed, it may be the cause: retry without it.
         if (!marker?.ok) {
           vt.turnOff(ctx.projectRoot, marker?.reason || 'Vitest produced no results with the trace wrapper config');
@@ -381,6 +385,7 @@ export class VitestBatchRunner implements IBatchRunner {
         return 'ok';
       }
       const summary = applyTraceRecords(readTraceLines(files), ctx.options.traceStore, ctx.toKey);
+      if (ctx.cutShort) { return 'ok'; }
       const untraced = [...ctx.received].filter((fp) => !summary.seen.has(fp));
       if (untraced.length > 0) {
         vt.turnOff(ctx.projectRoot, `${untraced.length} test file(s) ran without the trace setup (e.g. ${path.basename(untraced[0])}) — ` +
