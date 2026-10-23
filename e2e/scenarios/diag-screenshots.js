@@ -43,12 +43,12 @@ module.exports = {
       const doc = await vscode.workspace.openTextDocument(path.join(workspace, 'src', 'mul.vitest.js'));
       await vscode.window.showTextDocument(doc, { preview: false });
       await vscode.commands.executeCommand('workbench.view.extension.liveTestRunnerContainer');
-      await shot('mixed-explorer', { x: 0, y: 0, width: 760, height: 900 });
+      await shot('mixed-explorer', { x: 0, y: 36, width: 760, height: 864 });
 
       // 2. The shared source file: coverage from both frameworks.
       const math = await vscode.workspace.openTextDocument(path.join(workspace, 'src', 'math.js'));
       await vscode.window.showTextDocument(math, { preview: false });
-      await shot('mixed-coverage', { x: 0, y: 0, width: 1440, height: 560 });
+      await shot('mixed-coverage', { x: 0, y: 36, width: 1440, height: 524 });
 
     } finally {
       cdp.close();
