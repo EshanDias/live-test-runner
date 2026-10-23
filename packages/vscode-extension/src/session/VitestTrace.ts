@@ -18,7 +18,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { VitestAdapter as VitestRunnerAdapter, viteEntryFor, vitestDirFor } from '@live-test-runner/runner';
+import { VitestAdapter as VitestRunnerAdapter, toSpawnPath, viteEntryFor, vitestDirFor } from '@live-test-runner/runner';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Vitest');
@@ -131,8 +131,9 @@ export class VitestTrace {
     fs.writeFileSync(file, wrapperSource({
       helper: this._assets.helper,
       vite,
-      config: configPath ?? null,
-      projectRoot,
+      // Spelled as Vitest runs (its cwd, module ids): native realpath — Windows 8.3 names, macOS /private/var.
+      config: configPath ? toSpawnPath(configPath) : null,
+      projectRoot: toSpawnPath(projectRoot),
       major: install.major,
       setupFile: this._assets.setup,
       parser: this._assets.parser,

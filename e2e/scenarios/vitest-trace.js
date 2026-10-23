@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Vitest execution trace (phase 9, ADR-9) on a Vitest 4 project with two
+ * Vitest execution trace (phase 9, ADR-9) on a Vitest 3.2 project with two
  * projects (an inline one and a folder with its own config):
  *   - results match plain Vitest (the wrapper config changes nothing a test sees:
  *     `test.extend` fixtures, a function serialised with toString());

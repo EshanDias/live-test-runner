@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 
-// Two projects (Vitest 4): an inline one that extends this config, and a
+// Two projects (Vitest ≥ 3.2): an inline one that extends this config, and a
 // folder with its own config — the execution trace must reach both.
 export default defineConfig({
   test: {

@@ -58,9 +58,16 @@ const toArray = (v) => (v === undefined || v === null ? [] : Array.isArray(v) ? 
 function ltrTracePlugin(options) {
   const setupFile = options.setupFile;
   // The root as given and as Vite spells module ids (symlinks resolved: macOS /var → /private/var).
-  const roots = [options.projectRoot];
-  try { roots.push(fs.realpathSync(options.projectRoot)); } catch (_) { /* as given */ }
-  const rootPrefixes = [...new Set(roots.map((r) => norm(r).replace(/\/?$/, '/')))];
+  // Windows: 8.3 short names (C:\Users\RUNNER~1) vs the long ones Vitest runs from — the native realpath.
+  let rootPrefixes = [];
+  const addRoot = (r) => {
+    if (!r) { return; }
+    const all = [r];
+    try { all.push(fs.realpathSync(r)); } catch (_) { /* as given */ }
+    try { all.push(fs.realpathSync.native(r)); } catch (_) { /* as given */ }
+    rootPrefixes = [...new Set([...rootPrefixes, ...all.map((x) => norm(x).replace(/\/?$/, '/'))])];
+  };
+  addRoot(options.projectRoot);
   let active = false;
   let root = options.projectRoot;
   let failures = 0;
@@ -103,6 +110,7 @@ function ltrTracePlugin(options) {
     },
     configResolved(config) {
       root = config.root || root;
+      addRoot(config.root);
       const first = (config.plugins || []).find((p) => p && p.name === PLUGIN_NAME);
       const browser = !!(config.test && config.test.browser && config.test.browser.enabled);
       active = first === plugin && !browser;
