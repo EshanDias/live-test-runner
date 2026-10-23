@@ -297,7 +297,9 @@ export function activate(context: vscode.ExtensionContext) {
     const ctx = owner(filePath);
     if (!ctx) { return undefined; }
     const services = ctx.services.servicesFor(filePath);
-    return services.features.trace ? undefined : `covering tests are not available for ${services.displayName} yet`;
+    if (!services.features.trace) { return `covering tests are not available for ${services.displayName} yet`; }
+    const off = services.traceOffReason?.(ctx.root);
+    return off ? `covering tests are off for this project — ${off}` : undefined;
   });
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(

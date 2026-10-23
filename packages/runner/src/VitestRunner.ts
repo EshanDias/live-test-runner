@@ -123,14 +123,19 @@ export class VitestRunner extends CommandRunner {
    */
   async liveCommand(
     files: string[],
-    options: { coverageDir?: string; related?: string } = {},
+    options: {
+      coverageDir?: string;
+      related?: string;
+      /** `--config` for this run instead of the project's (the execution trace wrapper). */
+      config?: string;
+    } = {},
   ): Promise<{ command: ExecutorCommand; eventsFile: string; resultFile: string; coverageFile?: string }> {
     // `related`: Vitest finds the test files that import this source file (`vitest related <src> --run`); `files` is ignored.
     const request: RunRequest = options.related ? { kind: 'related', file: options.related } : { kind: 'files', files };
     const root = this.requireProjectRoot();
     const resultFile = path.join(this.tmpDir ?? os.tmpdir(), `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
     const env = this.runEnv(request) ?? {};
-    const args = [...await this.commandArgs(request), ...this.requireAdapter().outputFileArg(resultFile)];
+    const args = [...await this.commandArgs(request, options.config), ...this.requireAdapter().outputFileArg(resultFile)];
     const coverage = options.coverageDir ? await this.coverageArgs(root, options.coverageDir) : undefined;
     if (coverage) { args.push(...coverage); }
     return {
@@ -139,6 +144,11 @@ export class VitestRunner extends CommandRunner {
       resultFile,
       coverageFile: coverage ? path.join(options.coverageDir!, 'coverage-final.json') : undefined,
     };
+  }
+
+  /** The project's own Vitest config file (the test script's `--config`, else vitest/vite.config.*). */
+  async projectConfigPath(): Promise<string | undefined> {
+    return this.requireAdapter().resolveConfig(this.requireProjectRoot());
   }
 
   /**

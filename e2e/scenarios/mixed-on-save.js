@@ -2,7 +2,7 @@
 /**
  * Saves in a mixed-framework project (phase 8): a saved test file reruns
  * with its own framework; a saved source file reruns the dependent tests of
- * both frameworks (Jest by its trace, Vitest with `vitest related`) and no
+ * both frameworks (each by its own execution trace) and no
  * file gets the other framework's result; a file that starts importing
  * `vitest` moves to Vitest on save; saving the Vitest config restarts.
  */
@@ -30,6 +30,9 @@ module.exports = {
       await vscode.commands.executeCommand('liveTestRunner.startTesting');
       await waitIdle(api);
       t.eq('full run: uses-jest.test.js', h.statusCounts(api, 'uses-jest.test.js'), { passed: 1, failed: 1 });
+      const users = api.traceStore.getAffectedTestFiles(src('math.js').replace(/^[A-Z]:/, (m) => m.toLowerCase())).map((f) => path.basename(f)).sort();
+      t.check('one trace store, both frameworks: math.js is used by Jest and Vitest test files',
+        users.includes('add.jest.js') && users.includes('mul.vitest.js') && users.includes('imports-vitest.test.js'), users.join(', '));
 
       // ── A Vitest test file ──
       let rec = h.recordEvents(api);
@@ -63,8 +66,8 @@ module.exports = {
       t.check('saved math.js reruns Jest\'s dependents', reran.has('add.jest.js') && reran.has('uses-jest.test.js'), [...reran].join(', '));
       t.check('…and Vitest\'s', reran.has('mul.vitest.js') && reran.has('imports-vitest.test.js'), [...reran].join(', '));
       t.check('…not says-nothing.test.js (no import of math.js)', !reran.has('says-nothing.test.js'), [...reran].join(', '));
-      t.check('…Vitest via vitest related', /\[vitest#\d+\] > .* related .*math\.js/.test(raw), raw.slice(0, 2000));
-      t.eq('uses-jest.test.js kept Jest\'s result (Vitest\'s related run lists it too)', h.statusCounts(api, 'uses-jest.test.js'), { passed: 1, failed: 1 });
+      t.check('…Vitest by its trace (not `vitest related`)', /\[vitest#\d+\] > /.test(raw) && !/\[vitest#\d+\] > .* related /.test(raw), raw.slice(0, 2000));
+      t.eq('uses-jest.test.js kept Jest\'s result', h.statusCounts(api, 'uses-jest.test.js'), { passed: 1, failed: 1 });
       t.eq('imports-vitest.test.js passes', h.statusCounts(api, 'imports-vitest.test.js'), { passed: 1 });
       t.eq('nothing left running', api.store.getAllFiles().filter((f) => f.status === 'running').map((f) => f.name), []);
       rec.stop();

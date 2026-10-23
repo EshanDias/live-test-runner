@@ -13,7 +13,8 @@ const minify = process.argv.includes('--minify');
  *
  * Files from timeline/instrumentation → timeline debugger (traceTransform/traceRuntime)
  * Files from session/instrumentation  → session-wide tracing, kept in shared/ (trace
- *   runtime, framework-neutral) and jest/ (transform, reporter, setup file)
+ *   runtime, framework-neutral), jest/ (transform, reporter, setup file) and
+ *   vitest/ (wrapper-config helper, Vite plugin, transform, setup file)
  */
 function copyInstrumentationFiles() {
   const dest = path.join(__dirname, 'out', 'instrumentation');
@@ -30,6 +31,7 @@ function copyInstrumentationFiles() {
   const sessionFiles = {
     shared: ['sessionTraceRuntime.js'],
     jest: ['sessionTraceTransform.js', 'liveReporter.js', 'ltrCoverageSetup.js'],
+    vitest: ['vitestTraceConfig.js', 'vitestTracePlugin.js', 'vitestTraceTransform.js', 'vitestTraceSetup.mjs'],
   };
   for (const [dir, files] of Object.entries(sessionFiles)) {
     fs.mkdirSync(path.join(dest, dir), { recursive: true });

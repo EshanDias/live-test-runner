@@ -563,7 +563,8 @@ export class SessionManager {
       return this._runAffectedWith(this._services.servicesFor(projectRoot), sourceFilePath, projectRoot, token);
     }
     // Mixed project: each framework reruns its own test files that depend on
-    // the source file (Jest by its trace, Vitest with `vitest related`).
+    // the source file (by its trace, else its related run — `jest
+    // --findRelatedTests`, `vitest related`).
     const bundles = this._services.all();
     const ran = await Promise.all(bundles.map((s) =>
       this._runAffectedWith(s, sourceFilePath, projectRoot, token, (fp) => this._services.servicesFor(fp) === s)));
@@ -582,7 +583,10 @@ export class SessionManager {
     token: number,
     owns?: (filePath: string) => boolean,
   ): Promise<string[]> {
-    const affectedTestFiles = this._traceStore
+    // A framework whose trace is off for this root (Vitest: see VitestTrace)
+    // may have partial trace data: trust only its related run.
+    const traceOff = services.traceOffReason?.(projectRoot);
+    const affectedTestFiles = traceOff ? [] : this._traceStore
       .getAffectedTestFiles(sourceFilePath)
       .filter((fp) => this._isRunnable(fp) && (!owns || owns(fp)));
 
@@ -591,7 +595,7 @@ export class SessionManager {
       // own static import-graph analysis: it finds test files that (transitively)
       // import the changed source file and reruns them whole. Less precise than
       // trace (whole file, not individual test cases) but correct as a safety net.
-      log.debug(`No trace data for ${path.basename(sourceFilePath)} — using ${services.terms.relatedCommand}`);
+      log.debug(`${traceOff ? `No execution trace (${traceOff})` : 'No trace data'} for ${path.basename(sourceFilePath)} — using ${services.terms.relatedCommand}`);
       const batchRunner = services.batchRunner;
       if (batchRunner.runRelated) {
         return this._runRelatedBatch(batchRunner.runRelated.bind(batchRunner), sourceFilePath, projectRoot, token, owns);
@@ -796,9 +800,11 @@ export class SessionManager {
 
       const nameSet = new Set(names);
 
-      // Check if every test in the file is covered → full file run
+      // Check if every test in the file is covered → full file run (a batch:
+      // coverage is measured again). Skipped / todo tests never run, so they
+      // never show up in a trace — they do not count against it.
       const allFileTests = this._store.getFileNodes(filePath).filter(n => n.type === 'test');
-      const allTestFullNames = allFileTests.map(n => n.fullName);
+      const allTestFullNames = allFileTests.filter((n) => n.status !== 'skipped').map(n => n.fullName);
       if (allTestFullNames.length > 0 && allTestFullNames.every((n) => nameSet.has(n))) {
         filesToRunFull.push(filePath);
         continue;

@@ -243,16 +243,21 @@ export abstract class CommandRunner implements TestRunner {
     return this.afterRun(request, adapter.parseResult(passed, jsonOutput, stderr));
   }
 
-  /** [user-command words] [leading args] [config args] [adapter extra args] [framework args] */
-  protected async commandArgs(request: RunRequest): Promise<string[]> {
+  /**
+   * [user-command words] [leading args] [config args] [adapter extra args] [framework args]
+   * @param configOverride passed with `--config` instead of the project's config (which still
+   *   decides `prepare`) — Vitest's trace wrapper, which loads the project's config itself
+   */
+  protected async commandArgs(request: RunRequest, configOverride?: string): Promise<string[]> {
     const adapter = this.requireAdapter();
     const projectRoot = this.requireProjectRoot();
     const configPath = await adapter.resolveConfig(projectRoot);
     await this.prepare(projectRoot, configPath);
+    const config = configOverride ?? configPath;
     return [
       ...this.resolvePrefixArgs(),
       ...this.leadingArgs(request),
-      ...(configPath ? ['--config', this.spawnPath(configPath)] : []),
+      ...(config ? ['--config', this.spawnPath(config)] : []),
       ...adapter.getExtraArgs(projectRoot),
       ...this.buildArgs(request),
     ];

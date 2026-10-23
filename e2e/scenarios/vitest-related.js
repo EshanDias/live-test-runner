@@ -7,6 +7,10 @@
  * uncalled function lowers it). A file no test imports reruns nothing.
  * Saving the Vitest config restarts the session (every test reruns).
  * Every saved file gets its exact content back.
+ *
+ * Runs with the execution trace off (liveTestRunner.vitestTrace: false):
+ * `vitest related` is then the save path, as it is whenever the trace is
+ * unavailable (see vitest-trace for the traced path).
  */
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +26,7 @@ const key = (p) => p.replace(/^[A-Z]:/, (m) => m.toLowerCase());
 
 module.exports = {
   workspace: 'fixture:vitest-basic',
+  settings: { 'liveTestRunner.vitestTrace': false },
   timeoutMs: 5 * 60_000,
 
   async run({ api, t, vscode, workspace }) {

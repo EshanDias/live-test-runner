@@ -232,6 +232,11 @@
           "default": false,
           "description": "Vitest: also run browser-mode projects (Playwright / WebdriverIO). They need real browsers installed, so by default they are left out when the test script does not choose projects itself."
         },
+        "liveTestRunner.vitestTrace": {
+          "type": "boolean",
+          "default": true,
+          "description": "Vitest: record which lines each test runs (execution trace). Powers \"covering tests\" in the coverage hover and saving a source file reruns only the tests that ran it. Turn off to run Vitest exactly as configured; saves then rerun the related test files (vitest related)."
+        },
         "liveTestRunner.runMode": {
           "type": "string",
           "enum": [

@@ -52,6 +52,12 @@ export interface FrameworkServices {
   readonly terms: FrameworkTerms;
   /** Features beyond running tests. */
   readonly features: FrameworkFeatures;
+  /**
+   * When the framework has the trace but it is off for this project root
+   * (Vitest: setting off, or the wrapper config could not add it): why.
+   * Undefined = available. Source-file saves then use the related run.
+   */
+  traceOffReason?(projectRoot: string): string | undefined;
   /** Discovery, single-file / test-case runs, debug configs, result mapping. */
   readonly adapter: IFrameworkAdapter;
   /** The project's resolved config, re-read every session. */
