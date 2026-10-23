@@ -1,6 +1,6 @@
 {
   "sample-react-project": {
-    "recorded": "2026-10-23T10:47:01.525Z",
+    "recorded": "2026-10-23T11:46:45.348Z",
     "head": "",
     "extensionMatches": true,
     "files": 14,
@@ -83,7 +83,7 @@
     }
   },
   "jest-dom": {
-    "recorded": "2026-10-23T10:44:42.847Z",
+    "recorded": "2026-10-23T11:44:27.415Z",
     "head": "0ff8904ff4683d676ff70ab68b7f08465c44d0d0",
     "extensionMatches": true,
     "files": 31,
@@ -251,7 +251,7 @@
     }
   },
   "vscode-jest": {
-    "recorded": "2026-10-23T10:45:53.167Z",
+    "recorded": "2026-10-23T11:45:38.257Z",
     "head": "b71edf0b1b80aa22a16222775fbd37dabab3aea0",
     "extensionMatches": true,
     "files": 49,
@@ -2942,7 +2942,7 @@
     }
   },
   "unplugin": {
-    "recorded": "2026-10-23T10:50:58.525Z",
+    "recorded": "2026-10-23T11:47:07.185Z",
     "head": "bd0f8ddba859b2ca1d0e91269afb8eac42785576",
     "extensionMatches": true,
     "files": 26,
@@ -3085,7 +3085,7 @@
     }
   },
   "slidev": {
-    "recorded": "2026-10-23T10:51:20.631Z",
+    "recorded": "2026-10-23T11:47:30.336Z",
     "head": "73053ab2b9653ed475960301b56e1ce4439d9c75",
     "extensionMatches": true,
     "files": 34,
@@ -3268,7 +3268,7 @@
     }
   },
   "vueuse": {
-    "recorded": "2026-10-23T10:53:30.552Z",
+    "recorded": "2026-10-23T11:49:44.064Z",
     "head": "279bac0230c56a5707e3f92f2f5f2225acda6c5d",
     "extensionMatches": true,
     "files": 134,
