@@ -144,18 +144,20 @@ src/
 │   │   instrumentation/            (protocol: docs/architecture.md → Session instrumentation protocol)
 │   │   ├── shared/
 │   │   │   ├── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook; flushes T/H records to JSONL — framework-neutral
+│   │   │   ├── sourceMapLookup.js      reads a source map back (generated → original line/column) — Jest + Vitest transforms (TS, components)
 │   │   │   └── testDiscovery.js        Static AST test discovery (bundled; used by TestDiscoveryService)
 │   │   ├── jest/
-│   │   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest
+│   │   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest; components via the project's transformer + its map; processAsync (ESM)
 │   │   │   ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
 │   │   │   └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
 │   │   └── vitest/                    Vitest execution trace (ADR-9)
-│   │       ├── vitestTraceConfig.js      wrapper-config helper: project config via its own Vite + plugin into every test.projects entry
-│   │       ├── vitestTracePlugin.js      Vite plugin: setup file first, enforce:'post' transform of project sources
+│   │       ├── vitestTraceConfig.js      wrapper-config helper: project config via its own Vite + plugin into every test.projects / Vitest 3 workspace entry
+│   │       ├── vitestTracePlugin.js      Vite plugin: setup file first, enforce:'post' transform of project sources (JS/TS + .vue/.svelte/.astro/.marko)
 │   │       ├── vitestTraceTransform.js   splices globalThis.__strace?.step(L,F) (lines via the incoming source map); withoutTrace()
 │   │       └── vitestTraceSetup.mjs      per-test context (beforeEach/afterEach), F record, Function.prototype.toString without the calls
 │   ├── VitestBatchRunner.ts        IBatchRunner for Vitest: one process per batch, results streamed per file (reporter events), per-test hang limit, Vitest coverage → CoverageStore, execution trace (per-worker trace files → traceRecords)
 │   ├── VitestTrace.ts              Vitest trace on/off per root + the wrapper config (ltr.vitest.config.mjs → instrumentation/vitest/)
+│   ├── sourceFiles.ts              which files are source code: JS/TS + components (.vue/.svelte/.astro/.marko); scriptOf() for the coverage scan
 │   ├── traceRecords.ts             applyTraceRecords: T/H/F trace records → ExecutionTraceStore (Jest and Vitest)
 │   ├── VitestProjectConfig.ts      IProjectConfig for Vitest: the config file path
 │   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
@@ -564,7 +566,7 @@ All in `packages/vscode-extension/package.json`:
 |-----------|--------|
 | Jest | Fully supported |
 | Create React App | Fully supported (via `--showConfig` + direct Jest invocation) |
-| Vitest | Supported since 3.0.0 (Vitest 3+; 1–2 results only) — run, pass/fail, per-test output, failures, live progress, coverage, related tests on save. Execution trace / "covering tests" + precise source-file reruns: unreleased (phase 9, ADR-9 — `VitestTrace` wrapper config + `instrumentation/vitest/` Vite plugin; setting `liveTestRunner.vitestTrace`). Not yet: Timeline. See `docs/framework-features.md` |
+| Vitest | Supported since 3.0.0 (Vitest 3+; 1–2 results only) — run, pass/fail, per-test output, failures, live progress, coverage, related tests on save. Execution trace / "covering tests" + precise source-file reruns: unreleased (phase 9, ADR-9 — `VitestTrace` wrapper config + `instrumentation/vitest/` Vite plugin; setting `liveTestRunner.vitestTrace`). Vitest 3 workspaces, type-check files and components (`.vue` / `.svelte` / `.astro` / `.marko`, both frameworks — Jest through the project's transformer + its source map, `shared/sourceMapLookup.js`) included; Jest ESM mode from the test script's NODE_OPTIONS (runner `jestNodeEnv`). Not yet: Timeline. See `docs/framework-features.md` |
 | Jest + Vitest in one project | Unreleased (phase 8) — a Jest root with its own `vitest.config.*` (or a `liveTestRunner.frameworks` rule) runs each test file with its own framework; `FrameworkRouter` |
 
 ---

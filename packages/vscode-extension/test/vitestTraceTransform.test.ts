@@ -198,6 +198,33 @@ describe('the plugin', () => {
     expect(t(path.join(root, 'src/types.d.ts'))).toBeNull();
   });
 
+  it('instruments components (.vue, .svelte, …) compiled by their Vite plugin, at the component\'s lines', async () => {
+    const p = make();
+    await configured(p, { test: {} });
+    // Compiled component: line 1 is the plugin's helper (another source), line 2 maps to App.vue line 8.
+    const map = { version: 3, sources: ['helper.js', path.join(root, 'src/App.vue')], names: [], mappings: 'AAAA;ACOA' };
+    const ctx = { getCombinedSourcemap: () => map };
+    const code = 'let helper = 1;\nlet count = 0;';
+    for (const name of ['App.vue', 'App.svelte', 'App.astro']) {
+      const out = p.transform.call(ctx, code, path.join(root, 'src', name));
+      expect(out && out.code).toContain(name === 'App.vue' ? 'step(8,' : 'step(');
+    }
+    const vue = p.transform.call(ctx, code, path.join(root, 'src/App.vue'));
+    expect((vue.code.match(/__strace/g) || [])).toHaveLength(1); // the helper line is not the component's
+    // No map back to the component: left alone.
+    expect(p.transform.call({ getCombinedSourcemap: () => undefined }, code, path.join(root, 'src/App.vue'))).toBeNull();
+    // Styles and other assets are not code.
+    expect(p.transform.call(ctx, 'export default ".a{}"', path.join(root, 'src/app.css'))).toBeNull();
+  });
+
+  it('takes the component extensions from its options', async () => {
+    const p = ltrTracePlugin({ setupFile, parser: require.resolve('@babel/parser'), projectRoot: root, componentExtensions: ['riot'] });
+    await configured(p, { test: {} });
+    const ctx = { getCombinedSourcemap: () => ({ version: 3, sources: ['x'], names: [], mappings: 'AAAA' }) };
+    expect(p.transform.call(ctx, 'let a = 1;', path.join(root, 'src/A.riot'))).not.toBeNull();
+    expect(p.transform.call(ctx, 'let a = 1;', path.join(root, 'src/A.vue'))).toBeNull();
+  });
+
   it('only the first copy in a config works (a project can inherit it and get it added)', async () => {
     const a = make();
     const b = make();

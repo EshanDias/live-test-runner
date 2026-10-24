@@ -55,6 +55,7 @@ interface RunHandle {
 }
 
 import { nameToPattern } from '../utils/testNames';
+import { isSourceFile } from './sourceFiles';
 export { nameToPattern };
 
 /**
@@ -420,15 +421,16 @@ export class SessionManager {
         .get<number>('onSaveDebounceMs') ?? 300;
 
     const filePath = document.uri.fsPath;
-    // Only the project's own JS/TS files matter — VS Code also saves its
-    // settings.json, untitled buffers, files in other folders, etc.
+    // Only the project's own source files matter (JS / TS and components —
+    // .vue, .svelte, …) — VS Code also saves its settings.json, untitled
+    // buffers, files in other folders, etc.
     const root = this._getProjectRoot();
     const rel = root ? path.relative(root, filePath) : '';
     if (
       !root || document.uri.scheme !== 'file' ||
       rel.startsWith('..') || path.isAbsolute(rel) ||
       /(^|[\\/])node_modules[\\/]/.test(rel) ||
-      !/\.(c|m)?[jt]sx?$/i.test(filePath)
+      !isSourceFile(filePath)
     ) {
       return;
     }

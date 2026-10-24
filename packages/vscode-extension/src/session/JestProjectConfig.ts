@@ -129,14 +129,14 @@ export class JestProjectConfig implements IProjectConfig {
  * Windows (VS Code gives `c:\`, Jest's realpath `C:\`), so both are accepted.
  * Built from the root's real path: Jest matches it against realpath'd files.
  */
-export function sourceTransformPattern(projectRoot: string): string {
+export function sourceTransformPattern(projectRoot: string, extensions = '[jt]sx?'): string {
   const rootFwd = toRunnerPath(projectRoot).replace(/\\/g, '/');
   const driveMatch = rootFwd.match(/^([a-zA-Z]):(.*)/);
   const escapedRoot = driveMatch
     ? `[${driveMatch[1].toLowerCase()}${driveMatch[1].toUpperCase()}]:${escapeRegex(driveMatch[2])}`
     : escapeRegex(rootFwd);
   const escapedRootSlash = escapedRoot.replace(/\//g, '[/\\\\]');
-  return `^${escapedRootSlash}[/\\\\](?!node_modules[/\\\\]).+\\.[jt]sx?$`;
+  return `^${escapedRootSlash}[/\\\\](?!node_modules[/\\\\]).+\\.${extensions}$`;
 }
 
 /** `c:\x` → `C:\x` — the spelling Jest uses for its realpath'd rootDir. */

@@ -16,7 +16,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults, jestNodeEnv } from '@live-test-runner/runner';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
@@ -26,6 +26,7 @@ import { CoverageScope, coverageScopeOf } from '../coverage/coverageScope';
 import { logger } from '../utils/logger';
 import { IProjectConfig } from './IProjectConfig';
 import { sourceTransformPattern, upperDrive } from './JestProjectConfig';
+import { COMPONENT_EXTENSIONS } from './sourceFiles';
 import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
 import { applyTraceRecords, normPath } from './traceRecords';
 
@@ -196,6 +197,9 @@ export class JestBatchRunner implements IBatchRunner {
 
     registerProjectRoot(projectRoot);
     const srcPattern = sourceTransformPattern(projectRoot);
+    // Components (.vue, .svelte, …): one pattern per extension, used only when
+    // the project transforms that extension itself (vue-jest, svelte-jester…).
+    const componentPatterns = Object.fromEntries(COMPONENT_EXTENSIONS.map((ext) => [ext, sourceTransformPattern(projectRoot, ext)]));
 
     // The project's config as Jest resolved it (any format) — see JestProjectConfig.
     const resolvedConfigPath = await this._projectConfig.get(projectRoot);
@@ -307,6 +311,12 @@ function _overlay(cfg) {
   const hasGeneralJsTransform = Object.keys(baseTransformObj).some(pattern => {
     try { return new RegExp(pattern).test('src/foo.js'); } catch(_) { return false; }
   });
+  // Components the project compiles itself: our transform first, it calls theirs.
+  const componentTransform = {};
+  for (const [ext, pattern] of Object.entries(${JSON.stringify(componentPatterns)})) {
+    const handled = Object.keys(baseTransformObj).some((p) => { try { return new RegExp(p).test('src/Comp.' + ext); } catch (_) { return false; } });
+    if (handled) { componentTransform[pattern] = ${JSON.stringify(SESSION_TRANSFORM_PATH)}; }
+  }
   let fallbackTransform = {};
   if (!hasGeneralJsTransform) {
     try {
@@ -321,6 +331,7 @@ function _overlay(cfg) {
     ...c,
     transform: {
       [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
+      ...componentTransform,
       ...baseTransformObj,
       ...fallbackTransform,
     },
@@ -527,6 +538,8 @@ module.exports = _projects
           ],
           cwd: projectRoot,
           extraEnv: {
+            // The test script's Node options (e.g. --experimental-vm-modules: Jest's ESM mode).
+            ...jestNodeEnv(projectRoot),
             SESSION_TRACE_FILE:   traceFile,
             COVERAGE_OUTPUT_FILE: covCountersFile,
             LTR_MANIFEST_DIR:     this._manifestDir(projectRoot),

@@ -187,6 +187,8 @@ export class VitestBatchRunner implements IBatchRunner {
     }
 
     const received = new Set<string>();
+    /** Files only type-checked so far (typecheck.enabled): they never run the trace setup. */
+    const typecheckOnly = new Set<string>();
     /** Console output and failures per file, until its result arrives. */
     const pending = new Map<string, VitestEvent[]>();
     /** The test each file is running now — what the hang limit measures. */
@@ -233,6 +235,8 @@ export class VitestBatchRunner implements IBatchRunner {
             );
             pending.delete(fp);
             const fileResult: FileRunResult = result.fileResults[0];
+            if (ev.typecheck && !received.has(fp)) { typecheckOnly.add(fp); }
+            else if (!ev.typecheck) { typecheckOnly.delete(fp); }
             received.add(fp);
             if (!owns(fp)) {
               log.debug(`${batch}: ignoring the result for ${path.basename(fp)} — a newer run of it has started`);
@@ -337,7 +341,7 @@ export class VitestBatchRunner implements IBatchRunner {
       log.debug(`${batch}: done in ${seconds(startedAt)} — ${received.size}/${filePaths.length} file(s) reported`);
     }
     if (trace) {
-      const outcome = this._readTrace(trace, { projectRoot, batch, options, toKey, received, stopped, cutShort: !!timedOut || stalled });
+      const outcome = this._readTrace(trace, { projectRoot, batch, options, toKey, received, typecheckOnly, stopped, cutShort: !!timedOut || stalled });
       if (outcome === 'rerun' && !this._killed && generation === this._generation) {
         // The wrapper itself broke the run: the same batch as configured.
         release();
@@ -360,6 +364,8 @@ export class VitestBatchRunner implements IBatchRunner {
     ctx: {
       projectRoot: string; batch: string; options: BatchRunOptions; toKey: (p: string) => string;
       received: Set<string>;
+      /** Received only as type-check results: not expected to be traced. */
+      typecheckOnly: Set<string>;
       /** Stopped by the user: nothing is applied. */
       stopped: boolean;
       /** Stopped by the hang limit: what finished is applied, nothing is judged. */
@@ -386,7 +392,7 @@ export class VitestBatchRunner implements IBatchRunner {
       }
       const summary = applyTraceRecords(readTraceLines(files), ctx.options.traceStore, ctx.toKey);
       if (ctx.cutShort) { return 'ok'; }
-      const untraced = [...ctx.received].filter((fp) => !summary.seen.has(fp));
+      const untraced = [...ctx.received].filter((fp) => !summary.seen.has(fp) && !ctx.typecheckOnly.has(fp));
       if (untraced.length > 0) {
         vt.turnOff(ctx.projectRoot, `${untraced.length} test file(s) ran without the trace setup (e.g. ${path.basename(untraced[0])}) — ` +
           'a Vitest project the trace could not reach');

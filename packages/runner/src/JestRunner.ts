@@ -8,6 +8,7 @@ import { refusingAdapter } from './framework/refusingAdapter';
 import { FrameworkRegistry } from './framework/FrameworkRegistry';
 import { isFrameworkAllowedAt } from './framework/allowedFrameworks';
 import { FRAMEWORK_IDS } from './types';
+import { jestNodeEnv } from './framework/jestConfig';
 import { ResultParser } from './parsing/ResultParser';
 import { createLogger } from './utils/logger';
 import { fromRunnerPath, toRunnerPath } from './resolution/RunnerPaths';
@@ -61,6 +62,11 @@ export class JestRunner extends CommandRunner {
     }
     log.debug(`${projectRoot} is a "${adapter.framework}" project — the Jest runner will refuse to run it`);
     return refusingAdapter(adapter);
+  }
+
+  /** The test script's Node options (e.g. `--experimental-vm-modules` for Jest's ESM mode). */
+  protected override runEnv(_request: RunRequest): Record<string, string> | undefined {
+    return jestNodeEnv(this.requireProjectRoot());
   }
 
   protected buildArgs(request: RunRequest): string[] {
