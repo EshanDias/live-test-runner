@@ -1,0 +1,12 @@
+{
+  "name": "ltr-fixture-vitest-workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "3.1.4",
+    "typescript": "5.6.3"
+  }
+}

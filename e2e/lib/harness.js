@@ -213,7 +213,7 @@ function plainJestJson(workspace) {
   const fs = require('fs');
   const os = require('os');
   // The runner's own parser for the test script (built by `pnpm build`).
-  const { testScriptJestArgs } = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'framework', 'jestConfig.js'));
+  const { testScriptJestArgs, jestNodeEnv } = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'framework', 'jestConfig.js'));
   const scriptArgs = testScriptJestArgs(workspace);
   const pkg = JSON.parse(fs.readFileSync(path.join(workspace, 'package.json'), 'utf8'));
   const cra = /react-scripts/.test(pkg.scripts?.test || '');
@@ -222,7 +222,8 @@ function plainJestJson(workspace) {
     ? path.join(path.dirname(resolveFrom('react-scripts/package.json')), 'bin', 'react-scripts.js')
     : path.join(path.dirname(resolveFrom('jest/package.json')), 'bin', 'jest.js');
   const out = path.join(os.tmpdir(), `ltr-e2e-plain-${process.pid}-${Date.now()}.json`);
-  const env = { ...process.env, CI: 'true' };
+  // NODE_OPTIONS from the test script (e.g. --experimental-vm-modules: Jest's ESM mode).
+  const env = { ...process.env, CI: 'true', ...jestNodeEnv(workspace) };
   delete env.ELECTRON_RUN_AS_NODE;
   const node = process.platform === 'win32' ? 'node.exe' : 'node';
   const r = spawnSync(node, [entry, ...(cra ? ['test'] : []), ...scriptArgs, '--watchAll=false', '--json', `--outputFile=${out}`],

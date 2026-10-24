@@ -194,11 +194,21 @@ export default class LtrReporter {
 
 const written = new Set<string>();
 
-/** Writes the reporter into `dir` (once per process) and returns its path. */
+/**
+ * Writes the reporter into `dir` (once per process) and returns its path.
+ *
+ * It goes in `<dir>/node_modules/.ltr/`: Vitest 3.0 / 3.1 load reporters
+ * through vite-node, which sends a file outside node_modules through Vite —
+ * and Vite ≥ 6.4 refuses files outside `server.fs.allow` ("Failed to load
+ * url … Does the file exist?"), so every run failed at startup. Under a
+ * `node_modules` folder vite-node imports it natively (externalized). The
+ * folder is in our session folder, never in the project.
+ */
 export function vitestReporterFile(dir: string): string {
-  const file = path.join(dir, 'ltr-vitest-reporter.mjs');
+  const folder = path.join(dir, 'node_modules', '.ltr');
+  const file = path.join(folder, 'ltr-vitest-reporter.mjs');
   if (!written.has(file) || !fs.existsSync(file)) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(file, REPORTER_SOURCE, 'utf8');
     written.add(file);
   }
