@@ -62,25 +62,42 @@ export function runnableCacheKey(projectRoot: string, testFiles: string[], setti
   return h.digest('hex');
 }
 
+/** One remembered answer. */
+export interface RunnableEntry {
+  files: string[];
+  groups?: Record<string, string>;
+  /** Mixed projects: file → `"<framework>:<rule>"`. */
+  frameworks?: Record<string, string>;
+}
+
 export class RunnableFilesCache {
   /** @param _dir folder shared by all sessions (survives VS Code restarts) */
   constructor(private readonly _dir: string) {}
 
   /** The remembered list, or undefined when there is none for this key. */
   read(projectRoot: string, key: string): string[] | undefined {
+    return this.readEntry(projectRoot, key)?.files;
+  }
+
+  /**
+   * The remembered list, the framework's file groups (Vitest project names)
+   * and, in a mixed project, each file's framework — if any.
+   */
+  readEntry(projectRoot: string, key: string): RunnableEntry | undefined {
     try {
-      const data = JSON.parse(fs.readFileSync(this._file(projectRoot), 'utf8')) as { key?: string; files?: unknown };
+      const data = JSON.parse(fs.readFileSync(this._file(projectRoot), 'utf8')) as { key?: string; files?: unknown; groups?: unknown; frameworks?: unknown };
       if (data.key !== key || !Array.isArray(data.files)) { return undefined; }
-      return data.files.filter((f): f is string => typeof f === 'string');
+      const record = (v: unknown) => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, string> : undefined;
+      return { files: data.files.filter((f): f is string => typeof f === 'string'), groups: record(data.groups), frameworks: record(data.frameworks) };
     } catch {
       return undefined; // none yet, or unreadable — ask Jest
     }
   }
 
   /** @throws when the file cannot be written (the next Start then asks Jest again) */
-  write(projectRoot: string, key: string, files: string[]): void {
+  write(projectRoot: string, key: string, files: string[], groups?: Record<string, string>, frameworks?: Record<string, string>): void {
     fs.mkdirSync(this._dir, { recursive: true });
-    fs.writeFileSync(this._file(projectRoot), JSON.stringify({ key, files }), 'utf8');
+    fs.writeFileSync(this._file(projectRoot), JSON.stringify({ key, files, ...(groups ? { groups } : {}), ...(frameworks ? { frameworks } : {}) }), 'utf8');
   }
 
   private _file(projectRoot: string): string {

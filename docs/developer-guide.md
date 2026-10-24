@@ -104,7 +104,7 @@ Two adapter interfaces exist in the codebase:
 
 The separation means the runner can be used independently of VS Code.
 
-On the extension side a framework is a **services bundle** (`FrameworkServices`: `adapter`, `projectConfig: IProjectConfig`, `batchRunner: IBatchRunner`, `instrumentedRunner`, `createSessionRunner()`). `SessionManager` asks an `IFrameworkServicesProvider` for the bundle of a file or root (`servicesFor`) and never constructs framework classes; `extension.ts` composes a `DetectingFrameworkProvider` that builds the Jest (`createJestServices`) or Vitest (`createVitestServices`) bundle for the project's framework. Adapters that run through a packages/runner `CommandRunner` extend `RunnerBackedAdapter` and add only detection, their runner and the debug config.
+On the extension side a framework is a **services bundle** (`FrameworkServices`: `adapter`, `projectConfig: IProjectConfig`, `batchRunner: IBatchRunner`, `instrumentedRunner`, `createSessionRunner()`). `SessionManager` asks an `IFrameworkServicesProvider` for the bundle of a file or root (`servicesFor`) and never constructs framework classes; each project composes a `FrameworkRouter` that builds the Jest (`createJestServices`) or Vitest (`createVitestServices`) bundle for the project's framework — or both in a mixed Jest + Vitest project, where it places every test file with one framework (see architecture.md → framework services). Adapters that run through a packages/runner `CommandRunner` extend `RunnerBackedAdapter` and add only detection, their runner and the debug config.
 
 Adding a framework = an adapter in each package plus the extension-side bundle (batch runner, project config). `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
 
@@ -142,6 +142,17 @@ To support multiple concurrent VS Code windows, every extension instance must op
 1. **Partitioning**: Session directories are named `session-<pid>-<timestamp>`.
 2. **Injection**: All runners and managers receive this directory via constructor injection. NEVER use global temporary constants for file writes.
 3. **Safe Cleanup**: On activate, scan the temp root and prune only session folders whose owning PID is inactive (verified via `process.kill(pid, 0)`). 
+4. **Per project**: with several test projects in the window (monorepo / multi-root, phase 7) each `ProjectContext` gets its own sub-folder `session-<pid>-<ts>/p<N>-<name>`; with one project it is the session folder itself.
+
+### Projects (monorepos, multi-root workspaces)
+
+Since phase 7 a window holds one `ProjectContext` per test project (`src/project/`): its own `ResultStore`, `ExecutionTraceStore`, `CoverageStore`, `TestDiscoveryService` + cache, framework services and `SessionManager`. The views, decorations and CodeLens are bound to the **selected** project (`ProjectRegistry.select` → `bindProject` / `bind`); each project's events reach them through its `ProjectObserverGate` only while it is selected.
+
+- Detection rules are pure and unit-tested in the runner (`framework/projectDiscovery.ts`, `test/projectDiscovery.test.ts`): a folder with its own test config is one project; a monorepo root without one is split into its workspace packages that have tests; nested projects are dropped.
+- New per-project state goes into `ProjectContext`, never a window-wide singleton; anything a view shows must be re-bindable.
+- The Explorer, Results panel and status bar follow the selected project; **editor features** (gutter icons, inline durations, CodeLens, coverage bars, coverage hover) resolve each file to **its own project** (`editor/FileStores.ts`, `ProjectRegistry.forFile`) and hear every project's events (`editorObservers` — the gate forwards to them regardless of selection).
+- Commands act on the selected project; commands that get a file (`rerunScope`, `rerunFromEditor`, `debugFromEditor`, `openTimelineDebugger`, saves) go to the file's project (`ProjectRegistry.forFile`).
+- Try it: `node e2e/run.js monorepo-select monorepo-run monorepo-stop` (fixtures `monorepo-jest`, `monorepo-vitest`).
 
 Use `spawn`, never `exec`. `exec` has a buffer limit that silently truncates large outputs. `spawn` streams.
 
@@ -187,7 +198,7 @@ Rules:
 - Never write extension diagnostics to the Test Output channel. It holds only Jest's output, plus `──── Run #N ────` separators.
 - Correlation tags: `Run #N` (SessionManager), `bN` (JestBatchRunner batch), `jest#N` (Executor process).
 
-**Logging from inside the Jest process** (instrumentation `.js` files): write `[LTR:<level>] message\n` to stderr. `Executor` routes those lines to the log at that level and strips them from captured stderr. `LTR_LOG_LEVEL` (set from the channel level) lets the scripts skip debug/trace writes:
+**Logging from inside the Jest / Vitest process** (instrumentation `.js` / `.mjs` files, incl. the Vitest trace's wrapper-config helper and plugin): write `[LTR:<level>] message\n` to stderr. `Executor` routes those lines to the log at that level and strips them from captured stderr. `LTR_LOG_LEVEL` (set from the channel level) lets the scripts skip debug/trace writes:
 
 ```js
 const _LTR_RANK = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 };
@@ -212,8 +223,8 @@ On-save runs are debounced at 300ms (configurable). Rapid successive saves only 
 
 When a **source file** (non-test) is saved, the rerun scope is determined by `_runAffectedBySourceFile`:
 
-1. **Trace data available** (after at least one full run): `ExecutionTraceStore.sourceToTests` is queried. For each affected test file, suites with `isSharedVars: false` rerun only their specific affected test cases (single Jest process with a combined `--testNamePattern`). Suites with `isSharedVars: true` rerun the whole file.
-2. **No trace data yet** (always for Vitest until its trace lands): the framework's related run reruns whole test files. A batch runner with `runRelated` (Vitest) runs it as a live batch — `vitest related <src> --run`, files show running as Vitest starts them, coverage of the saved file is measured again; otherwise the adapter's plain `runRelatedTests` (`jest --findRelatedTests`).
+1. **Trace data available** (after at least one full run, Jest and Vitest): `ExecutionTraceStore.sourceToTests` is queried. For each affected test file, suites with `isSharedVars: false` rerun only their specific affected test cases (one process per file with a combined `--testNamePattern` / `-t`); a file where every test that is not skipped is affected reruns whole (a batch, coverage measured again). Suites with `isSharedVars: true` rerun the whole file.
+2. **No trace data yet, or the trace is off for the root** (`FrameworkServices.traceOffReason` — Vitest: setting off, Vitest < 3, a `vitest.workspace` file, a failed wrapper; see `session/VitestTrace.ts`): the framework's related run reruns whole test files. A batch runner with `runRelated` (Vitest) runs it as a live batch — `vitest related <src> --run`, files show running as Vitest starts them, coverage of the saved file is measured again; otherwise the adapter's plain `runRelatedTests` (`jest --findRelatedTests`).
 
 When the framework's **config file** is saved (`FrameworkServices.isConfigFile`: `jest.config.*`, `vitest.config.*`, `vite.config.*`, `vitest.workspace.*` in the root, or the config the test script names), the session restarts: config, runnable files and every result are re-read.
 
@@ -402,7 +413,7 @@ export class VitestAdapter implements IFrameworkAdapter {
 
 ### Step 3 — Services bundle
 
-Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `FrameworkServices` (see `jestServices.ts`): the adapter above, an `IProjectConfig`, an `IBatchRunner`, an `IInstrumentedRunner`, `createSessionRunner()` (the runner adapter's `createRunner()`), `displayName` and `settingsFingerprint()`. `extension.ts` composes it into the provider; `SessionManager` needs no change.
+Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `FrameworkServices` (see `jestServices.ts`): the adapter above, an `IProjectConfig`, an `IBatchRunner`, an `IInstrumentedRunner`, `createSessionRunner()` (the runner adapter's `createRunner()`), `displayName` and `settingsFingerprint()`. Each `ProjectContext` composes it into its own `DetectingFrameworkProvider` (one provider per project, so projects never share a batch runner); `SessionManager` needs no change.
 
 ### Checklist
 
@@ -432,7 +443,7 @@ Verification:
 
 1. Implement `IResultObserver` from `src/IResultObserver.ts`
 2. Instantiate in `extension.ts`
-3. `sessionManager.addObserver(instance)`
+3. Add it to the `observers` array there — it receives the selected project's events (each project's `ProjectObserverGate` forwards them while that project is shown). If it holds a store reference, give it a `bind(...)` and call it from the `onDidChangeSelection` handler so it follows a project switch.
 
 The observer receives:
 - `onSessionStart()` — session began
@@ -532,7 +543,7 @@ Before opening the `release/*` → `main` PR:
 
 To test a package locally: `cd packages/vscode-extension && pnpm run build && vsce package` (produces a `.vsix`).
 
-**Website.** `.github/workflows/pages.yml` publishes the project website to GitHub Pages when `site/`, the guide, the screenshots or the workflow change on `main` or a `release/*` branch (one site, so the last deploy wins): `site/index.html` (marketing landing page) and `site/sitemap.xml` at https://eshandias.github.io/live-test-runner/, `docs/live-test-runner-guide.html` at `/guide/`, and `packages/vscode-extension/resources/images/*.png` at `/images/`. One-time setup: repository **Settings → Pages → Source: GitHub Actions**, and **Settings → Environments → github-pages → Deployment branches** must allow `release/*` (by default only `main` can deploy). SEO: the landing page carries the meta description, canonical URL, Open Graph / Twitter tags and JSON-LD (`SoftwareApplication` + `FAQPage`; keep its FAQ text in sync with the visible FAQ). Add the Google Search Console verification tag where the comment in `<head>` says, then submit `sitemap.xml` there; update the sitemap's `lastmod` when the pages change. A `robots.txt` is not used: on a `github.io` project site it would sit under `/live-test-runner/`, where crawlers don't look. Reviews can't be posted from the site (both marketplaces need sign-in on their own pages), so it links to the VS Code Marketplace and Open VSX review pages. The same file is copied to `out/guide/guide.html` by `esbuild.js` and shown by the **Open Guide** command (`views/GuidePanel.ts`), so the guide links to the other docs with absolute GitHub URLs. Links that leave a page (external URLs, and the site's links to the guide) open in a new tab (`target="_blank" rel="noopener"`); in-page `#anchor` links don't. Keep the guide (and, for headline features, the landing page) up to date with every important change — see CLAUDE.md → Documentation Maintenance.
+**Website.** `.github/workflows/pages.yml` publishes the project website to GitHub Pages when `site/`, the guide, the screenshots or the workflow change on `main` (release branches do not publish — the site shows what is released): `site/index.html` (marketing landing page) and `site/sitemap.xml` at https://eshandias.github.io/live-test-runner/, `docs/live-test-runner-guide.html` at `/guide/`, and `packages/vscode-extension/resources/images/*.png` at `/images/`. One-time setup: repository **Settings → Pages → Source: GitHub Actions**. SEO: the landing page carries the meta description, canonical URL, Open Graph / Twitter tags and JSON-LD (`SoftwareApplication` + `FAQPage`; keep its FAQ text in sync with the visible FAQ). Add the Google Search Console verification tag where the comment in `<head>` says, then submit `sitemap.xml` there; update the sitemap's `lastmod` when the pages change. A `robots.txt` is not used: on a `github.io` project site it would sit under `/live-test-runner/`, where crawlers don't look. Reviews can't be posted from the site (both marketplaces need sign-in on their own pages), so it links to the VS Code Marketplace and Open VSX review pages. The same file is copied to `out/guide/guide.html` by `esbuild.js` and shown by the **Open Guide** command (`views/GuidePanel.ts`), so the guide links to the other docs with absolute GitHub URLs. Links that leave a page (external URLs, and the site's links to the guide) open in a new tab (`target="_blank" rel="noopener"`); in-page `#anchor` links don't. Keep the guide (and, for headline features, the landing page) up to date with every important change — see CLAUDE.md → Documentation Maintenance.
 
 What goes into the `.vsix` is set by `packages/vscode-extension/.vscodeignore` (`npx @vscode/vsce ls --no-dependencies` lists it). Sources are bundled into `out/`, but the webviews load their HTML / JS / CSS from `src/webview` at runtime, so that folder must stay in the package.
 
@@ -582,6 +593,8 @@ unzip -q /tmp/ltr.vsix -d /tmp/ltr-vsix && LTR_E2E_EXTENSION_DIR=/tmp/ltr-vsix/e
   Every fixture's full run is compared file by file with plain Jest (`checkMatchesPlainJest`). When a real project shows a new problem, reproduce it in a fixture (or a new one) so CI keeps catching it.
 - **Fixtures** (`e2e/fixtures/<name>`) are copied to `%TEMP%/ltr e2e/<name> project` — a path with spaces on purpose — and `npm install`ed once (again when `package.json` changes).
 - **Scenarios** (`e2e/scenarios/*.js`) export `{ workspace, timeoutMs, settings?, run({ api, t, vscode, workspace }) }`. `workspace` is `fixture:<name>`, `env:<VAR>` or a path. With `LTR_E2E=1` the extension's `activate()` returns its internals (`store`, `session`, `traceStore`, `coverageStore`, `observers`, `rawOutput`, …) — never in normal use. Helpers are in `e2e/lib/harness.js` (wait for discovery, record observer events, Jest summaries from raw output, Jest / Vitest processes still alive — Vitest renames its processes to `node (vitest)`, so `vitestProcesses()` matches those titles —, edit + save through VS Code, plain Jest / Vitest reference runs and per-file comparisons).
+- **Monorepo scenarios** (phase 7): `fixture:monorepo-jest` (npm workspaces: two Jest packages — one with its own config, one with only a `jest` test script — and a package without tests) runs `monorepo-select` (detection, switching, the `maxRunningProjects` refusal, `projectRoot` pinning) and `monorepo-stop` (Stop on one project leaves the other running; each project's Jest CLI is found by its session folder in `--config`); `fixture:monorepo-vitest` (a Vitest package with two `test.projects` and one configured only by its test script) runs `monorepo-run` (two projects at once, switching while both run, results per project vs plain Vitest, D12 groups, a background on-save rerun). `api.projects` is the `ProjectRegistry`; `api.store` / `api.session` / … are the selected project's.
+- **Mixed-framework scenarios** (phase 8): `fixture:mixed-same-package` (Jest `*.test.js` + `*.jest.js`, Vitest `*.test.js` + `*.vitest.js`, Jest 29.7 + Vitest 3.2.4, a source file both load) runs `mixed-full-run` (each file's framework — its results only pass under the right one —, Explorer groups, the D13 WARN, status-bar split, merged coverage, ▶ Run), `mixed-on-save` (test and source saves, a file moving to Vitest, config restart) and `mixed-stop`; `fixture:mixed-monorepo` (a Jest, a Vitest and a mixed package) runs `mixed-monorepo`.
 - **Vitest scenarios** run on `fixture:vitest-basic` (Vitest 3.2.4): `vitest-full-run`, `vitest-scoped-run`, `vitest-session` (guard, test / source-file saves, ▶ Run, after Stop), `vitest-stop`, `vitest-hang`, `vitest-debug`; `repo-vitest` runs on real Vitest repos through `real-repos.js`.
 - **Real projects:** `LTR_E2E_TSJEST_REPO` (+ `LTR_E2E_TSJEST_BASELINE`, a `jest --json` result to compare every file with) for `repo-tsjest`; `LTR_E2E_CRA_REPO` for `repo-cra` (quick by default; `LTR_E2E_CRA_FULL=1` + `LTR_E2E_CRA_BASELINE` for the whole project). `repo-tsjest` edits one source file and restores it byte-for-byte; `repo-cra` never writes to the project.
 - **Real-repository matrix:** `node e2e/real-repos.js` (light repos) / `jest` (the heavy monorepo) / `--all` / `--fresh` runs those scenarios on a *copy* of each repo in `LTR_E2E_JEST_REPOS_DIR` and `LTR_E2E_VITEST_REPOS_DIR` (unplugin, slidev, vueuse — `repo-vitest`), computes the plain Jest / plain `vitest run` baseline itself, and fails if the original repository changed. Results go to `docs/temp_plans/vitest-baseline.json`.
@@ -621,6 +634,7 @@ engine.jumpTo(stepId)
 | `describe` fallback | If no `LineMap` entry exists for the line, `▶ Run` on a `describe` block reruns the whole file |
 | Debug config hardcoded path | `getDebugConfig` in `JestAdapter` uses `${workspaceFolder}/node_modules/.bin/jest`; non-standard layouts may need the `liveTestRunner.jestCommand` override |
 | CRA config cache is in-memory | Lost when the session ends; recomputed (~2–3s) on next Start Testing |
+| Projects inside a project | A folder with its own test config is one project even when its packages have their own configs; nested workspaces (a package that is itself a monorepo root) are not split further |
 | Gutter icon animation | `animateTransform` in the running SVG is rendered statically by VS Code — the spinner does not spin in the gutter |
 | `location` not always present | Some Jest setups (CRA) and Vitest 1–2 do not emit `location` in JSON; gutter icons won't appear for those files (Vitest ≥ 3 gets it via `--includeTaskLocation`) |
 | Timeline transform: regex-based injection | `traceTransform.js` injects trace calls using Babel AST. It handles assignments, function calls, and common statement patterns, but may miss complex patterns such as multi-line destructuring or chained optional calls inside expressions. |
@@ -631,9 +645,10 @@ engine.jumpTo(stepId)
 
 ## Roadmap
 
-- [x] Vitest support (3.0.0) — run, pass/fail, per-test logs, live progress, coverage; next steps (related tests on save, monorepos, mixed frameworks, trace) in `docs/temp_plans/vitest-support-plan.md`
+- [x] Vitest support (3.0.0) — run, pass/fail, per-test logs, live progress, coverage; related tests on save, monorepos, mixed frameworks (3.1), execution trace (unreleased) — see `docs/temp_plans/vitest-support-plan.md`
 - [x] ~~Suite/test-case level nodes in Test Explorer~~ — completed in 1.2.0 (recursive node tree with unlimited nesting)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
 - [ ] Streaming live output during a run (message type stubbed, not wired)
 - [ ] Coverage overlay in the file tree
-- [ ] Monorepo multi-root support — multiple `TestDiscoveryService` instances, one per root
+- [x] Monorepo / multi-root support (3.1.0, phase 7) — one `ProjectContext` per test project, project switcher, `maxRunningProjects`
+- [x] Mixed Jest + Vitest projects (phase 8) — `FrameworkRouter`, setting `liveTestRunner.frameworks`, per-framework batches, coverage merged by line

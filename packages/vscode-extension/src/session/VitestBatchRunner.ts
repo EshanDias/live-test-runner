@@ -20,7 +20,15 @@
  * Coverage: Vitest's own (v8 / istanbul provider), as istanbul JSON in a
  * per-batch folder of the session dir, mapped into the CoverageStore when
  * the batch ends. Off when the provider package is not installed (the
- * runner says so once). No execution trace (phase 9).
+ * runner says so once).
+ *
+ * Execution trace (phase 9, ADR-9): with a {@link VitestTrace}, batches run
+ * with its wrapper config; every worker writes its own trace file
+ * (`<base>.<pid>-<thread>`), read into the ExecutionTraceStore when the batch
+ * ends — the same records and indexes as Jest. A batch that produces nothing
+ * with the wrapper is rerun as configured and the trace is turned off for the
+ * root; so is a batch where a test file ran without the trace setup (the
+ * trace would be incomplete, and precise reruns would miss its tests).
  *
  * runRelated: `vitest related <src> --run` through the same live path — the
  * test files are only known when Vitest starts them, so each is claimed on
@@ -46,6 +54,8 @@ import { applyIstanbulCoverage } from '../coverage/istanbulCoverage';
 import { CoverageScope, coverageScopeOf, defaultCoverageScope } from '../coverage/coverageScope';
 import { IProjectConfig } from './IProjectConfig';
 import { PLAIN_RUN_HANG_FACTOR } from '../constants';
+import { VitestTrace } from './VitestTrace';
+import { applyTraceRecords, readTraceLines, workerTraceFiles } from './traceRecords';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Vitest');
@@ -71,7 +81,14 @@ export class VitestBatchRunner implements IBatchRunner {
   constructor(
     private readonly _createRunner: (rawLog: (msg: string) => void) => CommandRunner,
     private readonly _coverage?: { store: CoverageStore; sessionDir: string; projectConfig?: IProjectConfig },
+    /** The execution trace (none: batches run as configured, as before phase 9). */
+    private readonly _trace?: { trace: VitestTrace; sessionDir: string },
   ) {}
+
+  /** Why there is no execution trace for this root (undefined: there is, or there will be). */
+  traceOffReason(projectRoot: string): string | undefined {
+    return this._trace ? this._trace.trace.offReason(projectRoot) : 'Vitest runs without the execution trace';
+  }
 
   kill(): void {
     this._killed = true;
@@ -83,6 +100,7 @@ export class VitestBatchRunner implements IBatchRunner {
 
   reset(): void {
     this._killed = false;
+    this._trace?.trace.reset();
   }
 
   async runFiles(options: BatchRunOptions): Promise<{ missing: string[] }> {
@@ -105,7 +123,7 @@ export class VitestBatchRunner implements IBatchRunner {
   }
 
   /** A batch of `filePaths`, or (with `related`) of whatever test files depend on that source file. */
-  private async _run(options: BatchRunOptions, related?: string): Promise<{ ran: string[]; missing: string[] }> {
+  private async _run(options: BatchRunOptions, related?: string, untraced = false): Promise<{ ran: string[]; missing: string[] }> {
     const { projectRoot, applyFileResult, onFileDone } = options;
     /** The batch's files: given up front, or claimed as Vitest starts them (related). */
     const filePaths = [...options.filePaths];
@@ -136,10 +154,32 @@ export class VitestBatchRunner implements IBatchRunner {
 
     const runner = this._createRunner(rawLog) as VitestRunner;
     let live: Awaited<ReturnType<VitestRunner['liveCommand']>>;
+    /** This batch's trace: the wrapper config and where the workers write. */
+    let trace: { config: string; base: string; marker: string } | undefined;
     try {
       runner.setProjectRoot(projectRoot);
       const coverageDir = this._coverage ? path.join(this._coverage.sessionDir, 'vitest-coverage', batch) : undefined;
-      live = await runner.liveCommand(filePaths, { coverageDir, related });
+      if (this._trace && !untraced) {
+        const config = this._trace.trace.configFor(projectRoot, await runner.projectConfigPath());
+        if (config) {
+          const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          trace = {
+            config,
+            base: path.join(this._trace.sessionDir, `ltr-vtrace-${batch}-${stamp}.jsonl`),
+            marker: path.join(this._trace.sessionDir, `ltr-vtrace-${batch}-${stamp}.marker.json`),
+          };
+        }
+      }
+      live = await runner.liveCommand(filePaths, { coverageDir, related, config: trace?.config });
+      if (trace) {
+        live.command.extraEnv = {
+          ...live.command.extraEnv,
+          SESSION_TRACE_FILE: trace.base,
+          LTR_TRACE_PER_WORKER: '1',
+          LTR_VITEST_TRACE_MARKER: trace.marker,
+          LTR_LOG_LEVEL: logger.level,
+        };
+      }
     } catch (err) {
       log.error(`${batch}: could not build the Vitest command for ${projectRoot}`, err);
       release();
@@ -296,10 +336,70 @@ export class VitestBatchRunner implements IBatchRunner {
     } else {
       log.debug(`${batch}: done in ${seconds(startedAt)} — ${received.size}/${filePaths.length} file(s) reported`);
     }
+    if (trace) {
+      const outcome = this._readTrace(trace, { projectRoot, batch, options, toKey, received, stopped, cutShort: !!timedOut || stalled });
+      if (outcome === 'rerun' && !this._killed && generation === this._generation) {
+        // The wrapper itself broke the run: the same batch as configured.
+        release();
+        return this._run(options, related, true);
+      }
+    }
     const missing = stopped ? [] : filePaths.filter((fp) => owns(fp) && !received.has(fp));
     const ran = filePaths.filter((fp) => received.has(fp));
     release();
     return { ran, missing };
+  }
+
+  /**
+   * After a traced batch: applies the workers' trace files to the store, or
+   * turns the trace off for the root (see the class comment).
+   * @returns 'rerun' when the batch must run again without the trace
+   */
+  private _readTrace(
+    trace: { base: string; marker: string },
+    ctx: {
+      projectRoot: string; batch: string; options: BatchRunOptions; toKey: (p: string) => string;
+      received: Set<string>;
+      /** Stopped by the user: nothing is applied. */
+      stopped: boolean;
+      /** Stopped by the hang limit: what finished is applied, nothing is judged. */
+      cutShort: boolean;
+    },
+  ): 'ok' | 'rerun' {
+    const files = workerTraceFiles(trace.base);
+    let marker: { ok?: boolean; reason?: string } | undefined;
+    try { marker = JSON.parse(fs.readFileSync(trace.marker, 'utf8')); } catch { marker = undefined; }
+    try {
+      if (ctx.stopped) { return 'ok'; }
+      const vt = this._trace!.trace;
+      if (ctx.received.size === 0 && !ctx.cutShort) {
+        // Nothing ran. With the wrapper's own report missing or failed, it may be the cause: retry without it.
+        if (!marker?.ok) {
+          vt.turnOff(ctx.projectRoot, marker?.reason || 'Vitest produced no results with the trace wrapper config');
+          return 'rerun';
+        }
+        return 'ok';
+      }
+      if (marker && !marker.ok) {
+        vt.turnOff(ctx.projectRoot, marker.reason || 'the wrapper config could not add the trace', 'info');
+        return 'ok';
+      }
+      const summary = applyTraceRecords(readTraceLines(files), ctx.options.traceStore, ctx.toKey);
+      if (ctx.cutShort) { return 'ok'; }
+      const untraced = [...ctx.received].filter((fp) => !summary.seen.has(fp));
+      if (untraced.length > 0) {
+        vt.turnOff(ctx.projectRoot, `${untraced.length} test file(s) ran without the trace setup (e.g. ${path.basename(untraced[0])}) — ` +
+          'a Vitest project the trace could not reach');
+        return 'ok';
+      }
+      log.debug(`${ctx.batch}: traced ${summary.tests} test(s) across ${summary.files} file(s) (${files.length} worker file(s))`);
+      return 'ok';
+    } catch (err) {
+      log.error(`${ctx.batch}: could not read the execution trace`, err);
+      return 'ok';
+    } finally {
+      for (const f of [...files, trace.marker]) { try { fs.unlinkSync(f); } catch { /* gone */ } }
+    }
   }
 
   private _applyCoverage(coverageFile: string, projectRoot: string, batch: string, scope: CoverageScope): void {

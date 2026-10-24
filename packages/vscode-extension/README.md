@@ -32,6 +32,7 @@
 | 🎨 | **Editor decorations** — gutter icons, inline duration, CodeLens buttons | |
 | 📊 | **Per-line code coverage** — coloured bars + hover shows which tests hit each line | |
 | 🔍 | **Results panel** — 3-column view: test list · console output · errors | |
+| 🗂 | **Monorepos & multi-root workspaces** — every package is a project; switch between them, run several at once | |
 | ⏱ | **Timeline Debugger** *(coming soon)* — step through a test like a time-travel debugger | |
 
 ---
@@ -82,11 +83,41 @@ After the first run, every source file shows per-line coverage — no separate c
 | Red `▌` | Never executed |
 | Grey `▌` | Not executable |
 
-Hover any line to see which tests cover it, their pass/fail status, and duration (Jest; Vitest shows coverage and branches — covering tests are coming). When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
+Hover any line to see which tests cover it, their pass/fail status, and duration (Jest and Vitest). When more than 5 tests cover a line, click **Show all N** to open a searchable Quick Pick listing every covering test — select one to jump to its result. Coverage updates on every save; files show a grey overlay while a rerun is in progress.
 
 <!-- [TODO: USER_INPUT_NEEDED] Screenshot or gif of coverage bars + hover tooltip in a source file -->
-<!-- [TODO: USER_INPUT_NEEDED] Screenshot: coverage bars + hover on a Vitest project (with @vitest/coverage-v8 installed) -->
+<!-- [TODO: USER_INPUT_NEEDED] Screenshot: coverage bars + hover listing the covering tests on a Vitest project (with @vitest/coverage-v8 installed) -->
 ![Code Coverage Example](resources/images/code_coverage.png)
+
+---
+
+### Monorepos & multi-root workspaces
+
+- Every package with tests is detected as its own project — nothing runs until you start it.
+- A **project switcher** at the top of the Explorer shows each project's state (`● running`, `● live`, ✓ / ✗ counts). Pick one: the tree, results and status bar switch to it. Gutter icons, CodeLens and coverage bars always show each file's own project.
+- **▶ Start / ⏹ Stop act on the project shown.** Others keep running (and rerunning on save) in the background.
+- A root config that already covers its packages (Jest `projects`, Vitest `test.projects`) stays one project; Vitest projects are grouped by name in the tree.
+- `maxRunningProjects` limits how many run at once.
+
+![Project switcher in a monorepo](resources/images/monorepo-switcher.png)
+
+<!-- [TODO: USER_INPUT_NEEDED] optional gif: open the switcher, start two packages, switch between them while both run -->
+
+---
+
+### Jest and Vitest in one project
+
+Migrating from Jest to Vitest? A project with a Jest config **and** its own `vitest.config.*` runs **each test file with its own framework**:
+
+- Only one config lists the file → that framework.
+- Both list it → Vitest if it imports from `vitest` or calls `vi.`, Jest if it imports `@jest/globals` or calls `jest.`; otherwise Jest, with one warning in the log.
+- Override with `liveTestRunner.frameworks`, e.g. `{ "packages/new/**": "vitest" }`.
+
+The tree groups files by framework, saves rerun both frameworks' related tests, and coverage merges both.
+
+![A Jest + Vitest project: files grouped by framework, status bar split](resources/images/mixed-explorer.png)
+
+![Coverage of a file tested by both Jest and Vitest](resources/images/mixed-coverage.png)
 
 ---
 
@@ -115,7 +146,9 @@ Step through any test case line by line — variable values as inline ghost text
 | `Stop Testing` | End the session |
 | `Stop Testing and Clear Cache` | Stop + wipe discovery cache |
 | `Clear Cache and Restart Testing` | Fresh restart |
-| `Select Project Root` | Pick root in multi-folder workspace |
+| `Select Project` | Switch the project shown (same as the Explorer's switcher) |
+| `Select Project Root` | Pin Live Test Runner to one folder (or back to all projects) |
+| `Stop All Projects` | Stop every running project |
 | `Show Logs` | Open the extension log (filter by level) |
 | `Show Test Output` | Open the raw test-runner output |
 | `Copy Diagnostic Report` | Copy versions, setup and recent logs for a bug report |
@@ -142,10 +175,13 @@ All settings under `liveTestRunner.*`.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `projectRoot` | `""` | Auto-detected for single-folder workspaces |
+| `projectRoot` | `""` | Pin to one project root; empty = detect every project in the workspace |
+| `maxRunningProjects` | `"auto"` | Projects running at once: `auto` = 2 (1 on ≤ 4 cores or < 8 GB total memory), or a number |
 | `runMode` | `"auto"` | `"auto"` calls Jest directly; `"npm"` delegates to `npm test` (Jest only) |
 | `jestCommand` | `""` | Override Jest binary path |
 | `vitestCommand` | `""` | Override the Vitest command (e.g. `npx vitest`); empty = the project's own Vitest |
+| `frameworks` | `{}` | Jest + Vitest projects: glob → `"jest"` / `"vitest"` for those test files |
+| `vitestTrace` | `true` | Vitest execution trace: covering tests on hover, and saves rerun only the tests that ran the file |
 | `vitestIncludeBrowserProjects` | `false` | Also run Vitest browser-mode projects (need Playwright / WebdriverIO browsers) |
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
@@ -171,16 +207,16 @@ All settings under `liveTestRunner.*`.
 | Logs / console output | ✅ per file | ✅ per file | ✅ per test |
 | Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) |
 | Live per-file progress | ✅ | ✅ | ✅ |
-| Rerun tests related to a saved source file | ✅ | ✅ | ✅ whole test files (`vitest related`) |
-| Monorepo / multi-project | 🟡 | — | 🟡 Vitest `projects`, run from the root |
-| Mixed frameworks in one project | — | — | ⏳ 3.2 |
-| Execution trace / "covering tests" | ✅ | ✅ | ⏳ 3.3 |
+| Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off |
+| Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name |
+| Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ |
+| Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3; not in a `vitest.workspace` file or browser mode |
 | Timeline debugger | ⏳ | ⏳ | ⏳ later |
 <!-- matrix:end -->
 
 <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — the test tree fills in, results and gutter icons appear, ▶ Run on one test -->
 
-Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projects that list Vitest but configure Jest (e.g. libraries testing with both) run on Jest.
+Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projects that list Vitest but configure only Jest run on Jest; with a `vitest.config.*` of their own they run each file with its framework (see [Jest and Vitest in one project](#jest-and-vitest-in-one-project)).
 
 ---
 
@@ -189,7 +225,7 @@ Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projec
 - Individual test reruns use `--testNamePattern` — tests with exactly the same full name run together
 - Jest captures console output per file; it shows on a single test only when that test is rerun on its own. With Vitest every test shows its own output.
 - Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
-- Vitest: saving a source file reruns the whole test files that import it (`vitest related`); per-test reruns need the execution trace, coming in a later release
+- Vitest: the execution trace needs Vitest ≥ 3 and is off for projects with a `vitest.workspace` file and for browser-mode projects — saving a source file then reruns the test files that import it (`vitest related`)
 
 ---
 

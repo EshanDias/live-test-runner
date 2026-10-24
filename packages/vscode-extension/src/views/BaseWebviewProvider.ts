@@ -3,6 +3,7 @@ import { ResultStore } from '../store/ResultStore';
 import { SelectionState } from '../store/SelectionState';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResultObserver';
 import { getThresholds, getCoverageThresholds } from '../utils/duration';
+import type { ProjectViewState } from '../project/ProjectContext';
 
 /**
  * Shared base for ExplorerView and ResultsView.
@@ -23,15 +24,35 @@ export abstract class BaseWebviewProvider
   protected _isDiscovering  = false;
   protected _discoveryTotal = 0;
   protected _discoveryDone  = 0;
+  /** Progress of the bound project's runs in flight (set by bindProject). */
+  protected _running: ProjectViewState['running'];
 
   private _pendingFileResults: string[] = [];
   private _resultFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     protected readonly extensionUri: vscode.Uri,
-    protected readonly store: ResultStore,
+    /** The selected project's store — replaced by bindProject when another project is selected. */
+    protected store: ResultStore,
     protected readonly selection: SelectionState,
   ) {}
+
+  /**
+   * Shows another project (phase 7): its store and live state replace the
+   * current ones and the webview gets a fresh 'init'. Pending batched file
+   * results of the previous project are dropped.
+   */
+  bindProject(state: ProjectViewState): void {
+    if (this._resultFlushTimer !== null) { clearTimeout(this._resultFlushTimer); this._resultFlushTimer = null; }
+    this._pendingFileResults = [];
+    this.store           = state.store;
+    this._sessionActive  = state.sessionActive;
+    this._isDiscovering  = state.isDiscovering;
+    this._discoveryTotal = state.discoveryTotal;
+    this._discoveryDone  = state.discoveryDone;
+    this._running        = state.running;
+    this._sendInit();
+  }
 
   // ── WebviewViewProvider ────────────────────────────────────────────────────
 
@@ -119,10 +140,12 @@ export abstract class BaseWebviewProvider
 
   onSessionStopped(): void {
     this._sessionActive = false;
+    this._running = undefined;
     this.postMessage({ type: 'session-stopped' });
   }
 
   onRunStarted(payload: RunStartedPayload): void {
+    this._running = { completed: 0, total: payload.fileCount, failed: 0 };
     this.postMessage({ type: 'run-started', fileCount: payload.fileCount, files: payload.files });
   }
 
@@ -149,6 +172,7 @@ export abstract class BaseWebviewProvider
   }
 
   onRunFinished(payload: RunFinishedPayload): void {
+    this._running = undefined;
     // Flush pending file results first so the final tree precedes the summary.
     if (this._resultFlushTimer !== null) {
       clearTimeout(this._resultFlushTimer);
@@ -158,6 +182,7 @@ export abstract class BaseWebviewProvider
   }
 
   onRunProgress(completed: number, total: number, failed: number): void {
+    this._running = { completed, total, failed };
     this.postMessage({ type: 'run-progress', completed, total, failed });
   }
 

@@ -111,6 +111,16 @@ describe('vitest list output', () => {
     expect(await new VitestRunner().discoverTests(root)).toEqual([a, path.join(root, 'b.test.ts')]);
   });
 
+  it('groups files by Vitest project name when the config has several projects (D12)', async () => {
+    project({ devDependencies: { vitest: '5' } });
+    const a = path.join(root, 'a.test.ts');
+    const b = path.join(root, 'b.test.ts');
+    listStdout = JSON.stringify([{ file: a, projectName: 'unit' }, { file: a, projectName: 'server' }, { file: b, projectName: 'unit' }]);
+    expect(await new VitestRunner().listTestFiles(root)).toEqual({ files: [a, b], groups: { [a]: 'server, unit', [b]: 'unit' } });
+    listStdout = JSON.stringify([{ file: a, projectName: '' }, { file: b, projectName: '' }]);
+    expect((await new VitestRunner().listTestFiles(root)).groups).toBeUndefined();
+  });
+
   it('falls back to a folder scan when there is no list', async () => {
     project({ devDependencies: { vitest: '5' } }, '5.0.5', { 'src/x.spec.ts': '' });
     listStdout = 'Collect Error';

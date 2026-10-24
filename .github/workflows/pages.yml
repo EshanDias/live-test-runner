@@ -1,18 +1,16 @@
 name: Website (GitHub Pages)
 
 # Publishes the project website (https://eshandias.github.io/live-test-runner/)
-# whenever it changes on main or a release/* branch (the last deploy wins —
-# there is one site, so a release branch publishes its pre-release copy):
+# whenever it changes on main (release branches do not publish — the site
+# always shows what is released):
 #   /            site/index.html (landing page) + site/sitemap.xml
 #   /guide/      docs/live-test-runner-guide.html
 #   /images/     screenshots from packages/vscode-extension/resources/images
-# One-time setup: repository Settings → Pages → Source: "GitHub Actions", and
-# Settings → Environments → github-pages → Deployment branches: add `release/*`
-# (by default only the default branch may deploy).
+# One-time setup: repository Settings → Pages → Source: "GitHub Actions".
 
 on:
   push:
-    branches: [main, 'release/**']
+    branches: [main]
     paths:
       - 'site/**'
       - 'docs/live-test-runner-guide.html'

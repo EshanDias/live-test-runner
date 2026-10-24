@@ -6,7 +6,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { CommandRunner, FRAMEWORK_IDS, VitestAdapter as VitestRunnerAdapter } from '@live-test-runner/runner';
 import { FrameworkServices } from './FrameworkServices';
-import { VitestAdapter, vitestCommandSetting, vitestIncludeBrowserProjects } from './VitestAdapter';
+import { VitestAdapter, vitestCommandSetting, vitestIncludeBrowserProjects, vitestTraceSetting } from './VitestAdapter';
+import { VitestTrace } from '../session/VitestTrace';
 import { VitestProjectConfig } from '../session/VitestProjectConfig';
 import { VitestBatchRunner } from '../session/VitestBatchRunner';
 import { CoverageStore } from '../coverage/CoverageStore';
@@ -28,6 +29,11 @@ export function createVitestServices(options: {
       tmpDir: sessionDir,
       includeBrowserProjects: vitestIncludeBrowserProjects(),
     }) as CommandRunner;
+  const batchRunner = new VitestBatchRunner(
+    newRunner,
+    { store: coverageStore, sessionDir, projectConfig },
+    { trace: new VitestTrace(sessionDir, vitestTraceSetting), sessionDir },
+  );
   return {
     framework: FRAMEWORK_IDS.vitest,
     displayName: 'Vitest',
@@ -42,11 +48,12 @@ export function createVitestServices(options: {
       plainRun: 'plain Vitest',
       fallbackLoss: 'slower',
     },
-    // Trace needs the Vite plugin (phase 9), the Timeline its runner (phase 10).
-    features: { trace: false, timeline: false },
+    // The trace comes from the Vite plugin (phase 9, VitestTrace); the Timeline needs its runner (phase 10).
+    features: { trace: true, timeline: false },
+    traceOffReason: (projectRoot) => batchRunner.traceOffReason(projectRoot),
     adapter: new VitestAdapter(sessionDir),
     projectConfig,
-    batchRunner: new VitestBatchRunner(newRunner, { store: coverageStore, sessionDir, projectConfig }),
+    batchRunner,
     // The Timeline debugger needs the Vite trace plugin (phase 10).
     instrumentedRunner: undefined,
     createSessionRunner: () => newRunner(rawLog),

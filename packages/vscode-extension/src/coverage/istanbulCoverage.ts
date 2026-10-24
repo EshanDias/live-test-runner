@@ -10,7 +10,7 @@ import * as path from 'path';
 import { fromRunnerPath } from '@live-test-runner/runner';
 import { CoverageStore } from './CoverageStore';
 import { calculate } from './CoverageReport';
-import { isExcludedFromCoverage, mergeCounters } from './coverageRules';
+import { combineWithEntry, isExcludedFromCoverage } from './coverageRules';
 import { FileCov, LiveCov, Manifest } from './types';
 import { logger } from '../utils/logger';
 
@@ -81,10 +81,8 @@ export function applyIstanbulCoverage(
     }
 
     const counters: FileCov = { s: { ...fc.s }, f: { ...fc.f }, b: Object.fromEntries(Object.entries(fc.b ?? {}).map(([id, arms]) => [id, [...arms]])) };
-    const existing = store.getEntry(filePath);
-    const merged: LiveCov = existing && existing.state !== 'counted' && existing.manifestPath === manifestPath
-      ? mergeCounters(existing.counters, counters)
-      : counters;
+    // Same version → counters merged; a Jest-measured entry (mixed project) → merged by line.
+    const merged: LiveCov = combineWithEntry(store.getEntry(filePath), manifestPath, manifest, counters);
     store.setMeasuredEntry(filePath, { manifestPath, counters: merged, pct: calculate(manifest, merged) });
     measured++;
   }

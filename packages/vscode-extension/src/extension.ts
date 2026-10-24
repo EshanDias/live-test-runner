@@ -18,19 +18,18 @@ import { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
-import { DetectingFrameworkProvider } from './framework/FrameworkServices';
-import { createJestServices } from './framework/jestServices';
-import { createVitestServices } from './framework/vitestServices';
 import { CodeLensProvider } from './editor/CodeLensProvider';
 import { DecorationManager } from './editor/DecorationManager';
 import { ExplorerView } from './views/ExplorerView';
 import { ResultsView } from './views/ResultsView';
 import { SessionManager } from './session/SessionManager';
-import { TestDiscoveryService } from './session/TestDiscoveryService';
+import { ProjectRegistry } from './project/ProjectRegistry';
+import { ProjectContext } from './project/ProjectContext';
+import { FileStores } from './editor/FileStores';
 import { IResultObserver } from './IResultObserver';
 import { IInstrumentedRunner } from './timeline/IInstrumentedRunner';
 import { TimelineDecorationManager } from './timeline/TimelineDecorationManager';
-import { DiscoveryCache, rotateAndCheckCapacity } from './cache/DiscoveryCache';
+import { rotateAndCheckCapacity } from './cache/DiscoveryCache';
 import { CoverageStore } from './coverage/CoverageStore';
 import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
@@ -122,16 +121,25 @@ export function activate(context: vscode.ExtensionContext) {
   statusBar.show();
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const store         = new ResultStore();
+  // Every store lives in a ProjectContext (one per test project, phase 7).
+  // Views start on an empty placeholder and are bound to the selected project.
   const selection     = new SelectionState();
-  const coverageStore = new CoverageStore();
+  const emptyStore    = new ResultStore();
+  const emptyCoverage = new CoverageStore();
+  const emptyTrace    = new ExecutionTraceStore();
 
   // ── Views and editor providers ─────────────────────────────────────────────
-  const explorerView      = new ExplorerView(context.extensionUri, store, selection, coverageStore);
-  const resultsView       = new ResultsView(context.extensionUri, store, selection);
-  const decorationManager = new DecorationManager(store, context);
-  const codeLensProvider  = new CodeLensProvider(store);
-  const observers: IResultObserver[] = [explorerView, resultsView, decorationManager];
+  const explorerView      = new ExplorerView(context.extensionUri, emptyStore, selection, emptyCoverage);
+  const resultsView       = new ResultsView(context.extensionUri, emptyStore, selection);
+  // Explorer + Results follow the selected project; editor features decorate
+  // every file from its own project and hear every project's events.
+  const observers: IResultObserver[] = [explorerView, resultsView];
+  const editorObservers: Partial<IResultObserver>[] = [];
+  // Called only after the registry below exists (never during construction).
+  const storesOf = (filePath: string): FileStores | undefined => projects.forFile(filePath);
+  const decorationManager = new DecorationManager(storesOf, context);
+  const codeLensProvider  = new CodeLensProvider(storesOf);
+  editorObservers.push(decorationManager, codeLensProvider);
 
   // Register CodeLens immediately so ▶ Run / ▷ Debug appear as soon as
   // discovery populates the line map — no need to click Start Testing first.
@@ -150,29 +158,45 @@ export function activate(context: vscode.ExtensionContext) {
     resultsView.sendScopedData(sel.fileId, sel.nodeId);
   };
 
-  // The test framework's services (adapter, project config, batch runner,
-  // timeline runner), picked by the project's framework: Vitest or Jest (incl. CRA).
-  const rawLog = (msg: string) => outputChannel.appendLine(msg);
-  const frameworks = new DetectingFrameworkProvider(
-    {
-      jest: () => createJestServices({ sessionDir: LTR_SESSION_TMP_DIR, coverageStore, rawLog }),
-      vitest: () => createVitestServices({ sessionDir: LTR_SESSION_TMP_DIR, rawLog, coverageStore }),
-    },
-    () => _resolveProjectRoot(),
-  );
+  // ── Coverage decoration manager ───────────────────────────────────────────
+  const coverageDecoMgr = new CoverageDecorationManager(storesOf);
+  editorObservers.push(coverageDecoMgr);
+  context.subscriptions.push(emptyCoverage, coverageDecoMgr);
+
+  // ── Projects ───────────────────────────────────────────────────────────────
+  // Every test project of the workspace is detected; none runs until started.
+  const projects = new ProjectRegistry({
+    sessionDir: LTR_SESSION_TMP_DIR,
+    cacheRootDir: LTR_BASE_CACHE_DIR,
+    outputChannel,
+    observers,
+    editorObservers,
+    selection,
+    sendScopedData: (fileId, nodeId) => resultsView.sendScopedData(fileId, nodeId),
+    statusBar,
+    memento: context.workspaceState,
+  });
+  /** The project the views show; Start / Stop act on it. */
+  const sel = (): ProjectContext | undefined => projects.selected;
+  /** The project a file belongs to, else the selected one. */
+  const owner = (filePath: string | undefined): ProjectContext | undefined =>
+    (filePath ? projects.forFile(filePath) : undefined) ?? projects.selected;
 
   // ── Timeline debugger ──────────────────────────────────────────────────────
   // Reference typed as the interface — never as the concrete class. It hands
   // each run to the project's framework, which may not have one yet.
   const instrumentedRunner: IInstrumentedRunner = {
     run: (options) => {
-      const services = frameworks.servicesFor(options.projectRoot);
+      const ctx = projects.forFile(options.filePath) ?? projects.contexts.find((c) => c.root === options.projectRoot) ?? sel();
+      if (!ctx) { return Promise.reject(new Error('No test project for this file.')); }
+      // The test file's own framework (a mixed project has two).
+      const services = ctx.services.servicesFor(options.filePath);
       if (!services.instrumentedRunner) {
         return Promise.reject(new Error(`The Timeline debugger is not available for ${services.displayName} yet.`));
       }
       return services.instrumentedRunner.run(options);
     },
-    cancel: () => { for (const s of frameworks.all()) { s.instrumentedRunner?.cancel(); } },
+    cancel: () => { for (const c of projects.contexts) { for (const s of c.services.all()) { s.instrumentedRunner?.cancel(); } } },
   };
   const timelineDecorations = new TimelineDecorationManager();
 
@@ -181,18 +205,33 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Last serialised store — kept so TimelineDecorationManager can render inline values.
   let lastTimelineStore: { steps: unknown[]; variables: Record<number, unknown[]> } | null = null;
+  /** The panels show the Timeline (a project switch leaves it first). */
+  let timelineOpen = false;
+
+  const currentStore = (): ResultStore => sel()?.store ?? emptyStore;
 
   const routeExplorerToMain = () => {
-    const summary = store.getSummary();
+    timelineOpen = false;
+    const summary = currentStore().getSummary();
     explorerView.postMessage({
       type: 'route',
       view: 'testList',
       payload: {
-        files: (store.toJSON() as { files: unknown[] }).files,
+        files: (currentStore().toJSON() as { files: unknown[] }).files,
         total: summary.total,
         passed: summary.passed,
         failed: summary.failed,
         sessionActive: explorerView.sessionActive,
+        projects: projects.summaries(),
+      },
+    });
+  };
+  const routeResultsToMain = () => {
+    resultsView.postMessage({
+      type: 'route',
+      view: 'results',
+      payload: {
+        files: (currentStore().toJSON() as { files: unknown[] }).files,
       },
     });
   };
@@ -228,33 +267,23 @@ export function activate(context: vscode.ExtensionContext) {
     routeExplorerToMain();
   };
   resultsView.onTimelineExitRequest = () => {
-    resultsView.postMessage({
-      type: 'route',
-      view: 'results',
-      payload: {
-        files: (store.toJSON() as { files: unknown[] }).files,
-      },
-    });
+    routeResultsToMain();
     routeExplorerToMain();
   };
   explorerView.onTimelineExitRequest = () => {
     timelineDecorations.clearAll();
-    resultsView.postMessage({
-      type: 'route',
-      view: 'results',
-      payload: {
-        files: (store.toJSON() as { files: unknown[] }).files,
-      },
-    });
+    routeResultsToMain();
     routeExplorerToMain();
   };
 
   // Re-run button in the sidebar.
   explorerView.onTimelineRerun = () => {
     if (!lastTimelineOptions) { return; }
+    timelineOpen = true;
     openTimelineDebugger(
       lastTimelineOptions.filePath,
       lastTimelineOptions.testFullName,
+      owner(lastTimelineOptions.filePath)?.root,
       instrumentedRunner,
       resultsView,
       explorerView,
@@ -263,85 +292,14 @@ export function activate(context: vscode.ExtensionContext) {
     );
   };
 
-  // ── Coverage decoration manager ───────────────────────────────────────────
-  const coverageDecoMgr = new CoverageDecorationManager(coverageStore);
-  observers.push(coverageDecoMgr);
-  context.subscriptions.push(coverageStore, coverageDecoMgr);
-
-  // Propagate coverage updates to all observers (badge in Explorer view)
-  context.subscriptions.push(
-    coverageStore.onDidChange.event(() => {
-      const totals = coverageStore.getTotals();
-      const files  = coverageStore.getFileRows();
-      observers.forEach((o) => o.onCoverageUpdated?.(totals, files));
-    }),
-  );
-
-  // ── Execution trace store + trace directory ────────────────────────────────
-  const traceStore = new ExecutionTraceStore();
-  const traceDir   = path.join(LTR_SESSION_TMP_DIR, 'traces');
-
-  function cleanTraceDir() {
-    try { fs.rmSync(traceDir, { recursive: true, force: true }); } catch { /* ignore */ }
-    traceStore.clearAll();
-  }
-
-  // ── Discovery cache ────────────────────────────────────────────────────────
-  const activationRoot = _resolveProjectRoot();
-  let discoveryCache: DiscoveryCache | undefined;
-  if (activationRoot) {
-    discoveryCache = new DiscoveryCache(LTR_BASE_CACHE_DIR, activationRoot);
-    discoveryCache.writeLock();
-  }
-
-  // ── Session manager ────────────────────────────────────────────────────────
-  const discovery = new TestDiscoveryService();
-
-  const discoveryCallbacks = {
-    onFilesFound: (total: number) => {
-      observers.forEach((o) => o.onDiscoveryStarted?.(total));
-    },
-    onBatchDiscovered: (files: unknown[], discovered: number, total: number) => {
-      observers.forEach((o) => o.onDiscoveryProgress?.(files, discovered, total));
-    },
-    onComplete: () => {
-      observers.forEach((o) => o.onDiscoveryComplete?.());
-    },
-    onFileRemoved: (fileId: string) => {
-      observers.forEach((o) => o.onDiscoveryFileRemoved?.(fileId));
-    },
-  };
-
-  // Kick off static discovery immediately on activate so tests appear in the
-  // sidebar before the user clicks Start Testing.
-  if (activationRoot) {
-    log.info(`Project root: ${activationRoot}`);
-    discovery.start(activationRoot, store, discoveryCallbacks, discoveryCache);
-  } else {
-    log.info('No project root yet — open a single folder or run "Live Test Runner: Select Project Root"');
-  }
-
-  const session = new SessionManager(
-    frameworks,
-    store,
-    traceStore,
-    coverageStore,
-    selection,
-    resultsView,
-    observers,
-    outputChannel,
-    statusBar,
-    discovery,
-  );
-
-  // Expose cleanup so deactivate() can delete trace files on extension shutdown
-  _cleanTraceDir = cleanTraceDir;
-  _releaseDiscoveryLock = () => discoveryCache?.releaseLock();
-
   // ── Coverage hover provider ────────────────────────────────────────────────
-  const coverageHoverProvider = new CoverageHoverProvider(traceStore, store, coverageStore, (filePath) => {
-    const services = frameworks.servicesFor(filePath);
-    return services.features.trace ? undefined : `covering tests are not available for ${services.displayName} yet`;
+  const coverageHoverProvider = new CoverageHoverProvider(storesOf, (filePath) => {
+    const ctx = owner(filePath);
+    if (!ctx) { return undefined; }
+    const services = ctx.services.servicesFor(filePath);
+    if (!services.features.trace) { return `covering tests are not available for ${services.displayName} yet`; }
+    const off = services.traceOffReason?.(ctx.root);
+    return off ? `covering tests are off for this project — ${off}` : undefined;
   });
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(
@@ -350,73 +308,155 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   );
 
+  // ── Switching projects: bind every view to the selected project's stores ───
+  context.subscriptions.push(
+    projects.onDidChangeSelection((ctx) => {
+      if (timelineOpen) {
+        timelineDecorations.clearAll();
+        routeResultsToMain();
+        routeExplorerToMain();
+      }
+      selection.clear();
+      const state = ctx?.viewState() ?? {
+        store: emptyStore, coverageStore: emptyCoverage, traceStore: emptyTrace,
+        sessionActive: false, isDiscovering: false, discoveryTotal: 0, discoveryDone: 0,
+      };
+      explorerView.setProjects(projects.summaries());
+      explorerView.bindProject(state);
+      resultsView.bindProject(state);
+      // Editor features are per file, not per selection — only the project list may have changed.
+      coverageDecoMgr.watch(projects.contexts.map((c) => c.coverageStore));
+      decorationManager.refresh();
+      codeLensProvider.refresh();
+      // Coverage badge / tab of the newly shown project.
+      explorerView.onCoverageUpdated(state.coverageStore.getTotals(), state.coverageStore.getFileRows());
+    }),
+    projects.onDidChangeProjects(() => explorerView.setProjects(projects.summaries())),
+    projects,
+  );
+  projects.refresh();
+
+  _releaseDiscoveryLock = () => { for (const c of projects.contexts) { c.discoveryCache?.releaseLock(); } };
+  _cleanTraceDir = () => { for (const c of projects.contexts) { c.cleanTraceDir(); } };
+
+  /** The selected project, or an error message offering Select Project Root. */
+  async function requireProject(): Promise<ProjectContext | undefined> {
+    const ctx = sel();
+    if (ctx) { return ctx; }
+    log.warn('Start Testing: no test project — open a folder or set liveTestRunner.projectRoot');
+    const pick = await vscode.window.showErrorMessage(
+      'No test project found. Open a folder with a package.json or configure liveTestRunner.projectRoot.',
+      'Select Project Root',
+    );
+    if (pick) { await selectProjectRoot(projects); }
+    return undefined;
+  }
+
+  /** Start / restart one project's session (D11: the running-projects limit applies to new starts). */
+  async function startProject(ctx: ProjectContext): Promise<void> {
+    const refusal = projects.startRefusal(ctx);
+    if (refusal) {
+      log.info(`Start Testing "${ctx.name}": ${refusal}`);
+      void vscode.window.showWarningMessage(`Live Test Runner: ${refusal}`);
+      return;
+    }
+    // Check cache capacity before starting — evict stale projects or warn.
+    if (ctx.discoveryCache) {
+      const cap = rotateAndCheckCapacity(LTR_BASE_CACHE_DIR);
+      if (!cap.ok) {
+        const choice = await vscode.window.showWarningMessage(
+          `Live Test Runner cache is using ${cap.totalMb} MB across ${cap.activeCount} active sessions (limit: 500 MB). ` +
+          `No inactive projects can be evicted right now. Close unused VS Code windows to free space, or continue without caching this session.`,
+          'Continue Without Cache',
+          'Cancel',
+        );
+        if (choice !== 'Continue Without Cache') { return; }
+        // Run without cache this session
+        ctx.discoveryCache.releaseLock();
+        ctx.discoveryCache = undefined;
+      }
+    }
+    ctx.ensureDiscovery();
+    ctx.cleanTraceDir();
+    return ctx.session.start();
+  }
+
+  /** A project by id (root) or name for command arguments; else the selected one. */
+  const byArg = (id: unknown): ProjectContext | undefined =>
+    typeof id === 'string' && id ? projects.contexts.find((c) => c.id === id || c.name === id) : sel();
+
   // ── Commands ───────────────────────────────────────────────────────────────
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ExplorerView.viewId, explorerView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerWebviewViewProvider(ResultsView.viewId, resultsView, { webviewOptions: { retainContextWhenHidden: true } }),
 
-    vscode.commands.registerCommand('liveTestRunner.startTesting', async () => {
-      // Check cache capacity before starting — evict stale projects or warn.
-      if (activationRoot) {
-        const cap = rotateAndCheckCapacity(LTR_BASE_CACHE_DIR);
-        if (!cap.ok) {
-          const choice = await vscode.window.showWarningMessage(
-            `Live Test Runner cache is using ${cap.totalMb} MB across ${cap.activeCount} active sessions (limit: 500 MB). ` +
-            `No inactive projects can be evicted right now. Close unused VS Code windows to free space, or continue without caching this session.`,
-            'Continue Without Cache',
-            'Cancel',
-          );
-          if (choice !== 'Continue Without Cache') { return; }
-          // Run without cache this session
-          discoveryCache?.releaseLock();
-          discoveryCache = undefined;
-        }
-      }
-      cleanTraceDir();
-      return session.start();
+    vscode.commands.registerCommand('liveTestRunner.startTesting', async (projectId?: unknown) => {
+      const ctx = typeof projectId === 'string' ? byArg(projectId) : await requireProject();
+      if (!ctx) { return; }
+      return startProject(ctx);
     }),
-    vscode.commands.registerCommand('liveTestRunner.stopTesting',        () => session.stop(decorationManager)),
+    vscode.commands.registerCommand('liveTestRunner.stopTesting', (projectId?: unknown) => {
+      const ctx = byArg(projectId);
+      ctx?.session.stop(decorationManager);
+    }),
+    vscode.commands.registerCommand('liveTestRunner.stopAllProjects', () => {
+      for (const c of projects.contexts) { if (c.session.isActive() || c.session.isRunning()) { c.session.stop(decorationManager); } }
+    }),
     vscode.commands.registerCommand('liveTestRunner.stopAndClearCache',  async () => {
-      session.stop(decorationManager);
-      store.clearAll();
-      cleanTraceDir();
+      const ctx = sel();
+      if (!ctx) { return; }
+      ctx.session.stop(decorationManager);
+      ctx.store.clearAll();
+      ctx.cleanTraceDir();
       // Yield so session-stopped is processed by the webview before we send init
       await new Promise<void>((r) => setTimeout(r, 0));
       resultsView.syncNow();
       explorerView.syncNow();
-      if (discoveryCache) {
-        discoveryCache.releaseLock();
-        discoveryCache.clear();
-        discoveryCache.writeLock();
+      if (ctx.discoveryCache) {
+        ctx.discoveryCache.releaseLock();
+        ctx.discoveryCache.clear();
+        ctx.discoveryCache.writeLock();
         log.info('Session stopped and discovery cache cleared');
       }
     }),
     vscode.commands.registerCommand('liveTestRunner.clearCacheAndRestart', async () => {
-      session.stop(decorationManager);
-      if (discoveryCache && activationRoot) {
-        discoveryCache.releaseLock();
-        discoveryCache.clear();
-        discoveryCache.writeLock();
-        store.clearAll();
-        cleanTraceDir();
+      const ctx = sel();
+      if (!ctx) { return; }
+      ctx.session.stop(decorationManager);
+      if (ctx.discoveryCache) {
+        ctx.discoveryCache.releaseLock();
+        ctx.discoveryCache.clear();
+        ctx.discoveryCache.writeLock();
+        ctx.store.clearAll();
+        ctx.cleanTraceDir();
         log.info('Discovery cache cleared — rediscovering tests');
-        discovery.start(activationRoot, store, discoveryCallbacks, discoveryCache);
+        ctx.startDiscovery();
         vscode.window.showInformationMessage('Live Test Runner: Cache cleared. Click Start Testing to run.');
       }
     }),
-    vscode.commands.registerCommand('liveTestRunner.selectProjectRoot',  () => session.selectProjectRoot()),
+    vscode.commands.registerCommand('liveTestRunner.selectProjectRoot',  () => selectProjectRoot(projects)),
+    vscode.commands.registerCommand('liveTestRunner.selectProject',      async (projectId?: unknown) => {
+      if (typeof projectId === 'string' && projectId) {
+        const ctx = projects.select(projectId);
+        if (!ctx) { log.warn(`Select Project: no project "${projectId}"`); }
+        return ctx?.id;
+      }
+      return pickProject(projects);
+    }),
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.showLogs',           () => logChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.openGuide',          () => openGuide(context.extensionUri)),
     vscode.commands.registerCommand('liveTestRunner.copyDiagnostics',    async () => {
+      const ctx = sel();
       const report = buildDiagnosticReport({
         extensionVersion: extVersion,
-        projectRoot:      _resolveProjectRoot(),
-        sessionActive:    session.isActive(),
-        sessionDir:       LTR_SESSION_TMP_DIR,
-        summary:          store.getSummary(),
+        projectRoot:      ctx?.root,
+        sessionActive:    !!ctx?.session.isActive(),
+        sessionDir:       ctx?.sessionDir ?? LTR_SESSION_TMP_DIR,
+        summary:          currentStore().getSummary(),
         logLevel:         logger.level,
         recentLogLines:   logger.recentLines(),
+        projects:         projects.contexts.map((c) => `${c.name} · ${c.frameworkLabel} · ${c.runState} · ${c.root}`),
       });
       await vscode.env.clipboard.writeText(report);
       const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: report });
@@ -429,16 +469,26 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.executeCommand('liveTestRunner.explorer.focus');
       vscode.commands.executeCommand('liveTestRunner.results.focus');
     }),
-    vscode.commands.registerCommand('liveTestRunner.rerunScope',         (args) => session.rerunScope(args)),
-    vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath, line) => rerunFromEditor(filePath, line, store, session)),
-    vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath, line) => debugFromEditor(filePath, line, store, session)),
-    vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, nodeId) => focusResult(fileId, nodeId, store, selection, resultsView)),
+    vscode.commands.registerCommand('liveTestRunner.rerunScope',         (args) => owner(args?.fileId)?.session.rerunScope(args)),
+    vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath, line) => {
+      const ctx = owner(filePath);
+      return ctx && rerunFromEditor(filePath, line, ctx.store, ctx.session);
+    }),
+    vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath, line) => {
+      const ctx = owner(filePath);
+      return ctx && debugFromEditor(filePath, line, ctx.store, ctx.session);
+    }),
+    vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, nodeId) => {
+      const ctx = owner(fileId);
+      if (ctx) { projects.select(ctx); focusResult(fileId, nodeId, ctx.store, selection, resultsView); }
+    }),
     vscode.commands.registerCommand('liveTestRunner.revealTestInPanel',  (args: { testFileId: string; fullName: string }) => {
-      const node = store.findNodeByFullName(args.testFileId, args.fullName);
-      if (node) { focusResult(node.fileId, node.id, store, selection, resultsView); }
+      const ctx = owner(args.testFileId);
+      const node = ctx?.store.findNodeByFullName(args.testFileId, args.fullName);
+      if (ctx && node) { projects.select(ctx); focusResult(node.fileId, node.id, ctx.store, selection, resultsView); }
     }),
     vscode.commands.registerCommand('liveTestRunner.openTestFile',       async (args: { testFileId: string; fullName: string }) => {
-      const node = store.findNodeByFullName(args.testFileId, args.fullName);
+      const node = owner(args.testFileId)?.store.findNodeByFullName(args.testFileId, args.fullName);
       const targetLine = node?.line != null ? node.line - 1 : 0; // VS Code range is 0-based
       const uri = vscode.Uri.file(args.testFileId);
       const doc = await vscode.workspace.openTextDocument(uri);
@@ -448,7 +498,10 @@ export function activate(context: vscode.ExtensionContext) {
       });
     }),
     vscode.commands.registerCommand('liveTestRunner.showCoveringTests',   async (args: { filePath: string; line: number }) => {
-      const tests = traceStore.getTestsForLine(args.filePath, args.line);
+      const ctx = owner(args.filePath);
+      if (!ctx) { return; }
+      const store = ctx.store;
+      const tests = ctx.traceStore.getTestsForLine(args.filePath, args.line);
       if (tests.length === 0) { return; }
 
       const goToFileBtn: vscode.QuickInputButton = {
@@ -475,7 +528,7 @@ export function activate(context: vscode.ExtensionContext) {
         const picked = qp.selectedItems[0];
         if (picked) {
           const node = store.findNodeByFullName(picked.testFileId, picked.fullName);
-          if (node) { focusResult(node.fileId, node.id, store, selection, resultsView); }
+          if (node) { projects.select(ctx); focusResult(node.fileId, node.id, store, selection, resultsView); }
         }
         qp.dispose();
       });
@@ -497,7 +550,8 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('liveTestRunner.openTimelineDebugger', (filePath: string, testFullName: string) => {
       lastTimelineOptions = { filePath, testFullName };
-      return openTimelineDebugger(filePath, testFullName, instrumentedRunner, resultsView, explorerView, lastTimelineOptions,
+      timelineOpen = true;
+      return openTimelineDebugger(filePath, testFullName, owner(filePath)?.root, instrumentedRunner, resultsView, explorerView, lastTimelineOptions,
         (s) => { lastTimelineStore = s; });
     }),
 
@@ -509,22 +563,30 @@ export function activate(context: vscode.ExtensionContext) {
       void vscode.env.clipboard.writeText(value);
     }),
     vscode.commands.registerCommand('liveTestRunner.dumpTraceStore', () => {
-      logChannel.info(traceStore.dump());
+      logChannel.info(sel()?.traceStore.dump() ?? '(no project)');
       logChannel.show();
     }),
 
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-      if (editor) { codeLensProvider.refresh(); }
+      if (!editor) { return; }
+      // A file of a project not discovered yet: discover it so its gutter / CodeLens appear (nothing runs).
+      projects.forFile(editor.document.uri.fsPath)?.ensureDiscovery();
+      codeLensProvider.refresh();
     }),
 
     vscode.window.onDidChangeVisibleTextEditors((editors) => {
       for (const editor of editors) {
+        projects.forFile(editor.document.uri.fsPath)?.ensureDiscovery();
         decorationManager.applyToEditor(editor);
       }
     }),
 
-    vscode.workspace.onDidSaveTextDocument((doc) => session.onSave(doc)),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => session.onWorkspaceFoldersChanged()),
+    // Each project reruns its own files (a project in the background too).
+    vscode.workspace.onDidSaveTextDocument((doc) => owner(doc.uri.fsPath)?.session.onSave(doc)),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => { projects.refresh(); }),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('liveTestRunner.projectRoot')) { projects.refresh(); }
+    }),
 
     outputChannel,
     statusBar,
@@ -534,10 +596,18 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   // Internals for the end-to-end tests only — never returned in normal use.
+  // Store / session / … are the selected project's (getters: they follow a switch).
   if (e2eRawOutput) {
     return {
-      store, session, traceStore, coverageStore, discovery, observers, statusBar,
-      instrumentedRunner, logger, rawOutput: e2eRawOutput, sessionDir: LTR_SESSION_TMP_DIR,
+      get store() { return sel()?.store; },
+      get session() { return sel()?.session; },
+      get traceStore() { return sel()?.traceStore; },
+      get coverageStore() { return sel()?.coverageStore; },
+      get discovery() { return sel()?.discovery; },
+      get sessionDir() { return sel()?.sessionDir ?? LTR_SESSION_TMP_DIR; },
+      projects,
+      observers, editorObservers, decorationManager, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
+      explorerView,
     };
   }
   return undefined;
@@ -549,6 +619,53 @@ let _releaseDiscoveryLock: (() => void) | undefined;
 export function deactivate() {
   _cleanTraceDir?.();
   _releaseDiscoveryLock?.();
+}
+
+/**
+ * "Select Project Root": pins the window to one folder (the 3.0 behaviour,
+ * the liveTestRunner.projectRoot setting) — or, when pinned, back to every
+ * detected project.
+ */
+async function selectProjectRoot(projects: ProjectRegistry): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders?.length) {
+    vscode.window.showErrorMessage('No workspace folders are open.');
+    return;
+  }
+  const config = vscode.workspace.getConfiguration('liveTestRunner');
+  const pinned = config.get<string>('projectRoot')?.trim();
+  const roots = [...new Set([...projects.contexts.map((c) => c.root), ...folders.map((f) => f.uri.fsPath)])];
+  type Item = vscode.QuickPickItem & { root: string };
+  const items: Item[] = [
+    ...(pinned ? [{ label: '$(search) Detect all projects', description: 'clear liveTestRunner.projectRoot', root: '' }] : []),
+    ...roots.map((r) => ({ label: path.basename(r), description: r, root: r })),
+  ];
+  const selected =
+    items.length === 1
+      ? items[0]
+      : await vscode.window.showQuickPick(items, { placeHolder: 'Select the project root Live Test Runner uses (pins the window to it)' });
+  if (selected) {
+    await config.update('projectRoot', selected.root || undefined, vscode.ConfigurationTarget.Workspace);
+  }
+}
+
+/** "Select Project": the switcher as a quick pick. @returns the selected project's id. */
+async function pickProject(projects: ProjectRegistry): Promise<string | undefined> {
+  if (projects.contexts.length === 0) {
+    vscode.window.showInformationMessage('Live Test Runner: no test project found in this workspace.');
+    return undefined;
+  }
+  type Item = vscode.QuickPickItem & { id: string };
+  const items: Item[] = projects.summaries().map((p) => ({
+    label: `${p.selected ? '$(check) ' : ''}${p.name}`,
+    description: [p.framework, p.relPath].filter(Boolean).join(' · '),
+    detail: p.state === 'idle' ? (p.total ? `${p.total} tests` : undefined)
+      : `${p.state === 'watching' ? '● live' : p.state === 'running' ? '● running' : '⟳ discovering'}${p.passed + p.failed ? ` · ✓${p.passed} ✗${p.failed}` : ''}`,
+    id: p.id,
+  }));
+  const picked = await vscode.window.showQuickPick(items, { placeHolder: 'Show a test project (Start / Stop act on it)', matchOnDescription: true });
+  if (picked) { projects.select(picked.id); }
+  return projects.selected?.id;
 }
 
 // ── Editor commands ───────────────────────────────────────────────────────────
@@ -629,13 +746,13 @@ async function _resolveNodeAtLine(
 async function openTimelineDebugger(
   filePath: string,
   testFullName: string,
+  projectRoot: string | undefined,
   runner: IInstrumentedRunner,
   resultsView: ResultsView,
   explorerView: ExplorerView,
   _optionsRef?: { filePath: string; testFullName: string },
   onStoreReady?: (store: { steps: unknown[]; variables: Record<number, unknown[]> }) => void,
 ): Promise<void> {
-  const projectRoot = _resolveProjectRoot();
   if (!projectRoot) {
     vscode.window.showErrorMessage(
       'Live Test Runner: Cannot open Timeline Debugger — no project root configured.',
@@ -680,14 +797,6 @@ async function openTimelineDebugger(
     vscode.window.showErrorMessage(`Timeline Debugger error: ${message}`);
     resultsView.postMessage({ type: 'timeline-error', message });
   }
-}
-
-function _resolveProjectRoot(): string | undefined {
-  const configured = vscode.workspace.getConfiguration('liveTestRunner').get<string>('projectRoot');
-  if (configured?.trim()) { return configured.trim(); }
-  const folders = vscode.workspace.workspaceFolders;
-  if (folders?.length === 1) { return folders[0].uri.fsPath; }
-  return undefined;
 }
 
 function focusResult(

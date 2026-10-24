@@ -1,0 +1,12 @@
+{
+  "name": "ltr-fixture-vitest-trace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "3.2.4",
+    "@vitest/coverage-v8": "3.2.4"
+  }
+}

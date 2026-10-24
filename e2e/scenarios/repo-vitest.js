@@ -11,6 +11,9 @@ const fs = require('fs');
 const path = require('path');
 const h = require('../lib/harness');
 
+/** Every line in the extension log so far. */
+const allLogs = (api) => h.logsSince(api, '1970-01-01T00:00:00.000Z');
+
 /** True when the project can load a Vitest coverage provider package. */
 function hasCoverageProvider(workspace) {
   return ['@vitest/coverage-v8', '@vitest/coverage-istanbul'].some((p) => {
@@ -106,7 +109,12 @@ module.exports = {
       }
     }
 
-    // Save a source file a passing test file imports: `vitest related` reruns it live (phase 6). Restored afterwards.
+    // Execution trace (phase 9): on, and it mapped source files to tests.
+    const covered = api.traceStore.getAllCoveredFiles().length;
+    t.check('the execution trace recorded source lines', covered > 0, `covered files: ${covered}`);
+    t.check('…and stayed on', !allLogs(api).some((l) => /execution trace is off/.test(l)), allLogs(api).filter((l) => /trace/i.test(l)).join('\n'));
+
+    // Save a source file a passing test file imports: it reruns live (phase 6 / 9). Restored afterwards.
     const testFile = h.allNodes(api).find((n) => n.type === 'test' && n.status === 'passed')?.fileId;
     const src = testFile && relativeImport(testFile);
     if (src) {
@@ -120,7 +128,10 @@ module.exports = {
         const cmds3 = h.rawSince(api, mark3).filter((l) => /^\[vitest#\d+\] > /.test(l));
         const logs3 = h.logsSince(api, since3);
         const rel = path.relative(workspace, src);
-        t.check(`saving ${rel} runs \`vitest related\``, cmds3.some((l) => / related /.test(l) && l.includes(path.basename(src))), cmds3.join('\n'));
+        // Phase 9: by the execution trace (only the tests that ran it); `vitest related` when no test ran the file.
+        const traced = logs3.some((l) => l.includes(`Trace-based rerun for ${path.basename(src)}`));
+        const related = cmds3.some((l) => / related /.test(l) && l.includes(path.basename(src))) && logs3.some((l) => /No trace data for/.test(l));
+        t.check(`saving ${rel} reruns by the trace (or \`vitest related\` when no test ran it)`, traced || related, `${cmds3.join('\n')}\n${logs3.join('\n')}`);
         t.check(`…and reruns ${path.basename(testFile)}`, rec2.of('file-result').some((e) => e.file === path.basename(testFile)), JSON.stringify(rec2.of('file-result').slice(0, 10)));
         t.check('…without a plain-run fallback', !logs3.some((l) => /falling back to plain|retrying it with plain/.test(l)), logs3.join('\n'));
         t.eq('…nothing left running', h.nodesWithStatus(api, 'running').length, 0);

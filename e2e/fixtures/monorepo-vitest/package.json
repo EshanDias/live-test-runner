@@ -1,0 +1,9 @@
+{
+  "name": "ltr-fixture-monorepo-vitest",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "devDependencies": {
+    "vitest": "3.2.4"
+  }
+}

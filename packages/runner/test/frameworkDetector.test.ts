@@ -23,6 +23,12 @@ describe('FrameworkDetector', () => {
     expect(detect({ devDependencies: { vitest: '1' } })).toBe('vitest');
   });
 
+  it('picks Vitest for a workspace package whose test script runs a hoisted Vitest', () => {
+    expect(detect({ scripts: { test: 'vitest run' } })).toBe('vitest');
+    expect(detect({ scripts: { test: 'pnpm build && vitest' } })).toBe('vitest');
+    expect(detect({ scripts: { test: 'vitest-ish' } })).toBe('jest');
+  });
+
   it('picks Jest when a project has Vitest and a Jest config (e.g. jest-dom)', () => {
     expect(detect({ devDependencies: { vitest: '1', 'kcd-scripts': '1' } }, ['jest.config.js'])).toBe('jest');
   });

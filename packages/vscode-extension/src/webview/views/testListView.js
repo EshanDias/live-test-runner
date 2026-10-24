@@ -12,6 +12,16 @@
   const TEMPLATE = `
 <div class="explorer-layout">
 
+  <!-- Project switcher (phase 7): only with two or more projects -->
+  <div class="project-switcher hidden" id="projectSwitcher">
+    <button class="project-current" id="projectCurrent" title="Switch project — Start / Stop act on the project shown">
+      <span class="project-name" id="projectName"></span><span class="project-caret">▾</span>
+      <span class="project-state" id="projectState"></span>
+      <span class="project-counts" id="projectCounts"></span>
+    </button>
+    <div class="project-menu hidden" id="projectMenu" role="listbox"></div>
+  </div>
+
   <!-- Nav tabs -->
   <div class="explorer-nav">
     <button class="explorer-nav-tab" data-active="true"  id="tabTests"   >Tests</button>
@@ -183,6 +193,9 @@
   let _covSearchQuery   = '';
   let _covFolderView    = false;
   let _covExpandedFolders = new Set();
+  /** Projects for the switcher row — kept across mounts (timeline mode unmounts this view). */
+  let _projects         = [];
+  let _menuOpen         = false;
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -493,6 +506,50 @@
     _updateSortIcons();
   }
 
+  // ── Project switcher ─────────────────────────────────────────────────────────
+
+  const STATE_LABEL = { running: '● running', watching: '● live', discovering: '⟳ discovering', idle: '' };
+
+  function _projectStateHtml(p) {
+    const label = STATE_LABEL[p.state] ?? '';
+    const prog  = p.state === 'running' && p.progress ? ` ${p.progress.completed}/${p.progress.total}` : '';
+    return label ? `<span class="project-dot state-${_esc(p.state)}">${_esc(label)}${_esc(prog)}</span>` : '';
+  }
+
+  function _projectCountsHtml(p) {
+    if (!p.passed && !p.failed) { return ''; }
+    return `<span class="status-passed">✓${p.passed}</span>` + (p.failed ? ` <span class="status-failed">✗${p.failed}</span>` : '');
+  }
+
+  function renderProjects(projects) {
+    if (Array.isArray(projects)) { _projects = projects; }
+    const box = _q('projectSwitcher');
+    if (!box) { return; }
+    box.classList.toggle('hidden', _projects.length < 2);
+    if (_projects.length < 2) { return; }
+    const cur = _projects.find((p) => p.selected) ?? _projects[0];
+    _q('projectName').textContent = cur.name;
+    _q('projectName').title = cur.relPath || cur.name;
+    _q('projectState').innerHTML = _projectStateHtml(cur);
+    _q('projectCounts').innerHTML = _projectCountsHtml(cur);
+    const menu = _q('projectMenu');
+    menu.classList.toggle('hidden', !_menuOpen);
+    if (!_menuOpen) { return; }
+    menu.innerHTML = _projects.map((p) => `
+      <div class="project-item${p.selected ? ' selected' : ''}" role="option" data-project-id="${_esc(p.id)}" title="${_esc(p.id)}">
+        <span class="project-item-name">${p.selected ? '✓ ' : ''}${_esc(p.name)}</span>
+        <span class="project-item-meta">${_esc(p.framework)}${p.relPath ? ' · ' + _esc(p.relPath) : ''}</span>
+        <span class="project-item-state">${_projectStateHtml(p)} ${_projectCountsHtml(p)}</span>
+      </div>`).join('');
+    menu.querySelectorAll('.project-item').forEach((row) => {
+      row.addEventListener('click', () => {
+        _menuOpen = false;
+        menu.classList.add('hidden');
+        _vscode.postMessage({ type: 'select-project', id: row.dataset.projectId });
+      });
+    });
+  }
+
   // ── View object ─────────────────────────────────────────────────────────────
 
   const TestListView = {
@@ -521,6 +578,9 @@
       _covExpandedFolders = new Set();
 
       container.innerHTML = TEMPLATE;
+      _menuOpen = false;
+      _q('projectCurrent').addEventListener('click', () => { _menuOpen = !_menuOpen; renderProjects(); });
+      renderProjects(payload && payload.projects);
 
       _list = new TestListLayout(_q('testList'), vscode, { showTimelineButton: true });
 
@@ -693,7 +753,12 @@
     onMessage(msg) {
       switch (msg.type) {
 
+        case 'projects':
+          renderProjects(msg.projects);
+          break;
+
         case 'init':
+          if (msg.projects) { renderProjects(msg.projects); }
           LiveTestUtils.setThresholds(msg.thresholds);
           if (msg.coverageThresholds) { _coverageThresholds = msg.coverageThresholds; }
           _list.setData(msg.files ?? []);
@@ -706,7 +771,17 @@
             _discoveryTotal = msg.discoveryTotal ?? 0;
             applySessionState('discovering');
             _applyDiscoveryProgress(msg.discoveryDone ?? 0, _discoveryTotal);
+          } else if (msg.running) {
+            // A project shown while its run is in flight (switched to from the background).
+            _totalFiles = msg.running.total ?? 0;
+            _completedFiles = msg.running.completed ?? 0;
+            _failedDuringRun = msg.running.failed ?? 0;
+            _runStartTime = Date.now();
+            _q('runProgress').textContent = `Running — ${_completedFiles} / ${_totalFiles} files`;
+            _q('runProgress').classList.add('visible');
+            applySessionState('running');
           } else {
+            _q('runProgress').classList.remove('visible');
             applySessionState(msg.sessionActive ? 'watching' : 'idle');
           }
           break;

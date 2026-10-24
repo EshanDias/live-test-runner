@@ -37,6 +37,11 @@ export class SelectionState {
     this._webviews.delete(webview);
   }
 
+  /** Forget the selection (another project is shown). Webviews get their 'init' separately. */
+  clear(): void {
+    this._current = null;
+  }
+
   select(sel: Selection): void {
     this._current = sel;
     for (const wv of this._webviews) {
