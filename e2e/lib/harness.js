@@ -340,8 +340,13 @@ function plainVitestJson(workspace) {
   const env = { ...process.env, CI: 'true' };
   delete env.ELECTRON_RUN_AS_NODE;
   const node = process.platform === 'win32' ? 'node.exe' : 'node';
+  // From the real path, as the extension spawns it (toSpawnPath): with a Windows
+  // 8.3 short name (C:\Users\RUNNER~1) as cwd, Vite's server.fs check sees the
+  // long name and refuses the project's own files (workspace file, components).
+  let cwd = workspace;
+  try { cwd = fs.realpathSync.native(workspace); } catch { /* as given */ }
   const r = spawnSync(node, [entry, 'run', ...adapter.getExtraArgs(workspace), '--reporter=json', `--outputFile=${out}`],
-    { cwd: workspace, env, encoding: 'utf8', timeout: 20 * 60_000, maxBuffer: 1 << 30 });
+    { cwd, env, encoding: 'utf8', timeout: 20 * 60_000, maxBuffer: 1 << 30 });
   if (!fs.existsSync(out)) {
     throw new Error(`plain Vitest wrote no results (exit ${r.status}${r.error ? `, ${r.error.message}` : ''}): ${(r.stderr || '').slice(-1500)}`);
   }
