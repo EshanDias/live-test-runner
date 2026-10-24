@@ -6,12 +6,16 @@ All notable changes to Live Test Runner are documented here.
 
 ### New
 
-- **Vitest: covering tests and precise reruns** — the coverage hover now lists the tests that ran each line, and saving a source file reruns only the tests that ran it (not every test file that imports it), as with Jest. On by default; turn it off with `liveTestRunner.vitestTrace`. Needs Vitest 3 or newer; projects using a `vitest.workspace` file and browser-mode projects run as before.
+- **Vitest: covering tests and precise reruns** — the coverage hover now lists the tests that ran each line, and saving a source file reruns only the tests that ran it (not every test file that imports it), as with Jest. On by default; turn it off with `liveTestRunner.vitestTrace`. Needs Vitest 3 or newer (browser-mode projects run as before); `vitest.workspace` files and type-check (`*.test-d.ts`) files are supported.
 - **Monorepos & multi-root workspaces** — every package with tests is detected as its own project; nothing runs until you start it. A project switcher at the top of the Explorer shows each project's state and counts; pick one and the tree, results and status bar switch to it, while gutter icons, CodeLens and coverage bars always show each file's own project. Start and Stop act on the project shown, and several projects can run at once in the background (new setting `liveTestRunner.maxRunningProjects`, default `auto`). A root config that covers its packages (Jest `projects`, Vitest `test.projects`) stays one project, and Vitest projects are grouped by name. New commands **Select Project** and **Stop All Projects**; `liveTestRunner.projectRoot` / **Select Project Root** pin one folder as before.
 - **Jest and Vitest in one project** — a project with a Jest config and its own `vitest.config.*` (e.g. mid-migration) runs each test file with its own framework: the one whose config lists it, else what the file imports or calls (`vitest` / `vi.` or `@jest/globals` / `jest.`), else Jest with a warning. New setting `liveTestRunner.frameworks` (glob → `"jest"` / `"vitest"`) decides explicitly. The tree groups files by framework, saving a source file reruns both frameworks' related tests, and coverage shows the lines either framework ran.
 
+- **Any UI framework** — Vue, Svelte, Astro and Marko components are now first-class, with Jest and Vitest: saving a `.vue` / `.svelte` file reruns the tests that use it, the coverage hover lists the tests that ran each line of a component, and coverage covers components (untested ones count too). React, Solid, Preact, Lit, Angular and Qwik code was already supported — it is plain JS / TS.
+- **Jest in ESM mode** — a test script like `NODE_OPTIONS=--experimental-vm-modules jest` is honoured, so ESM-only projects and Svelte 4+ with svelte-jester run.
+
 ### Fixes
 
+- Vitest 3.0 and 3.1 projects failed to start with recent Vite versions ("Failed to load custom Reporter"). They run again.
 - Jest projects whose `testMatch` / `testRegex` names files the default patterns miss (e.g. `*.jest.js`) ran those files one by one in a slower fallback, without coverage. They now run in the normal batches.
 
 ## [3.0.0] - 2026-10-22
