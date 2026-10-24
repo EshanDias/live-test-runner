@@ -16,7 +16,13 @@ const SETUP = path.join(INSTR, 'vitestTraceSetup.mjs');
 
 const FAKE_VITE = `
 import { pathToFileURL } from 'node:url';
+import { readFileSync, writeFileSync } from 'node:fs';
 export async function loadConfigFromFile(env, file) {
+  // Vite bundles imports by absolute path; plain Node needs file URLs (Windows).
+  const src = readFileSync(file, 'utf8');
+  if (src.includes('Live Test Runner: loads')) {
+    writeFileSync(file, src.replace(/from "([^"]+)"/g, (_, p) => 'from ' + JSON.stringify(pathToFileURL(p).href)));
+  }
   const m = await import(pathToFileURL(file).href + '?' + Math.random());
   const c = typeof m.default === 'function' ? await m.default(env) : m.default;
   return { path: file, config: c };
@@ -45,7 +51,10 @@ import { pathToFileURL } from 'node:url';
 const m = await import(pathToFileURL(process.argv[2]).href);
 const c = await m.default({ command: 'serve', mode: 'test' });
 const describe = (cfg) => ({
-  root: cfg.root, name: cfg.test && cfg.test.name, workspace: cfg.test && cfg.test.workspace,
+  root: cfg.root, name: cfg.test && cfg.test.name,
+  workspace: cfg.test && (Array.isArray(cfg.test.workspace)
+    ? cfg.test.workspace.map((p) => typeof p === 'string' ? p : { name: p.test && p.test.name, root: p.root, extends: p.extends, plugins: (p.plugins || []).map((x) => x && x.name) })
+    : cfg.test.workspace),
   plugins: (cfg.plugins || []).map((p) => p && p.name),
   projects: cfg.test && cfg.test.projects && cfg.test.projects.map((p) => typeof p === 'string' ? p : { name: p.test && p.test.name, extends: p.extends, plugins: (p.plugins || []).map((x) => x && x.name) }),
 });
@@ -83,13 +92,62 @@ it('works without any project config', () => {
   expect(marker.ok).toBe(true);
 });
 
-it('leaves a `test.workspace` config untouched and says why', () => {
-  const cfg = write('vitest.config.mjs', 'export default { test: { workspace: "./vitest.workspace.ts" } };');
-  const { config, marker } = load(wrapper({ config: cfg }));
-  expect(config.plugins).toEqual([]);
-  expect(config.workspace).toBe('./vitest.workspace.ts');
-  expect(marker.ok).toBe(false);
-  expect(marker.reason).toMatch(/workspace/);
+describe('Vitest 3 workspaces', () => {
+  it('a workspace file next to the config: passed inline, entries wrapped, paths from the file\'s folder', () => {
+    write('packages/lib/vitest.config.mjs', 'export default {};');
+    const cfg = write('configs/vitest.config.mjs', 'export default { test: { include: ["x"] } };');
+    write('configs/vitest.workspace.mjs', `export default [
+      { test: { name: 'unit' } },
+      { root: './sub', extends: './vitest.config.mjs', test: { name: 'sub' } },
+      'packages/*',
+    ];`);
+    const { config, marker } = load(wrapper({ config: cfg, major: 3 }));
+    expect(marker).toEqual({ ok: true, projects: 3, reason: '' });
+    expect(config.plugins).toEqual(['live-test-runner:trace']);
+    const [unit, sub, lib] = config.workspace;
+    expect(unit).toEqual({ name: 'unit', plugins: ['live-test-runner:trace'] });
+    expect(sub.root).toBe(path.join(dir, 'configs', 'sub'));
+    expect(sub.extends).toBe(path.join(dir, 'configs', 'vitest.config.mjs'));
+    expect(path.basename(lib)).toBe('vitest.config.mjs');
+    expect(lib.startsWith(path.join(dir, 'session'))).toBe(true);
+    // The loader stays in the session folder; nothing is written into the project.
+    expect(fs.readdirSync(path.join(dir, 'configs')).sort()).toEqual(['vitest.config.mjs', 'vitest.workspace.mjs']);
+  });
+
+  it('a JSON workspace file, without a project config (looked up at the root)', () => {
+    write('packages/lib/vitest.config.mjs', 'export default {};');
+    write('vitest.projects.json', JSON.stringify(['packages/*']));
+    const { config, marker } = load(wrapper({ config: null, major: 3 }));
+    expect(marker.ok).toBe(true);
+    expect(config.workspace).toHaveLength(1);
+  });
+
+  it('`test.workspace` inline; an entry naming the root config is the root project (the wrapper)', () => {
+    const cfg = write('vitest.config.mjs', `export default { test: { workspace: [
+      { extends: true, test: { name: 'app' } },
+      './vitest.config.mjs',
+    ] } };`);
+    const w = wrapper({ config: cfg, major: 3 });
+    const { config, marker } = load(w);
+    expect(marker).toEqual({ ok: true, projects: 2, reason: '' });
+    expect(config.workspace[0]).toEqual({ name: 'app', extends: true, plugins: ['live-test-runner:trace'] });
+    expect(config.workspace[1]).toBe(w);
+  });
+
+  it('`test.workspace` naming a file', () => {
+    write('ws/list.mjs', 'export default [{ test: { name: "a" } }];');
+    const cfg = write('vitest.config.mjs', 'export default { test: { workspace: "./ws/list.mjs" } };');
+    const { config } = load(wrapper({ config: cfg, major: 3 }));
+    expect(config.workspace).toEqual([{ name: 'a', plugins: ['live-test-runner:trace'] }]);
+  });
+
+  it('Vitest 4+ has no workspaces: a workspace file is left alone', () => {
+    const cfg = write('vitest.config.mjs', 'export default {};');
+    write('vitest.workspace.mjs', 'export default [{ test: { name: "a" } }];');
+    const { config, marker } = load(wrapper({ config: cfg, major: 4 }));
+    expect(config.workspace).toBeUndefined();
+    expect(marker.ok).toBe(true);
+  });
 });
 
 it('reaches every project: inline ones get the plugin, folders and config files a wrapper of their own', () => {
@@ -152,19 +210,20 @@ describe('VitestTrace', () => {
     const a = vt.configFor(dir, undefined);
     expect(a && fs.existsSync(a)).toBe(true);
     expect(fs.readFileSync(a!, 'utf8')).toContain('"major":4');
+    expect(fs.readFileSync(a!, 'utf8')).toContain('"componentExtensions":["vue","svelte","astro","marko"]');
     expect(vt.configFor(dir, undefined)).toBe(a);
     expect(vt.offReason(dir)).toBeUndefined();
   });
 
-  it('is off: by the setting, below Vitest 3, with a workspace file, or without Vite', () => {
+  it('is off: by the setting, below Vitest 3, or without Vite — not for a workspace file', () => {
     install('4.1.0');
     expect(new VitestTrace(dir, () => false, assets()).configFor(dir, undefined)).toBeUndefined();
     expect(new VitestTrace(dir, () => false, assets()).offReason(dir)).toMatch(/liveTestRunner\.vitestTrace/);
 
     write('vitest.workspace.ts', 'export default []');
-    let vt = new VitestTrace(dir, () => true, assets());
-    expect(vt.configFor(dir, undefined)).toBeUndefined();
-    expect(vt.offReason(dir)).toMatch(/workspace file/);
+    let vt = new VitestTrace(path.join(dir, 'session'), () => true, assets());
+    expect(vt.configFor(dir, undefined)).toBeDefined(); // the wrapper handles it
+    expect(vt.offReason(dir)).toBeUndefined();
     fs.unlinkSync(path.join(dir, 'vitest.workspace.ts'));
 
     install('2.1.0');

@@ -121,6 +121,51 @@ export function testScriptJestArgs(projectRoot: string): string[] {
 }
 
 /**
+ * Node options the project's `test` script gives Jest — `NODE_OPTIONS=…
+ * jest`, `cross-env NODE_OPTIONS=… jest`, `node --flag node_modules/.bin/jest`:
+ * most often `--experimental-vm-modules` (Jest's ESM mode — ES-module
+ * projects, Svelte 4+ through svelte-jester). Only flags Node accepts in
+ * NODE_OPTIONS and that change how test code loads are kept.
+ */
+export function testScriptNodeOptions(projectRoot: string): string[] {
+  const script = readPackageJson(projectRoot)?.scripts?.test;
+  if (typeof script !== 'string') { return []; }
+  const tokens = tokenize(script);
+  const jestAt = tokens.findIndex((t, idx) =>
+    /(^|[\\/])jest(\.js|\.cmd)?$/i.test(t) ||
+    (/(^|[\\/])react-scripts(\.js|\.cmd)?$/i.test(t) && tokens[idx + 1] === 'test'),
+  );
+  if (jestAt < 0) { return []; }
+  // The words of the command that runs Jest: back to the previous && / ; / |.
+  let start = jestAt;
+  while (start > 0 && !/^(&&|\|\||\||;)$/.test(tokens[start - 1])) { start--; }
+  const flags: string[] = [];
+  let afterNode = false;
+  for (let i = start; i < jestAt; i++) {
+    const tok = tokens[i];
+    const env = /^NODE_OPTIONS=(.*)$/.exec(tok);
+    if (env) { flags.push(...env[1].split(/\s+/).filter(Boolean)); continue; }
+    if (/(^|[\\/])node(\.exe)?$/i.test(tok)) { afterNode = true; continue; }
+    if (afterNode && tok.startsWith('-')) { flags.push(tok); }
+  }
+  return [...new Set(flags.filter((f) => NODE_FLAG_RE.test(f)))];
+}
+
+/** Node flags kept from a test script (allowed in NODE_OPTIONS, about loading code). */
+const NODE_FLAG_RE = /^--(?:experimental-vm-modules|experimental-[\w-]+|no-warnings|no-experimental-[\w-]+|enable-source-maps|conditions=\S+|import=\S+|require=\S+|(?:experimental-)?loader=\S+|max-old-space-size=\d+|stack-trace-limit=\d+)$/;
+
+/**
+ * Environment for a Jest process: the test script's Node options (see
+ * {@link testScriptNodeOptions}) added to NODE_OPTIONS; undefined when none.
+ */
+export function jestNodeEnv(projectRoot: string, base: string | undefined = process.env.NODE_OPTIONS): Record<string, string> | undefined {
+  const flags = testScriptNodeOptions(projectRoot);
+  if (flags.length === 0) { return undefined; }
+  const have = (base ?? '').split(/\s+/).filter(Boolean);
+  return { NODE_OPTIONS: [...have, ...flags.filter((f) => !have.includes(f))].join(' ') };
+}
+
+/**
  * Splits a shell command line on whitespace. Quotes group words and may sit
  * inside a token (`--project="browser (chromium)"` → `--project=browser (chromium)`);
  * `&&`, `||`, `|`, `;` come out as their own tokens.

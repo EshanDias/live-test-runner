@@ -10,8 +10,11 @@
  *  - transform (enforce 'post', after the project's own transforms):
  *    `__strace.step(line, file)` before every statement of the project's own
  *    source files, with the source's line numbers — not
- *    node_modules, not test files, not files outside the project, not Vue /
- *    Svelte single-file components (their script is not plain JS/TS).
+ *    node_modules, not test files, not files outside the project. JS / TS
+ *    files and single-file components (.vue, .svelte, .astro, .marko — the
+ *    framework's Vite plugin has compiled them to JS by then; the combined
+ *    source map leads back to the component's own lines). Their sub-modules
+ *    (`Comp.vue?vue&type=style…`) have a query and are left alone.
  *
  * Idempotent: a project may get the plugin twice (added to an inline project
  * that also inherits it); only the first copy in a resolved config works.
@@ -25,7 +28,10 @@ const { pathToFileURL } = require('url');
 const { instrument } = require('./vitestTraceTransform.js');
 
 const PLUGIN_NAME = 'live-test-runner:trace';
-const SOURCE_RE = /\.(?:[cm]?[jt]s|[jt]sx)$/i;
+const SCRIPT_RE = /\.(?:[cm]?[jt]s|[jt]sx)$/i;
+/** Components when the options name none (the extension passes its list: sourceFiles.ts). */
+const DEFAULT_COMPONENT_EXTENSIONS = ['vue', 'svelte', 'astro', 'marko'];
+const componentRe = (exts) => new RegExp(`\\.(?:${exts.map((e) => e.replace(/[^\w-]/g, '')).join('|')})$`, 'i');
 const TEST_RE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?$)|(?:[\\/]__tests__[\\/])/i;
 
 // Vitest's main process also loads instrumented modules (globalSetup, config
@@ -53,7 +59,7 @@ const norm = (p) => { const n = path.normalize(p).replace(/\\/g, '/'); return pr
 const toArray = (v) => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
 
 /**
- * @param {{ setupFile: string, parser: string, projectRoot: string, vite?: string, forceRoot?: string }} options
+ * @param {{ setupFile: string, parser: string, projectRoot: string, vite?: string, forceRoot?: string, componentExtensions?: string[] }} options
  */
 function ltrTracePlugin(options) {
   const setupFile = options.setupFile;
@@ -71,6 +77,7 @@ function ltrTracePlugin(options) {
   let active = false;
   let root = options.projectRoot;
   let failures = 0;
+  const COMPONENT_RE = componentRe(options.componentExtensions || DEFAULT_COMPONENT_EXTENSIONS);
 
   const plugin = {
     name: PLUGIN_NAME,
@@ -123,14 +130,14 @@ function ltrTracePlugin(options) {
       if (!active || typeof code !== 'string') { return null; }
       if (id.includes('?') || id.startsWith('\0')) { return null; }
       const file = norm(id);
-      if (!rootPrefixes.some((r) => file.startsWith(r)) || file.includes('/node_modules/') || !SOURCE_RE.test(file) ||
+      if (!rootPrefixes.some((r) => file.startsWith(r)) || file.includes('/node_modules/') || !(SCRIPT_RE.test(file) || COMPONENT_RE.test(file)) ||
           TEST_RE.test(file) || /\.d\.[cm]?ts$/.test(file)) {
         return null;
       }
       try {
         let inputMap;
         try { inputMap = this.getCombinedSourcemap(); } catch (_) { inputMap = undefined; }
-        if (!inputMap && typeof this.originalCode === 'string' && this.originalCode !== code) {
+        if (!inputMap && (COMPONENT_RE.test(file) || (typeof this.originalCode === 'string' && this.originalCode !== code))) {
           return null; // transformed, but no way back to the source lines
         }
         const out = instrument(code, path.normalize(id), loadParser(options.parser, options.projectRoot), inputMap);
