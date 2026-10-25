@@ -35,6 +35,7 @@ import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
+import { initPythonInterpreters } from './python/PythonInterpreters';
 
 const log = logger.scope('Extension');
 
@@ -66,6 +67,9 @@ export function activate(context: vscode.ExtensionContext) {
   log.info(
     `Live Test Runner v${extVersion} · VS Code ${vscode.version} · ${process.platform}-${process.arch} · Node ${process.versions.node}`,
   );
+
+  // pytest projects: which Python runs them (the user's choice is kept in the workspace storage).
+  const pythons = initPythonInterpreters(context.workspaceState);
 
   // Ensure the shared base directories exist up front so no path checks fail later.
   for (const dir of [LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR]) {
@@ -447,6 +451,18 @@ export function activate(context: vscode.ExtensionContext) {
       }
       return pickProject(projects);
     }),
+    vscode.commands.registerCommand('liveTestRunner.selectPythonInterpreter', async (projectRoot?: unknown) => {
+      const ctx = (typeof projectRoot === 'string' ? projects.contexts.find((c) => c.root === projectRoot) : undefined)
+        ?? (projects.selected?.framework === 'pytest' ? projects.selected : projects.contexts.find((c) => c.framework === 'pytest'));
+      if (!ctx) {
+        void vscode.window.showInformationMessage('Live Test Runner: no pytest project is open — the Python interpreter is only used for pytest projects.');
+        return;
+      }
+      if (await pythons.select(ctx.root) && ctx.session.isActive()) {
+        // The next run uses the new interpreter: start over so every result comes from it.
+        await ctx.session.start();
+      }
+    }),
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.showLogs',           () => logChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.openGuide',          () => openGuide(context.extensionUri)),
@@ -590,6 +606,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeWorkspaceFolders(() => { projects.refresh(); }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('liveTestRunner.projectRoot')) { projects.refresh(); }
+      if (e.affectsConfiguration('liveTestRunner.pythonPath')) { pythons.invalidate(); }
     }),
 
     outputChannel,

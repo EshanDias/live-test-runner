@@ -3,6 +3,7 @@ import { FrameworkAdapter } from './adapters/FrameworkAdapter';
 import { CRAAdapter } from './adapters/CRAAdapter';
 import { JestAdapter } from './adapters/JestAdapter';
 import { VitestAdapter } from './adapters/VitestAdapter';
+import { PytestAdapter } from './adapters/PytestAdapter';
 
 /** Priorities of the shipped adapters — higher is checked first. */
 export const ADAPTER_PRIORITIES = {
@@ -12,6 +13,8 @@ export const ADAPTER_PRIORITIES = {
   vitest: 200,
   /** Plain Jest (and Next.js + Jest, etc.). */
   jest: 100,
+  /** pytest (Python) — only folders no JS framework claims (a JS + Python root is a later release). */
+  pytest: 50,
 } as const;
 
 interface Entry { adapter: FrameworkAdapter; priority: number; seq: number }
@@ -62,6 +65,7 @@ export class FrameworkRegistry {
     return FrameworkRegistry._default ??= new FrameworkRegistry()
       .register(new CRAAdapter(), ADAPTER_PRIORITIES.cra)
       .register(new VitestAdapter(), ADAPTER_PRIORITIES.vitest)
-      .register(new JestAdapter(), ADAPTER_PRIORITIES.jest);
+      .register(new JestAdapter(), ADAPTER_PRIORITIES.jest)
+      .register(new PytestAdapter(), ADAPTER_PRIORITIES.pytest);
   }
 }

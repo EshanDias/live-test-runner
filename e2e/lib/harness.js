@@ -196,6 +196,12 @@ function statusCounts(api, fileSuffix) {
   return counts;
 }
 
+/** statusCounts with the keys sorted (stable to compare with t.eq). */
+function sortedCounts(api, fileSuffix) {
+  const c = statusCounts(api, fileSuffix);
+  return Object.fromEntries(Object.keys(c).sort().map((k) => [k, c[k]]));
+}
+
 function isoNow() { return new Date().toISOString(); }
 
 /**
@@ -384,7 +390,80 @@ function checkMatchesPlainVitest(api, t, workspace, label = 'results match plain
   t.check(`${label} (${want.size} files)`, want.size > 0 && diffs.length === 0, diffs.slice(0, 21).join('\n') || 'no files');
 }
 
+/** The python of a workspace's .venv (fixtures and real-repo clones). */
+function workspacePython(workspace) {
+  const fs = require('fs');
+  const win = process.platform === 'win32';
+  for (const dir of ['.venv', 'venv']) {
+    const p = win ? path.join(workspace, dir, 'Scripts', 'python.exe') : path.join(workspace, dir, 'bin', 'python');
+    if (fs.existsSync(p)) { return p; }
+  }
+  throw new Error(`no .venv in ${workspace}`);
+}
+
+/**
+ * A plain pytest run of the project (no Live Test Runner plugin, pytest's own
+ * cache off) as per-test outcomes from its JUnit XML (xunit1 has the file of
+ * each test): Map<file in the workspace's spelling, Map<"Class name", status>>.
+ * Collection errors (a file that cannot be imported) are left out.
+ */
+function plainPytestResults(workspace, extraArgs = []) {
+  const { spawnSync } = require('child_process');
+  const fs = require('fs');
+  const os = require('os');
+  const python = workspacePython(workspace);
+  const out = path.join(os.tmpdir(), `ltr-e2e-plain-pytest-${process.pid}-${Date.now()}.xml`);
+  // --continue-on-collection-errors, as the extension runs: a file that cannot be imported must not hide the others.
+  const r = spawnSync(python, ['-m', 'pytest', '-p', 'no:cacheprovider', '--continue-on-collection-errors', '-o', 'junit_family=xunit1', `--junitxml=${out}`, '-q', '--color=no', ...extraArgs],
+    { cwd: workspace, encoding: 'utf8', timeout: 20 * 60_000, maxBuffer: 1 << 30, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+  let xml;
+  try { xml = fs.readFileSync(out, 'utf8'); } catch {
+    throw new Error(`plain pytest wrote no JUnit XML (exit ${r.status}): ${(r.stderr || r.stdout || '').slice(-1500)}`);
+  }
+  fs.unlinkSync(out);
+  const toWorkspace = workspaceSpelling(workspace);
+  const unescape = (v) => v.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  const files = new Map();
+  const re = /<testcase\b([^>]*?)(\/>|>([\s\S]*?)<\/testcase>)/g;
+  for (let m = re.exec(xml); m; m = re.exec(xml)) {
+    const attrs = {};
+    for (const a of m[1].matchAll(/(\w+)="([^"]*)"/g)) { attrs[a[1]] = unescape(a[2]); }
+    if (!attrs.file || !attrs.name) { continue; }
+    const body = m[3] || '';
+    if (/<error\b[^>]*message="collection failure/.test(body)) { continue; }
+    const status = /<(failure|error)\b/.test(body) ? 'failed' : /<skipped\b/.test(body) ? 'skipped' : 'passed';
+    const file = toWorkspace(path.resolve(workspace, attrs.file));
+    const tests = files.get(file) ?? new Map();
+    // classname "tests.test_cart.TestCart.TestNested" → the classes after the module.
+    const modParts = attrs.file.replace(/\\/g, '/').replace(/\.py$/, '').split('/');
+    const cls = (attrs.classname || '').split('.').slice(modParts.length).join(' ');
+    const key = cls ? `${cls} ${attrs.name}` : attrs.name;
+    // A teardown error is a second entry for the same test: failed wins.
+    if (tests.get(key) !== 'failed') { tests.set(key, status); }
+    files.set(file, tests);
+  }
+  return files;
+}
+
+/** Per-file pass / fail / skip in the tree equal a plain pytest run (see plainPytestResults). */
+function checkMatchesPlainPytest(api, t, workspace, label = 'results match plain pytest', results = plainPytestResults(workspace)) {
+  const diffs = [];
+  for (const [file, tests] of results) {
+    const key = api.store.findFileKey(file);
+    if (!key) { diffs.push(`${path.basename(file)}: not in the tree`); continue; }
+    const got = new Map(api.store.getFileNodes(key).filter((n) => n.type === 'test').map((n) => [n.fullName, n.status]));
+    for (const [name, status] of tests) {
+      if (got.get(name) !== status) { diffs.push(`${path.basename(file)} ${name}: pytest ${status} vs extension ${got.get(name) ?? 'missing'}`); }
+    }
+    for (const [name, status] of got) {
+      if (!tests.has(name)) { diffs.push(`${path.basename(file)} ${name}: extension ${status}, not reported by pytest`); }
+    }
+  }
+  t.check(`${label} (${results.size} files)`, results.size > 0 && diffs.length === 0, diffs.slice(0, 25).join('\n') || 'no files');
+}
+
 module.exports = {
+  workspacePython, plainPytestResults, checkMatchesPlainPytest, sortedCounts,
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
   statusCounts, isoNow, plainJestCounts, plainJestJson, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,

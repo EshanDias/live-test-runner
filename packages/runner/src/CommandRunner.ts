@@ -22,7 +22,11 @@ export type RunRequest =
   | { kind: 'list' }
   | { kind: 'full'; withCoverage: boolean }
   | { kind: 'files'; files: string[] }
-  | { kind: 'testCase'; file: string; testFullName: string; isTestSuite: boolean }
+  /**
+   * Named tests of one file. `testFullName` is the name pattern (Jest / Vitest
+   * `-t`); `names` the store's full names, for frameworks that select by id (pytest).
+   */
+  | { kind: 'testCase'; file: string; testFullName: string; isTestSuite: boolean; names?: string[] }
   | { kind: 'related'; file: string };
 
 /**
@@ -147,6 +151,9 @@ export abstract class CommandRunner implements TestRunner {
     this.initAdapter(root);
   }
 
+  /** The limit for single-file runs (0 = none). */
+  protected get fileTimeout(): number { return this.fileTimeoutMs; }
+
   /** Stop single-file runs that take longer than `ms` (a hanging test). 0 disables. */
   setFileTimeout(ms: number): void {
     this.fileTimeoutMs = Math.max(0, ms);
@@ -238,7 +245,7 @@ export abstract class CommandRunner implements TestRunner {
 
   // ── Private ─────────────────────────────────────────────────────────────────
 
-  private async runJson(request: RunRequest, timeoutMs?: number): Promise<RunResult> {
+  protected async runJson(request: RunRequest, timeoutMs?: number): Promise<RunResult> {
     const adapter = this.requireAdapter();
     const cwd = this.spawnPath(this.requireProjectRoot());
     const binary = this.spawnPath(this.resolveBinary());

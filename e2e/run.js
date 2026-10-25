@@ -81,15 +81,56 @@ function copyDir(src, dest) {
   }
 }
 
-/** Fresh copy of a fixture (node_modules kept between runs). */
+/**
+ * A Python ≥ 3.12 to create fixture virtual environments with:
+ * LTR_E2E_PYTHON, else the first of python3.14 / 3.13 / 3.12 / python3 /
+ * python (py -3 on Windows) that is new enough.
+ */
+function findPython() {
+  const { spawnSync } = require('child_process');
+  const candidates = process.env.LTR_E2E_PYTHON
+    ? [[process.env.LTR_E2E_PYTHON]]
+    : process.platform === 'win32'
+      ? [['py', '-3'], ['python']]
+      : [['python3.14'], ['python3.13'], ['python3.12'], ['python3'], ['python']];
+  for (const [cmd, ...pre] of candidates) {
+    const r = spawnSync(cmd, [...pre, '-c', 'import sys; print("%d.%d" % sys.version_info[:2])'], { encoding: 'utf8' });
+    const [maj, min] = String(r.stdout || '').trim().split('.').map(Number);
+    if (r.status === 0 && (maj > 3 || (maj === 3 && min >= 12))) { return [cmd, ...pre]; }
+  }
+  throw new Error('No Python 3.12+ found for the pytest fixtures — set LTR_E2E_PYTHON');
+}
+
+/** The python of a fixture's .venv. */
+function venvPython(dir) {
+  return process.platform === 'win32' ? path.join(dir, '.venv', 'Scripts', 'python.exe') : path.join(dir, '.venv', 'bin', 'python');
+}
+
+/** A fixture with requirements-e2e.txt gets a .venv (kept between runs, rebuilt when the file changes). */
+function preparePythonEnv(src, dest) {
+  const req = path.join(src, 'requirements-e2e.txt');
+  const hash = crypto.createHash('sha1').update(fs.readFileSync(req)).digest('hex');
+  const stamp = path.join(dest, '.venv', '.ltr-e2e-stamp');
+  if ((fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8') : '') === hash) { return; }
+  const [cmd, ...pre] = findPython();
+  console.log(`[e2e] python venv + pip install in ${dest}`);
+  fs.rmSync(path.join(dest, '.venv'), { recursive: true, force: true });
+  execSync([cmd, ...pre, '-m', 'venv', '.venv'].map((a) => JSON.stringify(a)).join(' '), { cwd: dest, stdio: 'inherit' });
+  execSync(`${JSON.stringify(venvPython(dest))} -m pip install --disable-pip-version-check -q -r requirements-e2e.txt`, { cwd: dest, stdio: 'inherit' });
+  fs.writeFileSync(stamp, hash);
+}
+
+/** Fresh copy of a fixture (node_modules and .venv kept between runs). */
 function prepareFixture(name) {
   const src = path.join(__dirname, 'fixtures', name);
   const dest = path.join(WORK_ROOT, `${name} project`);
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(dest)) {
-    if (entry !== 'node_modules') { fs.rmSync(path.join(dest, entry), { recursive: true, force: true }); }
+    if (entry !== 'node_modules' && entry !== '.venv') { fs.rmSync(path.join(dest, entry), { recursive: true, force: true }); }
   }
   copyDir(src, dest);
+  if (fs.existsSync(path.join(src, 'requirements-e2e.txt'))) { preparePythonEnv(src, dest); }
+  if (!fs.existsSync(path.join(src, 'package.json'))) { return dest; }
 
   const pkgHash = crypto.createHash('sha1').update(fs.readFileSync(path.join(src, 'package.json'))).digest('hex');
   const stamp = path.join(dest, 'node_modules', '.ltr-e2e-stamp');

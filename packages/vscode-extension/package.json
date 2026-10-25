@@ -119,6 +119,11 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.selectPythonInterpreter",
+        "title": "Select Python Interpreter",
+        "category": "Live Test Runner"
+      },
+      {
         "command": "liveTestRunner.openGuide",
         "title": "Open Guide",
         "category": "Live Test Runner"
@@ -236,6 +241,21 @@
           "type": "boolean",
           "default": true,
           "description": "Vitest: record which lines each test runs (execution trace). Powers \"covering tests\" in the coverage hover and saving a source file reruns only the tests that ran it. Turn off to run Vitest exactly as configured; saves then rerun the related test files (vitest related)."
+        },
+        "liveTestRunner.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "pytest projects: the Python interpreter that runs the tests (an absolute path, or relative to the workspace folder; `${workspaceFolder}` works). Empty = automatic: the interpreter chosen with **Live Test Runner: Select Python Interpreter**, else the project's own virtual environment (`.venv` / `venv` / `env`, poetry, pipenv), the Python extension's interpreter, then `python3` on PATH. Nothing is installed into it."
+        },
+        "liveTestRunner.pytestArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "pytest projects: extra arguments for every pytest run, e.g. `[\"-m\", \"not slow\"]`. The project's own `addopts` already apply."
         },
         "liveTestRunner.runMode": {
           "type": "string",
