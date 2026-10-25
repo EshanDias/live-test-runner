@@ -202,13 +202,14 @@ describe('the plugin', () => {
     const p = make();
     await configured(p, { test: {} });
     // Compiled component: line 1 is the plugin's helper (another source), line 2 maps to App.vue line 8.
-    const map = { version: 3, sources: ['helper.js', path.join(root, 'src/App.vue')], names: [], mappings: 'AAAA;ACOA' };
-    const ctx = { getCombinedSourcemap: () => map };
     const code = 'let helper = 1;\nlet count = 0;';
     for (const name of ['App.vue', 'App.svelte', 'App.astro']) {
-      const out = p.transform.call(ctx, code, path.join(root, 'src', name));
-      expect(out && out.code).toContain(name === 'App.vue' ? 'step(8,' : 'step(');
+      const m = { version: 3, sources: ['helper.js', path.join(root, 'src', name)], names: [], mappings: 'AAAA;ACOA' };
+      const out = p.transform.call({ getCombinedSourcemap: () => m }, code, path.join(root, 'src', name));
+      expect(out && out.code).toContain('step(8,');
     }
+    const map = { version: 3, sources: ['helper.js', path.join(root, 'src/App.vue')], names: [], mappings: 'AAAA;ACOA' };
+    const ctx = { getCombinedSourcemap: () => map };
     const vue = p.transform.call(ctx, code, path.join(root, 'src/App.vue'));
     expect((vue.code.match(/__strace/g) || [])).toHaveLength(1); // the helper line is not the component's
     // No map back to the component: left alone.
@@ -217,12 +218,21 @@ describe('the plugin', () => {
     expect(p.transform.call(ctx, 'export default ".a{}"', path.join(root, 'src/app.css'))).toBeNull();
   });
 
-  it('takes the component extensions from its options', async () => {
-    const p = ltrTracePlugin({ setupFile, parser: require.resolve('@babel/parser'), projectRoot: root, componentExtensions: ['riot'] });
+  it('no extension list: any compiled module whose map leads back to it; assets never', async () => {
+    const p = ltrTracePlugin({ setupFile, parser: require.resolve('@babel/parser'), projectRoot: root, nonSourceExtensions: ['css', 'yml'] });
     await configured(p, { test: {} });
-    const ctx = { getCombinedSourcemap: () => ({ version: 3, sources: ['x'], names: [], mappings: 'AAAA' }) };
-    expect(p.transform.call(ctx, 'let a = 1;', path.join(root, 'src/A.riot'))).not.toBeNull();
-    expect(p.transform.call(ctx, 'let a = 1;', path.join(root, 'src/A.vue'))).toBeNull();
+    const own = (file: string) => ({ getCombinedSourcemap: () => ({ version: 3, sources: [path.basename(file)], names: [], mappings: 'AAAA' }) });
+    for (const name of ['A.riot', 'A.coffee', 'A.mdx', 'A.whatever']) {
+      const file = path.join(root, 'src', name);
+      expect(p.transform.call(own(file), 'let a = 1;', file)).not.toBeNull();
+    }
+    // A map that leads elsewhere (a virtual module, generated code): not this file's lines.
+    const other = { getCombinedSourcemap: () => ({ version: 3, sources: ['virtual:thing'], names: [], mappings: 'AAAA' }) };
+    expect(p.transform.call(other, 'let a = 1;', path.join(root, 'src/A.mdx'))).toBeNull();
+    for (const name of ['a.css', 'a.yml']) {
+      const file = path.join(root, 'src', name);
+      expect(p.transform.call(own(file), 'export default 1;', file)).toBeNull();
+    }
   });
 
   it('only the first copy in a config works (a project can inherit it and get it added)', async () => {

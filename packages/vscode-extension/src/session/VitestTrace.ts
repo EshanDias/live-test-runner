@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { VitestAdapter as VitestRunnerAdapter, toSpawnPath, viteEntryFor, vitestDirFor } from '@live-test-runner/runner';
 import { logger } from '../utils/logger';
-import { COMPONENT_EXTENSIONS } from './sourceFiles';
+import { NON_SOURCE_EXTENSIONS } from './sourceFiles';
 
 const log = logger.scope('Vitest');
 
@@ -133,8 +133,8 @@ export class VitestTrace {
       wrapperDir: dir,
       vitestDir,
       selfFile: file,
-      // Instrumented besides JS / TS (compiled by the project's Vite plugins).
-      componentExtensions: [...COMPONENT_EXTENSIONS],
+      // Never instrumented, even when a Vite plugin turns them into JS (CSS, JSON, images…).
+      nonSourceExtensions: [...NON_SOURCE_EXTENSIONS],
     }), 'utf8');
     log.debug(`Vitest ${install.version}: execution trace wrapper for ${projectRoot} → ${file}`);
     return file;

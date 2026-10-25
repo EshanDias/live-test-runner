@@ -35,7 +35,6 @@ import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
-import { sourceFileGlob } from './session/sourceFiles';
 
 const log = logger.scope('Extension');
 
@@ -304,8 +303,8 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(
-      // Every source file: JS / TS and components (.vue, .svelte, …).
-      { scheme: 'file', pattern: sourceFileGlob() },
+      // Any file: whatever the tests ran has coverage (the provider answers only where there is some).
+      { scheme: 'file' },
       coverageHoverProvider,
     ),
   );

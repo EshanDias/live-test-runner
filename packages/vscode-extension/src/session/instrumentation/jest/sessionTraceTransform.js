@@ -672,8 +672,11 @@ function remapLocations(ast, lookup) {
  * @param {string} sourcePath
  * @param {Function} [lookup] generated → original positions (sourceMapLookup)
  *   when `code` was compiled from another language (components)
+ * @param {{ templateLines?: { from: number, to: number } }} [extra] a Vue
+ *   component's <template> lines: its render function marks them as run
+ *   (trace only — no coverage counters; vue-jest does not map the template)
  */
-function instrumentAST(code, sourcePath, lookup) {
+function instrumentAST(code, sourcePath, lookup, extra) {
   const t = _t;
   let ast;
   try {
@@ -1066,6 +1069,8 @@ function instrumentAST(code, sourcePath, lookup) {
     ast.program.body.unshift(varDecl);
   }
 
+  if (extra && extra.templateLines) { addTemplateSteps(ast, extra.templateLines, sourcePath); }
+
   // Inject coverage preamble at the top of the program body
   const preamble = buildCovPreamble(fileHash, manifest);
   if (ast.program && ast.program.body) {
@@ -1096,22 +1101,61 @@ function instrumentAST(code, sourcePath, lookup) {
   return output.code;
 }
 
+/** Names of a compiled Vue component's render function (vue-jest, @vue/compiler-sfc). */
+const RENDER_NAMES = new Set(['render', 'ssrRender', '_sfc_render', '_sfc_ssrRender']);
+
+/**
+ * Covering tests for a Vue template under Jest: vue-jest maps only the
+ * <script> block, so the render function has no lines of its own. A step
+ * for every template line at the start of the render function: a test that
+ * rendered the component "ran" its template. Trace only — the coverage
+ * numbers stay those of `jest --coverage`.
+ */
+function addTemplateSteps(ast, { from, to }, sourcePath) {
+  const loop = () => _parser.parse(
+    `for (var __ltrL = ${from}; __ltrL <= ${to}; __ltrL++) { __strace.step(__ltrL, ${JSON.stringify(sourcePath)}); }`,
+    { sourceType: 'script' },
+  ).program.body[0];
+  for (const node of ast.program.body) {
+    let fn = null;
+    const target = node.type === 'ExportNamedDeclaration' && node.declaration ? node.declaration : node;
+    if (target.type === 'FunctionDeclaration' && target.id && RENDER_NAMES.has(target.id.name)) { fn = target; }
+    if (target.type === 'VariableDeclaration') {
+      const d = target.declarations.find((x) => x.id && RENDER_NAMES.has(x.id.name) && x.init && /Function/.test(x.init.type));
+      if (d) { fn = d.init; }
+    }
+    if (fn && fn.body && fn.body.type === 'BlockStatement') { fn.body.body.unshift(loop()); }
+  }
+}
+
+/** A Vue component's <template> block: its first and last line (1-based), or undefined. */
+function templateLinesOf(source) {
+  const open = /^<template\b[^>]*>/m.exec(source);
+  const close = source.lastIndexOf('</template>');
+  if (!open || close < open.index) { return undefined; }
+  const lineAt = (i) => source.slice(0, i).split('\n').length;
+  return { from: lineAt(open.index), to: lineAt(close) };
+}
+
 // ── Jest transform entry point ───────────────────────────────────────────────
 
 const IS_TEST_FILE_RE = /\.(test|spec)\.[jt]sx?$/;
 /**
- * Single-file components (the extension's sourceFiles.ts list). The batch
- * config only routes them here when the project has a transform for them.
+ * Sources compiled from another language (.vue, .svelte, .coffee, …): the
+ * batch config routes only JS / TS (sourceTransformPattern) and the
+ * extensions the project itself transforms here, so anything that is not
+ * JS / TS is one of those.
  */
-const IS_COMPONENT_RE = /\.(?:vue|svelte|astro|marko)$/i;
+const IS_SCRIPT_RE = /\.[cm]?[jt]sx?$/i;
+const isCompiledSource = (p) => !IS_SCRIPT_RE.test(p);
 
 /**
  * instrumentAST, but never throws: an instrumentation bug must cost coverage
  * for one file, not make every test file that imports it fail to run.
  */
-function safeInstrument(code, sourcePath, lookup) {
+function safeInstrument(code, sourcePath, lookup, extra) {
   try {
-    return instrumentAST(code, sourcePath, lookup);
+    return instrumentAST(code, sourcePath, lookup, extra);
   } catch (e) {
     _ltrLog('warn', `could not instrument ${sourcePath} (${e.message}) — it runs without coverage/trace`);
     return null;
@@ -1146,7 +1190,8 @@ function instrumentCompiled(compiled, sourceCode, sourcePath, options) {
     return { code: compiled.code, map: compiled.map };
   }
   if (rootDir && loadBabel(rootDir)) {
-    const instrumented = safeInstrument(compiled.code, sourcePath, lookup);
+    const extra = /\.vue$/i.test(sourcePath) ? { templateLines: templateLinesOf(sourceCode) } : undefined;
+    const instrumented = safeInstrument(compiled.code, sourcePath, lookup, extra);
     if (instrumented) {
       return { code: withRuntime(instrumented, options) };
     }
@@ -1157,7 +1202,7 @@ function instrumentCompiled(compiled, sourceCode, sourcePath, options) {
 module.exports = {
   /** Jest's ESM mode: components may need their transformer's processAsync (svelte-jester, Svelte 4+). */
   async processAsync(sourceCode, sourcePath, options) {
-    if (IS_COMPONENT_RE.test(sourcePath) && !IS_TEST_FILE_RE.test(sourcePath)) {
+    if (isCompiledSource(sourcePath) && !IS_TEST_FILE_RE.test(sourcePath)) {
       return instrumentCompiled(await projectTransform(sourceCode, sourcePath, options, true), sourceCode, sourcePath, options);
     }
     return module.exports.process(sourceCode, sourcePath, options);
@@ -1183,7 +1228,7 @@ module.exports = {
     // Components: the project's transformer (vue-jest, svelte-jester, …)
     // compiles them to JS; that JS is instrumented, with locations moved back
     // to the component through the transformer's source map.
-    if (IS_COMPONENT_RE.test(sourcePath)) {
+    if (isCompiledSource(sourcePath)) {
       return instrumentCompiled(projectTransform(sourceCode, sourcePath, options), sourceCode, sourcePath, options);
     }
 

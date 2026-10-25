@@ -6,13 +6,26 @@
   },
   "jest": {
     "testEnvironment": "jsdom",
-    "testEnvironmentOptions": { "customExportConditions": ["node", "node-addons"] },
-    "moduleFileExtensions": ["js", "json", "vue"],
+    "testEnvironmentOptions": {
+      "customExportConditions": [
+        "node",
+        "node-addons"
+      ]
+    },
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "vue",
+      "html"
+    ],
     "transform": {
       "^.+\\.js$": "babel-jest",
-      "^.+\\.vue$": "@vue/vue3-jest"
+      "^.+\\.vue$": "@vue/vue3-jest",
+      "^.+\\.html$": "<rootDir>/html-transform.js"
     },
-    "collectCoverageFrom": ["src/**/*.{js,vue}"]
+    "collectCoverageFrom": [
+      "src/**/*.{js,vue}"
+    ]
   },
   "devDependencies": {
     "jest": "29.7.0",

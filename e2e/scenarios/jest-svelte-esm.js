@@ -1,13 +1,14 @@
 'use strict';
 /**
- * Jest's ESM mode (`NODE_OPTIONS=--experimental-vm-modules jest` in the test
- * script) with Svelte 4 components compiled by svelte-jester (processAsync,
- * ESM output):
- *   - the extension runs Jest with the test script's Node options — results
+ * Jest's ESM mode (`node-options=--experimental-vm-modules` in the project's
+ * .npmrc, as `npm test` uses it) with Svelte 4 components compiled by
+ * svelte-jester (processAsync, ESM output):
+ *   - the extension runs Jest with those Node options — results
  *     match plain Jest (before, every ESM file failed to load);
  *   - instrumented ES modules load the trace runtime with an import;
  *   - covering tests at the component's own lines;
- *   - saving the .svelte file reruns only the tests that ran it.
+ *   - saving the .svelte file reruns only the tests that ran it;
+ *   - without the option, one WARN says how to turn Jest's ESM mode on.
  */
 const fs = require('fs');
 const path = require('path');
@@ -29,6 +30,7 @@ module.exports = {
     const greeting = path.join(workspace, 'src', 'Greeting.svelte');
     const text = path.join(workspace, 'src', 'text.js');
     const original = fs.readFileSync(greeting, 'utf8');
+    const npmrc = path.join(workspace, '.npmrc');
     try {
       await h.waitForDiscovery(api);
       let since = h.isoNow();
@@ -58,9 +60,21 @@ module.exports = {
       t.eq('…only greeting.test.js got a result', [...new Set(rec.of('file-result').map((e) => e.file))], ['greeting.test.js']);
       t.eq('…still passing', h.statusCounts(api, 'src/greeting.test.js'), { passed: 1 });
       rec.stop();
+
+      // ── Without the ESM option: the files fail to load, and the log says what to change ──
+      await vscode.commands.executeCommand('liveTestRunner.stopTesting');
+      fs.renameSync(npmrc, npmrc + '.off');
+      since = h.isoNow();
+      await vscode.commands.executeCommand('liveTestRunner.startTesting');
+      await waitIdle(api);
+      logs = h.logsSince(api, since);
+      const hints = logs.filter((l) => /\[warn\].*could not be loaded: Jest runs ES modules only in its ESM mode/.test(l));
+      t.check('one WARN explains Jest\'s ESM mode and where to turn it on', hints.length === 1 && /experimental-vm-modules/.test(hints[0]) && /\.npmrc/.test(hints[0]),
+        logs.filter((l) => /warn/.test(l)).join('\n'));
     } finally {
       await vscode.commands.executeCommand('liveTestRunner.stopTesting');
       fs.writeFileSync(greeting, original);
+      if (fs.existsSync(npmrc + '.off')) { fs.renameSync(npmrc + '.off', npmrc); }
     }
   },
 };

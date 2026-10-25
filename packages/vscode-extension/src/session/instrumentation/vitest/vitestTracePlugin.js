@@ -10,11 +10,12 @@
  *  - transform (enforce 'post', after the project's own transforms):
  *    `__strace.step(line, file)` before every statement of the project's own
  *    source files, with the source's line numbers — not
- *    node_modules, not test files, not files outside the project. JS / TS
- *    files and single-file components (.vue, .svelte, .astro, .marko — the
- *    framework's Vite plugin has compiled them to JS by then; the combined
- *    source map leads back to the component's own lines). Their sub-modules
- *    (`Comp.vue?vue&type=style…`) have a query and are left alone.
+ *    node_modules, not test files, not files outside the project. No list
+ *    of extensions: JS / TS files, and any other module a Vite plugin
+ *    compiled to JS (.vue, .svelte, .astro, .mdx, .coffee, …) whose combined
+ *    source map leads back to the file itself — its own lines are recorded.
+ *    Assets and data (`nonSourceExtensions`: CSS, JSON, images…) never are,
+ *    and sub-modules (`Comp.vue?vue&type=style…`) have a query.
  *
  * Idempotent: a project may get the plugin twice (added to an inline project
  * that also inherits it); only the first copy in a resolved config works.
@@ -26,12 +27,15 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { instrument } = require('./vitestTraceTransform.js');
+const { mapsBackTo } = require('../shared/sourceMapLookup.js');
 
 const PLUGIN_NAME = 'live-test-runner:trace';
 const SCRIPT_RE = /\.(?:[cm]?[jt]s|[jt]sx)$/i;
-/** Components when the options name none (the extension passes its list: sourceFiles.ts). */
-const DEFAULT_COMPONENT_EXTENSIONS = ['vue', 'svelte', 'astro', 'marko'];
-const componentRe = (exts) => new RegExp(`\\.(?:${exts.map((e) => e.replace(/[^\w-]/g, '')).join('|')})$`, 'i');
+/** Never source, when the options name none (the extension passes its list: sourceFiles.ts NON_SOURCE_EXTENSIONS). */
+const DEFAULT_NON_SOURCE = ['css', 'scss', 'sass', 'less', 'styl', 'stylus', 'pcss', 'postcss', 'sss', 'json', 'json5', 'jsonc',
+  'html', 'htm', 'xml', 'svg', 'md', 'markdown', 'txt', 'csv', 'yaml', 'yml', 'toml', 'graphql', 'gql', 'glsl', 'wgsl', 'vert', 'frag',
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'wasm'];
+const extOf = (file) => { const m = /\.([^./]+)$/.exec(file); return m ? m[1].toLowerCase() : ''; };
 const TEST_RE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?$)|(?:[\\/]__tests__[\\/])/i;
 
 // Vitest's main process also loads instrumented modules (globalSetup, config
@@ -59,7 +63,7 @@ const norm = (p) => { const n = path.normalize(p).replace(/\\/g, '/'); return pr
 const toArray = (v) => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
 
 /**
- * @param {{ setupFile: string, parser: string, projectRoot: string, vite?: string, forceRoot?: string, componentExtensions?: string[] }} options
+ * @param {{ setupFile: string, parser: string, projectRoot: string, vite?: string, forceRoot?: string, nonSourceExtensions?: string[] }} options
  */
 function ltrTracePlugin(options) {
   const setupFile = options.setupFile;
@@ -77,7 +81,7 @@ function ltrTracePlugin(options) {
   let active = false;
   let root = options.projectRoot;
   let failures = 0;
-  const COMPONENT_RE = componentRe(options.componentExtensions || DEFAULT_COMPONENT_EXTENSIONS);
+  const nonSource = new Set((options.nonSourceExtensions || DEFAULT_NON_SOURCE).map((e) => String(e).toLowerCase()));
 
   const plugin = {
     name: PLUGIN_NAME,
@@ -130,16 +134,19 @@ function ltrTracePlugin(options) {
       if (!active || typeof code !== 'string') { return null; }
       if (id.includes('?') || id.startsWith('\0')) { return null; }
       const file = norm(id);
-      if (!rootPrefixes.some((r) => file.startsWith(r)) || file.includes('/node_modules/') || !(SCRIPT_RE.test(file) || COMPONENT_RE.test(file)) ||
+      if (!rootPrefixes.some((r) => file.startsWith(r)) || file.includes('/node_modules/') || nonSource.has(extOf(file)) ||
           TEST_RE.test(file) || /\.d\.[cm]?ts$/.test(file)) {
         return null;
       }
       try {
         let inputMap;
         try { inputMap = this.getCombinedSourcemap(); } catch (_) { inputMap = undefined; }
-        if (!inputMap && (COMPONENT_RE.test(file) || (typeof this.originalCode === 'string' && this.originalCode !== code))) {
+        const compiled = !SCRIPT_RE.test(file);
+        if (!inputMap && (compiled || (typeof this.originalCode === 'string' && this.originalCode !== code))) {
           return null; // transformed, but no way back to the source lines
         }
+        // Compiled from another language: only when the map leads back to this very file.
+        if (compiled && !mapsBackTo(inputMap, id)) { return null; }
         const out = instrument(code, path.normalize(id), loadParser(options.parser, options.projectRoot), inputMap);
         if (!out) { return null; }
         ltrLog('trace', `instrumented ${id} (${out.statements} statements)`);

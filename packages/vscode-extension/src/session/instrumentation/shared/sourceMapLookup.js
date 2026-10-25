@@ -107,4 +107,10 @@ function sourceMapLookup(map, file) {
   };
 }
 
-module.exports = { sourceMapLookup, normalizeMap };
+/** The map has a source that is `file` itself (by base name) — code compiled from that file. */
+function mapsBackTo(map, file) {
+  const m = normalizeMap(map);
+  return !!m && ownSources(m, String(file).split(/[?#]/)[0]) !== null;
+}
+
+module.exports = { sourceMapLookup, normalizeMap, mapsBackTo };

@@ -24,6 +24,14 @@ export interface IProjectConfig {
    */
   coverageScope(projectRoot: string): Promise<CoverageScope | undefined>;
 
+  /**
+   * File extensions (no dot, lower case) the framework loads as modules
+   * beyond JS / TS — Jest's `moduleFileExtensions` (e.g. `vue`, `html` with
+   * jest-preset-angular). Saving such a file reruns its tests. Undefined when
+   * the framework has no such list (Vitest) or the config could not be read.
+   */
+  sourceExtensions?(projectRoot: string): Promise<string[] | undefined>;
+
   /** Forget cached configs (a new session re-reads them — the config may have changed). */
   reset(): void;
 }

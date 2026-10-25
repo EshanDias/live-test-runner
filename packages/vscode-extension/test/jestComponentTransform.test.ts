@@ -55,10 +55,11 @@ function compile(src, file) {
 }
 `;
 
-function project(transformerFile: string, transformerSrc: string): { file: string; options: any } {
+function project(transformerFile: string, transformerSrc: string, name = 'Cart.vue'): { file: string; options: any } {
   const transformer = path.join(dir, transformerFile);
   fs.writeFileSync(transformer, transformerSrc);
-  const file = path.join(dir, 'src', 'Cart.vue');
+  const file = path.join(dir, 'src', name);
+  const ext = path.extname(name).slice(1);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, [
     '<template>',
@@ -73,7 +74,7 @@ function project(transformerFile: string, transformerSrc: string): { file: strin
     '</script>',
   ].join('\n'));
   const options = {
-    config: { rootDir: dir, cwd: dir, transform: [[`^${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/.+\\.vue$`, OURS], ['\\.vue$', transformer]] },
+    config: { rootDir: dir, cwd: dir, transform: [[`^${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/.+\\.${ext}$`, OURS], [`\\.${ext}$`, transformer]] },
     configString: '{}', cacheFS: new Map(), transformerConfig: {},
   };
   return { file, options };
@@ -97,6 +98,7 @@ function run(code: string): { steps: number[]; exports: any } {
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     new Function('require', 'module', 'exports', code)(req, mod, mod.exports);
     mod.exports.total([1, 2]);
+    if (typeof mod.exports.render === 'function') { mod.exports.render(); }
     return { steps, exports: mod.exports };
   } finally {
     [g.__strace, g.__cov] = before;
@@ -154,4 +156,30 @@ it('the cache key differs between CJS and ESM mode (the output does)', () => {
   const a = T.getCacheKey('x', '/p/a.js', { configString: '{}', supportsStaticESM: false });
   const b = T.getCacheKey('x', '/p/a.js', { configString: '{}', supportsStaticESM: true });
   expect(a).not.toBe(b);
+});
+
+it('any format the project compiles (no extension list): e.g. a .coffee file', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const T = require(OURS);
+  const { file, options } = project('fake-coffee.js', `${COMPILER}\nmodule.exports = { process: (src, file) => compile(src, file) };`, 'cart.coffee');
+  const out = T.process(fs.readFileSync(file, 'utf8'), file, options);
+  expect(Object.keys(manifest().statements)).toHaveLength(4);
+  expect([...new Set(run(out.code).steps)].sort()).toEqual([6, 7, 8]);
+});
+
+it('Vue: the render function vue-jest leaves unmapped marks the <template> lines as run (trace only)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const T = require(OURS);
+  const withRender = COMPILER.replace(
+    "'module.exports = { total: total };'",
+    "'function render(_ctx) { var x = 1; return x; }', 'module.exports = { total: total, render: render };'",
+  );
+  const { file, options } = project('fake-vue-jest-render.js', `${withRender}\nmodule.exports = { process: (src, file) => compile(src, file) };`);
+  const out = T.process(fs.readFileSync(file, 'utf8'), file, options);
+  const m = manifest();
+  expect(Object.values(m.statements).map((x: any) => x.start.line).sort((a: number, b: number) => a - b)).toEqual([6, 7, 7, 8]); // coverage unchanged
+  expect(Object.values(m.functions).map((f: any) => f.name)).toEqual(['total']);
+  const steps = new Set(run(out.code).steps);
+  for (const l of [1, 2, 3]) { expect(steps.has(l)).toBe(true); } // <template> … </template>
+  expect(steps.has(4)).toBe(false); // <script>
 });

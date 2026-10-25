@@ -62,6 +62,23 @@ export class JestProjectConfig implements IProjectConfig {
     return settings ? jestCoverageScope(settings) : undefined;
   }
 
+  /** Every project config's `moduleFileExtensions`, from the same `--showConfig` read as {@link get}. */
+  async sourceExtensions(projectRoot: string): Promise<string[] | undefined> {
+    const file = await this.get(projectRoot);
+    if (!file) { return undefined; }
+    try {
+      const resolved = JSON.parse(fs.readFileSync(file, 'utf8')) as ResolvedProjectConfig;
+      const exts = new Set<string>();
+      for (const c of resolved.configs) {
+        const list = (c as { moduleFileExtensions?: unknown }).moduleFileExtensions;
+        if (Array.isArray(list)) { for (const e of list) { if (typeof e === 'string') { exts.add(e.replace(/^\./, '').toLowerCase()); } } }
+      }
+      return [...exts];
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
    * Path of a JSON file holding the {@link ResolvedProjectConfig}, or
    * undefined when Jest could not report its config (the caller falls back

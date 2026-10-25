@@ -1,17 +1,31 @@
-import { isComponentFile, isSourceFile, scriptOf, sourceFileGlob } from '../src/session/sourceFiles';
+import { extensionOf, isCompiledFile, isSourceFile, scriptOf, sourceFileGlob } from '../src/session/sourceFiles';
 
 /** Which files are source code, whatever the UI framework (React, Vue, Svelte, Astro, …). */
 
-it('JS / TS and single-file components are source files; assets and docs are not', () => {
-  for (const f of ['a.js', 'a.jsx', 'a.ts', 'a.tsx', 'a.mjs', 'a.cts', 'App.vue', 'Card.svelte', 'Page.astro', 'x.marko', 'store.svelte.ts']) {
+it('JS / TS and compiled formats are source files; assets and docs are not', () => {
+  for (const f of ['a.js', 'a.jsx', 'a.ts', 'a.tsx', 'a.mjs', 'a.cts', 'App.vue', 'Card.svelte', 'Page.astro', 'x.marko', 'store.svelte.ts',
+    'doc.mdx', 'tag.riot', 'a.coffee', 'a.civet', 'Comp.gjs', 'Comp.gts', 'Main.elm', 'a.imba']) {
     expect(isSourceFile(`/p/src/${f}`)).toBe(true);
   }
-  for (const f of ['a.css', 'a.scss', 'README.md', 'data.json', 'index.html', 'logo.svg', 'a.vue.snap']) {
+  for (const f of ['a.css', 'a.scss', 'README.md', 'data.json', 'index.html', 'logo.svg', 'a.vue.snap', 'yarn.lock', '.env']) {
     expect(isSourceFile(`/p/src/${f}`)).toBe(false);
   }
-  expect(isComponentFile('/p/App.VUE')).toBe(true);
-  expect(isComponentFile('/p/app.ts')).toBe(false);
-  expect(sourceFileGlob()).toBe('**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,vue,svelte,astro,marko}');
+  expect(sourceFileGlob()).toMatch(/^\*\*\/\*\.\{js,jsx,ts,tsx,mjs,cjs,mts,cts,vue,svelte,astro,marko,mdx,/);
+});
+
+it('the framework can add extensions (Jest\'s moduleFileExtensions, e.g. html for Angular)', () => {
+  expect(isSourceFile('/p/app.component.html')).toBe(false);
+  expect(isSourceFile('/p/app.component.html', new Set(['html']))).toBe(true);
+  expect(isSourceFile('/p/A.HTML', new Set(['html']))).toBe(true);
+});
+
+it('compiled = not JS / TS and not an asset; extensionOf is lower case', () => {
+  expect(isCompiledFile('/p/App.vue')).toBe(true);
+  expect(isCompiledFile('/p/a.whatever')).toBe(true);
+  expect(isCompiledFile('/p/app.ts')).toBe(false);
+  expect(isCompiledFile('/p/a.css')).toBe(false);
+  expect(extensionOf('C:\\p\\B.Vue')).toBe('vue');
+  expect(extensionOf('/p/Makefile')).toBe('');
 });
 
 describe('scriptOf', () => {

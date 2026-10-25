@@ -3,12 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest"
+    "test": "jest"
   },
   "jest": {
     "testEnvironment": "jsdom",
-    "moduleFileExtensions": ["js", "svelte"],
-    "extensionsToTreatAsEsm": [".svelte"],
+    "moduleFileExtensions": [
+      "js",
+      "svelte"
+    ],
+    "extensionsToTreatAsEsm": [
+      ".svelte"
+    ],
     "transform": {
       "^.+\\.svelte$": "svelte-jester"
     }

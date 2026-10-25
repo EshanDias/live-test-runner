@@ -6,8 +6,12 @@
  *   - covering tests at the component's own lines (through vue-jest's map);
  *   - coverage of the component (our transform measures Jest coverage), and
  *     an untested component counts from its <script> block;
+ *   - template lines get covering tests (the render function marks them),
+ *     coverage stays what `jest --coverage` counts;
  *   - saving a .vue file reruns only the tests that ran it — before, saves
- *     of component files were ignored.
+ *     of component files were ignored;
+ *   - a file type the project's Jest config adds (`moduleFileExtensions`:
+ *     html, with its own transform) reruns its tests on save.
  */
 const fs = require('fs');
 const path = require('path');
@@ -54,6 +58,7 @@ module.exports = {
       t.eq('Counter.vue line 17 (computed label) by both counter tests', names(counter, 17), ['counter counts', 'counter starts at zero']);
       t.eq('text.js is used by both test files',
         api.traceStore.getAffectedTestFiles(key(text)).map((f) => path.basename(f)).sort(), ['counter.test.js', 'text.test.js']);
+      t.eq('Counter.vue template line 2 (<button …>) by both counter tests — the render function ran it', names(counter, 2), ['counter counts', 'counter starts at zero']);
       const hover = await hoverText(vscode, counter, 21);
       t.check('hover on Counter.vue line 22: "Covered by 1 test" naming it', /Covered by 1 test/.test(hover) && /counter counts/.test(hover), hover);
 
@@ -77,6 +82,19 @@ module.exports = {
       t.eq('…only counter.test.js got a result', [...new Set(rec.of('file-result').map((e) => e.file))], ['counter.test.js']);
       t.eq('…still passing', h.statusCounts(api, 'src/counter.test.js'), { passed: 2 });
       rec.stop();
+
+      // ── A file type the project's Jest config adds (moduleFileExtensions: html) ──
+      const html = path.join(workspace, 'src', 'greeting.html');
+      const htmlOriginal = fs.readFileSync(html, 'utf8');
+      try {
+        const rec2 = h.recordEvents(api);
+        await h.editAndSave(vscode, html, (s) => s + '\n<!-- touched -->\n');
+        await waitIdle(api);
+        t.eq('saving greeting.html (html in moduleFileExtensions) reruns the test that loads it', [...new Set(rec2.of('file-result').map((e) => e.file))], ['html.test.js']);
+        rec2.stop();
+      } finally {
+        fs.writeFileSync(html, htmlOriginal);
+      }
 
       t.eq('nothing written into the project', fs.readdirSync(workspace).sort(), before);
     } finally {

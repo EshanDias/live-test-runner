@@ -55,7 +55,7 @@ interface RunHandle {
 }
 
 import { nameToPattern } from '../utils/testNames';
-import { isSourceFile } from './sourceFiles';
+import { extensionOf, isSourceFile, NON_SOURCE_EXTENSIONS } from './sourceFiles';
 export { nameToPattern };
 
 /**
@@ -104,6 +104,9 @@ export class SessionManager {
   private _groups: Record<string, string> | undefined;
   /** Mixed projects: each listed file's framework (remembered with the list). */
   private _frameworks: Record<string, string> | undefined;
+
+  /** Module extensions the project's framework(s) load beyond the list (Jest's moduleFileExtensions), per session. */
+  private _sourceExtensions = new Set<string>();
 
   constructor(
     /** The project this manager runs (one SessionManager per project, phase 7). */
@@ -162,6 +165,7 @@ export class SessionManager {
 
     // Which framework(s) the project runs, re-read every Start (phase 8: a mixed project has two).
     this._services.prepare(projectRoot);
+    this._sourceExtensions = new Set();
     // Bootstrap a session with the main framework's runner to hold the coverage map
     const services = this._services.servicesFor(projectRoot);
     this._session = new TestSession(services.createSessionRunner());
@@ -195,6 +199,7 @@ export class SessionManager {
       for (const s of this._services.all()) {
         if (s !== services) { s.projectConfig.reset(); void s.projectConfig.get(projectRoot); }
       }
+      void this._loadSourceExtensions(projectRoot, token);
       if (this._services.isMixed()) { framework = `${framework} + ${services.framework === 'vitest' ? 'jest' : 'vitest'}`; }
       this._runnable = toRunnableSet(runnableList);
       if (runnableList) {
@@ -430,7 +435,7 @@ export class SessionManager {
       !root || document.uri.scheme !== 'file' ||
       rel.startsWith('..') || path.isAbsolute(rel) ||
       /(^|[\\/])node_modules[\\/]/.test(rel) ||
-      !isSourceFile(filePath)
+      !this._isProjectSource(filePath)
     ) {
       return;
     }
@@ -1192,6 +1197,32 @@ export class SessionManager {
   }
 
   /** Settings that change how the framework is called, and so which files it lists. */
+  /**
+   * A saved file that can change test results: a source file by the list
+   * (sourceFiles.ts), by the framework's own module extensions (Jest's
+   * moduleFileExtensions), or one the execution trace saw a test run —
+   * whatever its extension. Anything else (docs, images, lock files) starts nothing.
+   */
+  private _isProjectSource(filePath: string): boolean {
+    if (isSourceFile(filePath, this._sourceExtensions)) { return true; }
+    if (NON_SOURCE_EXTENSIONS.has(extensionOf(filePath))) { return this._sourceExtensions.has(extensionOf(filePath)); }
+    return this._traceStore.getAffectedTestFiles(filePath).length > 0;
+  }
+
+  /** The frameworks' module extensions beyond the list (see {@link _isProjectSource}). */
+  private async _loadSourceExtensions(projectRoot: string, token: number): Promise<void> {
+    for (const s of this._services.all()) {
+      const exts = await s.projectConfig.sourceExtensions?.(projectRoot).catch(() => undefined);
+      if (token !== this._token || !exts) { continue; }
+      // Jest's JSON / native addons are data, not code a test reruns for.
+      for (const e of exts) { if (e !== 'json' && e !== 'node') { this._sourceExtensions.add(e); } }
+    }
+    const extra = [...this._sourceExtensions].filter((e) => !isSourceFile(`x.${e}`));
+    if (extra.length > 0 && token === this._token) {
+      log.debug(`Saving these files also reruns tests (the project's ${this._terms(projectRoot).config} loads them): ${extra.map((e) => `.${e}`).join(', ')}`);
+    }
+  }
+
   private _runnerSettings(projectRoot: string): string {
     return this._services.fingerprint(projectRoot);
   }

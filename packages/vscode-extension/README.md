@@ -217,7 +217,7 @@ All settings under `liveTestRunner.*`.
 
 <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — the test tree fills in, results and gutter icons appear, ▶ Run on one test -->
 
-**Any UI framework** — React, Preact, Solid, Lit, Angular, Qwik (plain JS / TS) and Vue, Svelte, Astro, Marko components: if Jest or Vitest runs your tests, every feature works, including on-save reruns, coverage and covering tests for components. Jest's ESM mode (`NODE_OPTIONS=--experimental-vm-modules jest`) is picked up from your test script.
+**Any UI framework** — React, Preact, Solid, Lit, Angular, Qwik (plain JS / TS) and Vue, Svelte, Astro, Marko components: if Jest or Vitest runs your tests, every feature works, including on-save reruns, coverage and covering tests for components. Jest's ESM mode (`NODE_OPTIONS=--experimental-vm-modules` in your test script, or `node-options` in `.npmrc`) is picked up automatically.
 
 Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projects that list Vitest but configure only Jest run on Jest; with a `vitest.config.*` of their own they run each file with its framework (see [Jest and Vitest in one project](#jest-and-vitest-in-one-project)).
 
@@ -229,7 +229,7 @@ Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projec
 - Jest captures console output per file; it shows on a single test only when that test is rerun on its own. With Vitest every test shows its own output.
 - Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
 - Vitest: the execution trace needs Vitest ≥ 3 and is off for browser-mode projects — saving a source file then reruns the test files that import it (`vitest related`)
-- Vue components under Jest: coverage and covering tests cover the `<script>` block (vue-jest maps only that), not the template
+- Vue components under Jest: coverage counts the `<script>` block only, as `jest --coverage` does (vue-jest maps only that); template lines still show their covering tests
 
 ---
 

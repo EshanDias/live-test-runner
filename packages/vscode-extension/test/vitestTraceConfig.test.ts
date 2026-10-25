@@ -210,7 +210,7 @@ describe('VitestTrace', () => {
     const a = vt.configFor(dir, undefined);
     expect(a && fs.existsSync(a)).toBe(true);
     expect(fs.readFileSync(a!, 'utf8')).toContain('"major":4');
-    expect(fs.readFileSync(a!, 'utf8')).toContain('"componentExtensions":["vue","svelte","astro","marko"]');
+    expect(fs.readFileSync(a!, 'utf8')).toMatch(/"nonSourceExtensions":\["css",/);
     expect(vt.configFor(dir, undefined)).toBe(a);
     expect(vt.offReason(dir)).toBeUndefined();
   });
