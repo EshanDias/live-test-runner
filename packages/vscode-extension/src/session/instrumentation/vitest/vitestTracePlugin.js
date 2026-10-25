@@ -137,14 +137,17 @@ function ltrTracePlugin(options) {
           ? Object.values(viteServer.environments).map((e) => e && e.moduleGraph).filter(Boolean)
           : [viteServer.moduleGraph];
         const own = (f) => !!f && !f.includes('/node_modules/') && rootPrefixes.some((r) => norm(f).startsWith(r));
+        // Native spelling, as the trace records have it (Vite's ids use forward slashes on Windows too).
+        const native = (f) => path.normalize(f);
         for (const graph of graphs) {
           for (const [file, mods] of graph.fileToModulesMap || []) {
             if (!own(file)) { continue; }
-            const set = new Set(importers[file] || []);
+            const key = native(file);
+            const set = new Set(importers[key] || []);
             for (const m of mods) {
-              for (const i of m.importers || []) { if (i.file && i.file !== file && own(i.file)) { set.add(i.file); } }
+              for (const i of m.importers || []) { if (i.file && i.file !== file && own(i.file)) { set.add(native(i.file)); } }
             }
-            importers[file] = [...set];
+            importers[key] = [...set];
           }
         }
         const out = `${process.env.LTR_VITEST_DEPS}.${process.pid}-${Math.random().toString(36).slice(2)}.json`;

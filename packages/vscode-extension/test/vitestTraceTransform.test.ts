@@ -238,7 +238,8 @@ describe('the plugin', () => {
       const files = fs.readdirSync(dir);
       expect(files).toHaveLength(1);
       const { importers } = JSON.parse(fs.readFileSync(path.join(dir, files[0]), 'utf8'));
-      expect(importers).toEqual({ [f('card.html')]: [f('card.ts')], [f('banner.html')]: [f('banner.test.ts')] });
+      const n = (x: string) => path.normalize(f(x)); // native spelling, as the trace records
+      expect(importers).toEqual({ [n('card.html')]: [n('card.ts')], [n('banner.html')]: [n('banner.test.ts')] });
     } finally {
       delete process.env.LTR_VITEST_DEPS;
       fs.rmSync(dir, { recursive: true, force: true });
