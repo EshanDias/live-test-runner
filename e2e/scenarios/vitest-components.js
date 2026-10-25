@@ -8,6 +8,8 @@
  *   - Vitest's coverage reaches the components;
  *   - saving a .vue / .svelte file reruns only the tests that ran it (trace,
  *     not `vitest related`) — before, component saves were ignored;
+ *   - saving an HTML file a test loads (a `?raw` import, a template a plugin
+ *     reads with addWatchFile — Angular's way) reruns exactly those tests;
  *   - nothing is written into the project.
  */
 const fs = require('fs');
@@ -38,7 +40,8 @@ module.exports = {
     const counter = path.join(workspace, 'src', 'Counter.vue');
     const greeting = path.join(workspace, 'src', 'Greeting.svelte');
     const text = path.join(workspace, 'src', 'text.ts');
-    const originals = new Map([counter, greeting].map((f) => [f, fs.readFileSync(f, 'utf8')]));
+    const htmls = ['banner.html', 'card.html'].map((n) => path.join(workspace, 'src', n));
+    const originals = new Map([counter, greeting, ...htmls].map((f) => [f, fs.readFileSync(f, 'utf8')]));
     const before = fs.readdirSync(workspace).sort();
     try {
       await h.waitForDiscovery(api);
@@ -91,6 +94,19 @@ module.exports = {
         rec.stop();
       }
       t.eq('…still all passing', [h.statusCounts(api, 'src/counter.test.ts'), h.statusCounts(api, 'src/greeting.test.ts')], [{ passed: 2 }, { passed: 1 }]);
+
+      // ── Any file a test loads (Vite's module graph): HTML via ?raw, a template a plugin reads ──
+      for (const [name, testFile] of [['banner.html', 'banner.test.ts'], ['card.html', 'card.test.ts']]) {
+        const file = path.join(workspace, 'src', name);
+        const rec = h.recordEvents(api);
+        since = h.isoNow();
+        await h.editAndSave(vscode, file, (s) => s + '\n<!-- touched -->\n');
+        await waitIdle(api);
+        logs = h.logsSince(api, since);
+        t.check(`saving ${name}: a module-graph rerun`, logs.some((l) => new RegExp(`Module-graph rerun for ${name.replace('.', '\\.')}: 1 test file`).test(l)), logs.join('\n'));
+        t.eq(`…only ${testFile} got a result`, [...new Set(rec.of('file-result').map((e) => e.file))], [testFile]);
+        rec.stop();
+      }
 
       t.eq('nothing written into the project', fs.readdirSync(workspace).sort(), before);
     } finally {

@@ -81,6 +81,8 @@ function ltrTracePlugin(options) {
   let active = false;
   let root = options.projectRoot;
   let failures = 0;
+  let viteServer = null;
+  let depsWritten = false;
   const nonSource = new Set((options.nonSourceExtensions || DEFAULT_NON_SOURCE).map((e) => String(e).toLowerCase()));
 
   const plugin = {
@@ -118,6 +120,39 @@ function ltrTracePlugin(options) {
           }
         }
       },
+    },
+    configureServer(server) {
+      viteServer = server;
+    },
+    // Vitest closes its Vite server(s) at the end of a run: write which project
+    // files import which (the module graph — imports, `?raw` / `?url` files,
+    // files plugins read with addWatchFile, e.g. Angular templates), so a save
+    // of any file a test loaded reruns exactly the test files that reach it.
+    closeBundle() {
+      if (!active || !viteServer || depsWritten || !process.env.LTR_VITEST_DEPS) { return; }
+      depsWritten = true;
+      try {
+        const importers = {};
+        const graphs = viteServer.environments
+          ? Object.values(viteServer.environments).map((e) => e && e.moduleGraph).filter(Boolean)
+          : [viteServer.moduleGraph];
+        const own = (f) => !!f && !f.includes('/node_modules/') && rootPrefixes.some((r) => norm(f).startsWith(r));
+        for (const graph of graphs) {
+          for (const [file, mods] of graph.fileToModulesMap || []) {
+            if (!own(file)) { continue; }
+            const set = new Set(importers[file] || []);
+            for (const m of mods) {
+              for (const i of m.importers || []) { if (i.file && i.file !== file && own(i.file)) { set.add(i.file); } }
+            }
+            importers[file] = [...set];
+          }
+        }
+        const out = `${process.env.LTR_VITEST_DEPS}.${process.pid}-${Math.random().toString(36).slice(2)}.json`;
+        fs.writeFileSync(out, JSON.stringify({ importers }), 'utf8');
+        ltrLog('debug', `module graph: ${Object.keys(importers).length} project file(s) → ${path.basename(out)}`);
+      } catch (err) {
+        ltrLog('debug', `could not write the module graph: ${err && err.message}`);
+      }
     },
     configResolved(config) {
       root = config.root || root;

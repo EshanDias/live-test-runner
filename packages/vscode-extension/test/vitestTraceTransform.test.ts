@@ -218,6 +218,33 @@ describe('the plugin', () => {
     expect(p.transform.call(ctx, 'export default ".a{}"', path.join(root, 'src/app.css'))).toBeNull();
   });
 
+  it('writes the module graph when Vitest closes its server: project files and their importers, any type', async () => {
+    const fs = require('fs'); const os = require('os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-graph-'));
+    process.env.LTR_VITEST_DEPS = path.join(dir, 'deps');
+    try {
+      const p = make();
+      await configured(p, { test: {} });
+      const f = (x: string) => path.join(root, 'src', x).replace(/\\/g, '/');
+      const mod = (file: string, importers: string[]) => ({ file, importers: new Set(importers.map((i) => ({ file: i }))) });
+      const graph = { fileToModulesMap: new Map<string, unknown[]>([
+        [f('card.html'), [mod(f('card.html'), [f('card.ts')])]],
+        [f('banner.html'), [mod(f('banner.html'), [f('banner.html')]), mod(f('banner.html'), [f('banner.test.ts')])]],
+        [path.join(root, 'node_modules/x/index.js').replace(/\\/g, '/'), [mod('x', [f('card.ts')])]],
+      ]) };
+      p.configureServer({ environments: { ssr: { moduleGraph: graph } } });
+      p.closeBundle();
+      p.closeBundle(); // once per server
+      const files = fs.readdirSync(dir);
+      expect(files).toHaveLength(1);
+      const { importers } = JSON.parse(fs.readFileSync(path.join(dir, files[0]), 'utf8'));
+      expect(importers).toEqual({ [f('card.html')]: [f('card.ts')], [f('banner.html')]: [f('banner.test.ts')] });
+    } finally {
+      delete process.env.LTR_VITEST_DEPS;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('no extension list: any compiled module whose map leads back to it; assets never', async () => {
     const p = ltrTracePlugin({ setupFile, parser: require.resolve('@babel/parser'), projectRoot: root, nonSourceExtensions: ['css', 'yml'] });
     await configured(p, { test: {} });

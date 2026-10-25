@@ -57,6 +57,14 @@ export class ExecutionTraceStore {
    */
   private readonly _lineToTests = new Map<string, Map<number, LineTestEntry[]>>();
 
+  /**
+   * Module graph (Vitest): file → the project files that import it, any
+   * file type (`?raw` imports, files a plugin reads — Angular templates).
+   * Lets a save of a file no test *ran* (no lines: HTML, CSS modules,
+   * templates) rerun the test files that load it.
+   */
+  private readonly _importers = new Map<string, Set<string>>();
+
   // ── Trace index ────────────────────────────────────────────────────────────
 
   setTraceFile(testId: string, filePath: string): void {
@@ -116,6 +124,34 @@ export class ExecutionTraceStore {
     const mapping = this._sourceToTests.get(sourceFilePath);
     if (!mapping) { return []; }
     return Object.keys(mapping);
+  }
+
+  /** Module graph: `importers` import `filePath` (merged across batches). */
+  addImporters(filePath: string, importers: string[]): void {
+    let set = this._importers.get(filePath);
+    if (!set) { set = new Set(); this._importers.set(filePath, set); }
+    for (const i of importers) { set.add(i); }
+  }
+
+  /** A test loaded this file (it is in the module graph). */
+  isLoaded(filePath: string): boolean {
+    return this._importers.has(filePath);
+  }
+
+  /** The test files that (transitively) import `filePath`, by the module graph. */
+  getDependentTestFiles(filePath: string, isTestFile: (fp: string) => boolean): string[] {
+    const found = new Set<string>();
+    const seen = new Set<string>([filePath]);
+    const queue = [filePath];
+    while (queue.length > 0) {
+      const f = queue.shift()!;
+      for (const imp of this._importers.get(f) ?? []) {
+        if (seen.has(imp)) { continue; }
+        seen.add(imp);
+        if (isTestFile(imp)) { found.add(imp); } else { queue.push(imp); }
+      }
+    }
+    return [...found];
   }
 
   /**
@@ -206,6 +242,7 @@ export class ExecutionTraceStore {
    * Trace files on disk are deleted by the batch runner / extension cleanup separately.
    */
   clearAll(): void {
+    this._importers.clear();
     this._traceIndex.clear();
     this._coverageIndex.clear();
     this._sourceToTests.clear();

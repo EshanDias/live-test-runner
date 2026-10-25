@@ -1,6 +1,6 @@
 {
   "sample-react-project": {
-    "recorded": "2026-10-24T09:01:11.529Z",
+    "recorded": "2026-10-25T10:40:34.169Z",
     "head": "",
     "extensionMatches": true,
     "files": 14,
@@ -83,7 +83,7 @@
     }
   },
   "jest-dom": {
-    "recorded": "2026-10-24T08:58:54.275Z",
+    "recorded": "2026-10-25T10:38:18.607Z",
     "head": "0ff8904ff4683d676ff70ab68b7f08465c44d0d0",
     "extensionMatches": true,
     "files": 31,
@@ -251,7 +251,7 @@
     }
   },
   "vscode-jest": {
-    "recorded": "2026-10-24T09:00:05.134Z",
+    "recorded": "2026-10-25T10:39:28.025Z",
     "head": "b71edf0b1b80aa22a16222775fbd37dabab3aea0",
     "extensionMatches": true,
     "files": 49,
@@ -2942,7 +2942,7 @@
     }
   },
   "unplugin": {
-    "recorded": "2026-10-24T09:01:33.557Z",
+    "recorded": "2026-10-25T10:40:56.624Z",
     "head": "bd0f8ddba859b2ca1d0e91269afb8eac42785576",
     "extensionMatches": true,
     "files": 26,
@@ -3085,7 +3085,7 @@
     }
   },
   "slidev": {
-    "recorded": "2026-10-24T09:01:56.167Z",
+    "recorded": "2026-10-25T10:41:19.513Z",
     "head": "73053ab2b9653ed475960301b56e1ce4439d9c75",
     "extensionMatches": true,
     "files": 34,
@@ -3268,7 +3268,7 @@
     }
   },
   "vueuse": {
-    "recorded": "2026-10-24T09:04:10.414Z",
+    "recorded": "2026-10-25T10:43:31.812Z",
     "head": "279bac0230c56a5707e3f92f2f5f2225acda6c5d",
     "extensionMatches": true,
     "files": 134,
@@ -3945,6 +3945,423 @@
       },
       "test/package-json-export.test.ts": {
         "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "vue-testing-library": {
+    "recorded": "2026-10-25T10:43:58.009Z",
+    "head": "d46ed8f757e77fe85b369847c21d394bb9706066",
+    "extensionMatches": true,
+    "files": 26,
+    "total": {
+      "passed": 134,
+      "failed": 0,
+      "skipped": 0
+    },
+    "perFile": {
+      "src/__tests__/auto-cleanup-skip.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/auto-cleanup.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/button-simple.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/card-slots.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/collapsible-visibility.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/deprecated-options.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/directive.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/disappearance.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/element-plus.js": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/fetch-axios-mock.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/fire-event.js": {
+        "passed": 90,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/form.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/functional-sfc.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/hello-world-debug.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/render.js": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/rerender.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/select.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/stopwatch.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/stubs.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/teleport.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/translations-vue-i18n.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/user-event.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/validate-plugin.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/vue-router.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/vuex.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/__tests__/within.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "vue-multiselect": {
+    "recorded": "2026-10-25T10:44:24.462Z",
+    "head": "8092917041f0ae02cbe4c6982deddc931c6adecd",
+    "extensionMatches": true,
+    "files": 1,
+    "total": {
+      "passed": 105,
+      "failed": 0,
+      "skipped": 0
+    },
+    "perFile": {
+      "tests/unit/Multiselect.spec.js": {
+        "passed": 105,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "example-app-v22": {
+    "recorded": "2026-10-25T10:45:13.459Z",
+    "head": "4bdc805d5c9721c96492d0ede2f4c08bc6af0166",
+    "extensionMatches": true,
+    "files": 23,
+    "total": {
+      "passed": 133,
+      "failed": 0,
+      "skipped": 0
+    },
+    "perFile": {
+      "src/app/about/about.component.spec.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/app-initial.spec.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/app.router.spec.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/app.spec.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/banner/banner-external.component.spec.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/banner/banner-initial.component.spec.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/banner/banner.component.detect-changes.spec.ts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/banner/banner.component.spec.ts": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/dashboard/dashboard-hero.component.spec.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/dashboard/dashboard.component.spec.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/demo/async-helper.spec.ts": {
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/hero/hero-detail.component.spec.ts": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/hero/hero-list.component.spec.ts": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/model/hero.service.spec.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/model/testing/http-client.spec.ts": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/shared/app.service.spec.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/shared/canvas.component.spec.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/shared/foo.component.spec.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/shared/highlight.directive.spec.ts": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/shared/title-case.pipe.spec.ts": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/signal-form-test/signal-form-test.component.spec.ts": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/twain/twain.component.spec.ts": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "src/app/welcome/welcome.component.spec.ts": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "svelte-testing-library": {
+    "recorded": "2026-10-25T10:45:56.211Z",
+    "head": "7d5ebf855a176f5e3fdc6cead18e67c3488c0433",
+    "extensionMatches": true,
+    "files": 23,
+    "total": {
+      "passed": 79,
+      "failed": 0,
+      "skipped": 2
+    },
+    "perFile": {
+      "examples/basic/basic.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/binds/bind.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/contexts/context.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/deprecated/deprecated-event.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/deprecated/deprecated-slot.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/events/event.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/snippets/basic-snippet.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/snippets/complex-snippet.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "examples/wrappers/child.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/act.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/auto-cleanup.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/bind.test.svelte.js": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/cleanup.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/context.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/debug.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/events.test.js": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/mount.test.js": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/multi-base.test.js": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/render.test.js": {
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/rerender.test.js": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 1
+      },
+      "tests/transition.test.js": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1
+      },
+      "tests/vite-plugin.test.js": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/wrapper.test.js": {
+        "passed": 5,
         "failed": 0,
         "skipped": 0
       }

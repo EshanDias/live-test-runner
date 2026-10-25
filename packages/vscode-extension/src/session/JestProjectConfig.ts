@@ -156,6 +156,19 @@ export function sourceTransformPattern(projectRoot: string, extensions = '[jt]sx
   return `^${escapedRootSlash}[/\\\\](?!node_modules[/\\\\]).+\\.${extensions}$`;
 }
 
+/**
+ * Jest pattern for the extension's instrumentation folder (setup files,
+ * runtimes) — for `transformIgnorePatterns`: the project's transforms must
+ * never touch our files (its Babel config may add `@babel/runtime` imports
+ * that cannot be resolved from the extension's folder). Either slash, any
+ * drive-letter case. `dir` defaults to the built `out/instrumentation`.
+ */
+export function ownFilesPattern(dir: string = path.resolve(__dirname, 'instrumentation')): string {
+  const fwd = dir.replace(/\\/g, '/');
+  const esc = fwd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\//g, '[/\\\\]');
+  return esc.replace(/^([a-zA-Z]):/, (_, d: string) => `[${d.toLowerCase()}${d.toUpperCase()}]:`);
+}
+
 /** `c:\x` → `C:\x` — the spelling Jest uses for its realpath'd rootDir. */
 export function upperDrive(p: string): string {
   return p.replace(/^([a-z]):/, (_, d: string) => `${d.toUpperCase()}:`);

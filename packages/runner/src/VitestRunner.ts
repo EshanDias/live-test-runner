@@ -126,6 +126,8 @@ export class VitestRunner extends CommandRunner {
     options: {
       coverageDir?: string;
       related?: string;
+      /** Only type-check files (`--typecheck.only`; with `related`: the related ones). */
+      typecheckOnly?: boolean;
       /** `--config` for this run instead of the project's (the execution trace wrapper). */
       config?: string;
     } = {},
@@ -136,6 +138,7 @@ export class VitestRunner extends CommandRunner {
     const resultFile = path.join(this.tmpDir ?? os.tmpdir(), `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
     const env = this.runEnv(request) ?? {};
     const args = [...await this.commandArgs(request, options.config), ...this.requireAdapter().outputFileArg(resultFile)];
+    if (options.typecheckOnly) { args.push('--typecheck.only'); }
     const coverage = options.coverageDir ? await this.coverageArgs(root, options.coverageDir) : undefined;
     if (coverage) { args.push(...coverage); }
     return {

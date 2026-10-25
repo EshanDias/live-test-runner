@@ -7,7 +7,8 @@
  *     project, with an INFO line);
  *   - the type-check file does not turn the trace off (it never runs a worker);
  *   - results match plain Vitest;
- *   - saving a source file is a trace-based rerun, not `vitest related`;
+ *   - saving a source file is a trace-based rerun, not `vitest related`, and
+ *     type-checks the related type-check files (`--typecheck.only`);
  *   - nothing is written into the project.
  */
 const fs = require('fs');
@@ -62,11 +63,26 @@ module.exports = {
         cmds = vitestCmds(h.rawSince(api, mark));
         const base = path.basename(file).replace('.', '\\.');
         t.check(`saving ${path.basename(file)}: a trace-based rerun`, logs.some((l) => new RegExp(`Trace-based rerun for ${base}`).test(l)), logs.join('\n'));
-        t.check('…not `vitest related`', cmds.length > 0 && !cmds.some((l) => / related /.test(l)), cmds.join('\n'));
+        t.check('…its tests not by `vitest related` (only the type-check files are)', cmds.length > 0 && !cmds.some((l) => / related /.test(l) && !/--typecheck\.only/.test(l)), cmds.join('\n'));
         t.eq(`…${testFile} got a result`, [...new Set(rec.of('file-result').map((e) => e.file))].filter((f) => f === testFile), [testFile]);
         rec.stop();
       }
       t.check('…the trace is still on', !h.logsSince(api, since).some((l) => /execution trace is off/.test(l)));
+
+      // ── Type-check files: a source save type-checks the related ones too ──
+      {
+        const rec = h.recordEvents(api);
+        since = h.isoNow();
+        mark = h.rawMark(api);
+        await h.editAndSave(vscode, price, (s) => s + '\n// touched again\n');
+        await waitIdle(api);
+        cmds = vitestCmds(h.rawSince(api, mark));
+        t.check('saving price.ts also type-checks its related files (vitest related --typecheck.only)',
+          cmds.some((l) => / related .*price\.ts.*--typecheck\.only/.test(l)), cmds.join('\n'));
+        t.check('…price.test-d.ts got a result', rec.of('file-result').some((e) => e.file === 'price.test-d.ts'),
+          JSON.stringify(rec.of('file-result').map((e) => e.file)));
+        rec.stop();
+      }
 
       t.eq('nothing written into the project', fs.readdirSync(workspace).sort(), before);
     } finally {

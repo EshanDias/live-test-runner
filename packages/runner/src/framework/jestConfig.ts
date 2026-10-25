@@ -213,7 +213,8 @@ const ESM_LOAD_ERROR_RE = /Cannot use import statement outside a module|Unexpect
 export function jestEsmHint(message: string, projectRoot: string, home?: string): { kind: 'esm-mode' | 'node-modules'; text: string } | undefined {
   if (!ESM_LOAD_ERROR_RE.test(message)) { return undefined; }
   const esmMode = testScriptNodeOptions(projectRoot, home).includes('--experimental-vm-modules');
-  const fromPackage = /[\\/]node_modules[\\/]/.test(message);
+  // Jest prints the path relative ("node_modules/pkg/index.mjs") or absolute.
+  const fromPackage = /(^|[\s\\/'"(])node_modules[\\/]/.test(message);
   const flag = 'add NODE_OPTIONS=--experimental-vm-modules to the test script ("test": "NODE_OPTIONS=--experimental-vm-modules jest") '
     + 'or node-options=--experimental-vm-modules to .npmrc, then Start again (https://jestjs.io/docs/ecmascript-modules)';
   if (fromPackage) {

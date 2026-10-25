@@ -11,7 +11,7 @@ import * as path from 'path';
 import { Executor, BinaryResolver, toJestPathArg, registerProjectRoot, toRunnerPath, fromRunnerPath, jestNodeEnv } from '@live-test-runner/runner';
 import { IInstrumentedRunner } from './IInstrumentedRunner';
 import { IProjectConfig } from '../session/IProjectConfig';
-import { sourceTransformPattern, upperDrive } from '../session/JestProjectConfig';
+import { ownFilesPattern, sourceTransformPattern, upperDrive } from '../session/JestProjectConfig';
 import { nameToPattern } from '../utils/testNames';
 import {
   TimelineStore,
@@ -165,6 +165,11 @@ module.exports = {
   // case-sensitively and resolves symlinks).
   rootDir: ${JSON.stringify(upperDrive(toRunnerPath(projectRoot)))},
   roots: [${JSON.stringify(upperDrive(toRunnerPath(projectRoot)))}],
+  // Our own files (the trace runtime) are never the project's to transform.
+  transformIgnorePatterns: [
+    ...(baseConfig.transformIgnorePatterns || ['/node_modules/', '\\\\.pnp\\\\.[^\\\\/]+$']),
+    ${JSON.stringify(ownFilesPattern())},
+  ],
   transform: {
     // Our entry first — matches only the exact file being debugged
     [${JSON.stringify(srcTransformPattern)}]: ${JSON.stringify(TRACE_TRANSFORM_PATH)},

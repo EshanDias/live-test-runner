@@ -37,6 +37,9 @@ Vitest is planned for a later release.
 UI frameworks: any. React, Preact, Solid, Lit, Angular and Qwik code is plain
 JS / TS; single-file components (Vue, Svelte, Astro, Marko) are compiled by the
 project's own Jest transformer or Vite plugin and mapped back to their own
-lines; any other extension the Jest config loads (`moduleFileExtensions`) or the
-Vitest trace sees counts too. Jest's ESM mode (`NODE_OPTIONS=--experimental-vm-modules`
+lines; any other extension the Jest config loads (`moduleFileExtensions`), any
+file in Vitest's module graph (HTML via `?raw`, templates a plugin reads) and
+templates named by a relative path (Angular `templateUrl` under Jest) rerun
+their tests on save. Type-check tests (`*.test-d.ts`) rerun with the files they
+check. Jest's ESM mode (`NODE_OPTIONS=--experimental-vm-modules`
 in the test script, or `node-options` in `.npmrc`) is honoured.

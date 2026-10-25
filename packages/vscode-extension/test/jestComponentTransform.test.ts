@@ -183,3 +183,60 @@ it('Vue: the render function vue-jest leaves unmapped marks the <template> lines
   for (const l of [1, 2, 3]) { expect(steps.has(l)).toBe(true); } // <template> … </template>
   expect(steps.has(4)).toBe(false); // <script>
 });
+
+describe('TypeScript sources', () => {
+  /** A ts-jest-like transformer that type-checks: rejects code with our inserted calls, returns an inline source map. */
+  const STRICT = `
+const vlq = ${vlq.toString()};
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+module.exports = {
+  process(src, file) {
+    if (src.includes('__strace') || src.includes('__cov')) { throw new Error('TS2304: Cannot find name __strace'); }
+    const code = src.replace(/: number(\\[\\])?/g, '').replace(/export function/g, 'function') + '\\nmodule.exports = { total };';
+    const lines = src.split('\\n');
+    const mappings = lines.map((_, i) => vlq(0) + vlq(0) + vlq(i === 0 ? 0 : 1) + vlq(0)).join(';');
+    const map = { version: 3, sources: [require('path').basename(file)], mappings };
+    return { code: code + '\\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,' + Buffer.from(JSON.stringify(map)).toString('base64') };
+  },
+};`;
+
+  function tsProject(name: string, transformerName: string): { file: string; options: any } {
+    const transformer = path.join(dir, transformerName);
+    fs.writeFileSync(transformer, STRICT);
+    const file = path.join(dir, 'src', name);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      'export function total(items: number[]): number {',
+      '  let sum: number = 0;',
+      '  for (const i of items) { sum += i; }',
+      '  return sum;',
+      '}',
+    ].join('\n'));
+    const esc = dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return { file, options: { config: { rootDir: dir, cwd: dir, transform: [[`^${esc}/.+\\.ts$`, OURS], ['\\.ts$', transformer]] }, configString: '{}', cacheFS: new Map(), transformerConfig: {} } };
+  }
+
+  it('a transformer that rejects the instrumented code (type-checks, e.g. jest-preset-angular): compiled first, lines from its inline map', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const T = require(OURS);
+    const { file, options } = tsProject('price.ts', 'fake-ng-jest.js');
+    const out = T.process(fs.readFileSync(file, 'utf8'), file, options);
+    expect(out.code).toMatch(/__strace\.step/);
+    expect(Object.values(manifest().statements).map((x: any) => x.start.line).sort()).toEqual([2, 3, 3, 4]);
+    expect([...new Set(run(out.code).steps)].sort()).toEqual([2, 3, 4]);
+  });
+
+  it('TypeScript generics in a .ts file parse (no JSX plugin for TypeScript source)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const T = require(OURS);
+    const file = path.join(dir, 'src', 'generic.ts');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const src = 'export const id = <T>(x: T): T => x;\nexport const n = id<number>(1);\n';
+    fs.writeFileSync(file, src);
+    const babelLike = path.join(dir, 'passthrough.js');
+    fs.writeFileSync(babelLike, 'module.exports = { process: (src) => ({ code: src }) };');
+    const esc = dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const out = T.process(src, file, { config: { rootDir: dir, cwd: dir, transform: [[`^${esc}/.+\\.ts$`, OURS], ['\\.ts$', babelLike]] }, configString: '{}' });
+    expect(out.code).toMatch(/__strace\.step\(2,/);
+  });
+});

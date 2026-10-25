@@ -42,7 +42,11 @@ export class JestAdapter implements FrameworkAdapter {
       JEST_CONFIG_FILES.some((f) => fs.existsSync(path.join(projectRoot, f))) ||
       pkg.jest !== undefined;
 
-    return hasJest || hasJestConfig;
+    if (!(hasJest || hasJestConfig)) { return false; }
+    // The test script decides when it runs only Vitest and there is no Vitest
+    // config to make the project a mixed one (svelte-testing-library keeps a
+    // jest.config.js for a separate `test:jest`, but `npm test` is Vitest).
+    return !testScriptRunsOnlyVitest(pkg.scripts?.test) || hasOwnVitestConfig(projectRoot);
   }
 
   resolveBinary(projectRoot: string): string {
@@ -113,4 +117,16 @@ export function readPackageJson(projectRoot: string): Record<string, any> | unde
   } catch {
     return undefined;
   }
+}
+
+/** `scripts.test` runs Vitest and not Jest (`vitest run --coverage`; not `vitest run && jest`). */
+export function testScriptRunsOnlyVitest(script: unknown): boolean {
+  const s = String(script ?? '');
+  return /(^|[\s;&|(])vitest(\s|$)/.test(s) && !/(^|[\s;&|(/])(jest|kcd-scripts\s+test|react-scripts\s+test)(\s|$)/.test(s);
+}
+
+/** A Vitest config file of the root's own (vitest.config.* / vitest.workspace.*) — with a Jest marker, a mixed project. */
+function hasOwnVitestConfig(root: string): boolean {
+  return ['ts', 'mts', 'cts', 'js', 'mjs', 'cjs'].some((e) => fs.existsSync(path.join(root, `vitest.config.${e}`)))
+    || ['ts', 'mts', 'cts', 'js', 'mjs', 'cjs', 'json'].some((e) => fs.existsSync(path.join(root, `vitest.workspace.${e}`)));
 }

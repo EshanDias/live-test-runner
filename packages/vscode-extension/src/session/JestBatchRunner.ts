@@ -25,13 +25,15 @@ import { combineWithEntry } from '../coverage/coverageRules';
 import { CoverageScope, coverageScopeOf } from '../coverage/coverageScope';
 import { logger } from '../utils/logger';
 import { IProjectConfig } from './IProjectConfig';
-import { sourceTransformPattern, upperDrive } from './JestProjectConfig';
+import { ownFilesPattern, sourceTransformPattern, upperDrive } from './JestProjectConfig';
 import { COMPILED_EXTENSIONS, NON_SOURCE_EXTENSIONS, SCRIPT_EXTENSIONS } from './sourceFiles';
 import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
 import { applyTraceRecords, normPath } from './traceRecords';
 
 const log = logger.scope('Runner');
 const covLog = logger.scope('Coverage');
+
+const OWN_FILES_PATTERN = ownFilesPattern();
 
 const SESSION_TRANSFORM_PATH = path.resolve(
   __dirname,
@@ -344,6 +346,13 @@ function _overlay(cfg) {
       ...baseTransformObj,
       ...fallbackTransform,
     },
+    // Our own files (setup, runtime) are never the project's to transform:
+    // its Babel config could add imports (@babel/runtime helpers) that cannot
+    // be resolved from the extension's folder.
+    transformIgnorePatterns: [
+      ...(c.transformIgnorePatterns || ['/node_modules/', '\\\\.pnp\\\\.[^\\\\/]+$']),
+      ${JSON.stringify(OWN_FILES_PATTERN)},
+    ],
     // Ours first: its beforeEach opens the per-test trace context before the
     // project's own hooks run, so their hits count for the test.
     setupFilesAfterEnv: [

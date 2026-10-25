@@ -217,7 +217,7 @@ All settings under `liveTestRunner.*`.
 
 <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — the test tree fills in, results and gutter icons appear, ▶ Run on one test -->
 
-**Any UI framework** — React, Preact, Solid, Lit, Angular, Qwik (plain JS / TS) and Vue, Svelte, Astro, Marko components: if Jest or Vitest runs your tests, every feature works, including on-save reruns, coverage and covering tests for components. Jest's ESM mode (`NODE_OPTIONS=--experimental-vm-modules` in your test script, or `node-options` in `.npmrc`) is picked up automatically.
+**Any UI framework** — React, Preact, Solid, Lit, Angular, Qwik (plain JS / TS) and Vue, Svelte, Astro, Marko components: if Jest or Vitest runs your tests, every feature works, including on-save reruns, coverage and covering tests for components. Saving any file your tests load — an Angular template, an HTML file imported with `?raw` — reruns the tests that use it. Jest's ESM mode (`NODE_OPTIONS=--experimental-vm-modules` in your test script, or `node-options` in `.npmrc`) is picked up automatically.
 
 Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projects that list Vitest but configure only Jest run on Jest; with a `vitest.config.*` of their own they run each file with its framework (see [Jest and Vitest in one project](#jest-and-vitest-in-one-project)).
 

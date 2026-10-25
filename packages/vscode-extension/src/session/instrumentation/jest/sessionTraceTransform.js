@@ -110,6 +110,8 @@ function loadBabel(rootDir) {
 // For these we must transpile first (TS→JS), then instrument the resulting JS.
 const STRICT_TRANSFORMER_PATTERNS = [
   /\bts-jest\b/,
+  /\bjest-preset-angular\b/,
+  /@angular-builders[\\/]jest\b/,
   /@swc\/jest\b/,
   /\bbabel-plugin-jest-hoist\b/,
   /\besbuild-jest\b/,
@@ -206,7 +208,7 @@ async function invokeTransformerAsync(moduleName, sourceCode, sourcePath, option
  * transform matches or it fails. `async`: Jest's ESM mode (processAsync) —
  * returns a promise.
  */
-function projectTransform(sourceCode, sourcePath, options, async = false) {
+function projectTransform(sourceCode, sourcePath, options, async = false, quiet = false) {
   if (!options || !options.config) { return null; }
   let transforms = options.config.transform;
   if (!Array.isArray(transforms)) {
@@ -215,7 +217,7 @@ function projectTransform(sourceCode, sourcePath, options, async = false) {
   const entry = findMatchingTransform(transforms, sourcePath);
   if (!entry) { return async ? Promise.resolve(null) : null; }
   const failed = (e) => {
-    _ltrLog('warn', `project transformer "${entry[1]}" failed on ${sourcePath}: ${e.message}`);
+    _ltrLog(quiet ? 'debug' : 'warn', `project transformer "${entry[1]}" failed on ${sourcePath}: ${e.message}`);
     return null;
   };
   if (async) {
@@ -680,10 +682,14 @@ function instrumentAST(code, sourcePath, lookup, extra) {
   const t = _t;
   let ast;
   try {
+    // TypeScript source (.ts / .mts / .cts) is not JSX: with the jsx plugin a
+    // generic arrow `<T>(x: T) => …` reads as a tag and the file fails to parse.
+    // Compiled output (`lookup`: a transformer's JS) may be either.
+    const tsOnly = !lookup && /\.[cm]?ts$/i.test(sourcePath);
     ast = _parser.parse(code, {
       sourceType: 'module',
       allowReturnOutsideFunction: true,
-      plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator'],
+      plugins: [...(tsOnly ? [] : ['jsx']), 'typescript', 'decorators-legacy', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator'],
     });
   } catch (e) {
     _ltrLog('debug', `parse failed for ${sourcePath}: ${e.message}`);
@@ -1162,6 +1168,40 @@ function safeInstrument(code, sourcePath, lookup, extra) {
   }
 }
 
+/** Transformers seen rejecting instrumented code (they type-check): compiled first from then on. */
+const _rejectsInstrumented = new Set();
+
+/** Removes the coverage manifest written for a version of a file that will not run. */
+function dropManifest(sourcePath, code) {
+  const dir = process.env.LTR_MANIFEST_DIR;
+  if (!dir) { return; }
+  try { fs.unlinkSync(path.join(dir, `${_fileHash(sourcePath, code)}.json`)); } catch (_) { /* none */ }
+}
+
+/** An inline source map at the end of compiled code (ts-jest writes one), or null. */
+function inlineSourceMap(code) {
+  const m = /\/\/[#@] sourceMappingURL=data:application\/json;(?:charset=[\w-]+;)?base64,([A-Za-z0-9+/=]+)\s*$/.exec(code);
+  if (!m) { return null; }
+  try { return JSON.parse(Buffer.from(m[1], 'base64').toString('utf8')); } catch (_) { return null; }
+}
+
+/**
+ * The project's transformer first, then instrumentation of its JS output —
+ * with locations moved back to the source through the transformer's map
+ * (returned, or inline at the end of the code), so recorded lines are the
+ * file's own.
+ */
+function compileThenInstrument(sourceCode, sourcePath, options) {
+  const compiled = projectTransform(sourceCode, sourcePath, options) || { code: chainTransform(sourceCode, sourcePath, options) };
+  const map = compiled.map || inlineSourceMap(compiled.code);
+  const lookup = map ? sourceMapLookup(map, sourcePath) : null;
+  const instrumented = safeInstrument(compiled.code, sourcePath, lookup || undefined);
+  if (instrumented) { return { code: withRuntime(instrumented, options) }; }
+  // Instrumentation failed — return at least transpiled code so tests can run
+  _ltrLog('warn', `could not instrument ${sourcePath} — it runs without coverage/trace (set log level to Debug for the parse error)`);
+  return { code: compiled.code, map: compiled.map };
+}
+
 /**
  * Instrumented code + loading the trace runtime first. Jest's ESM mode
  * (`supportsStaticESM`: the file is evaluated as an ES module, where there
@@ -1242,28 +1282,28 @@ module.exports = {
       transforms = Object.entries(transforms).map(([p, v]) => Array.isArray(v) ? [p, ...v] : [p, v]);
     }
     const matchingEntry = findMatchingTransform(transforms, sourcePath);
-    const strict = matchingEntry ? isStrictTransformer(matchingEntry[1]) : false;
+    const strict = matchingEntry ? (isStrictTransformer(matchingEntry[1]) || _rejectsInstrumented.has(matchingEntry[1])) : false;
 
     if (rootDir && loadBabel(rootDir)) {
-      if (strict) {
-        // Transpile first with the project's own transformer, then instrument the JS output.
-        const transpiledCode = chainTransform(sourceCode, sourcePath, options);
-        const instrumented = safeInstrument(transpiledCode, sourcePath);
-        if (instrumented) {
-          const finalCode = withRuntime(instrumented, options);
-          return { code: finalCode };
-        }
-        // Instrumentation failed — return at least transpiled code so tests can run
-        _ltrLog('warn', `could not instrument ${sourcePath} — it runs without coverage/trace (set log level to Debug for the parse error)`);
-        return { code: transpiledCode };
-      }
+      // Strict: transpile first with the project's own transformer, then instrument the JS output.
+      if (strict) { return compileThenInstrument(sourceCode, sourcePath, options); }
 
       // Lenient path: instrument first, then transpile (original behaviour)
       const instrumented = safeInstrument(sourceCode, sourcePath);
       if (instrumented) {
+        if (matchingEntry) {
+          const viaProject = projectTransform(instrumented, sourcePath, options, false, true);
+          if (viaProject) { return { code: withRuntime(viaProject.code, options) }; }
+          // A transformer that type-checks (jest-preset-angular, built on ts-jest)
+          // rejects the inserted calls: compile first, instrument its output —
+          // from now on for every file it handles (in this worker).
+          _rejectsInstrumented.add(matchingEntry[1]);
+          dropManifest(sourcePath, sourceCode);
+          _ltrLog('debug', `${path.basename(String(matchingEntry[1]))} rejected the instrumented ${sourcePath} — compiling first from now on`);
+          return compileThenInstrument(sourceCode, sourcePath, options);
+        }
         const transpiledCode = chainTransform(instrumented, sourcePath, options);
-        const finalCode = withRuntime(transpiledCode, options);
-        return { code: finalCode };
+        return { code: withRuntime(transpiledCode, options) };
       }
     }
 

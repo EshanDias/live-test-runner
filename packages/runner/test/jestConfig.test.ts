@@ -160,6 +160,8 @@ describe('jestEsmHint', () => {
     expect(h?.kind).toBe('node-modules');
     expect(h?.text).toMatch(/transformIgnorePatterns/);
     expect(h?.text).toMatch(/ESM mode/);
+    // Jest's "Details:" spell it relative to the root.
+    expect(jestEsmHint("Details:\n\n    node_modules/element-plus/es/index.mjs:1\n    export * from './a.mjs'\n    SyntaxError: Unexpected token 'export'", dir, home)?.kind).toBe('node-modules');
   });
 
   it('nothing for other errors, or for an ES module error once ESM mode is on', () => {

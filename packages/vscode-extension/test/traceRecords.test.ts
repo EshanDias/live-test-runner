@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ExecutionTraceStore } from '../src/store/ExecutionTraceStore';
-import { applyTraceRecords, readTraceLines, workerTraceFiles } from '../src/session/traceRecords';
+import { applyDependencyFiles, applyTraceRecords, readTraceLines, workerTraceFiles } from '../src/session/traceRecords';
 
 /** Trace records (T / H / F, docs/architecture.md → Session instrumentation protocol) → ExecutionTraceStore, shared by Jest and Vitest. */
 
@@ -62,4 +62,39 @@ it('reads every worker\'s trace file of a batch', () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+describe('module graph (Vitest): any file a test loads', () => {
+  const p = (f: string) => path.resolve('/p/src', f);
+
+  it('test files that reach a file through its importers — HTML templates, ?raw files, any type', () => {
+    const store = new ExecutionTraceStore();
+    store.addImporters(p('card.html'), [p('card.ts')]);       // a plugin read it (addWatchFile)
+    store.addImporters(p('card.ts'), [p('card.test.ts'), p('page.ts')]);
+    store.addImporters(p('page.ts'), [p('page.test.ts'), p('card.ts')]); // a cycle
+    store.addImporters(p('banner.html'), [p('banner.test.ts')]); // ?raw import
+    const isTest = (f: string) => /\.test\.ts$/.test(f);
+    expect(store.isLoaded(p('card.html'))).toBe(true);
+    expect(store.isLoaded(p('README.md'))).toBe(false);
+    expect(store.getDependentTestFiles(p('card.html'), isTest).sort()).toEqual([p('card.test.ts'), p('page.test.ts')]);
+    expect(store.getDependentTestFiles(p('banner.html'), isTest)).toEqual([p('banner.test.ts')]);
+    expect(store.getDependentTestFiles(p('nothing.ts'), isTest)).toEqual([]);
+    store.clearAll();
+    expect(store.isLoaded(p('card.html'))).toBe(false);
+  });
+
+  it('reads the files the plugin wrote, merging batches', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-deps-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'a.json'), JSON.stringify({ importers: { [p('card.html')]: [p('card.ts')] } }));
+      fs.writeFileSync(path.join(dir, 'b.json'), JSON.stringify({ importers: { [p('card.html')]: [p('other.ts')], [p('x.ts')]: [] } }));
+      fs.writeFileSync(path.join(dir, 'c.json'), 'not json');
+      const store = new ExecutionTraceStore();
+      expect(applyDependencyFiles(['a.json', 'b.json', 'c.json', 'missing.json'].map((f) => path.join(dir, f)), store)).toBe(3);
+      const key = (f: string) => f.replace(/^[A-Z]:/, (m) => m.toLowerCase());
+      expect(store.getDependentTestFiles(key(p('card.html')), () => true).sort()).toEqual([key(p('card.ts')), key(p('other.ts'))].sort());
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

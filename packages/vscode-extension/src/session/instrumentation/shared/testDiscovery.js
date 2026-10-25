@@ -486,6 +486,33 @@ function _analyseDescribeBody(bodyStatements, fileScopeVars) {
  *   rootTests: Array<{ name: string; line: number; fullName: string }>;
  * } | null}
  */
+
+/**
+ * parser.parse, leaving out plugins this parser rejects: Babel 8 removed
+ * some proposals (`decimal`, `recordAndTuple`, …) and options
+ * (`pipelineOperator` "minimal") — the rest of the list still applies
+ * (decorators, TypeScript, …) instead of the minimal fallback set.
+ */
+function parseDroppingRemoved(parser, code, options) {
+  let plugins = options.plugins;
+  for (let i = 0; i < 12; i++) {
+    try {
+      return parser.parse(code, { ...options, plugins });
+    } catch (e) {
+      // The error names the plugin it rejects: "The 'decimal' plugin has been
+      // removed…", "\"pipelineOperator\" requires \"proposal\" option…".
+      const msg = (e && e.message) || '';
+      const name = plugins.map((p) => (Array.isArray(p) ? p[0] : p))
+        .find((n) => [`'${n}'`, `"${n}"`, `\`${n}\``].some((q) => msg.includes(q)));
+      if (!name) { throw e; }
+      const next = plugins.filter((p) => (Array.isArray(p) ? p[0] : p) !== name);
+      if (next.length === plugins.length) { throw e; }
+      plugins = next;
+    }
+  }
+  return parser.parse(code, { ...options, plugins });
+}
+
 function discoverTests(sourceCode, sourcePath, rootDir) {
   if (!loadBabel(rootDir)) { return null; }
 
@@ -496,7 +523,7 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
 
   let ast;
   try {
-    ast = _parser.parse(sourceCode, {
+    ast = parseDroppingRemoved(_parser, sourceCode, {
       sourceType: 'module',
       allowReturnOutsideFunction: true,
       errorRecovery: true,
@@ -562,7 +589,8 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
         sourceType: 'module',
         allowReturnOutsideFunction: true,
         errorRecovery: true,
-        plugins: withoutJsx(['jsx', 'typescript', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator']),
+        // decorators-legacy: Angular / NestJS / TypeORM test files use decorators (@Component …).
+        plugins: withoutJsx(['jsx', 'typescript', 'decorators-legacy', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator']),
       });
     } catch (_e2) {
       _log.warn(`Could not parse ${sourcePath} — its tests will not appear until it parses: ${_e2 && (_e2.message || _e2)}`);
@@ -686,4 +714,4 @@ function discoverTests(sourceCode, sourcePath, rootDir) {
   };
 }
 
-module.exports = { discoverTests, setLogger };
+module.exports = { discoverTests, setLogger, _parseDroppingRemoved: parseDroppingRemoved };
