@@ -55,9 +55,7 @@ interface RunHandle {
   token: number;
 }
 
-import { nameToPattern } from '../utils/testNames';
 import { extensionOf, isSourceFile, NON_SOURCE_EXTENSIONS } from './sourceFiles';
-export { nameToPattern };
 
 /**
  * SessionManager — owns the test session lifecycle and all run execution.
@@ -354,7 +352,7 @@ export class SessionManager {
         ok = await this._adapterFor(args.fileId).runTestCase(
           this._store,
           args.fileId,
-          nameToPattern(args.fullName),
+          [args.fullName],
           projectRoot,
           (msg) => this._outputChannel.appendLine(msg),
           { nodeId: args.nodeId },
@@ -923,7 +921,6 @@ export class SessionManager {
             }
 
             const names = run.names;
-            const pattern = names.map(nameToPattern).join('|');
 
             const opts =
               run.kind === 'node' ? { nodeId: run.nodeId } :
@@ -934,13 +931,13 @@ export class SessionManager {
               ok = await this._adapterFor(run.filePath).runTestCase(
                 this._store,
                 run.filePath,
-                pattern,
+                names,
                 projectRoot,
                 rawLog,
                 opts,
               );
             } catch (err) {
-              log.error(`Could not run ${names.length} test(s) in ${path.basename(run.filePath)} (pattern ${pattern})`, err);
+              log.error(`Could not run ${names.length} test(s) in ${path.basename(run.filePath)} `, err);
             }
             if (token !== this._token) { break; }
             // No result: put the spinning tests back to pending (BUG-23).

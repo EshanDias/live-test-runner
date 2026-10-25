@@ -42,6 +42,13 @@ export interface ExecutorCommand {
   label?: string;
   /** Also send stdout to the raw-output sink (still captured). Default false. */
   forwardStdout?: boolean;
+  /**
+   * Add the JS test environment (`NODE_ENV=test`, `BABEL_ENV=test`, `CI=true`).
+   * Default true. Non-JS runners (pytest) turn it off: `CI` changes how
+   * Python tools behave (pytest prints full diffs, some suites skip tests),
+   * and a run must behave like the user's own terminal run.
+   */
+  jsEnv?: boolean;
 }
 
 /**
@@ -134,7 +141,7 @@ export class Executor {
 
     this.kill();
 
-    const result = await this.spawn(inv, command.cwd, command.extraEnv, command.forwardStdout ?? false, command.timeoutMs, command.label);
+    const result = await this.spawn(inv, command.cwd, command.extraEnv, command.forwardStdout ?? false, command.timeoutMs, command.label, command.jsEnv ?? true);
 
     // Prefer the output file; fall back to captured stdout for CRA edge cases.
     let jsonOutput: string;
@@ -216,7 +223,7 @@ export class Executor {
     try {
       // Stdout is forwarded here: test console output written directly by the
       // test (or by a verbose reporter) would otherwise be invisible.
-      return await this.spawn(inv, command.cwd, command.extraEnv, true, 0, command.label);
+      return await this.spawn(inv, command.cwd, command.extraEnv, true, 0, command.label, command.jsEnv ?? true);
     } finally {
       clearInterval(interval);
       pollReporter();
@@ -243,7 +250,7 @@ export class Executor {
     const inv = this.buildInvocation(command.binary, command.args);
     this.kill();
 
-    return this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs, command.label);
+    return this.spawn(inv, command.cwd, command.extraEnv, false, command.timeoutMs, command.label, command.jsEnv ?? true);
   }
 
   /** Ends the running Jest process and everything it started (workers, shells). */
@@ -285,6 +292,7 @@ export class Executor {
     forwardStdout = false,
     timeoutMs = 0,
     label = 'jest',
+    jsEnv = true,
   ): Promise<ExecutionResult> {
     return new Promise((resolve) => {
       const tag = `${label}#${++Executor._seq}`;
@@ -297,9 +305,7 @@ export class Executor {
 
       const env = {
         ...process.env,
-        NODE_ENV: 'test',
-        BABEL_ENV: 'test',
-        CI: 'true',
+        ...(jsEnv ? { NODE_ENV: 'test', BABEL_ENV: 'test', CI: 'true' } : {}),
         ...inv.env,
         ...extraEnv,
       };
@@ -369,9 +375,11 @@ export class Executor {
 
       child.on('error', (err) => {
         if (resolved) return;
-        const hint = (err as NodeJS.ErrnoException).code === 'ENOENT'
-          ? ` — the ${label === 'jest' ? 'Jest' : label} binary was not found. Run npm install, or set liveTestRunner.${label}Command.`
-          : '';
+        const enoent = (err as NodeJS.ErrnoException).code === 'ENOENT';
+        const hint = !enoent ? ''
+          : label === 'pytest'
+            ? ` — the Python interpreter was not found. Run "Live Test Runner: Select Python Interpreter", or set liveTestRunner.pythonPath.`
+            : ` — the ${label === 'jest' ? 'Jest' : label} binary was not found. Run npm install, or set liveTestRunner.${label}Command.`;
         log.error(`${tag} could not start "${binary}" (cwd ${cwd})${hint}`, err);
         resolved = true;
         if (timer) { clearTimeout(timer); }

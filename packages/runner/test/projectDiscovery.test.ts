@@ -8,7 +8,11 @@ import {
   workspaceGlobs,
   hasOwnTestConfig,
   testFrameworkOf,
+  pyprojectName,
 } from '../src/framework/projectDiscovery';
+import { FrameworkRegistry } from '../src/framework/FrameworkRegistry';
+import { JestAdapter } from '../src/framework/adapters/JestAdapter';
+import { FrameworkAdapter } from '../src/framework/adapters/FrameworkAdapter';
 
 /** Writes `files` (path → content; objects are JSON) under a new temp folder. */
 function tree(files: Record<string, string | object>): string {
@@ -124,5 +128,27 @@ describe('project discovery', () => {
     expect(testFrameworkOf(make({ 'package.json': { scripts: { test: 'vitest run' } } }))).toBe('vitest');
     expect(testFrameworkOf(make({ 'package.json': { scripts: { test: 'react-scripts test' } } }))).toBe('cra');
     expect(testFrameworkOf(make({ 'package.json': { scripts: { test: 'tsc' } } }))).toBeUndefined();
+  });
+
+  it('names a Python project after pyproject.toml ([project] or [tool.poetry]), else its folder', () => {
+    expect(pyprojectName(make({ 'pyproject.toml': '[build-system]\nrequires = ["x"]\n\n[project]\nname = "cart-lib"\n' }))).toBe('cart-lib');
+    expect(pyprojectName(make({ 'pyproject.toml': "[tool.poetry]\nname = 'poetry-app'\n" }))).toBe('poetry-app');
+    expect(pyprojectName(make({ 'pyproject.toml': '[tool.ruff]\nname = "not-this"\n' }))).toBeUndefined();
+    expect(pyprojectName(make({}))).toBeUndefined();
+  });
+
+  it('keeps a project of another language family that lies inside a project folder', () => {
+    // A fake Python adapter: claims folders with a pytest.ini.
+    const python = {
+      framework: 'pyfake', family: 'python',
+      detect: (root: string) => fs.existsSync(path.join(root, 'pytest.ini')),
+    } as unknown as FrameworkAdapter;
+    const registry = new FrameworkRegistry().register(new JestAdapter(), 100).register(python, 50);
+    const root = make({ 'package.json': { name: 'web', devDependencies: { jest: '30' } }, 'backend/pytest.ini': '[pytest]\n' });
+    const projects = findTestProjects([root, path.join(root, 'backend')], registry);
+    expect(projects.map((p) => [path.relative(root, p.root) || '.', p.framework])).toEqual([['.', 'jest'], ['backend', 'pyfake']]);
+    // Same family inside → still dropped (the outer one runs it).
+    const js = make({ 'package.json': { devDependencies: { jest: '30' } }, 'pkg/package.json': { devDependencies: { jest: '30' } } });
+    expect(findTestProjects([js, path.join(js, 'pkg')], registry).map((p) => p.root)).toEqual([js]);
   });
 });
