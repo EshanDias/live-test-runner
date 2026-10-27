@@ -21,7 +21,9 @@ const log = createLogger('VitestRunner');
  * A test name pattern, built from the space-joined full name the json
  * reporter gives (`Outer Inner adds`), made to match the name Vitest tests
  * `-t` against: `Outer > Inner > adds` in Vitest 5, `Outer Inner adds` in
- * older versions. Every literal space becomes `(?: > | )`.
+ * older versions. Every literal space becomes `(?: > | )`. Vitest 1 counts
+ * the file as an unnamed parent, so its names start with a space
+ * (` Outer Inner adds`): one leading space is allowed.
  *
  * The input is a regex whose literal parts are escaped (spaces are never
  * escaped), as the extension's `nameToPattern` builds it.
@@ -29,7 +31,7 @@ const log = createLogger('VitestRunner');
 export function toVitestNamePattern(testFullName: string, isTestSuite: boolean): string {
   const p = testFullName.replace(/ /g, '(?: > | )');
   // A suite matches the tests under it: its name followed by a separator.
-  return isTestSuite ? `^(?:${p})(?: > | |$)` : `^(?:${p})$`;
+  return isTestSuite ? `^ ?(?:${p})(?: > | |$)` : `^ ?(?:${p})$`;
 }
 
 /**

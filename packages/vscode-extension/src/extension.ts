@@ -382,6 +382,26 @@ export function activate(context: vscode.ExtensionContext) {
     return ctx.session.start();
   }
 
+  /**
+   * Stops the project's session and forgets everything it knew: results,
+   * traces and the discovery cache. The views are resynced to the empty store
+   * (the next discovery / Start refills them).
+   */
+  async function stopAndClear(ctx: ProjectContext): Promise<void> {
+    ctx.session.stop(decorationManager);
+    ctx.store.clearAll();
+    ctx.cleanTraceDir();
+    if (ctx.discoveryCache) {
+      ctx.discoveryCache.releaseLock();
+      ctx.discoveryCache.clear();
+      ctx.discoveryCache.writeLock();
+    }
+    // Yield so session-stopped is processed by the webview before we send init
+    await new Promise<void>((r) => setTimeout(r, 0));
+    resultsView.syncNow();
+    explorerView.syncNow();
+  }
+
   /** A project by id (root) or name for command arguments; else the selected one. */
   const byArg = (id: unknown): ProjectContext | undefined =>
     typeof id === 'string' && id ? projects.contexts.find((c) => c.id === id || c.name === id) : sel();
@@ -406,34 +426,17 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.stopAndClearCache',  async () => {
       const ctx = sel();
       if (!ctx) { return; }
-      ctx.session.stop(decorationManager);
-      ctx.store.clearAll();
-      ctx.cleanTraceDir();
-      // Yield so session-stopped is processed by the webview before we send init
-      await new Promise<void>((r) => setTimeout(r, 0));
-      resultsView.syncNow();
-      explorerView.syncNow();
-      if (ctx.discoveryCache) {
-        ctx.discoveryCache.releaseLock();
-        ctx.discoveryCache.clear();
-        ctx.discoveryCache.writeLock();
-        log.info('Session stopped and discovery cache cleared');
-      }
+      await stopAndClear(ctx);
+      log.info('Session stopped and discovery cache cleared');
     }),
     vscode.commands.registerCommand('liveTestRunner.clearCacheAndRestart', async () => {
       const ctx = sel();
       if (!ctx) { return; }
-      ctx.session.stop(decorationManager);
-      if (ctx.discoveryCache) {
-        ctx.discoveryCache.releaseLock();
-        ctx.discoveryCache.clear();
-        ctx.discoveryCache.writeLock();
-        ctx.store.clearAll();
-        ctx.cleanTraceDir();
-        log.info('Discovery cache cleared — rediscovering tests');
-        ctx.startDiscovery();
-        vscode.window.showInformationMessage('Live Test Runner: Cache cleared. Click Start Testing to run.');
-      }
+      await stopAndClear(ctx);
+      log.info('Discovery cache cleared — rediscovering tests and restarting');
+      // Start waits for the fresh discovery, then runs everything.
+      ctx.startDiscovery();
+      return startProject(ctx);
     }),
     vscode.commands.registerCommand('liveTestRunner.selectProjectRoot',  () => selectProjectRoot(projects)),
     vscode.commands.registerCommand('liveTestRunner.selectProject',      async (projectId?: unknown) => {

@@ -19,6 +19,8 @@ All notable changes to Live Test Runner are documented here.
 - Jest projects whose Babel config uses `@babel/runtime` failed every test file; Angular projects with jest-preset-angular ran untranspiled TypeScript; files with TypeScript generics had no coverage; Angular spec files with decorators were missing from the tree with Babel 8. All fixed.
 - A project whose test script runs Vitest but that also has a `jest.config` file now runs on Vitest, like `npm test`.
 - Vitest 3.0 and 3.1 projects failed to start with recent Vite versions ("Failed to load custom Reporter"). They run again.
+- Vitest: running a single test or suite failed with "invalid JSON" in projects whose Vitest config sets `outputFile` (e.g. for a junit report), and matched nothing on Vitest 1. Both work now, and the extension no longer writes into your project's report file.
+- **Clear Cache and Restart Testing** now restarts testing, and the test list and counts refresh right away.
 - Jest projects whose `testMatch` / `testRegex` names files the default patterns miss (e.g. `*.jest.js`) ran those files one by one in a slower fallback, without coverage. They now run in the normal batches.
 
 ## [3.0.0] - 2026-10-22
