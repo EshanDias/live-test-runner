@@ -211,11 +211,10 @@ export class PythonInterpreters {
     const items: Item[] = [];
     const current = (await this.peek(projectRoot))?.info.python;
     for (const c of candidates) {
-      let detail = '';
       try {
         const info = await probePython(c.python, projectRoot);
         const bad = unsupportedReason(info);
-        detail = bad ? `⚠ ${bad}` : describePython(info);
+        const detail = bad ? `⚠ ${bad}` : describePython(info);
         items.push({ label: `${c.python === current ? '$(check) ' : ''}${info.executable}`, description: c.source, detail, python: info.executable });
       } catch {
         /* not runnable — not offered */

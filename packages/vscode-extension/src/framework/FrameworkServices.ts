@@ -96,6 +96,12 @@ export interface FrameworkServices {
    */
   settingsFingerprint(): string;
   /**
+   * Root-level file names that can be the framework's config although they
+   * are not source files (pytest: `pyproject.toml`, `pytest.ini`, …): their
+   * saves get past the source filter to {@link isConfigFile}.
+   */
+  readonly configFileNames?: readonly string[];
+  /**
    * True for the framework's own config file (saving it restarts the
    * session: config, runnable files and every result are re-read).
    */

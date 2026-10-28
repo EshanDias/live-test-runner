@@ -67,6 +67,7 @@ export function createPytestServices(options: {
       // The plugin's version too: a newer plugin may list files differently.
       return `pytest|${PLUGIN_HASH}|${cfg.get<string>('pythonPath') ?? ''}|${JSON.stringify(cfg.get('pytestArgs') ?? [])}`;
     },
+    configFileNames: [...PYTEST_CONFIG_FILES, 'conftest.py'],
     // A pytest config file or a conftest.py in the root changes what is collected and how.
     isConfigFile: async (filePath, projectRoot) => {
       if (path.dirname(filePath) !== projectRoot) { return false; }

@@ -447,7 +447,7 @@ export class SessionManager {
       !root || document.uri.scheme !== 'file' ||
       rel.startsWith('..') || path.isAbsolute(rel) ||
       /(^|[\\/])node_modules[\\/]/.test(rel) ||
-      !this._isProjectSource(filePath)
+      (!this._isProjectSource(filePath) && !this._mayBeConfigFile(filePath, root))
     ) {
       return;
     }
@@ -1302,6 +1302,13 @@ export class SessionManager {
     if (this._traceStore.isLoaded(filePath)) { return true; }
     if (NON_SOURCE_EXTENSIONS.has(extensionOf(filePath))) { return false; }
     return this._traceStore.getAffectedTestFiles(filePath).length > 0;
+  }
+
+  /** A root-level file a framework names as a possible config (pytest's pyproject.toml, …) — checked by isConfigFile after the debounce. */
+  private _mayBeConfigFile(filePath: string, root: string): boolean {
+    if (path.dirname(filePath) !== root) { return false; }
+    const name = path.basename(filePath);
+    return this._services.all().some((s) => s.configFileNames?.includes(name));
   }
 
   /** The frameworks' module extensions beyond the list (see {@link _isProjectSource}). */
