@@ -260,3 +260,34 @@ def test_missing_coverage_package_is_reported_not_fatal(pytester, run, tmp_path)
     assert result["passed"] is True
     off = [e for e in events if e["ev"] == "coverage-off"]
     assert off and "not installed" in off[0]["reason"]
+
+
+def test_each_test_gets_its_own_coverage_context(pytester, run, tmp_path):
+    pytester.makepyfile(
+        price="def tax(x):\n    return x * 2\n\ndef label(x):\n    return '#' + x\n",
+        test_ctx="""
+            import price
+
+            class TestP:
+                def test_tax(self):
+                    assert price.tax(2) == 4
+
+            def test_label():
+                assert price.label('a') == '#a'
+
+            def test_nothing():
+                assert True
+        """,
+    )
+    cov_dir = tmp_path / "cov3"
+    run(env={"LTR_PYTEST_COVERAGE": str(cov_dir)})
+    records = [json.loads(l) for l in (cov_dir / "trace.jsonl").read_text().splitlines()]
+    tests = {r["tn"]: r for r in records if r["type"] == "T"}
+    src = lambda r: {os.path.basename(f): ls for f, ls in r["fh"].items()}
+    assert src(tests["TestP test_tax"])["price.py"] == [2]
+    assert src(tests["test_label"])["price.py"] == [5]
+    assert "price.py" not in src(tests.get("test_nothing", {"fh": {}}))
+    assert all(r["tf"].endswith("test_ctx.py") for r in tests.values())
+    # Lines run at import (the defs) are outside every test: coverage only.
+    outside = [r for r in records if r["type"] == "H"]
+    assert outside and outside[0]["hk"] == "file" and {1, 4} <= set(src(outside[0])["price.py"])

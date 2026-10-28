@@ -15,7 +15,10 @@
  *
  * Coverage: the plugin measures with the project's coverage.py and settings
  * into a per-batch folder of the session dir, written istanbul-shaped, and
- * mapped into the CoverageStore when the batch ends. Without the `coverage`
+ * mapped into the CoverageStore when the batch ends. Each test runs in its
+ * own coverage context; those become trace records (the same as Jest's and
+ * Vitest's) in the ExecutionTraceStore: covering tests in the hover, and a
+ * saved source file reruns exactly the tests that ran it (by node id). Without the `coverage`
  * package the tests still run; one INFO line per project says why there is
  * no coverage.
  */
@@ -28,15 +31,18 @@ import {
   PytestRunner,
   fromRunnerPath,
   pytestExitReason,
+  pytestSettings,
   tail,
 } from '@live-test-runner/runner';
-import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
+import { BatchRunOptions, IBatchRunner, RelatedRunOptions } from './IBatchRunner';
+import { PythonImportGraph, pythonImportRoots } from './pythonImports';
 import { runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { applyIstanbulCoverage } from '../coverage/istanbulCoverage';
 import { coverageScopeOf } from '../coverage/coverageScope';
 import { IProjectConfig } from './IProjectConfig';
 import { pythonInterpreters } from '../python/PythonInterpreters';
+import { applyTraceRecords, readTraceLines } from './traceRecords';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('pytest');
@@ -87,16 +93,51 @@ export class PytestBatchRunner implements IBatchRunner {
 
   async runFiles(options: BatchRunOptions): Promise<{ missing: string[] }> {
     if (options.filePaths.length === 0 || this._killed) { return { missing: [] }; }
-    try {
-      await pythonInterpreters().ensure(options.projectRoot);
-    } catch (err) {
-      // Said once (notification + WARN); the files get no result.
-      log.debug(`No usable Python for ${options.projectRoot}: ${(err as Error).message}`);
-      return { missing: [] };
-    }
-    if (this._killed) { return { missing: [] }; }
+    // No usable Python: said once (notification + WARN); the files get no result.
+    if (!(await this._ready(options.projectRoot))) { return { missing: [] }; }
     const r = await this._run(options);
     return { missing: r.missing };
+  }
+
+  /** Import graphs per project root (files re-read when they change). */
+  private readonly _graphs = new Map<string, PythonImportGraph>();
+
+  /**
+   * The tests of a saved source file when covering tests do not know it yet
+   * (before its first coverage run, or no coverage package): every test file
+   * that imports it, directly or through project modules, runs whole — in one
+   * batch, with coverage, so the covering tests are known from then on.
+   */
+  async runRelated(options: RelatedRunOptions): Promise<{ ran: string[]; missing: string[] }> {
+    if (options.sourceFiles.length === 0 || this._killed) { return { ran: [], missing: [] }; }
+    const { projectRoot } = options;
+    let graph = this._graphs.get(projectRoot);
+    if (!graph) {
+      graph = new PythonImportGraph(pythonImportRoots(projectRoot, pytestSettings(projectRoot).pythonpath));
+      this._graphs.set(projectRoot, graph);
+    }
+    const tests = options.store.getAllFiles().filter((f) => !f.excluded).map((f) => f.filePath);
+    const dependents = new Set<string>();
+    for (const src of options.sourceFiles) {
+      for (const t of graph.dependents(src, tests)) { dependents.add(t); }
+    }
+    if (dependents.size === 0) {
+      log.debug(`No test file imports ${options.sourceFiles.map((f) => path.basename(f)).join(', ')}`);
+      return { ran: [], missing: [] };
+    }
+    log.debug(`Import graph: ${dependents.size} test file(s) import ${options.sourceFiles.map((f) => path.basename(f)).join(', ')}`);
+    if (!(await this._ready(projectRoot))) { return { ran: [], missing: [] }; }
+    return this._run({ ...options, filePaths: [...dependents] });
+  }
+
+  private async _ready(projectRoot: string): Promise<boolean> {
+    try {
+      await pythonInterpreters().ensure(projectRoot);
+      return !this._killed;
+    } catch (err) {
+      log.debug(`No usable Python for ${projectRoot}: ${(err as Error).message}`);
+      return false;
+    }
   }
 
   private async _run(options: BatchRunOptions): Promise<{ ran: string[]; missing: string[] }> {
@@ -237,6 +278,16 @@ export class PytestBatchRunner implements IBatchRunner {
     }
 
     if (live.coverageFile && this._coverage && generation === this._generation) {
+      // Covering tests first (the coverage folder is removed with the coverage).
+      const traceFile = path.join(path.dirname(live.coverageFile), 'trace.jsonl');
+      if (fs.existsSync(traceFile)) {
+        try {
+          const summary = applyTraceRecords(readTraceLines([traceFile]), options.traceStore, toKey);
+          log.debug(`${batch}: covering tests — ${summary.tests} test(s) across ${summary.files} file(s)`);
+        } catch (err) {
+          log.warn(`${batch}: could not read the covering tests`, err);
+        }
+      }
       await this._applyCoverage(live.coverageFile, projectRoot, batch);
     } else if (coverageDir) {
       try { fs.rmSync(coverageDir, { recursive: true, force: true }); } catch { /* gone */ }

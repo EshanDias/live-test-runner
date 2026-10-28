@@ -96,6 +96,8 @@ export interface PytestSettings {
   /** `python_functions` (prefixes or globs). */
   pythonFunctions: string[];
   testpaths: string[];
+  /** pytest's `pythonpath` option (folders put on sys.path, relative to the rootdir). */
+  pythonpath: string[];
   addopts: string[];
 }
 
@@ -107,6 +109,7 @@ export function pytestSettings(root: string): PytestSettings {
     pythonClasses: listOption(cfg?.options, 'python_classes') ?? ['Test'],
     pythonFunctions: listOption(cfg?.options, 'python_functions') ?? ['test'],
     testpaths: listOption(cfg?.options, 'testpaths') ?? [],
+    pythonpath: listOption(cfg?.options, 'pythonpath') ?? [],
     addopts: addopts(cfg?.options),
   };
 }

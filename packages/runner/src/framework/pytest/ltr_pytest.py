@@ -14,7 +14,10 @@ What it does (every output goes to files in the extension's session folder):
 * ``$LTR_PYTEST_LIST``: with ``--collect-only``, the collected test files.
 * ``$LTR_PYTEST_COVERAGE=<dir>``: measures coverage with the project's own
   coverage.py and its own settings, and writes it istanbul-shaped to
-  ``<dir>/coverage-final.json`` (data files stay in ``<dir>``).
+  ``<dir>/coverage-final.json`` (data files stay in ``<dir>``). Each test is
+  measured in its own coverage context (its node id), written as the
+  extension's trace records to ``<dir>/trace.jsonl``: which lines each test
+  ran ("covering tests", precise reruns when a source file is saved).
 
 Result shapes mirror the runner's TypeScript types (FileRunResult,
 TestCaseRunResult, ConsoleEntry). Logs: ``[LTR:<level>] message`` on stderr.
@@ -43,6 +46,7 @@ _config = None
 _events = None
 _cov = None
 _cov_error = None
+_contexts = True  # per-test contexts (off when the project's coverage config sets its own dynamic_context)
 _nodes = {}  # nodeid -> {"file", "titles", "name", "line"}
 _files = {}  # file -> _FileState
 _tests = {}  # nodeid -> {"reports": {when: report}}
@@ -188,10 +192,48 @@ def _finish_coverage():
         out = os.path.join(directory, "coverage-final.json")
         with open(out, "w", encoding="utf-8") as fh:
             json.dump(_istanbul(report), fh)
+        if _contexts:
+            _write_trace(os.path.join(directory, "trace.jsonl"))
         return out
     except Exception as err:
         _log("warn", "could not write coverage: %s" % err)
         return None
+
+
+def _write_trace(target):
+    """Per-test coverage contexts as the extension's trace records (traceRecords.ts):
+
+    ``T`` {tf: test file, tn: full name, fh: {source: [lines]}} for each test,
+    ``H`` {tf, hk: "file", fh} for lines run outside any test (imports, collection).
+    Read straight from the coverage data — coverage's own JSON report with
+    contexts is far too large (ADR-9: 1.2 GB on httpx).
+    """
+    data = _cov.get_data()
+    per_test = {}  # nodeid -> {source: [lines]}
+    outside = {}
+    for measured in data.measured_files():
+        path = os.path.normpath(measured)
+        if not _keep_coverage_file(path):
+            continue
+        try:
+            by_line = data.contexts_by_lineno(measured)
+        except Exception:
+            continue
+        for line, labels in by_line.items():
+            for label in labels:
+                bucket = per_test.setdefault(label, {}) if label else outside
+                bucket.setdefault(path, []).append(line)
+    with open(target, "w", encoding="utf-8") as fh:
+        for nodeid, hits in per_test.items():
+            node = _nodes.get(nodeid)
+            if node is None:
+                continue
+            record = {"type": "T", "tf": node["file"], "tn": " ".join(node["titles"] + [node["name"]]), "fh": {f: sorted(set(ls)) for f, ls in hits.items()}}
+            fh.write(json.dumps(record) + "\n")
+        if outside:
+            for test_file in sorted({n["file"] for n in _nodes.values()}):
+                fh.write(json.dumps({"type": "H", "tf": test_file, "hk": "file", "fh": {f: sorted(set(ls)) for f, ls in outside.items()}}) + "\n")
+                break  # coverage only: one record is enough
 
 
 def _keep_coverage_file(path):
@@ -360,7 +402,19 @@ def _start_file(st):
     _emit(ev="file-start", file=st.path)
 
 
+def _switch_context(label):
+    global _contexts
+    if _cov is None or not _contexts:
+        return
+    try:
+        _cov.switch_context(label)
+    except Exception as err:  # e.g. the project's own [run] dynamic_context
+        _contexts = False
+        _log("info", "covering tests are off for this run: coverage.py refused per-test contexts (%s)" % err)
+
+
 def pytest_runtest_logstart(nodeid, location):
+    _switch_context(nodeid)
     node = _nodes.get(nodeid)
     path = node["file"] if node else _file_of(nodeid)
     _start_file(_state(path))
@@ -376,6 +430,7 @@ def pytest_runtest_logreport(report):
 
 
 def pytest_runtest_logfinish(nodeid, location):
+    _switch_context("")
     node = _nodes.get(nodeid) or {"file": _file_of(nodeid), "titles": [], "name": nodeid.split("::")[-1], "line": None}
     reports = (_tests.pop(nodeid, None) or {"reports": {}})["reports"]
     case, output = _case(node, reports)

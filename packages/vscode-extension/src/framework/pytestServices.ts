@@ -5,7 +5,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import { FRAMEWORK_IDS, PytestAdapter as PytestRunnerAdapter, CommandRunner, PYTEST_CONFIG_FILES, LTR_PYTEST_SOURCE } from '@live-test-runner/runner';
+import { FRAMEWORK_IDS, PytestAdapter as PytestRunnerAdapter, CommandRunner, PYTEST_CONFIG_FILES, LTR_PYTEST_SOURCE, pythonFor } from '@live-test-runner/runner';
 import { FrameworkServices } from './FrameworkServices';
 import { PytestAdapter, pytestArgsSetting } from './PytestAdapter';
 import { PytestProjectConfig } from '../session/PytestProjectConfig';
@@ -42,13 +42,16 @@ export function createPytestServices(options: {
       configRulesShort: 'testpaths / python_files',
       configRules: 'testpaths / python_files / norecursedirs',
       listCommand: 'pytest --collect-only',
-      relatedCommand: 'covering tests',
+      relatedCommand: 'the test files that import it',
       batchRun: 'pytest batch',
       plainRun: 'plain pytest',
       fallbackLoss: 'slower; no coverage for these files',
     },
-    // Covering tests from coverage contexts come in 3.3 (pytest plan phase 6); the Timeline is a later release (D6).
-    features: { trace: false, timeline: false },
+    // Covering tests come from coverage.py's per-test contexts (pytest plan phase 6); the Timeline is a later release (D6).
+    features: { trace: true, timeline: false },
+    traceOffReason: (projectRoot) => pythonFor(projectRoot) && !pythonFor(projectRoot)!.coverage
+      ? "the coverage package is not installed in the project's Python environment"
+      : undefined,
     adapter: new PytestAdapter(sessionDir),
     projectConfig,
     batchRunner: new PytestBatchRunner(newRunner, { store: coverageStore, sessionDir, projectConfig }),
