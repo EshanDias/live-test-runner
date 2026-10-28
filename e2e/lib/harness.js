@@ -177,8 +177,11 @@ function pytestProcesses(marker) {
       const norm = (x) => x.toLowerCase().replace(/\\\\/g, '\\').replace(/\//g, '\\');
       return out.split(/\r?\n/).filter((l) => (norm(l).includes(norm(marker)) || norm(l).includes(norm(real))) && isPytest(l));
     }
+    // A framework-build Python on macOS (CI's setup-python) re-executes itself as
+    // …/Python.app/…/Python: the workspace's .venv path is gone from `ps`, so our
+    // own runs (`-m pytest -p ltr_pytest`) count too — e2e runs one workspace at a time.
     const out = execFileSync('ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-    return out.split('\n').filter((l) => (l.includes(marker) || l.includes(real)) && isPytest(l));
+    return out.split('\n').filter((l) => isPytest(l) && (l.includes(marker) || l.includes(real) || / -m pytest -p ltr_pytest\b/.test(l)));
   } catch {
     return [];
   }

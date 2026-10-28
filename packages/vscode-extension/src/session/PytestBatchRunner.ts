@@ -282,7 +282,8 @@ export class PytestBatchRunner implements IBatchRunner {
       const traceFile = path.join(path.dirname(live.coverageFile), 'trace.jsonl');
       if (fs.existsSync(traceFile)) {
         try {
-          const summary = applyTraceRecords(readTraceLines([traceFile]), options.traceStore, toKey);
+          const lines = readTraceLines([traceFile]).map((l) => respellTrace(l, projectRoot));
+          const summary = applyTraceRecords(lines, options.traceStore, toKey);
           log.debug(`${batch}: covering tests — ${summary.tests} test(s) across ${summary.files} file(s)`);
         } catch (err) {
           log.warn(`${batch}: could not read the covering tests`, err);
@@ -337,9 +338,14 @@ export class PytestBatchRunner implements IBatchRunner {
         return;
       }
       const scope = await coverageScopeOf(this._coverage!.projectConfig ?? { coverageScope: async () => undefined }, projectRoot);
-      const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
+      const raw = JSON.parse(fs.readFileSync(coverageFile, 'utf8')) as Record<string, { path?: string }>;
+      const coverage: Record<string, unknown> = {};
+      for (const [key, fc] of Object.entries(raw)) {
+        const file = toProjectSpelling(projectRoot, fc.path || key);
+        coverage[file] = { ...fc, path: file };
+      }
       const { measured, excluded } = applyIstanbulCoverage(
-        coverage, this._coverage!.store, path.join(this._coverage!.sessionDir, 'pytest-manifests'), projectRoot,
+        coverage as Parameters<typeof applyIstanbulCoverage>[0], this._coverage!.store, path.join(this._coverage!.sessionDir, 'pytest-manifests'), projectRoot,
         (fp) => scope.counts(fp),
       );
       log.debug(`${batch}: coverage — ${measured} file(s) measured, ${excluded} excluded`);
@@ -348,6 +354,57 @@ export class PytestBatchRunner implements IBatchRunner {
     } finally {
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ }
     }
+  }
+}
+
+/**
+ * A path Python reported, in the project root's own spelling. coverage.py
+ * canonicalises file names — on Windows lower-cased (`c:\\users\\runner~1\\…`)
+ * and sometimes with long names where the editor has 8.3 ones — so a path
+ * under the root (compared case-insensitively on Windows, also through the
+ * real path) is rebuilt as root + its own relative part. Others pass through
+ * fromRunnerPath unchanged.
+ */
+export function toProjectSpelling(projectRoot: string, p: string, win = process.platform === 'win32'): string {
+  const cmp = (x: string) => (win ? x.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase() : x.replace(/\/+$/, ''));
+  const sep = win ? '\\' : '/';
+  const under = (file: string, root: string) => {
+    const f = cmp(file);
+    const r = cmp(root);
+    return f.startsWith(r + sep) ? file.slice(root.replace(/[\\/]+$/, '').length + 1) : undefined;
+  };
+  const real = (x: string) => { try { return fs.realpathSync.native(x); } catch { return x; } };
+  const mapped = fromRunnerPath(p);
+  const rel = under(mapped, projectRoot) ?? under(p, projectRoot) ?? under(real(p), real(projectRoot));
+  if (rel === undefined) { return mapped; }
+  // The relative part in the editor's case: walk it from the root (Windows paths are case-insensitive).
+  return path.join(projectRoot, win ? caseOnDisk(projectRoot, rel) : rel);
+}
+
+/** `rel` (any case) under `root` with each segment spelled as it is on disk; unknown segments kept. */
+function caseOnDisk(root: string, rel: string): string {
+  const parts = rel.split(/[\\/]+/).filter(Boolean);
+  let dir = root;
+  const out: string[] = [];
+  for (const part of parts) {
+    let names: string[] = [];
+    try { names = fs.readdirSync(dir); } catch { /* not a folder */ }
+    const hit = names.find((n) => n.toLowerCase() === part.toLowerCase()) ?? part;
+    out.push(hit);
+    dir = path.join(dir, hit);
+  }
+  return out.join(path.sep);
+}
+
+/** One trace record line with its paths in the project's spelling (see toProjectSpelling). */
+function respellTrace(line: string, projectRoot: string): string {
+  try {
+    const rec = JSON.parse(line) as { tf?: string; fh?: Record<string, number[]> };
+    if (rec.tf) { rec.tf = toProjectSpelling(projectRoot, rec.tf); }
+    if (rec.fh) { rec.fh = Object.fromEntries(Object.entries(rec.fh).map(([f, ls]) => [toProjectSpelling(projectRoot, f), ls])); }
+    return JSON.stringify(rec);
+  } catch {
+    return line;
   }
 }
 

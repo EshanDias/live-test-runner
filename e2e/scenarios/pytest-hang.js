@@ -36,7 +36,7 @@ module.exports = {
     t.eq('the files after it still ran', h.sortedCounts(api, 'tests/test_unittest_style.py'), { passed: 2 });
     t.eq('…and before it', h.sortedCounts(api, 'tests/test_cart.py'), { failed: 2, passed: 9, skipped: 2 });
     t.eq('nothing left running', h.nodesWithStatus(api, 'running').map((n) => n.id), []);
-    await h.sleep(4000);
+    await h.waitFor(() => h.pytestProcesses(workspace).length === 0, { what: 'pytest to end', timeout: 10_000 }).catch(() => {});
     t.check('no pytest process left behind', h.pytestProcesses(workspace).length === 0, h.pytestProcesses(workspace).join('\n'));
   },
 };

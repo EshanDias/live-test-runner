@@ -45,7 +45,9 @@ module.exports = {
     t.check('pytest processes are tagged [pytest#N] and load the plugin with -p only', cmds.length > 0 && cmds.every((l) => / -m pytest -p ltr_pytest /.test(l)), cmds.join('\n'));
     t.check("runs keep pytest's cache in the session folder", cmds.every((l) => /cache_dir=/.test(l)), cmds.join('\n'));
     t.check('no Jest or Vitest process', !raw.some((l) => /^\[(jest|vitest)#\d+\] > /.test(l)));
-    t.check('pytest --collect-only listed the files', logs.some((l) => /pytest --collect-only/.test(l)) || cmds.some((l) => /--collect-only/.test(l)), cmds.join('\n'));
+    // Asked now, or remembered from an earlier session (Windows copies keep file times, so the cache key can match).
+    t.check('pytest --collect-only listed the files (now or remembered)',
+      cmds.some((l) => /--collect-only/.test(l)) || logs.some((l) => /pytest --collect-only|remembered from the last session/.test(l)), cmds.join('\n'));
 
     const spinning = h.nodesWithStatus(api, 'running');
     t.check('nothing left "running"', spinning.length === 0, spinning.map((n) => n.id).join('\n'));

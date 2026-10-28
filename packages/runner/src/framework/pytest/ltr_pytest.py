@@ -223,6 +223,10 @@ def _write_trace(target):
             for label in labels:
                 bucket = per_test.setdefault(label, {}) if label else outside
                 bucket.setdefault(path, []).append(line)
+    unknown = [label for label in per_test if label not in _nodes]
+    _log("debug", "covering tests: %d measured file(s), %d test context(s)%s" % (
+        len(data.measured_files()), len(per_test) - len(unknown),
+        (", %d unknown label(s) e.g. %r" % (len(unknown), unknown[0])) if unknown else ""))
     with open(target, "w", encoding="utf-8") as fh:
         for nodeid, hits in per_test.items():
             node = _nodes.get(nodeid)

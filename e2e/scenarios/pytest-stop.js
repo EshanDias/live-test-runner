@@ -23,9 +23,10 @@ module.exports = {
 
     await vscode.commands.executeCommand('liveTestRunner.stopTesting');
     const rawAtStop = h.rawMark(api);
-    await h.sleep(4000);
+    // SIGTERM, then SIGKILL after 3 s for a process that ignores it: allow 10 s.
+    await h.waitFor(() => h.pytestProcesses(workspace).length === 0, { what: 'pytest to end', timeout: 10_000 }).catch(() => {});
     const left = h.pytestProcesses(workspace);
-    t.check('no pytest process left 4s after Stop', left.length === 0, left.join('\n'));
+    t.check('no pytest process left 10s after Stop', left.length === 0, left.join('\n'));
 
     await startPromise;
     await h.sleep(3000);
