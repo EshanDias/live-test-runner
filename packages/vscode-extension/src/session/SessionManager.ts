@@ -183,6 +183,19 @@ export class SessionManager {
         await this._discovery.awaitDiscovery();
       }
 
+      // A framework that cannot run the project now (pytest: no usable Python) — nothing runs.
+      for (const s of this._services.all()) {
+        const why = await s.whyNotReady?.(projectRoot);
+        if (token !== this._token) { return; }
+        if (why) {
+          log.warn(`Not started — ${why}`);
+          this._session.stop();
+          this._session = undefined;
+          this._updateStatusBar(`⚠ ${s.displayName} cannot run`);
+          return;
+        }
+      }
+
       // ── Derive the file list from the already-populated store ──────────────
       const discovered = this._store.getAllFiles().map((f) => f.filePath);
       let framework = 'unknown';
@@ -827,7 +840,11 @@ export class SessionManager {
     projectRoot: string,
     token: number,
   ): Promise<void> {
-    const CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
+    // The budget, and no more than any involved framework runs at once (pytest: one process).
+    const CONCURRENCY = Math.max(1, Math.min(
+      Math.floor(os.cpus().length / 4),
+      ...cases.map((c) => this._services.servicesFor(c.filePath).batchPolicy?.maxParallel ?? Number.MAX_SAFE_INTEGER),
+    ));
 
     // Group by file — one Jest invocation per file with combined pattern
     const byFile = new Map<string, string[]>();
@@ -1074,8 +1091,9 @@ export class SessionManager {
           `(${terms.fallbackLoss}). Files: ${shortList(batch)}`,
         );
         const fallbackQueue = [...missing];
+        const fallbackParallel = Math.min(CONCURRENCY, this._services.servicesFor(batch[0]).batchPolicy?.maxParallel ?? CONCURRENCY);
         await Promise.all(
-          Array.from({ length: Math.min(CONCURRENCY, fallbackQueue.length) }, async () => {
+          Array.from({ length: Math.min(fallbackParallel, fallbackQueue.length) }, async () => {
             while (live()) {
               const fp = fallbackQueue.shift();
               if (!fp) { break; }
@@ -1107,23 +1125,45 @@ export class SessionManager {
       const list = byFramework.get(s);
       if (list) { list.push(fp); } else { byFramework.set(s, [fp]); }
     }
-    const batchQueue: string[][] = [];
-    for (const files of byFramework.values()) {
-      for (let i = 0; i < files.length; i += BATCH_SIZE) {
-        batchQueue.push(files.slice(i, i + BATCH_SIZE));
+    // A framework's BatchPolicy caps its batch size and how many of its
+    // processes run at once (pytest: one, with every file) within the budget.
+    const batchQueue: { batch: string[]; services: FrameworkServices }[] = [];
+    for (const [services, files] of byFramework) {
+      const size = Math.max(1, services.batchPolicy?.maxFilesPerBatch ?? BATCH_SIZE);
+      for (let i = 0; i < files.length; i += size) {
+        batchQueue.push({ batch: files.slice(i, i + size), services });
       }
     }
     const batchCount = batchQueue.length;
+    const runningOf = new Map<FrameworkServices, number>();
+    const waiters: (() => void)[] = [];
+    const wakeAll = () => { for (const w of waiters.splice(0)) { w(); } };
+    /** The next batch whose framework is below its own limit (undefined: none can start now). */
+    const nextBatch = () => {
+      const i = batchQueue.findIndex((q) => (runningOf.get(q.services) ?? 0) < (q.services.batchPolicy?.maxParallel ?? CONCURRENCY));
+      return i < 0 ? undefined : batchQueue.splice(i, 1)[0];
+    };
 
     await Promise.all(
       Array.from(
         { length: Math.min(CONCURRENCY, batchQueue.length) },
         async () => {
-          while (live()) {
-            const batch = batchQueue.shift();
-            if (!batch) { break; }
-            await runBatch(batch);
+          while (live() && batchQueue.length > 0) {
+            const next = nextBatch();
+            if (!next) {
+              // Every queued batch's framework is at its limit: wait for one of its batches to end.
+              await new Promise<void>((resolve) => waiters.push(resolve));
+              continue;
+            }
+            runningOf.set(next.services, (runningOf.get(next.services) ?? 0) + 1);
+            try {
+              await runBatch(next.batch);
+            } finally {
+              runningOf.set(next.services, (runningOf.get(next.services) ?? 1) - 1);
+              wakeAll();
+            }
           }
+          wakeAll();
         },
       ),
     );

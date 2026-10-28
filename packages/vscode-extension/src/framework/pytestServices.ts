@@ -4,12 +4,16 @@
  */
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { FRAMEWORK_IDS, PytestAdapter as PytestRunnerAdapter, CommandRunner, PYTEST_CONFIG_FILES } from '@live-test-runner/runner';
+import * as crypto from 'crypto';
+import { FRAMEWORK_IDS, PytestAdapter as PytestRunnerAdapter, CommandRunner, PYTEST_CONFIG_FILES, LTR_PYTEST_SOURCE } from '@live-test-runner/runner';
 import { FrameworkServices } from './FrameworkServices';
 import { PytestAdapter, pytestArgsSetting } from './PytestAdapter';
 import { PytestProjectConfig } from '../session/PytestProjectConfig';
 import { PytestBatchRunner } from '../session/PytestBatchRunner';
 import { CoverageStore } from '../coverage/CoverageStore';
+import { pythonInterpreters } from '../python/PythonInterpreters';
+
+const PLUGIN_HASH = crypto.createHash('sha1').update(LTR_PYTEST_SOURCE).digest('hex').slice(0, 12);
 
 export function createPytestServices(options: {
   /** The project's session folder (plugin, results, events, coverage). */
@@ -26,6 +30,12 @@ export function createPytestServices(options: {
   return {
     framework: FRAMEWORK_IDS.pytest,
     displayName: 'pytest',
+    // One pytest process at a time, every file in it — as the user's own `pytest`:
+    // projects share session fixtures, ports and files between tests (httpx's
+    // test server binds a fixed port), so two processes side by side can deadlock.
+    // Results still stream per file; session fixtures are set up once per batch.
+    // 300 relative paths stay far below Windows' 32k command-line limit.
+    batchPolicy: { maxParallel: 1, maxFilesPerBatch: 300 },
     terms: {
       name: 'pytest',
       config: 'pytest config',
@@ -44,9 +54,18 @@ export function createPytestServices(options: {
     batchRunner: new PytestBatchRunner(newRunner, { store: coverageStore, sessionDir, projectConfig }),
     instrumentedRunner: undefined,
     createSessionRunner: () => newRunner(rawLog),
+    whyNotReady: async (projectRoot) => {
+      try {
+        await pythonInterpreters().ensure(projectRoot);
+        return undefined;
+      } catch (err) {
+        return (err as Error).message;
+      }
+    },
     settingsFingerprint: () => {
       const cfg = vscode.workspace.getConfiguration('liveTestRunner');
-      return `pytest|${cfg.get<string>('pythonPath') ?? ''}|${JSON.stringify(cfg.get('pytestArgs') ?? [])}`;
+      // The plugin's version too: a newer plugin may list files differently.
+      return `pytest|${PLUGIN_HASH}|${cfg.get<string>('pythonPath') ?? ''}|${JSON.stringify(cfg.get('pytestArgs') ?? [])}`;
     },
     // A pytest config file or a conftest.py in the root changes what is collected and how.
     isConfigFile: async (filePath, projectRoot) => {

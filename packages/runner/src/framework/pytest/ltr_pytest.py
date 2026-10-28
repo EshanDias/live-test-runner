@@ -294,7 +294,8 @@ def pytest_collectreport(report):
     if not report.nodeid:
         return
     part = report.nodeid.split("::", 1)[0]
-    if not part.endswith(".py"):
+    # Modules only: a package's own collector (pytest 7 names it ".../__init__.py") is not a test file.
+    if not part.endswith(".py") or (part.rsplit("/", 1)[-1] == "__init__.py" and "::" not in report.nodeid and not report.failed):
         return
     path = _file_of(report.nodeid)
     st = _state(path)

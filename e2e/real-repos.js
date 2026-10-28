@@ -22,10 +22,14 @@
  * Environment:
  *   LTR_E2E_JEST_REPOS_DIR    default /Users/eshandias/Projects/test/jest-test-projects
  *   LTR_E2E_VITEST_REPOS_DIR  default /Users/eshandias/Projects/test/vitest-projects
+ *   LTR_E2E_PYTHON_REPOS_DIR  default /Users/eshandias/Projects/test/python-projects (each with its own .venv)
  *   LTR_E2E_CLONES_DIR        default <tmp>/ltr real repos
  *
  * Vitest repos run the `repo-vitest` scenario against a plain `vitest run`
- * (with the test script's config flags) on the same clone.
+ * (with the test script's config flags) on the same clone. Python repos run
+ * `repo-pytest` against a plain `python -m pytest` with the clone's .venv —
+ * whose editable installs (`pip install -e .` .pth files) are pointed at the
+ * clone, so the tests import the clone's code, never the original's.
  */
 const { spawnSync, execFileSync } = require('child_process');
 const fs = require('fs');
@@ -35,10 +39,12 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const JEST_DIR = process.env.LTR_E2E_JEST_REPOS_DIR || '/Users/eshandias/Projects/test/jest-test-projects';
 const VITEST_DIR = process.env.LTR_E2E_VITEST_REPOS_DIR || '/Users/eshandias/Projects/test/vitest-projects';
+const PYTHON_DIR = process.env.LTR_E2E_PYTHON_REPOS_DIR || '/Users/eshandias/Projects/test/python-projects';
 const CLONES = process.env.LTR_E2E_CLONES_DIR || path.join(os.tmpdir(), 'ltr real repos');
 
 /** Per-repo plain-runner baseline, recorded on every run (see recordBaseline). */
 const BASELINE_FILE = path.join(ROOT, 'docs', 'temp_plans', 'vitest-baseline.json');
+const PYTEST_BASELINE_FILE = path.join(ROOT, 'docs', 'temp_plans', 'pytest-baseline.json');
 
 /**
  * name → { dir, scenario, env (the variable the scenario reads), light,
@@ -58,6 +64,11 @@ const REPOS = {
   'vue-multiselect':      { dir: JEST_DIR, scenario: 'repo-components', env: 'LTR_E2E_COMPONENT_REPO', light: true, baseline: 'LTR_E2E_COMPONENT_BASELINE', extra: { LTR_E2E_COMPONENT_EXTS: 'vue' } },
   'example-app-v22':      { dir: path.join(JEST_DIR, 'jest-preset-angular', 'examples'), scenario: 'repo-components', env: 'LTR_E2E_COMPONENT_REPO', light: true, baseline: 'LTR_E2E_COMPONENT_BASELINE', extra: { LTR_E2E_COMPONENT_EXTS: 'html' } },
   'svelte-testing-library': { dir: VITEST_DIR, scenario: 'repo-components', env: 'LTR_E2E_COMPONENT_REPO', light: true, baseline: 'LTR_E2E_COMPONENT_BASELINE', plain: 'vitest', extra: { LTR_E2E_COMPONENT_EXTS: 'svelte' } },
+  'click':                { dir: PYTHON_DIR, scenario: 'repo-pytest', env: 'LTR_E2E_PYTEST_REPO', light: true, baseline: 'LTR_E2E_PYTEST_BASELINE', plain: 'pytest' },
+  'httpx':                { dir: PYTHON_DIR, scenario: 'repo-pytest', env: 'LTR_E2E_PYTEST_REPO', light: true, baseline: 'LTR_E2E_PYTEST_BASELINE', plain: 'pytest' },
+  // pytest 7.4 (pytest<8) with pytest-cov in addopts.
+  'erdantic':             { dir: PYTHON_DIR, scenario: 'repo-pytest', env: 'LTR_E2E_PYTEST_REPO', light: true, baseline: 'LTR_E2E_PYTEST_BASELINE', plain: 'pytest' },
+  'pytest':               { dir: PYTHON_DIR, scenario: 'repo-pytest', env: 'LTR_E2E_PYTEST_REPO', light: false, baseline: 'LTR_E2E_PYTEST_BASELINE', plain: 'pytest' },
 };
 
 function git(dir, ...args) {
@@ -66,7 +77,7 @@ function git(dir, ...args) {
 
 /** What identifies the repo's state: HEAD, tracked/untracked changes, and the working tree's newest mtime (excluding node_modules/.git). */
 function fingerprint(dir) {
-  const newest = execFileSync('find', [dir, '(', '-name', 'node_modules', '-o', '-name', '.git', ')', '-prune', '-o', '-type', 'f', '-print'], { encoding: 'utf8', maxBuffer: 1 << 28 })
+  const newest = execFileSync('find', [dir, '(', '-name', 'node_modules', '-o', '-name', '.git', '-o', '-name', '.venv', ')', '-prune', '-o', '-type', 'f', '-print'], { encoding: 'utf8', maxBuffer: 1 << 28 })
     .split('\n').filter(Boolean)
     .reduce((m, f) => { try { return Math.max(m, fs.statSync(f).mtimeMs); } catch { return m; } }, 0);
   return JSON.stringify({ head: git(dir, 'rev-parse', 'HEAD').trim(), status: git(dir, 'status', '--porcelain'), newest });
@@ -80,6 +91,57 @@ function clone(src, dest, fresh) {
   const args = process.platform === 'darwin' ? ['-cR', src, dest] : ['-a', src, dest];
   const r = spawnSync('cp', args, { stdio: 'inherit' });
   if (r.status !== 0) { throw new Error(`clone failed (cp exit ${r.status})`); }
+  repointEditableInstalls(src, dest);
+  dropBytecodeCaches(dest);
+}
+
+/**
+ * Python bytecode copied from the original names the original's files
+ * (pytest reuses its cached .pyc by mtime and size, not by path): test
+ * locations would point at the original. The clone recompiles instead.
+ */
+function dropBytecodeCaches(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === '.venv' || entry.name === 'node_modules' || entry.name === '.git') { continue; }
+    const p = path.join(dir, entry.name);
+    if (entry.name === '__pycache__') { fs.rmSync(p, { recursive: true, force: true }); } else { dropBytecodeCaches(p); }
+  }
+}
+
+/** The clone's .venv: editable-install .pth files name the original folder — point them at the clone. */
+function repointEditableInstalls(src, dest) {
+  const lib = path.join(dest, '.venv', process.platform === 'win32' ? 'Lib' : 'lib');
+  if (!fs.existsSync(lib)) { return; }
+  const dirs = process.platform === 'win32' ? [path.join(lib, 'site-packages')]
+    : fs.readdirSync(lib).filter((d) => d.startsWith('python')).map((d) => path.join(lib, d, 'site-packages'));
+  for (const dir of dirs) {
+    for (const f of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
+      if (!f.endsWith('.pth') && !/^__editable__.*finder\.py$/.test(f)) { continue; }
+      const p = path.join(dir, f);
+      const text = fs.readFileSync(p, 'utf8');
+      if (text.includes(src)) { fs.writeFileSync(p, text.split(src).join(dest)); }
+    }
+  }
+}
+
+/** A plain pytest result (plainPytestResults) as JSON-able per-file test outcomes. */
+function pytestResultsJson(results) {
+  return Object.fromEntries([...results].map(([file, tests]) => [file, Object.fromEntries(tests)]));
+}
+
+/** Per-file plain pytest counts of a Python repo, recorded like the Vitest baseline. */
+function recordPytestBaseline(name, original, copy, json, ok) {
+  let all = {};
+  try { all = JSON.parse(fs.readFileSync(PYTEST_BASELINE_FILE, 'utf8')); } catch { /* first run */ }
+  const files = {};
+  for (const [file, tests] of Object.entries(json).sort(([a], [b]) => a.localeCompare(b))) {
+    const c = { passed: 0, failed: 0, skipped: 0 };
+    for (const s of Object.values(tests)) { c[s] = (c[s] || 0) + 1; }
+    files[path.relative(copy, file).split(path.sep).join('/')] = c;
+  }
+  const total = Object.values(files).reduce((t, c) => ({ passed: t.passed + c.passed, failed: t.failed + c.failed, skipped: t.skipped + c.skipped }), { passed: 0, failed: 0, skipped: 0 });
+  all[name] = { recorded: new Date().toISOString(), head: git(original, 'rev-parse', 'HEAD').trim(), extensionMatches: ok, files: Object.keys(files).length, total, perFile: files };
+  fs.writeFileSync(PYTEST_BASELINE_FILE, JSON.stringify(all, null, 2) + '\n');
 }
 
 /**
@@ -126,15 +188,20 @@ function main() {
       const h = require('./lib/harness');
       const out = path.join(os.tmpdir(), `ltr-baseline-${n}.json`);
       const vitest = repo.plain === 'vitest';
-      console.log(`[repos] ${n}: plain ${vitest ? 'Vitest' : 'Jest'} baseline…`);
-      try { baseline = vitest ? h.plainVitestJson(copy) : h.plainJestJson(copy); fs.writeFileSync(out, JSON.stringify(baseline)); env[repo.baseline] = out; }
+      const pytest = repo.plain === 'pytest';
+      console.log(`[repos] ${n}: plain ${vitest ? 'Vitest' : pytest ? 'pytest' : 'Jest'} baseline…`);
+      try {
+        baseline = vitest ? h.plainVitestJson(copy) : pytest ? pytestResultsJson(h.plainPytestResults(copy)) : h.plainJestJson(copy);
+        fs.writeFileSync(out, JSON.stringify(baseline));
+        env[repo.baseline] = out;
+      }
       catch (e) { console.log(`[repos] ${n}: no baseline (${String(e.message).split('\n')[0]})`); }
     }
     console.log(`\n[repos] ===== ${n} (${repo.scenario}) =====`);
     const ok = runScenario(repo.scenario, env);
     const untouched = fingerprint(original) === before;
     if (!untouched) { console.log(`[repos] FAIL ${n}: the ORIGINAL repository changed during the run`); }
-    if (baseline) { recordBaseline(n, original, copy, baseline, ok); }
+    if (baseline) { (repo.plain === 'pytest' ? recordPytestBaseline : recordBaseline)(n, original, copy, baseline, ok); }
     results.push({ n, ok: ok && untouched });
   }
   console.log('\n[repos] ── summary ──');

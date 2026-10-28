@@ -107,8 +107,7 @@ export class PytestAdapter extends RunnerBackedAdapter {
     testFullName?: string,
     isSuite = false,
   ): Promise<vscode.DebugConfiguration> {
-    registerProjectRoot(projectRoot);
-    const { info } = await pythonInterpreters().ensure(projectRoot);
+    const config = await this.buildDebugConfig(projectRoot, filePath, testFullName, isSuite);
     if (!vscode.extensions.getExtension('ms-python.debugpy')) {
       void vscode.window.showWarningMessage(
         'Debugging pytest tests needs the Python Debugger extension (ms-python.debugpy).',
@@ -118,6 +117,18 @@ export class PytestAdapter extends RunnerBackedAdapter {
       });
       throw new Error('the Python Debugger extension (ms-python.debugpy) is not installed');
     }
+    return config;
+  }
+
+  /** The launch config itself (no check for the Python Debugger) — see {@link getDebugConfig}. */
+  async buildDebugConfig(
+    projectRoot: string,
+    filePath: string,
+    testFullName?: string,
+    isSuite = false,
+  ): Promise<vscode.DebugConfiguration> {
+    registerProjectRoot(projectRoot);
+    const { info } = await pythonInterpreters().ensure(projectRoot);
     const runner = this._createRunner(projectRoot, () => {}) as PytestRunner;
     return {
       type: 'debugpy',

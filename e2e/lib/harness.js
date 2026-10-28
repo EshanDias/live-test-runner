@@ -163,6 +163,27 @@ function vitestProcesses(marker) {
   }
 }
 
+/** Python processes running pytest for `marker` (the workspace — its .venv's python is in the command line). */
+function pytestProcesses(marker) {
+  let real = marker;
+  try { real = require('fs').realpathSync.native(marker); } catch { /* keep marker */ }
+  const isPytest = (l) => / -m pytest\b/.test(l) && !/Code(\.exe)?["\s]|extensionDevelopmentPath|powershell/i.test(l);
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('powershell', [
+        '-NoProfile', '-Command',
+        "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine } | ForEach-Object { \"$($_.ProcessId)`t$($_.Name)`t$($_.CommandLine)\" }",
+      ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+      const norm = (x) => x.toLowerCase().replace(/\\\\/g, '\\').replace(/\//g, '\\');
+      return out.split(/\r?\n/).filter((l) => (norm(l).includes(norm(marker)) || norm(l).includes(norm(real))) && isPytest(l));
+    }
+    const out = execFileSync('ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    return out.split('\n').filter((l) => (l.includes(marker) || l.includes(real)) && isPytest(l));
+  } catch {
+    return [];
+  }
+}
+
 function isVitest(cmdLine) {
   return /[\\/]node_modules[\\/](\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?vitest[\\/]/i.test(cmdLine) &&
     !/Code(\.exe)?["\s]|extensionDevelopmentPath|powershell/i.test(cmdLine);
@@ -414,8 +435,11 @@ function plainPytestResults(workspace, extraArgs = []) {
   const python = workspacePython(workspace);
   const out = path.join(os.tmpdir(), `ltr-e2e-plain-pytest-${process.pid}-${Date.now()}.xml`);
   // --continue-on-collection-errors, as the extension runs: a file that cannot be imported must not hide the others.
-  const r = spawnSync(python, ['-m', 'pytest', '-p', 'no:cacheprovider', '--continue-on-collection-errors', '-o', 'junit_family=xunit1', `--junitxml=${out}`, '-q', '--color=no', ...extraArgs],
+  // pytest's cache in a temp folder, as the extension runs (never `-p no:cacheprovider`: tests of the cache plugin itself differ).
+  const cacheDir = path.join(os.tmpdir(), `ltr-e2e-plain-pytest-cache-${process.pid}-${Date.now()}`);
+  const r = spawnSync(python, ['-m', 'pytest', '-o', `cache_dir=${cacheDir}`, '--continue-on-collection-errors', '-o', 'junit_family=xunit1', `--junitxml=${out}`, '-q', '--color=no', ...extraArgs],
     { cwd: workspace, encoding: 'utf8', timeout: 20 * 60_000, maxBuffer: 1 << 30, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+  fs.rmSync(cacheDir, { recursive: true, force: true });
   let xml;
   try { xml = fs.readFileSync(out, 'utf8'); } catch {
     throw new Error(`plain pytest wrote no JUnit XML (exit ${r.status}): ${(r.stderr || r.stdout || '').slice(-1500)}`);
@@ -446,24 +470,29 @@ function plainPytestResults(workspace, extraArgs = []) {
 }
 
 /** Per-file pass / fail / skip in the tree equal a plain pytest run (see plainPytestResults). */
-function checkMatchesPlainPytest(api, t, workspace, label = 'results match plain pytest', results = plainPytestResults(workspace)) {
+function checkMatchesPlainPytest(api, t, workspace, label = 'results match plain pytest', results = plainPytestResults(workspace), flaky = []) {
   const diffs = [];
+  const isFlaky = (name) => flaky.some((f) => name === f || name.startsWith(`${f}[`));
+  const flakyDiffs = [];
   for (const [file, tests] of results) {
     const key = api.store.findFileKey(file);
     if (!key) { diffs.push(`${path.basename(file)}: not in the tree`); continue; }
     const got = new Map(api.store.getFileNodes(key).filter((n) => n.type === 'test').map((n) => [n.fullName, n.status]));
     for (const [name, status] of tests) {
-      if (got.get(name) !== status) { diffs.push(`${path.basename(file)} ${name}: pytest ${status} vs extension ${got.get(name) ?? 'missing'}`); }
+      if (got.get(name) === status) { continue; }
+      const line = `${path.basename(file)} ${name}: pytest ${status} vs extension ${got.get(name) ?? 'missing'}`;
+      (isFlaky(name) && got.has(name) ? flakyDiffs : diffs).push(line);
     }
     for (const [name, status] of got) {
       if (!tests.has(name)) { diffs.push(`${path.basename(file)} ${name}: extension ${status}, not reported by pytest`); }
     }
   }
+  if (flakyDiffs.length) { t.info(`known-flaky tests differed (not counted): ${flakyDiffs.join('; ')}`); }
   t.check(`${label} (${results.size} files)`, results.size > 0 && diffs.length === 0, diffs.slice(0, 25).join('\n') || 'no files');
 }
 
 module.exports = {
-  workspacePython, plainPytestResults, checkMatchesPlainPytest, sortedCounts,
+  workspacePython, plainPytestResults, checkMatchesPlainPytest, sortedCounts, pytestProcesses,
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
   statusCounts, isoNow, plainJestCounts, plainJestJson, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,

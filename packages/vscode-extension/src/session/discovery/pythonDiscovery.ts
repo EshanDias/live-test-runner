@@ -234,9 +234,10 @@ export function pythonDiscoverer(): TestFileDiscoverer {
       return dirs.flatMap((d) => s.pythonFiles.map((f) => (d ? `${d}/**/${f}` : `**/${f}`)));
     },
     exclude: PYTHON_EXCLUDE,
-    // The patterns choose the files; a file pytest lists (custom python_files) is always readable.
-    accepts: (fp) => /\.py$/i.test(fp),
-    discover: (source, _fp, root) => discoverPythonTests(source, rules(root)),
+    // The patterns choose the files; any file pytest lists counts (custom python_files,
+    // doctest text files via --doctest-glob) — the scanner reads only .py, others fill in from results.
+    accepts: () => true,
+    discover: (source, fp, root) => (/\.py$/i.test(fp) ? discoverPythonTests(source, rules(root)) : { suites: [], rootTests: [] }),
     testsLabel: 'pytest tests',
   };
 }
