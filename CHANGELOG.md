@@ -2,7 +2,7 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [3.1.0] - Unreleased
+## [3.1.0] - 2026-10-28
 
 ### Any UI framework: components, Vitest workspaces, Jest ESM mode
 
