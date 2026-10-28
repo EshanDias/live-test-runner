@@ -36,6 +36,8 @@ export interface BatchRunOptions {
 /** A run of the tests that depend on changed source files — the framework finds them (e.g. `vitest related`). */
 export interface RelatedRunOptions extends Omit<BatchRunOptions, 'filePaths'> {
   sourceFiles: string[];
+  /** Vitest: only the related type-check files (`--typecheck.only`). */
+  typecheckOnly?: boolean;
 }
 
 export interface IBatchRunner {
@@ -53,6 +55,9 @@ export interface IBatchRunner {
    * Without it, SessionManager uses the adapter's plain related run.
    */
   runRelated?(options: RelatedRunOptions): Promise<{ ran: string[]; missing: string[] }>;
+
+  /** Vitest: the root has type-check files (no trace) — a source save also type-checks the related ones. */
+  hasTypecheckFiles?(projectRoot: string): boolean;
 
   /** Stop every running batch; results from batches started before this are dropped. Final until reset(). */
   kill(): void;

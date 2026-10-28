@@ -10,8 +10,7 @@
  *
  * Off for a root (the run is then exactly today's, and source-file saves use
  * `vitest related`): the setting `liveTestRunner.vitestTrace` is off, Vitest
- * is older than 3, Vite cannot be found, the project uses a
- * `vitest.workspace.*` file, the wrapper reported it could not add the trace,
+ * is older than 3, Vite cannot be found, the wrapper reported it could not add the trace,
  * a traced batch produced no result at all, or a test file ran without the
  * trace setup. Each reason is logged once (WARN when something failed, INFO
  * when off by design) and kept until the next session.
@@ -20,6 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { VitestAdapter as VitestRunnerAdapter, toSpawnPath, viteEntryFor, vitestDirFor } from '@live-test-runner/runner';
 import { logger } from '../utils/logger';
+import { NON_SOURCE_EXTENSIONS } from './sourceFiles';
 
 const log = logger.scope('Vitest');
 
@@ -41,8 +41,6 @@ export function defaultTraceAssets(): VitestTraceAssets {
     parser: path.join(__dirname, 'vendor', 'babel-parser.js'),
   };
 }
-
-const WORKSPACE_FILES = ['ts', 'mts', 'cts', 'js', 'mjs', 'cjs', 'json'].map((e) => `vitest.workspace.${e}`);
 
 interface RootState {
   /** The wrapper config, once written. */
@@ -113,11 +111,6 @@ export class VitestTrace {
     const install = this._runnerAdapter.findInstall(projectRoot);
     if (!install) { throw new Error('Vitest is not installed'); }
     if (install.major < 3) { throw infoError(`Vitest ${install.version} is older than 3`); }
-    const dirs = new Set([projectRoot, configPath ? path.dirname(configPath) : projectRoot]);
-    for (const dir of dirs) {
-      const ws = WORKSPACE_FILES.find((f) => fs.existsSync(path.join(dir, f)));
-      if (ws) { throw infoError(`the project uses a Vitest workspace file (${ws}), which the trace does not support`); }
-    }
     const vite = viteEntryFor(projectRoot);
     const vitestDir = vitestDirFor(projectRoot);
     if (!vite || !vitestDir) { throw new Error('Vite (used by Vitest) could not be found'); }
@@ -140,6 +133,8 @@ export class VitestTrace {
       wrapperDir: dir,
       vitestDir,
       selfFile: file,
+      // Never instrumented, even when a Vite plugin turns them into JS (CSS, JSON, images…).
+      nonSourceExtensions: [...NON_SOURCE_EXTENSIONS],
     }), 'utf8');
     log.debug(`Vitest ${install.version}: execution trace wrapper for ${projectRoot} → ${file}`);
     return file;

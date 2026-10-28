@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -55,6 +56,7 @@ interface RunHandle {
 }
 
 import { nameToPattern } from '../utils/testNames';
+import { extensionOf, isSourceFile, NON_SOURCE_EXTENSIONS } from './sourceFiles';
 export { nameToPattern };
 
 /**
@@ -103,6 +105,9 @@ export class SessionManager {
   private _groups: Record<string, string> | undefined;
   /** Mixed projects: each listed file's framework (remembered with the list). */
   private _frameworks: Record<string, string> | undefined;
+
+  /** Module extensions the project's framework(s) load beyond the list (Jest's moduleFileExtensions), per session. */
+  private _sourceExtensions = new Set<string>();
 
   constructor(
     /** The project this manager runs (one SessionManager per project, phase 7). */
@@ -161,6 +166,7 @@ export class SessionManager {
 
     // Which framework(s) the project runs, re-read every Start (phase 8: a mixed project has two).
     this._services.prepare(projectRoot);
+    this._sourceExtensions = new Set();
     // Bootstrap a session with the main framework's runner to hold the coverage map
     const services = this._services.servicesFor(projectRoot);
     this._session = new TestSession(services.createSessionRunner());
@@ -194,6 +200,7 @@ export class SessionManager {
       for (const s of this._services.all()) {
         if (s !== services) { s.projectConfig.reset(); void s.projectConfig.get(projectRoot); }
       }
+      void this._loadSourceExtensions(projectRoot, token);
       if (this._services.isMixed()) { framework = `${framework} + ${services.framework === 'vitest' ? 'jest' : 'vitest'}`; }
       this._runnable = toRunnableSet(runnableList);
       if (runnableList) {
@@ -420,15 +427,16 @@ export class SessionManager {
         .get<number>('onSaveDebounceMs') ?? 300;
 
     const filePath = document.uri.fsPath;
-    // Only the project's own JS/TS files matter — VS Code also saves its
-    // settings.json, untitled buffers, files in other folders, etc.
+    // Only the project's own source files matter (JS / TS and components —
+    // .vue, .svelte, …) — VS Code also saves its settings.json, untitled
+    // buffers, files in other folders, etc.
     const root = this._getProjectRoot();
     const rel = root ? path.relative(root, filePath) : '';
     if (
       !root || document.uri.scheme !== 'file' ||
       rel.startsWith('..') || path.isAbsolute(rel) ||
       /(^|[\\/])node_modules[\\/]/.test(rel) ||
-      !/\.(c|m)?[jt]sx?$/i.test(filePath)
+      !this._isProjectSource(filePath)
     ) {
       return;
     }
@@ -582,6 +590,8 @@ export class SessionManager {
     projectRoot: string,
     token: number,
     owns?: (filePath: string) => boolean,
+    /** 1 when running for a file that names the saved one (no further hops). */
+    depth = 0,
   ): Promise<string[]> {
     // A framework whose trace is off for this root (Vitest: see VitestTrace)
     // may have partial trace data: trust only its related run.
@@ -589,6 +599,37 @@ export class SessionManager {
     const affectedTestFiles = traceOff ? [] : this._traceStore
       .getAffectedTestFiles(sourceFilePath)
       .filter((fp) => this._isRunnable(fp) && (!owns || owns(fp)));
+
+    if (affectedTestFiles.length === 0 && !traceOff) {
+      // No lines of it ran, but tests load it (Vitest's module graph: an HTML
+      // template, a `?raw` file, a CSS module…): rerun the test files that reach it.
+      const isTest = (fp: string) => this._isRunnable(fp) && (!owns || owns(fp));
+      const dependents = this._traceStore.getDependentTestFiles(sourceFilePath, isTest)
+        .map((fp) => this._store.findFileKey(fp) ?? fp);
+      if (dependents.length > 0) {
+        log.debug(`Module-graph rerun for ${path.basename(sourceFilePath)}: ${dependents.length} test file(s) load it`);
+        await this._runFiles(dependents, projectRoot, token);
+        await this._typecheckRelated(services, sourceFilePath, projectRoot, token, owns);
+        return dependents;
+      }
+    }
+
+    // A non-JS file nothing ran or loaded as a module (Jest + Angular:
+    // `templateUrl: './x.html'` is a string, not an import — Jest's own related
+    // search does not see it): the source files next to it that name it run
+    // in its place, each by its own trace or related run.
+    if (affectedTestFiles.length === 0 && !depth && isCompiledOrAsset(sourceFilePath)) {
+      const referrers = referencingSources(sourceFilePath);
+      if (referrers.length > 0) {
+        log.debug(`${path.basename(sourceFilePath)} is used by ${referrers.map((f) => path.basename(f)).join(', ')} — rerunning their tests`);
+        const ran = new Set<string>();
+        for (const ref of referrers) {
+          if (token !== this._token) { break; }
+          for (const fp of await this._runAffectedWith(services, ref, projectRoot, token, owns, 1)) { ran.add(fp); }
+        }
+        return [...ran];
+      }
+    }
 
     if (affectedTestFiles.length === 0) {
       // No trace data — use jest --findRelatedTests as fallback. This runs Jest's
@@ -670,9 +711,31 @@ export class SessionManager {
       await this._runTestCases(individualCases, projectRoot, token);
     }
 
+    // Type-check files (typecheck.enabled) have no trace: type-check the related ones too.
+    await this._typecheckRelated(services, sourceFilePath, projectRoot, token, owns);
+
     // Scoped reruns don't produce coverage data; onSave clears the stale flag
     // once this returns — the existing counters are still valid.
     return [...new Set([...filesToRunFull, ...individualCases.map((c) => c.filePath)])];
+  }
+
+  /**
+   * After a trace / module-graph rerun: a Vitest root with type-check files
+   * (`*.test-d.ts`, which never get a trace) also type-checks the ones
+   * related to the saved file (`vitest related <src> --typecheck.only`).
+   */
+  private async _typecheckRelated(
+    services: FrameworkServices,
+    sourceFilePath: string,
+    projectRoot: string,
+    token: number,
+    owns?: (filePath: string) => boolean,
+  ): Promise<void> {
+    const batchRunner = services.batchRunner;
+    if (token !== this._token || !batchRunner.runRelated || !batchRunner.hasTypecheckFiles?.(projectRoot)) { return; }
+    log.debug(`Type-checking the test files related to ${path.basename(sourceFilePath)} (vitest related --typecheck.only)`);
+    const runRelated = (o: Parameters<NonNullable<IBatchRunner['runRelated']>>[0]) => batchRunner.runRelated!({ ...o, typecheckOnly: true });
+    await this._runRelatedBatch(runRelated, sourceFilePath, projectRoot, token, owns);
   }
 
   /**
@@ -1190,6 +1253,34 @@ export class SessionManager {
   }
 
   /** Settings that change how the framework is called, and so which files it lists. */
+  /**
+   * A saved file that can change test results: a source file by the list
+   * (sourceFiles.ts), by the framework's own module extensions (Jest's
+   * moduleFileExtensions), or one the execution trace saw a test run or
+   * load (Vitest's module graph) — whatever its extension. Anything else (docs, images, lock files) starts nothing.
+   */
+  private _isProjectSource(filePath: string): boolean {
+    if (isSourceFile(filePath, this._sourceExtensions)) { return true; }
+    // A file a test loaded (module graph: HTML templates, `?raw` files, CSS modules…) — whatever its type.
+    if (this._traceStore.isLoaded(filePath)) { return true; }
+    if (NON_SOURCE_EXTENSIONS.has(extensionOf(filePath))) { return false; }
+    return this._traceStore.getAffectedTestFiles(filePath).length > 0;
+  }
+
+  /** The frameworks' module extensions beyond the list (see {@link _isProjectSource}). */
+  private async _loadSourceExtensions(projectRoot: string, token: number): Promise<void> {
+    for (const s of this._services.all()) {
+      const exts = await s.projectConfig.sourceExtensions?.(projectRoot).catch(() => undefined);
+      if (token !== this._token || !exts) { continue; }
+      // Jest's JSON / native addons are data, not code a test reruns for.
+      for (const e of exts) { if (e !== 'json' && e !== 'node') { this._sourceExtensions.add(e); } }
+    }
+    const extra = [...this._sourceExtensions].filter((e) => !isSourceFile(`x.${e}`));
+    if (extra.length > 0 && token === this._token) {
+      log.debug(`Saving these files also reruns tests (the project's ${this._terms(projectRoot).config} loads them): ${extra.map((e) => `.${e}`).join(', ')}`);
+    }
+  }
+
   private _runnerSettings(projectRoot: string): string {
     return this._services.fingerprint(projectRoot);
   }
@@ -1315,4 +1406,33 @@ export class SessionManager {
 
 function capitalise(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Not JS / TS (a component, a template, a stylesheet…). */
+function isCompiledOrAsset(filePath: string): boolean {
+  return !/\.[cm]?[jt]sx?$/i.test(filePath);
+}
+
+/**
+ * Source files in the same folder that name `filePath` by a relative path
+ * (`'./x.component.html'` — Angular templateUrl / styleUrl, Vue
+ * `<template src>`…). Test files and large files are skipped.
+ */
+function referencingSources(filePath: string): string[] {
+  const dir = path.dirname(filePath);
+  const name = path.basename(filePath);
+  const needles = [`'./${name}'`, `"./${name}"`, `\`./${name}\``];
+  let entries: string[];
+  try { entries = fs.readdirSync(dir); } catch { return []; }
+  const out: string[] = [];
+  for (const e of entries) {
+    const f = path.join(dir, e);
+    if (f === filePath || !isSourceFile(f) || /\.(test|spec)\.[^.]+$/i.test(e)) { continue; }
+    try {
+      if (fs.statSync(f).size > 1_000_000) { continue; }
+      const text = fs.readFileSync(f, 'utf8');
+      if (needles.some((n) => text.includes(n))) { out.push(f); }
+    } catch { /* unreadable */ }
+  }
+  return out;
 }

@@ -16,7 +16,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults, jestNodeEnv, jestEsmHint } from '@live-test-runner/runner';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
@@ -25,12 +25,15 @@ import { combineWithEntry } from '../coverage/coverageRules';
 import { CoverageScope, coverageScopeOf } from '../coverage/coverageScope';
 import { logger } from '../utils/logger';
 import { IProjectConfig } from './IProjectConfig';
-import { sourceTransformPattern, upperDrive } from './JestProjectConfig';
+import { ownFilesPattern, sourceTransformPattern, upperDrive } from './JestProjectConfig';
+import { COMPILED_EXTENSIONS, NON_SOURCE_EXTENSIONS, SCRIPT_EXTENSIONS } from './sourceFiles';
 import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
 import { applyTraceRecords, normPath } from './traceRecords';
 
 const log = logger.scope('Runner');
 const covLog = logger.scope('Coverage');
+
+const OWN_FILES_PATTERN = ownFilesPattern();
 
 const SESSION_TRANSFORM_PATH = path.resolve(
   __dirname,
@@ -113,6 +116,8 @@ export class JestBatchRunner implements IBatchRunner {
   private readonly _owner = new Map<string, string>();
   private readonly _binaryResolver = new BinaryResolver();
   private _killed = false;
+  /** ES-module load hints already logged this session (jestEsmHint kinds). */
+  private readonly _hintsGiven = new Set<string>();
   /** Bumped by kill(): records from batches started before it are dropped. */
   private _generation = 0;
 
@@ -128,6 +133,7 @@ export class JestBatchRunner implements IBatchRunner {
 
   reset(): void {
     this._killed = false;
+    this._hintsGiven.clear();
   }
 
   private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
@@ -196,6 +202,10 @@ export class JestBatchRunner implements IBatchRunner {
 
     registerProjectRoot(projectRoot);
     const srcPattern = sourceTransformPattern(projectRoot);
+    // Compiled sources (.vue, .svelte, …, and whatever else the project's
+    // moduleFileExtensions name): the pattern for one extension is this prefix
+    // + the extension. Used only when the project transforms that extension itself.
+    const compiledPatternPrefix = sourceTransformPattern(projectRoot, '').replace(/\$$/, '');
 
     // The project's config as Jest resolved it (any format) — see JestProjectConfig.
     const resolvedConfigPath = await this._projectConfig.get(projectRoot);
@@ -307,6 +317,17 @@ function _overlay(cfg) {
   const hasGeneralJsTransform = Object.keys(baseTransformObj).some(pattern => {
     try { return new RegExp(pattern).test('src/foo.js'); } catch(_) { return false; }
   });
+  // Sources the project compiles itself (vue-jest, svelte-jester, coffee…):
+  // our transform first, it calls theirs. Candidates: our list + the
+  // project's moduleFileExtensions; never JS / TS (the pattern above) or assets.
+  const componentTransform = {};
+  const _skip = new Set(${JSON.stringify([...SCRIPT_EXTENSIONS, ...NON_SOURCE_EXTENSIONS])});
+  const _candidates = new Set([...${JSON.stringify(COMPILED_EXTENSIONS)}, ...((c.moduleFileExtensions || []).map((e) => String(e).toLowerCase()))]);
+  for (const ext of _candidates) {
+    if (_skip.has(ext) || !/^[\\w-]+$/.test(ext)) { continue; }
+    const handled = Object.keys(baseTransformObj).some((p) => { try { return new RegExp(p).test('src/Comp.' + ext); } catch (_) { return false; } });
+    if (handled) { componentTransform[${JSON.stringify(compiledPatternPrefix)} + ext + '$'] = ${JSON.stringify(SESSION_TRANSFORM_PATH)}; }
+  }
   let fallbackTransform = {};
   if (!hasGeneralJsTransform) {
     try {
@@ -321,9 +342,17 @@ function _overlay(cfg) {
     ...c,
     transform: {
       [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
+      ...componentTransform,
       ...baseTransformObj,
       ...fallbackTransform,
     },
+    // Our own files (setup, runtime) are never the project's to transform:
+    // its Babel config could add imports (@babel/runtime helpers) that cannot
+    // be resolved from the extension's folder.
+    transformIgnorePatterns: [
+      ...(c.transformIgnorePatterns || ['/node_modules/', '\\\\.pnp\\\\.[^\\\\/]+$']),
+      ${JSON.stringify(OWN_FILES_PATTERN)},
+    ],
     // Ours first: its beforeEach opens the per-test trace context before the
     // project's own hooks run, so their hits count for the test.
     setupFilesAfterEnv: [
@@ -425,6 +454,11 @@ module.exports = _projects
         // crash, or an instrumentation problem) — no test inside it executed.
         const firstLine = rec.failureMessage.split('\n').find((l) => l.trim()) ?? '';
         log.warn(`${batch}: ${path.basename(rec.testFilePath)} failed to run — ${firstLine.trim()}`);
+        const hint = jestEsmHint(rec.failureMessage, projectRoot);
+        if (hint && !this._hintsGiven.has(hint.kind)) {
+          this._hintsGiven.add(hint.kind);
+          log.warn(`${path.basename(rec.testFilePath)} could not be loaded: ${hint.text}`);
+        }
       }
       try {
         const prev = applied.get(rec.testFilePath);
@@ -527,6 +561,8 @@ module.exports = _projects
           ],
           cwd: projectRoot,
           extraEnv: {
+            // The test script's Node options (e.g. --experimental-vm-modules: Jest's ESM mode).
+            ...jestNodeEnv(projectRoot),
             SESSION_TRACE_FILE:   traceFile,
             COVERAGE_OUTPUT_FILE: covCountersFile,
             LTR_MANIFEST_DIR:     this._manifestDir(projectRoot),

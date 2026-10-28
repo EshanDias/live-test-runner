@@ -101,3 +101,24 @@ it('Vitest 1: module-scope output tagged <file>:<line>:<col> goes to the file', 
   `);
   expect(ev).toEqual([{ ev: 'log', file: path.resolve('/p', 'src/a.test.ts'), scope: 'file', names: [], type: 'stdout', content: 'top\n' }]);
 });
+
+it('tags a type-check run of a file (typecheck.enabled: meta.typecheck) on file-end', () => {
+  const ev = drive(`
+    const { file, idMap } = tree();
+    file.meta = { typecheck: true };
+    const r = new Reporter();
+    r.onInit({ version: '3.2.4', state: { idMap } });
+    r.onTestModuleEnd({ task: file });
+  `);
+  expect(ev.find((e) => e.ev === 'file-end')).toMatchObject({ file: '/p/a.test.ts', typecheck: true });
+});
+
+it('a run of a file without type-check is not tagged', () => {
+  const plain = drive(`
+    const { file, idMap } = tree();
+    const r = new Reporter();
+    r.onInit({ version: '3.2.4', state: { idMap } });
+    r.onTestModuleEnd({ task: file });
+  `);
+  expect(plain.find((e) => e.ev === 'file-end')).not.toHaveProperty('typecheck');
+});

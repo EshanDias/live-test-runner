@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Live Test Runner — Live Jest &amp; Vitest testing in VS Code</title>
 <meta name="description" content="Free VS Code extension that reruns the Jest and Vitest tests affected by every save and shows pass/fail, inline durations and per-line code coverage right in the editor. No terminal, no config.">
-<meta name="keywords" content="VS Code extension, Jest, Vitest, test runner, live testing, continuous testing, code coverage, TDD, Wallaby alternative, Create React App, TypeScript">
+<meta name="keywords" content="VS Code extension, Jest, Vitest, test runner, live testing, continuous testing, code coverage, TDD, Wallaby alternative, Create React App, TypeScript, Vue, Svelte">
 <meta name="author" content="EshLabs">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <link rel="canonical" href="https://eshandias.github.io/live-test-runner/">
@@ -66,7 +66,7 @@
       "@type": "FAQPage",
       "mainEntity": [
         { "@type": "Question", "name": "Which test frameworks does Live Test Runner support?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5) and Vitest 3+. Vitest 1 and 2 run with results only. The framework is detected from your project." } },
+          "acceptedAnswer": { "@type": "Answer", "text": "Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5) and Vitest 3+. Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more." } },
         { "@type": "Question", "name": "Do I need to change my Jest or Vitest config?",
           "acceptedAnswer": { "@type": "Answer", "text": "No. Live Test Runner uses your existing config and the test binary already in node_modules. Nothing extra is installed into your project." } },
         { "@type": "Question", "name": "Does it run tests in the background all the time?",
@@ -416,7 +416,7 @@
     <div class="section-head">
       <p class="eyebrow">Frameworks</p>
       <h2>Works with Jest and Vitest</h2>
-      <p>babel-jest, ts-jest and @swc/jest; Create React App (react-scripts 4 &amp; 5); Vitest 3+.</p>
+      <p>babel-jest, ts-jest and @swc/jest; Create React App (react-scripts 4 &amp; 5); Vitest 3+. Any UI framework: React, Vue, Svelte, Solid, Angular, Astro and more.</p>
     </div>
     <div class="table-wrap">
       <table>
@@ -430,6 +430,7 @@
         <tr><td>Monorepos (one project per package, switcher)</td><td>✅</td><td>🟡</td><td>✅</td></tr>
         <tr><td>Jest and Vitest in one project</td><td>✅</td><td>—</td><td>✅</td></tr>
         <tr><td>Covering tests on hover</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Vue / Svelte / Astro components (reruns, coverage, covering tests)</td><td>✅</td><td>—</td><td>✅</td></tr>
       </table>
     </div>
     <p class="legend">✅ supported · 🟡 partial · ⏳ coming soon · <a href="guide/#support" target="_blank" rel="noopener">Full support matrix</a></p>
@@ -470,7 +471,7 @@
       <h2>Questions</h2>
     </div>
     <div class="faq">
-      <details open><summary>Which test frameworks are supported?</summary><p>Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5) and Vitest 3+. Vitest 1 and 2 run with results only. The framework is detected from your project.</p></details>
+      <details open><summary>Which test frameworks are supported?</summary><p>Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5) and Vitest 3+. Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more.</p></details>
       <details><summary>Do I need to change my Jest or Vitest config?</summary><p>No. Live Test Runner uses your existing config and the test binary already in <code>node_modules</code>. Nothing extra is installed into your project.</p></details>
       <details><summary>Does it run tests in the background all the time?</summary><p>No. Nothing runs until you click <b>Start Testing</b>, and <b>Stop</b> ends the session. Single ▶ Run and ▷ Debug clicks from the editor always work.</p></details>
       <details><summary>Is it free?</summary><p>Yes. It is free and open source under the MIT license, on the VS Code Marketplace and on Open VSX for VSCodium, Cursor, Windsurf and other compatible editors.</p></details>

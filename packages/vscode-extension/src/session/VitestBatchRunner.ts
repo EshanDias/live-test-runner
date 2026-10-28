@@ -55,7 +55,7 @@ import { CoverageScope, coverageScopeOf, defaultCoverageScope } from '../coverag
 import { IProjectConfig } from './IProjectConfig';
 import { PLAIN_RUN_HANG_FACTOR } from '../constants';
 import { VitestTrace } from './VitestTrace';
-import { applyTraceRecords, readTraceLines, workerTraceFiles } from './traceRecords';
+import { applyDependencyFiles, applyTraceRecords, readTraceLines, workerTraceFiles } from './traceRecords';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Vitest');
@@ -70,6 +70,8 @@ export class VitestBatchRunner implements IBatchRunner {
   /** file → the batch whose result counts for it (the newest run of the file). */
   private readonly _owner = new Map<string, string>();
   private _killed = false;
+  /** Roots that ran type-check files this session (typecheck.enabled): saves also type-check related files. */
+  private readonly _typecheckRoots = new Set<string>();
   /** Bumped by kill(): events of batches started before it are dropped. */
   private _generation = 0;
 
@@ -101,6 +103,12 @@ export class VitestBatchRunner implements IBatchRunner {
   reset(): void {
     this._killed = false;
     this._trace?.trace.reset();
+    this._typecheckRoots.clear();
+  }
+
+  /** The root has type-check files (`*.test-d.ts`, typecheck.enabled) — they never get a trace. */
+  hasTypecheckFiles(projectRoot: string): boolean {
+    return this._typecheckRoots.has(projectRoot);
   }
 
   async runFiles(options: BatchRunOptions): Promise<{ missing: string[] }> {
@@ -123,7 +131,7 @@ export class VitestBatchRunner implements IBatchRunner {
   }
 
   /** A batch of `filePaths`, or (with `related`) of whatever test files depend on that source file. */
-  private async _run(options: BatchRunOptions, related?: string, untraced = false): Promise<{ ran: string[]; missing: string[] }> {
+  private async _run(options: BatchRunOptions & { typecheckOnly?: boolean }, related?: string, untraced = false): Promise<{ ran: string[]; missing: string[] }> {
     const { projectRoot, applyFileResult, onFileDone } = options;
     /** The batch's files: given up front, or claimed as Vitest starts them (related). */
     const filePaths = [...options.filePaths];
@@ -155,7 +163,7 @@ export class VitestBatchRunner implements IBatchRunner {
     const runner = this._createRunner(rawLog) as VitestRunner;
     let live: Awaited<ReturnType<VitestRunner['liveCommand']>>;
     /** This batch's trace: the wrapper config and where the workers write. */
-    let trace: { config: string; base: string; marker: string } | undefined;
+    let trace: { config: string; base: string; marker: string; deps: string } | undefined;
     try {
       runner.setProjectRoot(projectRoot);
       const coverageDir = this._coverage ? path.join(this._coverage.sessionDir, 'vitest-coverage', batch) : undefined;
@@ -167,16 +175,18 @@ export class VitestBatchRunner implements IBatchRunner {
             config,
             base: path.join(this._trace.sessionDir, `ltr-vtrace-${batch}-${stamp}.jsonl`),
             marker: path.join(this._trace.sessionDir, `ltr-vtrace-${batch}-${stamp}.marker.json`),
+            deps: path.join(this._trace.sessionDir, `ltr-vdeps-${batch}-${stamp}`),
           };
         }
       }
-      live = await runner.liveCommand(filePaths, { coverageDir, related, config: trace?.config });
+      live = await runner.liveCommand(filePaths, { coverageDir, related, config: trace?.config, typecheckOnly: options.typecheckOnly });
       if (trace) {
         live.command.extraEnv = {
           ...live.command.extraEnv,
           SESSION_TRACE_FILE: trace.base,
           LTR_TRACE_PER_WORKER: '1',
           LTR_VITEST_TRACE_MARKER: trace.marker,
+          LTR_VITEST_DEPS: trace.deps,
           LTR_LOG_LEVEL: logger.level,
         };
       }
@@ -187,6 +197,8 @@ export class VitestBatchRunner implements IBatchRunner {
     }
 
     const received = new Set<string>();
+    /** Files only type-checked so far (typecheck.enabled): they never run the trace setup. */
+    const typecheckOnly = new Set<string>();
     /** Console output and failures per file, until its result arrives. */
     const pending = new Map<string, VitestEvent[]>();
     /** The test each file is running now — what the hang limit measures. */
@@ -233,6 +245,8 @@ export class VitestBatchRunner implements IBatchRunner {
             );
             pending.delete(fp);
             const fileResult: FileRunResult = result.fileResults[0];
+            if (ev.typecheck && !received.has(fp)) { typecheckOnly.add(fp); }
+            else if (!ev.typecheck) { typecheckOnly.delete(fp); }
             received.add(fp);
             if (!owns(fp)) {
               log.debug(`${batch}: ignoring the result for ${path.basename(fp)} — a newer run of it has started`);
@@ -337,7 +351,7 @@ export class VitestBatchRunner implements IBatchRunner {
       log.debug(`${batch}: done in ${seconds(startedAt)} — ${received.size}/${filePaths.length} file(s) reported`);
     }
     if (trace) {
-      const outcome = this._readTrace(trace, { projectRoot, batch, options, toKey, received, stopped, cutShort: !!timedOut || stalled });
+      const outcome = this._readTrace(trace, { projectRoot, batch, options, toKey, received, typecheckOnly, stopped, cutShort: !!timedOut || stalled });
       if (outcome === 'rerun' && !this._killed && generation === this._generation) {
         // The wrapper itself broke the run: the same batch as configured.
         release();
@@ -356,10 +370,12 @@ export class VitestBatchRunner implements IBatchRunner {
    * @returns 'rerun' when the batch must run again without the trace
    */
   private _readTrace(
-    trace: { base: string; marker: string },
+    trace: { base: string; marker: string; deps: string },
     ctx: {
       projectRoot: string; batch: string; options: BatchRunOptions; toKey: (p: string) => string;
       received: Set<string>;
+      /** Received only as type-check results: not expected to be traced. */
+      typecheckOnly: Set<string>;
       /** Stopped by the user: nothing is applied. */
       stopped: boolean;
       /** Stopped by the hang limit: what finished is applied, nothing is judged. */
@@ -367,6 +383,8 @@ export class VitestBatchRunner implements IBatchRunner {
     },
   ): 'ok' | 'rerun' {
     const files = workerTraceFiles(trace.base);
+    const depFiles = workerTraceFiles(trace.deps);
+    if (ctx.typecheckOnly.size > 0) { this._typecheckRoots.add(ctx.projectRoot); }
     let marker: { ok?: boolean; reason?: string } | undefined;
     try { marker = JSON.parse(fs.readFileSync(trace.marker, 'utf8')); } catch { marker = undefined; }
     try {
@@ -385,8 +403,10 @@ export class VitestBatchRunner implements IBatchRunner {
         return 'ok';
       }
       const summary = applyTraceRecords(readTraceLines(files), ctx.options.traceStore, ctx.toKey);
+      const graphFiles = applyDependencyFiles(depFiles, ctx.options.traceStore);
+      if (graphFiles > 0) { log.debug(`${ctx.batch}: module graph — ${graphFiles} project file(s) and their importers`); }
       if (ctx.cutShort) { return 'ok'; }
-      const untraced = [...ctx.received].filter((fp) => !summary.seen.has(fp));
+      const untraced = [...ctx.received].filter((fp) => !summary.seen.has(fp) && !ctx.typecheckOnly.has(fp));
       if (untraced.length > 0) {
         vt.turnOff(ctx.projectRoot, `${untraced.length} test file(s) ran without the trace setup (e.g. ${path.basename(untraced[0])}) — ` +
           'a Vitest project the trace could not reach');
@@ -398,7 +418,7 @@ export class VitestBatchRunner implements IBatchRunner {
       log.error(`${ctx.batch}: could not read the execution trace`, err);
       return 'ok';
     } finally {
-      for (const f of [...files, trace.marker]) { try { fs.unlinkSync(f); } catch { /* gone */ } }
+      for (const f of [...files, ...depFiles, trace.marker]) { try { fs.unlinkSync(f); } catch { /* gone */ } }
     }
   }
 

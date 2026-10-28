@@ -70,7 +70,7 @@ describe('VitestRunner command lines', () => {
     await runner.runTestCaseJson(path.join(root, 'src', 'a.test.ts'), 'Suite', true);
     await runner.runRelatedTestsJson(path.join(root, 'src', 'util.ts'));
     expect(calls.map(stable)).toMatchSnapshot();
-    expect(outputFileArgs.map((f) => f('/tmp/out.json'))).toEqual(Array(7).fill(['--outputFile.json=/tmp/out.json']));
+    expect(outputFileArgs.map((f) => f('/tmp/out.json'))).toEqual(Array(7).fill(['--outputFile=/tmp/out.json']));
   });
 
   it('runs an old Vitest best-effort: no task-location flag, related → full run', async () => {
@@ -161,6 +161,12 @@ describe('toVitestNamePattern', () => {
     expect(test.test('Outer > Inner > adds')).toBe(true);
     expect(test.test('Outer Inner adds')).toBe(true);
     expect(test.test('Outer > Inner > adds more')).toBe(false);
+  });
+
+  it('matches Vitest 1 names, which start with a space (the file is an unnamed parent)', () => {
+    expect(new RegExp(toVitestNamePattern('Outer adds', false)).test(' Outer adds')).toBe(true);
+    expect(new RegExp(toVitestNamePattern('Outer', true)).test(' Outer adds')).toBe(true);
+    expect(new RegExp(toVitestNamePattern('Outer adds', false)).test('x Outer adds')).toBe(false);
   });
 
   it('matches the tests of a suite, not a longer suite name', () => {

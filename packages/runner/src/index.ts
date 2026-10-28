@@ -47,7 +47,7 @@ export {
   VITE_CONFIG_FILES,
 } from './framework/adapters/VitestAdapter';
 export { UnsupportedFrameworkError } from './framework/UnsupportedFrameworkError';
-export { toInputConfig, pickGlobalConfig, testScriptJestArgs } from './framework/jestConfig';
+export { toInputConfig, pickGlobalConfig, testScriptJestArgs, testScriptNodeOptions, jestNodeEnv, npmrcNodeOptions, jestEsmHint } from './framework/jestConfig';
 export { testScriptVitestArgs, VitestScriptArgs } from './framework/vitestConfig';
 export { vitestProjects, vitestConfigInfo, vitestCoverageInstalled, VitestProjectInfo, VitestConfigInfo } from './framework/vitestProjects';
 export {

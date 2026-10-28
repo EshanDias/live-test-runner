@@ -34,6 +34,8 @@
 // istanbul provider both read it) skips the call. Without it a tool that
 // cannot map the call's start retries with the next mapped position — the
 // original statement — and counts the call as an extra statement there.
+const { sourceMapLookup } = require('../shared/sourceMapLookup.js');
+
 const IGNORE = '/* istanbul ignore next */';
 const STEP = 'globalThis.__strace?.step';
 const OPEN_MARK = '/*ltr{*/';
@@ -342,57 +344,14 @@ function buildMap(code, inserts, tokens, file) {
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 /**
- * Decodes a source map's `mappings` into, per generated line, the
- * segments [generatedColumn, originalLine (0-based)] of mapped positions.
- * @returns {(line0: number, col: number) => number | undefined} the original
- *   line (1-based) at a generated position: the last mapped segment at or
- *   before `col` on that line, else the line's first mapped segment
+ * The original line (1-based) at a generated position (0-based line, column),
+ * through the incoming map — segments for other sources ignored — or
+ * undefined (unmapped).
  */
-function originalLineLookup(map) {
-  const lines = [];
-  const mappings = (map && map.mappings) || '';
-  let genCol = 0, src = 0, origLine = 0, origCol = 0, name = 0;
-  let line = [];
-  let i = 0;
-  const readVlq = () => {
-    let result = 0, shift = 0, c;
-    do {
-      c = B64.indexOf(mappings[i++]);
-      if (c < 0) { throw new Error('invalid source map mappings'); }
-      result += (c & 31) * 2 ** shift;
-      shift += 5;
-    } while (c & 32);
-    return result % 2 === 1 ? -Math.floor(result / 2) : result / 2;
-  };
-  while (i <= mappings.length) {
-    const ch = mappings[i];
-    if (ch === ';' || ch === undefined) {
-      lines.push(line);
-      line = [];
-      genCol = 0;
-      i++;
-      if (ch === undefined) { break; }
-      continue;
-    }
-    if (ch === ',') { i++; continue; }
-    genCol += readVlq();
-    const next = mappings[i];
-    if (next !== undefined && next !== ',' && next !== ';') {
-      src += readVlq();
-      origLine += readVlq();
-      origCol += readVlq();
-      if (mappings[i] !== undefined && mappings[i] !== ',' && mappings[i] !== ';') { name += readVlq(); }
-      line.push([genCol, origLine]);
-    }
-  }
-  for (const l of lines) { l.sort((a, b) => a[0] - b[0]); }
-  return (line0, col) => {
-    const segs = lines[line0];
-    if (!segs || segs.length === 0) { return undefined; }
-    let best;
-    for (const seg of segs) { if (seg[0] <= col) { best = seg; } else { break; } }
-    return (best || segs[0])[1] + 1;
-  };
+function originalLineLookup(map, file) {
+  const lookup = sourceMapLookup(map, file);
+  if (!lookup) { throw new Error('the incoming source map cannot be read'); }
+  return (line0, col) => { const p = lookup(line0, col); return p && p.line; };
 }
 
 /**
@@ -410,7 +369,7 @@ function instrument(code, file, parser, inputMap) {
   const ast = parse(parser, code, file);
   let edits = collect(ast);
   if (inputMap) {
-    const lookup = originalLineLookup(inputMap);
+    const lookup = originalLineLookup(inputMap, file);
     const starts = lineStarts(code);
     edits = edits.flatMap((e) => {
       const offset = e.kind === 'arrow' ? e.body : e.at;

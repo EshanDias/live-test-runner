@@ -19,7 +19,8 @@ export const VITEST_EVENTS_ENV = 'LTR_VITEST_EVENTS';
  *   { "ev": "error", "file", "scope", "names", "errors": [{ "name", "message", "diff", "stack", "stacks" }] }
  *   { "ev": "file-start", "file" }                      a test file starts running
  *   { "ev": "test-start", "file", "name" } / { "ev": "test-end", "file" }   heartbeats (hang limit)
- *   { "ev": "file-end", "file", "result" }              the file's result, in the json reporter's shape
+ *   { "ev": "file-end", "file", "result", "typecheck"? }  the file's result, in the json reporter's shape;
+ *                                                       typecheck: true for a type-check run (typecheck.enabled)
  *
  * Live events use the reporter API of Vitest 3+ (onTestModuleStart / End,
  * onTestCaseReady / Result) and onTaskUpdate before (Vitest 2 already has
@@ -130,7 +131,9 @@ export default class LtrReporter {
     if (!file || this.ended.has(file.id)) { return; }
     this.ended.add(file.id);
     failures(file); // before file-end: a live reader applies the result on file-end
-    write({ ev: 'file-end', file: file.filepath, result: fileResult(file) });
+    // Type-check runs (tsc, no worker, no setup files) are tagged meta.typecheck by Vitest.
+    const typecheck = !!(file.meta && file.meta.typecheck);
+    write({ ev: 'file-end', file: file.filepath, result: fileResult(file), ...(typecheck ? { typecheck } : {}) });
   }
 
   // ── Vitest 3+ ──
@@ -191,11 +194,21 @@ export default class LtrReporter {
 
 const written = new Set<string>();
 
-/** Writes the reporter into `dir` (once per process) and returns its path. */
+/**
+ * Writes the reporter into `dir` (once per process) and returns its path.
+ *
+ * It goes in `<dir>/node_modules/.ltr/`: Vitest 3.0 / 3.1 load reporters
+ * through vite-node, which sends a file outside node_modules through Vite —
+ * and Vite ≥ 6.4 refuses files outside `server.fs.allow` ("Failed to load
+ * url … Does the file exist?"), so every run failed at startup. Under a
+ * `node_modules` folder vite-node imports it natively (externalized). The
+ * folder is in our session folder, never in the project.
+ */
 export function vitestReporterFile(dir: string): string {
-  const file = path.join(dir, 'ltr-vitest-reporter.mjs');
+  const folder = path.join(dir, 'node_modules', '.ltr');
+  const file = path.join(folder, 'ltr-vitest-reporter.mjs');
   if (!written.has(file) || !fs.existsSync(file)) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(folder, { recursive: true });
     fs.writeFileSync(file, REPORTER_SOURCE, 'utf8');
     written.add(file);
   }
@@ -213,6 +226,8 @@ export interface VitestLiveEvent {
   name?: string;
   /** file-end: the file's result in the json reporter's shape (one testResults[] entry). */
   result?: unknown;
+  /** file-end: a type-check run of the file (no worker ran it). */
+  typecheck?: boolean;
 }
 
 export interface VitestLogEvent {

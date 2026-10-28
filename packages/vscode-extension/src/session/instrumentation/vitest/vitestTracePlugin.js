@@ -10,8 +10,12 @@
  *  - transform (enforce 'post', after the project's own transforms):
  *    `__strace.step(line, file)` before every statement of the project's own
  *    source files, with the source's line numbers — not
- *    node_modules, not test files, not files outside the project, not Vue /
- *    Svelte single-file components (their script is not plain JS/TS).
+ *    node_modules, not test files, not files outside the project. No list
+ *    of extensions: JS / TS files, and any other module a Vite plugin
+ *    compiled to JS (.vue, .svelte, .astro, .mdx, .coffee, …) whose combined
+ *    source map leads back to the file itself — its own lines are recorded.
+ *    Assets and data (`nonSourceExtensions`: CSS, JSON, images…) never are,
+ *    and sub-modules (`Comp.vue?vue&type=style…`) have a query.
  *
  * Idempotent: a project may get the plugin twice (added to an inline project
  * that also inherits it); only the first copy in a resolved config works.
@@ -23,9 +27,15 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { instrument } = require('./vitestTraceTransform.js');
+const { mapsBackTo } = require('../shared/sourceMapLookup.js');
 
 const PLUGIN_NAME = 'live-test-runner:trace';
-const SOURCE_RE = /\.(?:[cm]?[jt]s|[jt]sx)$/i;
+const SCRIPT_RE = /\.(?:[cm]?[jt]s|[jt]sx)$/i;
+/** Never source, when the options name none (the extension passes its list: sourceFiles.ts NON_SOURCE_EXTENSIONS). */
+const DEFAULT_NON_SOURCE = ['css', 'scss', 'sass', 'less', 'styl', 'stylus', 'pcss', 'postcss', 'sss', 'json', 'json5', 'jsonc',
+  'html', 'htm', 'xml', 'svg', 'md', 'markdown', 'txt', 'csv', 'yaml', 'yml', 'toml', 'graphql', 'gql', 'glsl', 'wgsl', 'vert', 'frag',
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'wasm'];
+const extOf = (file) => { const m = /\.([^./]+)$/.exec(file); return m ? m[1].toLowerCase() : ''; };
 const TEST_RE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?$)|(?:[\\/]__tests__[\\/])/i;
 
 // Vitest's main process also loads instrumented modules (globalSetup, config
@@ -53,7 +63,7 @@ const norm = (p) => { const n = path.normalize(p).replace(/\\/g, '/'); return pr
 const toArray = (v) => (v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]);
 
 /**
- * @param {{ setupFile: string, parser: string, projectRoot: string, vite?: string, forceRoot?: string }} options
+ * @param {{ setupFile: string, parser: string, projectRoot: string, vite?: string, forceRoot?: string, nonSourceExtensions?: string[] }} options
  */
 function ltrTracePlugin(options) {
   const setupFile = options.setupFile;
@@ -71,6 +81,9 @@ function ltrTracePlugin(options) {
   let active = false;
   let root = options.projectRoot;
   let failures = 0;
+  let viteServer = null;
+  let depsWritten = false;
+  const nonSource = new Set((options.nonSourceExtensions || DEFAULT_NON_SOURCE).map((e) => String(e).toLowerCase()));
 
   const plugin = {
     name: PLUGIN_NAME,
@@ -108,6 +121,42 @@ function ltrTracePlugin(options) {
         }
       },
     },
+    configureServer(server) {
+      viteServer = server;
+    },
+    // Vitest closes its Vite server(s) at the end of a run: write which project
+    // files import which (the module graph — imports, `?raw` / `?url` files,
+    // files plugins read with addWatchFile, e.g. Angular templates), so a save
+    // of any file a test loaded reruns exactly the test files that reach it.
+    closeBundle() {
+      if (!active || !viteServer || depsWritten || !process.env.LTR_VITEST_DEPS) { return; }
+      depsWritten = true;
+      try {
+        const importers = {};
+        const graphs = viteServer.environments
+          ? Object.values(viteServer.environments).map((e) => e && e.moduleGraph).filter(Boolean)
+          : [viteServer.moduleGraph];
+        const own = (f) => !!f && !f.includes('/node_modules/') && rootPrefixes.some((r) => norm(f).startsWith(r));
+        // Native spelling, as the trace records have it (Vite's ids use forward slashes on Windows too).
+        const native = (f) => path.normalize(f);
+        for (const graph of graphs) {
+          for (const [file, mods] of graph.fileToModulesMap || []) {
+            if (!own(file)) { continue; }
+            const key = native(file);
+            const set = new Set(importers[key] || []);
+            for (const m of mods) {
+              for (const i of m.importers || []) { if (i.file && i.file !== file && own(i.file)) { set.add(native(i.file)); } }
+            }
+            importers[key] = [...set];
+          }
+        }
+        const out = `${process.env.LTR_VITEST_DEPS}.${process.pid}-${Math.random().toString(36).slice(2)}.json`;
+        fs.writeFileSync(out, JSON.stringify({ importers }), 'utf8');
+        ltrLog('debug', `module graph: ${Object.keys(importers).length} project file(s) → ${path.basename(out)}`);
+      } catch (err) {
+        ltrLog('debug', `could not write the module graph: ${err && err.message}`);
+      }
+    },
     configResolved(config) {
       root = config.root || root;
       addRoot(config.root);
@@ -123,16 +172,19 @@ function ltrTracePlugin(options) {
       if (!active || typeof code !== 'string') { return null; }
       if (id.includes('?') || id.startsWith('\0')) { return null; }
       const file = norm(id);
-      if (!rootPrefixes.some((r) => file.startsWith(r)) || file.includes('/node_modules/') || !SOURCE_RE.test(file) ||
+      if (!rootPrefixes.some((r) => file.startsWith(r)) || file.includes('/node_modules/') || nonSource.has(extOf(file)) ||
           TEST_RE.test(file) || /\.d\.[cm]?ts$/.test(file)) {
         return null;
       }
       try {
         let inputMap;
         try { inputMap = this.getCombinedSourcemap(); } catch (_) { inputMap = undefined; }
-        if (!inputMap && typeof this.originalCode === 'string' && this.originalCode !== code) {
+        const compiled = !SCRIPT_RE.test(file);
+        if (!inputMap && (compiled || (typeof this.originalCode === 'string' && this.originalCode !== code))) {
           return null; // transformed, but no way back to the source lines
         }
+        // Compiled from another language: only when the map leads back to this very file.
+        if (compiled && !mapsBackTo(inputMap, id)) { return null; }
         const out = instrument(code, path.normalize(id), loadParser(options.parser, options.projectRoot), inputMap);
         if (!out) { return null; }
         ltrLog('trace', `instrumented ${id} (${out.statements} statements)`);

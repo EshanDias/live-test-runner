@@ -6,12 +6,21 @@ All notable changes to Live Test Runner are documented here.
 
 ### New
 
-- **Vitest: covering tests and precise reruns** — the coverage hover now lists the tests that ran each line, and saving a source file reruns only the tests that ran it (not every test file that imports it), as with Jest. On by default; turn it off with `liveTestRunner.vitestTrace`. Needs Vitest 3 or newer; projects using a `vitest.workspace` file and browser-mode projects run as before.
+- **Vitest: covering tests and precise reruns** — the coverage hover now lists the tests that ran each line, and saving a source file reruns only the tests that ran it (not every test file that imports it), as with Jest. On by default; turn it off with `liveTestRunner.vitestTrace`. Needs Vitest 3 or newer (browser-mode projects run as before); `vitest.workspace` files and type-check (`*.test-d.ts`) files are supported.
 - **Monorepos & multi-root workspaces** — every package with tests is detected as its own project; nothing runs until you start it. A project switcher at the top of the Explorer shows each project's state and counts; pick one and the tree, results and status bar switch to it, while gutter icons, CodeLens and coverage bars always show each file's own project. Start and Stop act on the project shown, and several projects can run at once in the background (new setting `liveTestRunner.maxRunningProjects`, default `auto`). A root config that covers its packages (Jest `projects`, Vitest `test.projects`) stays one project, and Vitest projects are grouped by name. New commands **Select Project** and **Stop All Projects**; `liveTestRunner.projectRoot` / **Select Project Root** pin one folder as before.
 - **Jest and Vitest in one project** — a project with a Jest config and its own `vitest.config.*` (e.g. mid-migration) runs each test file with its own framework: the one whose config lists it, else what the file imports or calls (`vitest` / `vi.` or `@jest/globals` / `jest.`), else Jest with a warning. New setting `liveTestRunner.frameworks` (glob → `"jest"` / `"vitest"`) decides explicitly. The tree groups files by framework, saving a source file reruns both frameworks' related tests, and coverage shows the lines either framework ran.
 
+- **Any UI framework** — Vue, Svelte, Astro, Marko, MDX and other compiled files are now first-class, with Jest and Vitest: saving one reruns the tests that use it, the coverage hover lists the tests that ran each line (Vue templates included), and coverage covers them (untested components count too). Any file type your Jest config loads (e.g. Angular `.html` templates) reruns its tests on save. React, Solid, Preact, Lit, Angular and Qwik code was already supported — it is plain JS / TS.
+- **HTML templates and other loaded files** — saving an Angular template (`templateUrl`), an HTML file imported with `?raw` or any other file your tests load reruns the tests that use it, with Jest and Vitest. Type-check tests (`*.test-d.ts`) rerun when a file they check is saved.
+- **Jest in ESM mode** — `NODE_OPTIONS=--experimental-vm-modules` in your test script or `node-options` in `.npmrc` is honoured, so ESM-only projects and Svelte 4+ with svelte-jester run. If a file fails to load as an ES module, the log says what to change.
+
 ### Fixes
 
+- Jest projects whose Babel config uses `@babel/runtime` failed every test file; Angular projects with jest-preset-angular ran untranspiled TypeScript; files with TypeScript generics had no coverage; Angular spec files with decorators were missing from the tree with Babel 8. All fixed.
+- A project whose test script runs Vitest but that also has a `jest.config` file now runs on Vitest, like `npm test`.
+- Vitest 3.0 and 3.1 projects failed to start with recent Vite versions ("Failed to load custom Reporter"). They run again.
+- Vitest: running a single test or suite failed with "invalid JSON" in projects whose Vitest config sets `outputFile` (e.g. for a junit report), and matched nothing on Vitest 1. Both work now, and the extension no longer writes into your project's report file.
+- **Clear Cache and Restart Testing** now restarts testing, and the test list and counts refresh right away.
 - Jest projects whose `testMatch` / `testRegex` names files the default patterns miss (e.g. `*.jest.js`) ran those files one by one in a slower fallback, without coverage. They now run in the normal batches.
 
 ## [3.0.0] - 2026-10-22

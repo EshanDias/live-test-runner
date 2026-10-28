@@ -53,6 +53,11 @@ const REPOS = {
   'unplugin':             { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true, baseline: 'LTR_E2E_VITEST_BASELINE', plain: 'vitest' },
   'slidev':               { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true, baseline: 'LTR_E2E_VITEST_BASELINE', plain: 'vitest' },
   'vueuse':               { dir: VITEST_DIR, scenario: 'repo-vitest', env: 'LTR_E2E_VITEST_REPO', light: true, baseline: 'LTR_E2E_VITEST_BASELINE', plain: 'vitest' },
+  // UI components (repo-components; LTR_E2E_COMPONENT_EXTS = the component files to check).
+  'vue-testing-library':  { dir: JEST_DIR, scenario: 'repo-components', env: 'LTR_E2E_COMPONENT_REPO', light: true, baseline: 'LTR_E2E_COMPONENT_BASELINE', extra: { LTR_E2E_COMPONENT_EXTS: 'vue', LTR_E2E_COMPONENT_COVERAGE: '0' } }, // collectCoverageFrom: **/src/**/*.js only
+  'vue-multiselect':      { dir: JEST_DIR, scenario: 'repo-components', env: 'LTR_E2E_COMPONENT_REPO', light: true, baseline: 'LTR_E2E_COMPONENT_BASELINE', extra: { LTR_E2E_COMPONENT_EXTS: 'vue' } },
+  'example-app-v22':      { dir: path.join(JEST_DIR, 'jest-preset-angular', 'examples'), scenario: 'repo-components', env: 'LTR_E2E_COMPONENT_REPO', light: true, baseline: 'LTR_E2E_COMPONENT_BASELINE', extra: { LTR_E2E_COMPONENT_EXTS: 'html' } },
+  'svelte-testing-library': { dir: VITEST_DIR, scenario: 'repo-components', env: 'LTR_E2E_COMPONENT_REPO', light: true, baseline: 'LTR_E2E_COMPONENT_BASELINE', plain: 'vitest', extra: { LTR_E2E_COMPONENT_EXTS: 'svelte' } },
 };
 
 function git(dir, ...args) {
@@ -114,7 +119,7 @@ function main() {
     const copy = path.join(CLONES, n);
     const before = fingerprint(original);
     clone(original, copy, fresh);
-    const env = { [repo.env]: copy };
+    const env = { [repo.env]: copy, ...(repo.extra || {}) };
     let baseline;
     if (repo.baseline) {
       // A plain run of the project's own runner on the clone is the reference the extension is compared with.

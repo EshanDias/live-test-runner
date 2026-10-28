@@ -198,6 +198,71 @@ describe('the plugin', () => {
     expect(t(path.join(root, 'src/types.d.ts'))).toBeNull();
   });
 
+  it('instruments components (.vue, .svelte, …) compiled by their Vite plugin, at the component\'s lines', async () => {
+    const p = make();
+    await configured(p, { test: {} });
+    // Compiled component: line 1 is the plugin's helper (another source), line 2 maps to App.vue line 8.
+    const code = 'let helper = 1;\nlet count = 0;';
+    for (const name of ['App.vue', 'App.svelte', 'App.astro']) {
+      const m = { version: 3, sources: ['helper.js', path.join(root, 'src', name)], names: [], mappings: 'AAAA;ACOA' };
+      const out = p.transform.call({ getCombinedSourcemap: () => m }, code, path.join(root, 'src', name));
+      expect(out && out.code).toContain('step(8,');
+    }
+    const map = { version: 3, sources: ['helper.js', path.join(root, 'src/App.vue')], names: [], mappings: 'AAAA;ACOA' };
+    const ctx = { getCombinedSourcemap: () => map };
+    const vue = p.transform.call(ctx, code, path.join(root, 'src/App.vue'));
+    expect((vue.code.match(/__strace/g) || [])).toHaveLength(1); // the helper line is not the component's
+    // No map back to the component: left alone.
+    expect(p.transform.call({ getCombinedSourcemap: () => undefined }, code, path.join(root, 'src/App.vue'))).toBeNull();
+    // Styles and other assets are not code.
+    expect(p.transform.call(ctx, 'export default ".a{}"', path.join(root, 'src/app.css'))).toBeNull();
+  });
+
+  it('writes the module graph when Vitest closes its server: project files and their importers, any type', async () => {
+    const fs = require('fs'); const os = require('os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-graph-'));
+    process.env.LTR_VITEST_DEPS = path.join(dir, 'deps');
+    try {
+      const p = make();
+      await configured(p, { test: {} });
+      const f = (x: string) => path.join(root, 'src', x).replace(/\\/g, '/');
+      const mod = (file: string, importers: string[]) => ({ file, importers: new Set(importers.map((i) => ({ file: i }))) });
+      const graph = { fileToModulesMap: new Map<string, unknown[]>([
+        [f('card.html'), [mod(f('card.html'), [f('card.ts')])]],
+        [f('banner.html'), [mod(f('banner.html'), [f('banner.html')]), mod(f('banner.html'), [f('banner.test.ts')])]],
+        [path.join(root, 'node_modules/x/index.js').replace(/\\/g, '/'), [mod('x', [f('card.ts')])]],
+      ]) };
+      p.configureServer({ environments: { ssr: { moduleGraph: graph } } });
+      p.closeBundle();
+      p.closeBundle(); // once per server
+      const files = fs.readdirSync(dir);
+      expect(files).toHaveLength(1);
+      const { importers } = JSON.parse(fs.readFileSync(path.join(dir, files[0]), 'utf8'));
+      const n = (x: string) => path.normalize(f(x)); // native spelling, as the trace records
+      expect(importers).toEqual({ [n('card.html')]: [n('card.ts')], [n('banner.html')]: [n('banner.test.ts')] });
+    } finally {
+      delete process.env.LTR_VITEST_DEPS;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('no extension list: any compiled module whose map leads back to it; assets never', async () => {
+    const p = ltrTracePlugin({ setupFile, parser: require.resolve('@babel/parser'), projectRoot: root, nonSourceExtensions: ['css', 'yml'] });
+    await configured(p, { test: {} });
+    const own = (file: string) => ({ getCombinedSourcemap: () => ({ version: 3, sources: [path.basename(file)], names: [], mappings: 'AAAA' }) });
+    for (const name of ['A.riot', 'A.coffee', 'A.mdx', 'A.whatever']) {
+      const file = path.join(root, 'src', name);
+      expect(p.transform.call(own(file), 'let a = 1;', file)).not.toBeNull();
+    }
+    // A map that leads elsewhere (a virtual module, generated code): not this file's lines.
+    const other = { getCombinedSourcemap: () => ({ version: 3, sources: ['virtual:thing'], names: [], mappings: 'AAAA' }) };
+    expect(p.transform.call(other, 'let a = 1;', path.join(root, 'src/A.mdx'))).toBeNull();
+    for (const name of ['a.css', 'a.yml']) {
+      const file = path.join(root, 'src', name);
+      expect(p.transform.call(own(file), 'export default 1;', file)).toBeNull();
+    }
+  });
+
   it('only the first copy in a config works (a project can inherit it and get it added)', async () => {
     const a = make();
     const b = make();

@@ -17,6 +17,7 @@ const path   = require('path');
 const fs     = require('fs');
 const crypto = require('crypto');
 const RUNTIME_PATH = path.resolve(__dirname, '..', 'shared', 'sessionTraceRuntime.js');
+const { sourceMapLookup } = require('../shared/sourceMapLookup.js');
 
 // Log protocol: "[LTR:<level>] msg" lines on stderr are routed by the
 // extension's Executor into the "Live Test Runner" log at that level.
@@ -109,6 +110,8 @@ function loadBabel(rootDir) {
 // For these we must transpile first (TS→JS), then instrument the resulting JS.
 const STRICT_TRANSFORMER_PATTERNS = [
   /\bts-jest\b/,
+  /\bjest-preset-angular\b/,
+  /@angular-builders[\\/]jest\b/,
   /@swc\/jest\b/,
   /\bbabel-plugin-jest-hoist\b/,
   /\besbuild-jest\b/,
@@ -118,7 +121,22 @@ function isStrictTransformer(moduleName) {
   return STRICT_TRANSFORMER_PATTERNS.some((re) => re.test(moduleName));
 }
 
-function invokeTransformer(moduleName, sourceCode, sourcePath, options, transforms) {
+/** A transformer module's export → an object with process / processAsync. */
+function transformerOf(mod, transformerConfig) {
+  if (!mod) { return null; }
+  // Some transformers (ts-jest v28+) don't export process directly.
+  // They expose a createTransformer factory on the default export.
+  if (typeof mod.process === 'function' || typeof mod.processAsync === 'function') { return mod; }
+  if (mod.default && (typeof mod.default.process === 'function' || typeof mod.default.processAsync === 'function')) { return mod.default; }
+  if (mod.default && typeof mod.default.createTransformer === 'function') { return mod.default.createTransformer(transformerConfig || {}); }
+  if (typeof mod.createTransformer === 'function') { return mod.createTransformer(transformerConfig || {}); }
+  return null;
+}
+
+/**
+ * Resolves a project transformer: `{ resolvedPath, transformerConfig, downstreamOptions }`.
+ */
+function transformerSetup(moduleName, options, transforms) {
   // Resolve from the project root first so ts-jest / @swc/jest / etc. are found
   // in the project's node_modules even though they are not in the extension's.
   const rootDir = options && options.config && options.config.rootDir;
@@ -132,34 +150,84 @@ function invokeTransformer(moduleName, sourceCode, sourcePath, options, transfor
   // Jest passes this as options.transformerConfig — ts-jest, @swc/jest etc. read it from there.
   const entry = transforms.find(e => e[1] === moduleName);
   const transformerConfig = (entry && entry[2]) || undefined;
-
-  let transformer;
-  try {
-    const mod = require(resolvedPath);
-    // Some transformers (ts-jest v28+) don't export process directly.
-    // They expose a createTransformer factory on the default export.
-    if (typeof mod.process === 'function') {
-      transformer = mod;
-    } else if (mod.default && typeof mod.default.createTransformer === 'function') {
-      transformer = mod.default.createTransformer(transformerConfig || {});
-    } else if (typeof mod.createTransformer === 'function') {
-      transformer = mod.createTransformer(transformerConfig || {});
-    }
-  } catch (requireErr) {
-    _ltrLog('warn', `could not load transformer ${resolvedPath}: ${requireErr.message}`);
-    return null;
-  }
-  if (!transformer || typeof transformer.process !== 'function') { return null; }
-
   const downstreamOptions = {
     ...options,
     ...(transformerConfig !== undefined ? { transformerConfig } : {}),
     config: { ...options.config, transform: transforms.filter(e => e[1] !== moduleName) },
   };
-  const result = transformer.process(sourceCode, sourcePath, downstreamOptions);
-  if (result && typeof result.code === 'string') { return result.code; }
-  if (typeof result === 'string') { return result; }
+  return { resolvedPath, transformerConfig, downstreamOptions };
+}
+
+function resultOf(result) {
+  if (result && typeof result.code === 'string') { return { code: result.code, map: result.map }; }
+  if (typeof result === 'string') { return { code: result }; }
   return null;
+}
+
+function invokeTransformer(moduleName, sourceCode, sourcePath, options, transforms) {
+  const { resolvedPath, transformerConfig, downstreamOptions } = transformerSetup(moduleName, options, transforms);
+  let transformer;
+  try {
+    transformer = transformerOf(require(resolvedPath), transformerConfig);
+  } catch (requireErr) {
+    _ltrLog('warn', `could not load transformer ${resolvedPath}: ${requireErr.message}`);
+    return null;
+  }
+  if (!transformer || typeof transformer.process !== 'function') { return null; }
+  return resultOf(transformer.process(sourceCode, sourcePath, downstreamOptions));
+}
+
+/**
+ * invokeTransformer for Jest's ESM mode (processAsync): the transformer's
+ * processAsync when it has one (svelte-jester for Svelte 4+), else process.
+ * ESM-only transformers are loaded with import().
+ */
+async function invokeTransformerAsync(moduleName, sourceCode, sourcePath, options, transforms) {
+  const { resolvedPath, transformerConfig, downstreamOptions } = transformerSetup(moduleName, options, transforms);
+  let transformer;
+  try {
+    let mod;
+    try { mod = require(resolvedPath); } catch (requireErr) {
+      if (!/ERR_REQUIRE_ESM|ERR_REQUIRE_ASYNC_MODULE|Unexpected token 'export'|Cannot use import statement/.test(`${requireErr.code} ${requireErr.message}`)) { throw requireErr; }
+      mod = await import(require('url').pathToFileURL(resolvedPath).href);
+    }
+    transformer = transformerOf(mod, transformerConfig);
+  } catch (loadErr) {
+    _ltrLog('warn', `could not load transformer ${resolvedPath}: ${loadErr.message}`);
+    return null;
+  }
+  if (!transformer) { return null; }
+  if (typeof transformer.processAsync === 'function') {
+    return resultOf(await transformer.processAsync(sourceCode, sourcePath, downstreamOptions));
+  }
+  return typeof transformer.process === 'function' ? resultOf(transformer.process(sourceCode, sourcePath, downstreamOptions)) : null;
+}
+
+/**
+ * The project's own transform of a file: `{ code, map }`, or null when no
+ * transform matches or it fails. `async`: Jest's ESM mode (processAsync) —
+ * returns a promise.
+ */
+function projectTransform(sourceCode, sourcePath, options, async = false, quiet = false) {
+  if (!options || !options.config) { return null; }
+  let transforms = options.config.transform;
+  if (!Array.isArray(transforms)) {
+    transforms = Object.entries(transforms || {}).map(([p, v]) => Array.isArray(v) ? [p, ...v] : [p, v]);
+  }
+  const entry = findMatchingTransform(transforms, sourcePath);
+  if (!entry) { return async ? Promise.resolve(null) : null; }
+  const failed = (e) => {
+    _ltrLog(quiet ? 'debug' : 'warn', `project transformer "${entry[1]}" failed on ${sourcePath}: ${e.message}`);
+    return null;
+  };
+  if (async) {
+    return invokeTransformerAsync(entry[1], sourceCode, sourcePath, options, transforms).catch(failed);
+  }
+  try {
+    return invokeTransformer(entry[1], sourceCode, sourcePath, options, transforms);
+  } catch (e) {
+    return failed(e);
+  }
 }
 
 function chainTransform(sourceCode, sourcePath, options) {
@@ -179,7 +247,7 @@ function chainTransform(sourceCode, sourcePath, options) {
 
     try {
       const result = invokeTransformer(moduleName, sourceCode, sourcePath, options, transforms);
-      if (result !== null) { return result; }
+      if (result !== null) { return result.code; }
     } catch (_e) {
       _ltrLog('warn', `project transformer "${moduleName}" failed on ${sourcePath}: ${_e.message}`);
     }
@@ -569,19 +637,68 @@ function buildCovPreamble(fileHash, manifest) {
 
 // ── Main AST instrumentation ─────────────────────────────────────────────────
 
-function instrumentAST(code, sourcePath) {
+/**
+ * Moves every node's location to the file's own source through `lookup`
+ * (sourceMapLookup): code compiled from a component (.vue, .svelte, …) then
+ * reports the component's lines. Nodes the map does not lead back to (code
+ * the compiler added) lose their location — they get no counter and no step.
+ */
+function remapLocations(ast, lookup) {
+  const seen = new WeakSet();
+  const visit = (node) => {
+    if (!node || typeof node !== 'object' || seen.has(node)) { return; }
+    seen.add(node);
+    if (Array.isArray(node)) { for (const n of node) { visit(n); } return; }
+    if (typeof node.type === 'string' && node.loc && node.loc.start) {
+      const st = lookup(node.loc.start.line - 1, node.loc.start.column);
+      if (!st) {
+        node.loc = null;
+      } else {
+        let en = node.loc.end ? lookup(node.loc.end.line - 1, Math.max(0, node.loc.end.column - 1)) : undefined;
+        if (!en || en.line < st.line || (en.line === st.line && en.column < st.column)) { en = st; }
+        else { en = { line: en.line, column: en.column + 1 }; }
+        node.loc = { start: { line: st.line, column: st.column }, end: { line: en.line, column: en.column } };
+      }
+    }
+    for (const key of Object.keys(node)) {
+      if (key === 'loc' || key === 'leadingComments' || key === 'trailingComments' || key === 'innerComments' || key === 'tokens') { continue; }
+      const v = node[key];
+      if (v && typeof v === 'object') { visit(v); }
+    }
+  };
+  visit(ast.program);
+}
+
+/**
+ * @param {string} code
+ * @param {string} sourcePath
+ * @param {Function} [lookup] generated → original positions (sourceMapLookup)
+ *   when `code` was compiled from another language (components)
+ * @param {{ templateLines?: { from: number, to: number } }} [extra] a Vue
+ *   component's <template> lines: its render function marks them as run
+ *   (trace only — no coverage counters; vue-jest does not map the template)
+ */
+function instrumentAST(code, sourcePath, lookup, extra) {
   const t = _t;
   let ast;
   try {
+    // TypeScript source (.ts / .mts / .cts) is not JSX: with the jsx plugin a
+    // generic arrow `<T>(x: T) => …` reads as a tag and the file fails to parse.
+    // Compiled output (`lookup`: a transformer's JS) may be either.
+    const tsOnly = !lookup && /\.[cm]?ts$/i.test(sourcePath);
     ast = _parser.parse(code, {
       sourceType: 'module',
       allowReturnOutsideFunction: true,
-      plugins: ['jsx', 'typescript', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator'],
+      plugins: [...(tsOnly ? [] : ['jsx']), 'typescript', 'decorators-legacy', 'classProperties', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator'],
     });
   } catch (e) {
     _ltrLog('debug', `parse failed for ${sourcePath}: ${e.message}`);
     return null;
   }
+
+  if (lookup) { remapLocations(ast, lookup); }
+  /** Compiled code (components) that the map does not lead back to: not counted. */
+  const unmapped = (node) => !!lookup && !(node && node.loc);
 
   // Coverage manifest — built during the walk below
   const fileHash = _fileHash(sourcePath, code);
@@ -672,6 +789,7 @@ function instrumentAST(code, sourcePath) {
         );
       });
       if (insideJestMock) { return; }
+      if (unmapped(node)) { return; }
 
       const fnId = `f${fIdx++}`;
       const loc  = node.loc;
@@ -712,6 +830,7 @@ function instrumentAST(code, sourcePath) {
       if (parentType !== 'FunctionDeclaration' && parentType !== 'FunctionExpression' &&
           parentType !== 'ArrowFunctionExpression' && parentType !== 'ClassMethod' &&
           parentType !== 'ObjectMethod') { return; }
+      if (unmapped(nodePath.node)) { return; }
       const bId  = `b${bIdx++}`;
       const line = nodePath.node.loc?.start?.line ?? 0;
       manifest.branches[bId] = { type: 'default-arg', line, arms: 1 };
@@ -726,6 +845,7 @@ function instrumentAST(code, sourcePath) {
       exit(nodePath) {
         if (generatedCondExprs.has(nodePath.node)) { return; }
         const node = nodePath.node;
+        if (unmapped(node)) { return; }
         const bId  = `b${bIdx++}`;
         manifest.branches[bId] = { type: 'cond-expr', line: node.loc?.start?.line ?? 0, arms: 2 };
         node.consequent = t.sequenceExpression([makeCovBranchExpr(bId, 0), node.consequent]);
@@ -748,6 +868,7 @@ function instrumentAST(code, sourcePath) {
       enter(nodePath) {
         if (!nodePath.node.optional) { return; } // non-optional continuations are handled by their `?.` ancestor
         const node = nodePath.node;
+        if (unmapped(node)) { return; }
         const topPath = findChainSegmentTop(nodePath);
         const bId = `b${bIdx++}`;
         manifest.branches[bId] = { type: 'optional-chaining', line: node.loc?.start?.line ?? 0, arms: 2 };
@@ -780,6 +901,7 @@ function instrumentAST(code, sourcePath) {
         const node = nodePath.node;
         if (!node.optional) { return; }
         if (t.isOptionalMemberExpression(node.callee)) { return; } // handled by OptionalMemberExpression visitor
+        if (unmapped(node)) { return; }
         const topPath = findChainSegmentTop(nodePath);
         const bId = `b${bIdx++}`;
         manifest.branches[bId] = { type: 'optional-chaining', line: node.loc?.start?.line ?? 0, arms: 2 };
@@ -815,6 +937,7 @@ function instrumentAST(code, sourcePath) {
         // Skip inner nodes of a same-operator chain — the root handles the whole chain
         if (nodePath.parent?.type === 'LogicalExpression' &&
             nodePath.parent.operator === node.operator) { return; }
+        if (unmapped(node)) { return; }
 
         const leaves = collectLogicalLeaves(node, node.operator);
         const bId    = `b${bIdx++}`;
@@ -840,7 +963,7 @@ function instrumentAST(code, sourcePath) {
     SwitchStatement(nodePath) {
       const node = nodePath.node;
       const cases = node.cases;
-      if (!cases.length) { return; }
+      if (!cases.length || unmapped(node)) { return; }
       const bId = `b${bIdx++}`;
       manifest.branches[bId] = { type: 'switch', line: node.loc?.start?.line ?? 0, arms: cases.length };
       cases.forEach((switchCase, armIdx) => {
@@ -851,6 +974,7 @@ function instrumentAST(code, sourcePath) {
     // Branch coverage — if/else
     IfStatement(nodePath) {
       const node = nodePath.node;
+      if (unmapped(node)) { return; }
       const bId  = `b${bIdx++}`;
       manifest.branches[bId] = { type: 'if', line: node.loc?.start?.line ?? 0, arms: 2 };
 
@@ -951,6 +1075,8 @@ function instrumentAST(code, sourcePath) {
     ast.program.body.unshift(varDecl);
   }
 
+  if (extra && extra.templateLines) { addTemplateSteps(ast, extra.templateLines, sourcePath); }
+
   // Inject coverage preamble at the top of the program body
   const preamble = buildCovPreamble(fileHash, manifest);
   if (ast.program && ast.program.body) {
@@ -981,24 +1107,147 @@ function instrumentAST(code, sourcePath) {
   return output.code;
 }
 
+/** Names of a compiled Vue component's render function (vue-jest, @vue/compiler-sfc). */
+const RENDER_NAMES = new Set(['render', 'ssrRender', '_sfc_render', '_sfc_ssrRender']);
+
+/**
+ * Covering tests for a Vue template under Jest: vue-jest maps only the
+ * <script> block, so the render function has no lines of its own. A step
+ * for every template line at the start of the render function: a test that
+ * rendered the component "ran" its template. Trace only — the coverage
+ * numbers stay those of `jest --coverage`.
+ */
+function addTemplateSteps(ast, { from, to }, sourcePath) {
+  const loop = () => _parser.parse(
+    `for (var __ltrL = ${from}; __ltrL <= ${to}; __ltrL++) { __strace.step(__ltrL, ${JSON.stringify(sourcePath)}); }`,
+    { sourceType: 'script' },
+  ).program.body[0];
+  for (const node of ast.program.body) {
+    let fn = null;
+    const target = node.type === 'ExportNamedDeclaration' && node.declaration ? node.declaration : node;
+    if (target.type === 'FunctionDeclaration' && target.id && RENDER_NAMES.has(target.id.name)) { fn = target; }
+    if (target.type === 'VariableDeclaration') {
+      const d = target.declarations.find((x) => x.id && RENDER_NAMES.has(x.id.name) && x.init && /Function/.test(x.init.type));
+      if (d) { fn = d.init; }
+    }
+    if (fn && fn.body && fn.body.type === 'BlockStatement') { fn.body.body.unshift(loop()); }
+  }
+}
+
+/** A Vue component's <template> block: its first and last line (1-based), or undefined. */
+function templateLinesOf(source) {
+  const open = /^<template\b[^>]*>/m.exec(source);
+  const close = source.lastIndexOf('</template>');
+  if (!open || close < open.index) { return undefined; }
+  const lineAt = (i) => source.slice(0, i).split('\n').length;
+  return { from: lineAt(open.index), to: lineAt(close) };
+}
+
 // ── Jest transform entry point ───────────────────────────────────────────────
 
 const IS_TEST_FILE_RE = /\.(test|spec)\.[jt]sx?$/;
+/**
+ * Sources compiled from another language (.vue, .svelte, .coffee, …): the
+ * batch config routes only JS / TS (sourceTransformPattern) and the
+ * extensions the project itself transforms here, so anything that is not
+ * JS / TS is one of those.
+ */
+const IS_SCRIPT_RE = /\.[cm]?[jt]sx?$/i;
+const isCompiledSource = (p) => !IS_SCRIPT_RE.test(p);
 
 /**
  * instrumentAST, but never throws: an instrumentation bug must cost coverage
  * for one file, not make every test file that imports it fail to run.
  */
-function safeInstrument(code, sourcePath) {
+function safeInstrument(code, sourcePath, lookup, extra) {
   try {
-    return instrumentAST(code, sourcePath);
+    return instrumentAST(code, sourcePath, lookup, extra);
   } catch (e) {
     _ltrLog('warn', `could not instrument ${sourcePath} (${e.message}) — it runs without coverage/trace`);
     return null;
   }
 }
 
+/** Transformers seen rejecting instrumented code (they type-check): compiled first from then on. */
+const _rejectsInstrumented = new Set();
+
+/** Removes the coverage manifest written for a version of a file that will not run. */
+function dropManifest(sourcePath, code) {
+  const dir = process.env.LTR_MANIFEST_DIR;
+  if (!dir) { return; }
+  try { fs.unlinkSync(path.join(dir, `${_fileHash(sourcePath, code)}.json`)); } catch (_) { /* none */ }
+}
+
+/** An inline source map at the end of compiled code (ts-jest writes one), or null. */
+function inlineSourceMap(code) {
+  const m = /\/\/[#@] sourceMappingURL=data:application\/json;(?:charset=[\w-]+;)?base64,([A-Za-z0-9+/=]+)\s*$/.exec(code);
+  if (!m) { return null; }
+  try { return JSON.parse(Buffer.from(m[1], 'base64').toString('utf8')); } catch (_) { return null; }
+}
+
+/**
+ * The project's transformer first, then instrumentation of its JS output —
+ * with locations moved back to the source through the transformer's map
+ * (returned, or inline at the end of the code), so recorded lines are the
+ * file's own.
+ */
+function compileThenInstrument(sourceCode, sourcePath, options) {
+  const compiled = projectTransform(sourceCode, sourcePath, options) || { code: chainTransform(sourceCode, sourcePath, options) };
+  const map = compiled.map || inlineSourceMap(compiled.code);
+  const lookup = map ? sourceMapLookup(map, sourcePath) : null;
+  const instrumented = safeInstrument(compiled.code, sourcePath, lookup || undefined);
+  if (instrumented) { return { code: withRuntime(instrumented, options) }; }
+  // Instrumentation failed — return at least transpiled code so tests can run
+  _ltrLog('warn', `could not instrument ${sourcePath} — it runs without coverage/trace (set log level to Debug for the parse error)`);
+  return { code: compiled.code, map: compiled.map };
+}
+
+/**
+ * Instrumented code + loading the trace runtime first. Jest's ESM mode
+ * (`supportsStaticESM`: the file is evaluated as an ES module, where there
+ * is no `require`) gets an import instead.
+ */
+function withRuntime(code, options) {
+  if (options && options.supportsStaticESM) {
+    return `import ${JSON.stringify(RUNTIME_PATH.replace(/\\/g, '/'))};\n${code}`;
+  }
+  return `require(${JSON.stringify(RUNTIME_PATH)});\n${code}`;
+}
+
+/**
+ * A component compiled by the project's transformer → instrumented, with
+ * locations moved back to the component through the transformer's map.
+ */
+function instrumentCompiled(compiled, sourceCode, sourcePath, options) {
+  const rootDir = options && options.config && options.config.rootDir;
+  if (!compiled) {
+    _ltrLog('warn', `no Jest transform compiled ${sourcePath} — it runs without coverage/trace`);
+    return { code: sourceCode };
+  }
+  const lookup = compiled.map ? sourceMapLookup(compiled.map, sourcePath) : null;
+  if (!lookup) {
+    _ltrLog('debug', `the transform of ${sourcePath} has no source map — it runs without coverage/trace`);
+    return { code: compiled.code, map: compiled.map };
+  }
+  if (rootDir && loadBabel(rootDir)) {
+    const extra = /\.vue$/i.test(sourcePath) ? { templateLines: templateLinesOf(sourceCode) } : undefined;
+    const instrumented = safeInstrument(compiled.code, sourcePath, lookup, extra);
+    if (instrumented) {
+      return { code: withRuntime(instrumented, options) };
+    }
+  }
+  return { code: compiled.code, map: compiled.map };
+}
+
 module.exports = {
+  /** Jest's ESM mode: components may need their transformer's processAsync (svelte-jester, Svelte 4+). */
+  async processAsync(sourceCode, sourcePath, options) {
+    if (isCompiledSource(sourcePath) && !IS_TEST_FILE_RE.test(sourcePath)) {
+      return instrumentCompiled(await projectTransform(sourceCode, sourcePath, options, true), sourceCode, sourcePath, options);
+    }
+    return module.exports.process(sourceCode, sourcePath, options);
+  },
+
   process(sourceCode, sourcePath, options) {
     const rootDir = options && options.config && options.config.rootDir;
 
@@ -1016,6 +1265,13 @@ module.exports = {
 
     _ltrLog('trace', `instrumenting ${sourcePath}`);
 
+    // Components: the project's transformer (vue-jest, svelte-jester, …)
+    // compiles them to JS; that JS is instrumented, with locations moved back
+    // to the component through the transformer's source map.
+    if (isCompiledSource(sourcePath)) {
+      return instrumentCompiled(projectTransform(sourceCode, sourcePath, options), sourceCode, sourcePath, options);
+    }
+
     // Detect whether the project uses a strict transformer (ts-jest, @swc/jest, etc.)
     // Strict transformers run the real TS compiler and reject our injected globals.
     // For those we must: transpile first (TS→JS) → instrument the clean JS output.
@@ -1026,28 +1282,28 @@ module.exports = {
       transforms = Object.entries(transforms).map(([p, v]) => Array.isArray(v) ? [p, ...v] : [p, v]);
     }
     const matchingEntry = findMatchingTransform(transforms, sourcePath);
-    const strict = matchingEntry ? isStrictTransformer(matchingEntry[1]) : false;
+    const strict = matchingEntry ? (isStrictTransformer(matchingEntry[1]) || _rejectsInstrumented.has(matchingEntry[1])) : false;
 
     if (rootDir && loadBabel(rootDir)) {
-      if (strict) {
-        // Transpile first with the project's own transformer, then instrument the JS output.
-        const transpiledCode = chainTransform(sourceCode, sourcePath, options);
-        const instrumented = safeInstrument(transpiledCode, sourcePath);
-        if (instrumented) {
-          const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${instrumented}`;
-          return { code: finalCode };
-        }
-        // Instrumentation failed — return at least transpiled code so tests can run
-        _ltrLog('warn', `could not instrument ${sourcePath} — it runs without coverage/trace (set log level to Debug for the parse error)`);
-        return { code: transpiledCode };
-      }
+      // Strict: transpile first with the project's own transformer, then instrument the JS output.
+      if (strict) { return compileThenInstrument(sourceCode, sourcePath, options); }
 
       // Lenient path: instrument first, then transpile (original behaviour)
       const instrumented = safeInstrument(sourceCode, sourcePath);
       if (instrumented) {
+        if (matchingEntry) {
+          const viaProject = projectTransform(instrumented, sourcePath, options, false, true);
+          if (viaProject) { return { code: withRuntime(viaProject.code, options) }; }
+          // A transformer that type-checks (jest-preset-angular, built on ts-jest)
+          // rejects the inserted calls: compile first, instrument its output —
+          // from now on for every file it handles (in this worker).
+          _rejectsInstrumented.add(matchingEntry[1]);
+          dropManifest(sourcePath, sourceCode);
+          _ltrLog('debug', `${path.basename(String(matchingEntry[1]))} rejected the instrumented ${sourcePath} — compiling first from now on`);
+          return compileThenInstrument(sourceCode, sourcePath, options);
+        }
         const transpiledCode = chainTransform(instrumented, sourcePath, options);
-        const finalCode = `require(${JSON.stringify(RUNTIME_PATH)});\n${transpiledCode}`;
-        return { code: finalCode };
+        return { code: withRuntime(transpiledCode, options) };
       }
     }
 
@@ -1065,6 +1321,7 @@ module.exports = {
     const configString = typeof configStringOrOptions === 'string'
       ? configStringOrOptions
       : (configStringOrOptions && configStringOrOptions.configString) || '';
+    const options = typeof configStringOrOptions === 'string' ? _maybeOptions : configStringOrOptions;
 
     return crypto.createHash('sha256')
       .update(sourceText)
@@ -1074,6 +1331,8 @@ module.exports = {
       .update(IS_TEST_FILE_RE.test(sourcePath) ? 'test' : 'source')
       .update('\0')
       .update(configString)
+      .update('\0')
+      .update(options && options.supportsStaticESM ? 'esm' : 'cjs')
       .update('\0')
       .update(getOwnHash())
       .update('\0')

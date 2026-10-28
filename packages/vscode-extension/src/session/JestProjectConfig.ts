@@ -62,6 +62,23 @@ export class JestProjectConfig implements IProjectConfig {
     return settings ? jestCoverageScope(settings) : undefined;
   }
 
+  /** Every project config's `moduleFileExtensions`, from the same `--showConfig` read as {@link get}. */
+  async sourceExtensions(projectRoot: string): Promise<string[] | undefined> {
+    const file = await this.get(projectRoot);
+    if (!file) { return undefined; }
+    try {
+      const resolved = JSON.parse(fs.readFileSync(file, 'utf8')) as ResolvedProjectConfig;
+      const exts = new Set<string>();
+      for (const c of resolved.configs) {
+        const list = (c as { moduleFileExtensions?: unknown }).moduleFileExtensions;
+        if (Array.isArray(list)) { for (const e of list) { if (typeof e === 'string') { exts.add(e.replace(/^\./, '').toLowerCase()); } } }
+      }
+      return [...exts];
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
    * Path of a JSON file holding the {@link ResolvedProjectConfig}, or
    * undefined when Jest could not report its config (the caller falls back
@@ -129,14 +146,27 @@ export class JestProjectConfig implements IProjectConfig {
  * Windows (VS Code gives `c:\`, Jest's realpath `C:\`), so both are accepted.
  * Built from the root's real path: Jest matches it against realpath'd files.
  */
-export function sourceTransformPattern(projectRoot: string): string {
+export function sourceTransformPattern(projectRoot: string, extensions = '[jt]sx?'): string {
   const rootFwd = toRunnerPath(projectRoot).replace(/\\/g, '/');
   const driveMatch = rootFwd.match(/^([a-zA-Z]):(.*)/);
   const escapedRoot = driveMatch
     ? `[${driveMatch[1].toLowerCase()}${driveMatch[1].toUpperCase()}]:${escapeRegex(driveMatch[2])}`
     : escapeRegex(rootFwd);
   const escapedRootSlash = escapedRoot.replace(/\//g, '[/\\\\]');
-  return `^${escapedRootSlash}[/\\\\](?!node_modules[/\\\\]).+\\.[jt]sx?$`;
+  return `^${escapedRootSlash}[/\\\\](?!node_modules[/\\\\]).+\\.${extensions}$`;
+}
+
+/**
+ * Jest pattern for the extension's instrumentation folder (setup files,
+ * runtimes) — for `transformIgnorePatterns`: the project's transforms must
+ * never touch our files (its Babel config may add `@babel/runtime` imports
+ * that cannot be resolved from the extension's folder). Either slash, any
+ * drive-letter case. `dir` defaults to the built `out/instrumentation`.
+ */
+export function ownFilesPattern(dir: string = path.resolve(__dirname, 'instrumentation')): string {
+  const fwd = dir.replace(/\\/g, '/');
+  const esc = fwd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\//g, '[/\\\\]');
+  return esc.replace(/^([a-zA-Z]):/, (_, d: string) => `[${d.toLowerCase()}${d.toUpperCase()}]:`);
 }
 
 /** `c:\x` → `C:\x` — the spelling Jest uses for its realpath'd rootDir. */

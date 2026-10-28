@@ -204,6 +204,24 @@ function extractSuiteName(fullTestName: string): string {
 }
 
 /** A source path from the runner in the editor's spelling (symlinks, drive-letter case). */
+/**
+ * Module-graph files the Vitest trace plugin wrote (`<base>.<pid>-<id>.json`,
+ * `{ importers: { file: [importer…] } }`) → the store; returns how many files.
+ */
+export function applyDependencyFiles(files: string[], traceStore: ExecutionTraceStore): number {
+  let count = 0;
+  for (const file of files) {
+    let data: { importers?: Record<string, string[]> };
+    try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { continue; }
+    for (const [f, importers] of Object.entries(data.importers ?? {})) {
+      if (!Array.isArray(importers)) { continue; }
+      traceStore.addImporters(normPath(f), importers.map(normPath));
+      count++;
+    }
+  }
+  return count;
+}
+
 export function normPath(filePath: string): string {
   return fromRunnerPath(filePath).replace(/^[A-Z]:/, (m) => m.toLowerCase());
 }
