@@ -290,12 +290,20 @@ def _write_trace(target):
 
 
 def _keep_coverage_file(path):
-    if path.startswith(_PLUGIN_DIR):
+    """A measured file under the project (the rootdir or the cwd), never our plugin.
+
+    Compared through real paths, case-normalised: coverage.py names files by
+    their canonical path (Windows: long names, lower case) while the rootdir
+    keeps the spelling it was started with (8.3 short names, as on GitHub's
+    Windows runners).
+    """
+    norm = lambda p: os.path.normcase(os.path.realpath(p))
+    target = norm(path)
+    if target.startswith(norm(_PLUGIN_DIR) + os.sep):
         return False
     root = str(_config.rootpath) if _config else _CWD
-    for base in (root, _CWD):
-        rel = os.path.relpath(path, base)
-        if not rel.startswith(".."):
+    for base in {norm(root), norm(_CWD)}:
+        if target.startswith(base.rstrip(os.sep) + os.sep):
             return True
     return False
 
