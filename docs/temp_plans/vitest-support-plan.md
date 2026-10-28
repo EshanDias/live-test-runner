@@ -29,7 +29,7 @@
 | Release | Scope | Phases |
 |---|---|---|
 | **3.0.0** (released 2026-10-22) | Decouple + Vitest single project: run, pass/fail, logs, live per-file streaming, coverage, source-file on-save (related tests); feature matrix | 0, 1, 2, 3, 4, 5, 6, 11 |
-| **3.1.0** | Monorepos / multi-project workspaces, mixed Jest + Vitest projects, execution trace for Vitest (owner, 2026-10-24: one release) | 7, 8, 9 |
+| **3.1.0** (released 2026-10-28) | Monorepos / multi-project workspaces, mixed Jest + Vitest projects, execution trace for Vitest, any UI framework (Vue / Svelte / Astro components, Jest ESM mode) | 7, 8, 9 |
 | ~~3.4.0~~ | ~~Timeline debugger for Vitest~~ — deferred to a separate release (D9) | 10 |
 
 ---
