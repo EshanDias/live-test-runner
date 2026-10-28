@@ -661,7 +661,16 @@ Where the work stands, for whoever resumes it (an hourly check resumes after usa
 - Real repos: click 2287 / httpx 1418 / erdantic 153 (pytest 7.4) match plain pytest test for test;
   pytest's own suite 4811 tests (562 s) matched except a doctest `.txt` file (fixed: any file pytest
   lists is kept) and a cache-plugin test (the reference run disabled the cache plugin — fixed).
-- Next: full regression, test PR → `release/3.1.0` with CI green (9.3 is the owner's release step).
+- 2026-10-28: full local regression 51/51; **test PR #53** (`feat/pytest-2-docs` → `release/3.1.0`,
+  merged with the released 3.1.0) — **all CI green** on Linux / macOS / Windows + the pytest-plugin
+  matrix. CI-only findings fixed on the way: (6) macOS framework Python re-execs as `Python.app`
+  (the workspace path is gone from `ps`); (7) Windows: coverage.py names files by their canonical
+  long, lower-case path while the rootdir keeps the 8.3 spelling — the plugin compares real
+  case-normalised paths, the extension respells paths (`toProjectSpelling`); (8) coverage.py's
+  `sysmon` core records no per-test contexts before Python 3.14 — the plugin picks `ctrace` /
+  `pytrace` unless the project chose a core, and says so when contexts are off.
+- Left for the owner: merge decision on #53 (test PR — not merged by the agent), deleting the stale
+  `feat/pytest-phase0/-decouple/-run` branches, 9.3 release prep. Next releases: phases 7–8.
 
 ## Progress tracker
 
