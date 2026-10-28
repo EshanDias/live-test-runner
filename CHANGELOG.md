@@ -19,7 +19,7 @@ pytest projects get every feature Jest and Vitest projects have, except the Time
 - **New settings:** `liveTestRunner.pythonPath`, `liveTestRunner.pytestArgs` (D16).
 - Tests: runner `pytest.test.ts` (17), plugin tests `packages/runner/python-tests/test_ltr_pytest.py` (10, pytester; CI job **pytest plugin** on pytest 7.4 / 8.4 / 9.1 × Python 3.12 / 3.13 / 3.14), extension `pythonDiscovery.test.ts` (7), `pythonImports.test.ts` (5). e2e: fixtures `pytest-basic` (own `.venv` built from `requirements-e2e.txt` by `e2e/run.js`; CI gets `actions/setup-python` and `LTR_E2E_PYTHON`) and `pytest-no-pytest`; scenarios `pytest-full-run` (compared test by test with a plain pytest JUnit run), `pytest-scoped-run`, `pytest-on-save`, `pytest-stop`, `pytest-hang`, `pytest-coverage` (totals equal coverage.py's own report), `pytest-debug`, `pytest-no-pytest`, `pytest-related`. Real repos (`e2e/real-repos.js`, scenario `repo-pytest`, baseline `docs/temp_plans/pytest-baseline.json`; clones get their editable installs pointed at the clone and copied `__pycache__` dropped): click (2287 tests), httpx (1418; one known-flaky timing test), erdantic (pytest 7.4, pytest-cov in `addopts`) — all match plain pytest test for test; pytest's own suite (4811 tests, opt-in).
 
-## [3.1.0] - Unreleased
+## [3.1.0] - 2026-10-28
 
 ### Any UI framework: components, Vitest workspaces, Jest ESM mode
 

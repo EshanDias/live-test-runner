@@ -648,7 +648,7 @@ engine.jumpTo(stepId)
 
 ## Roadmap
 
-- [x] Vitest support (3.0.0) — run, pass/fail, per-test logs, live progress, coverage; related tests on save, monorepos, mixed frameworks (3.1), execution trace (unreleased) — see `docs/temp_plans/vitest-support-plan.md`
+- [x] Vitest support (3.0.0) — run, pass/fail, per-test logs, live progress, coverage; related tests on save, monorepos, mixed frameworks, execution trace + any UI framework (3.1.0) — see `docs/temp_plans/vitest-support-plan.md`
 - [x] ~~Suite/test-case level nodes in Test Explorer~~ — completed in 1.2.0 (recursive node tree with unlimited nesting)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
 - [ ] Streaming live output during a run (message type stubbed, not wired)
