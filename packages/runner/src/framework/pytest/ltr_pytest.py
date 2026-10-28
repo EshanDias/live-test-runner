@@ -266,8 +266,15 @@ def _write_trace(target):
                 bucket = per_test.setdefault(label, {}) if label else outside
                 bucket.setdefault(path, []).append(line)
     unknown = [label for label in per_test if label not in _nodes]
-    _log("debug", "covering tests: %d measured file(s), %d test context(s)%s" % (
-        len(data.measured_files()), len(per_test) - len(unknown),
+    try:
+        recorded = len(data.measured_contexts())
+    except Exception:
+        recorded = -1
+    core = getattr(_cov, "_core", None)
+    _log("debug", "covering tests: %d measured file(s), %d test context(s), %d recorded context(s), %d switch(es)%s, core %s%s" % (
+        len(data.measured_files()), len(per_test) - len(unknown), recorded, _switches["ok"],
+        (", switch error %s" % _switches["error"]) if _switches["error"] else "",
+        type(core).__name__ if core is not None else "?",
         (", %d unknown label(s) e.g. %r" % (len(unknown), unknown[0])) if unknown else ""))
     with open(target, "w", encoding="utf-8") as fh:
         for nodeid, hits in per_test.items():
@@ -448,14 +455,19 @@ def _start_file(st):
     _emit(ev="file-start", file=st.path)
 
 
+_switches = {"ok": 0, "error": None}
+
+
 def _switch_context(label):
     global _contexts
     if _cov is None or not _contexts:
         return
     try:
         _cov.switch_context(label)
+        _switches["ok"] += 1
     except Exception as err:  # e.g. the project's own [run] dynamic_context
         _contexts = False
+        _switches["error"] = "%s: %s" % (type(err).__name__, err)
         _log("info", "covering tests are off for this run: coverage.py refused per-test contexts (%s)" % err)
 
 
