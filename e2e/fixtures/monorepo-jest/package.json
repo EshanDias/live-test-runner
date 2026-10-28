@@ -1,0 +1,8 @@
+{
+  "name": "ltr-fixture-monorepo-jest",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "devDependencies": {
+    "jest": "29.7.0"
+  }
+}

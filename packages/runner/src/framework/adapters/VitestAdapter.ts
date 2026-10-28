@@ -85,7 +85,9 @@ export class VitestAdapter implements FrameworkAdapter {
     const deps = { ...pkg.dependencies, ...pkg.devDependencies } as Record<string, string>;
     const hasVitest =
       'vitest' in deps ||
-      [...VITEST_CONFIG_FILES, ...VITEST_WORKSPACE_FILES].some((f) => fs.existsSync(path.join(projectRoot, f)));
+      [...VITEST_CONFIG_FILES, ...VITEST_WORKSPACE_FILES].some((f) => fs.existsSync(path.join(projectRoot, f))) ||
+      // A workspace package whose test script runs Vitest installed in the monorepo root (phase 7).
+      /(^|[\s;&|(])vitest(\s|$)/.test(String(pkg.scripts?.test ?? ''));
     return hasVitest && !new JestAdapter().detect(projectRoot);
   }
 
@@ -156,9 +158,15 @@ export class VitestAdapter implements FrameworkAdapter {
 
   // ── Results ────────────────────────────────────────────────────────────────
 
-  /** The json reporter's file; `.json` because the run has several reporters. */
+  /**
+   * The json reporter's file. The plain `--outputFile=` form: a config whose
+   * `outputFile` is a single path (`outputFile: 'report.xml'`) wins over
+   * `--outputFile.json=`, so the result went to the project's file and ours
+   * was never written. Only our json reporter uses it (the CLI's reporters
+   * replace the config's).
+   */
   outputFileArg(file: string): string[] {
-    return [`--outputFile.json=${file}`];
+    return [`--outputFile=${file}`];
   }
 
   /** Vitest's json reporter: Jest's shape with Vitest's own quirks (see VitestResultParser). */

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ResultStore } from '../store/ResultStore';
+import { FileStoresResolver } from './FileStores';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResultObserver';
 import { getThresholds, durationColorVar, durationLabel } from '../utils/duration';
 
@@ -11,15 +11,24 @@ import { getThresholds, durationColorVar, durationLabel } from '../utils/duratio
  *
  * All public IResultObserver methods trigger a refresh for the affected file
  * so editors update in real-time as results arrive.
+ *
+ * Every file is decorated from its own project's store (phase 7): the
+ * selected project only decides what the Explorer / Results panel show.
+ * It receives every project's events (not only the selected one's).
  */
 export class DecorationManager implements IResultObserver {
   private readonly _decorations: Map<string, vscode.TextEditorDecorationType> = new Map();
 
   constructor(
-    private readonly store: ResultStore,
+    private readonly _resolve: FileStoresResolver,
     private readonly context: vscode.ExtensionContext,
   ) {
     this._ensureDecorations();
+  }
+
+  /** Redraws every visible editor (e.g. the projects were re-detected). */
+  refresh(): void {
+    this._refreshAll();
   }
 
   // ── IResultObserver ────────────────────────────────────────────────────────
@@ -29,7 +38,8 @@ export class DecorationManager implements IResultObserver {
   }
 
   onSessionStopped(): void {
-    this._clearAll();
+    // Stop clears the stopped project's line maps; other projects' files keep theirs.
+    this._refreshAll();
   }
 
   onRunStarted(_payload: RunStartedPayload): void {
@@ -83,8 +93,9 @@ export class DecorationManager implements IResultObserver {
 
   public applyToEditor(editor: vscode.TextEditor): void {
     const filePath = editor.document.uri.fsPath;
-    const lineMap = this.store.getLineMap(filePath);
-    if (lineMap.size === 0) {
+    const store = this._resolve(filePath)?.store;
+    const lineMap = store ? store.getLineMap(filePath) : new Map();
+    if (!store || lineMap.size === 0) {
       for (const dec of this._decorations.values()) {
         editor.setDecorations(dec, []);
       }
@@ -102,7 +113,7 @@ export class DecorationManager implements IResultObserver {
       // A line past the end (file shortened since the run) would be clamped
       // to the last line and show its duration at the end of the file.
       if (line < 1 || line - 1 >= editor.document.lineCount) { continue; }
-      const node = this.store.getNode(entry.nodeId);
+      const node = store.getNode(entry.nodeId);
       if (!node) {
         continue;
       }

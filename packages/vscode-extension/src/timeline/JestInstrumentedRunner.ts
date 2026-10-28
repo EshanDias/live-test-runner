@@ -8,10 +8,10 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, toJestPathArg, registerProjectRoot, toRunnerPath, fromRunnerPath } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, toJestPathArg, registerProjectRoot, toRunnerPath, fromRunnerPath, jestNodeEnv } from '@live-test-runner/runner';
 import { IInstrumentedRunner } from './IInstrumentedRunner';
 import { IProjectConfig } from '../session/IProjectConfig';
-import { sourceTransformPattern, upperDrive } from '../session/JestProjectConfig';
+import { ownFilesPattern, sourceTransformPattern, upperDrive } from '../session/JestProjectConfig';
 import { nameToPattern } from '../utils/testNames';
 import {
   TimelineStore,
@@ -165,6 +165,11 @@ module.exports = {
   // case-sensitively and resolves symlinks).
   rootDir: ${JSON.stringify(upperDrive(toRunnerPath(projectRoot)))},
   roots: [${JSON.stringify(upperDrive(toRunnerPath(projectRoot)))}],
+  // Our own files (the trace runtime) are never the project's to transform.
+  transformIgnorePatterns: [
+    ...(baseConfig.transformIgnorePatterns || ['/node_modules/', '\\\\.pnp\\\\.[^\\\\/]+$']),
+    ${JSON.stringify(ownFilesPattern())},
+  ],
   transform: {
     // Our entry first — matches only the exact file being debugged
     [${JSON.stringify(srcTransformPattern)}]: ${JSON.stringify(TRACE_TRANSFORM_PATH)},
@@ -229,7 +234,7 @@ module.exports = {
         cwd: projectRoot,
         // Passed to the Jest process only. Setting it on the extension host's
         // own process.env leaked into every Jest started meanwhile.
-        extraEnv: { LTR_LOG_LEVEL: logger.level, TRACE_OUTPUT_FILE: traceFile },
+        extraEnv: { ...jestNodeEnv(projectRoot), LTR_LOG_LEVEL: logger.level, TRACE_OUTPUT_FILE: traceFile },
       });
 
       // A failing test is normal here (people trace failing tests) — debug only.

@@ -28,7 +28,7 @@ export {
 } from './types';
 
 // Runners: the generic command-line runner and the Jest one built on it
-export { CommandRunner, RunRequest } from './CommandRunner';
+export { CommandRunner, RunRequest, TestFileList } from './CommandRunner';
 export { JestRunner, toJestPathArg } from './JestRunner';
 export { VitestRunner, toVitestNamePattern, toVitestPathArg } from './VitestRunner';
 
@@ -47,7 +47,7 @@ export {
   VITE_CONFIG_FILES,
 } from './framework/adapters/VitestAdapter';
 export { UnsupportedFrameworkError } from './framework/UnsupportedFrameworkError';
-export { toInputConfig, pickGlobalConfig, testScriptJestArgs } from './framework/jestConfig';
+export { toInputConfig, pickGlobalConfig, testScriptJestArgs, testScriptNodeOptions, jestNodeEnv, npmrcNodeOptions, jestEsmHint } from './framework/jestConfig';
 export { testScriptVitestArgs, VitestScriptArgs } from './framework/vitestConfig';
 export { vitestProjects, vitestConfigInfo, vitestCoverageInstalled, VitestProjectInfo, VitestConfigInfo } from './framework/vitestProjects';
 export {
@@ -61,9 +61,39 @@ export {
   fileKey as vitestFileKey,
 } from './framework/vitestReporter';
 export { refusingAdapter } from './framework/refusingAdapter';
+export {
+  RoutedFramework,
+  ProjectFrameworks,
+  projectFrameworks,
+  frameworkHint,
+  FrameworkRule,
+  FrameworkRuleSetting,
+  globToRegExp,
+  parseFrameworkRules,
+  matchFrameworkRule,
+  AssignmentRule,
+  FrameworkAssignment,
+  AssignInput,
+  AssignOutput,
+  assignFrameworks,
+  allowFrameworkAt,
+  isFrameworkAllowedAt,
+} from './framework/frameworkRouting';
+export {
+  DetectedProject,
+  findTestProjects,
+  projectsInFolder,
+  hasOwnTestConfig,
+  testFrameworkOf,
+  workspaceGlobs,
+  pnpmWorkspacePackages,
+  expandWorkspaceGlobs,
+  isInside,
+} from './framework/projectDiscovery';
 
 // Lower-level layers — exposed for testing and advanced usage
-export { BinaryResolver, nodeRuntime, nodeRuntimeVersion, NodeRuntime } from './resolution/BinaryResolver';
+export { BinaryResolver, nodeRuntime, nodeRuntimeVersion, NodeRuntime, resolvePackageDir } from './resolution/BinaryResolver';
+export { viteEntryFor, vitestDirFor } from './framework/vitestTrace';
 export { parseVersion, compareVersions, satisfies } from './utils/semver';
 export { registerProjectRoot, toRunnerPath, fromRunnerPath, toSpawnPath, toJestPath, fromJestPath } from './resolution/RunnerPaths';
 export { Executor, tail } from './execution/Executor';

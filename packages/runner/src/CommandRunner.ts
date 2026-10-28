@@ -11,6 +11,13 @@ import { registerProjectRoot } from './resolution/RunnerPaths';
 const log = createLogger('CommandRunner');
 
 /** What a run should cover; the framework turns it into its own CLI args. */
+/** Test files a framework runs, with its own grouping of them (if any). */
+export interface TestFileList {
+  files: string[];
+  /** file → group label (Vitest project name; several joined with ", "). */
+  groups?: Record<string, string>;
+}
+
 export type RunRequest =
   | { kind: 'list' }
   | { kind: 'full'; withCoverage: boolean }
@@ -140,6 +147,14 @@ export abstract class CommandRunner implements TestRunner {
   }
 
   async discoverTests(projectRoot: string): Promise<string[]> {
+    return (await this.listTestFiles(projectRoot)).files;
+  }
+
+  /**
+   * {@link discoverTests}, plus the framework's own grouping of the files
+   * when it has one (Vitest: the `test.projects` name of each file, D12).
+   */
+  async listTestFiles(projectRoot: string): Promise<TestFileList> {
     this.initAdapter(projectRoot);
     const result = await this.executor.run({
       binary: this.spawnPath(this.resolveBinary()),
@@ -149,10 +164,19 @@ export abstract class CommandRunner implements TestRunner {
     });
     const found = this.parseTestList(result, projectRoot);
     if (found.length > 0) {
-      return found;
+      return { files: found, groups: this.parseTestGroups(result, projectRoot) };
     }
     log.warn(`${this.runnerName}: the test list was empty — falling back to a filesystem scan`);
-    return this.discoverFromFilesystem(projectRoot);
+    return { files: await this.discoverFromFilesystem(projectRoot) };
+  }
+
+  /**
+   * Group label per test file (editor spelling) from the output of a `list`
+   * run, or undefined when the framework has no groups (Jest) or there is
+   * only one. Default: none.
+   */
+  protected parseTestGroups(_result: ExecutionResult, _projectRoot: string): Record<string, string> | undefined {
+    return undefined;
   }
 
   async runFullSuiteJson(projectRoot: string, withCoverage = false): Promise<RunResult> {
@@ -219,16 +243,21 @@ export abstract class CommandRunner implements TestRunner {
     return this.afterRun(request, adapter.parseResult(passed, jsonOutput, stderr));
   }
 
-  /** [user-command words] [leading args] [config args] [adapter extra args] [framework args] */
-  protected async commandArgs(request: RunRequest): Promise<string[]> {
+  /**
+   * [user-command words] [leading args] [config args] [adapter extra args] [framework args]
+   * @param configOverride passed with `--config` instead of the project's config (which still
+   *   decides `prepare`) — Vitest's trace wrapper, which loads the project's config itself
+   */
+  protected async commandArgs(request: RunRequest, configOverride?: string): Promise<string[]> {
     const adapter = this.requireAdapter();
     const projectRoot = this.requireProjectRoot();
     const configPath = await adapter.resolveConfig(projectRoot);
     await this.prepare(projectRoot, configPath);
+    const config = configOverride ?? configPath;
     return [
       ...this.resolvePrefixArgs(),
       ...this.leadingArgs(request),
-      ...(configPath ? ['--config', this.spawnPath(configPath)] : []),
+      ...(config ? ['--config', this.spawnPath(config)] : []),
       ...adapter.getExtraArgs(projectRoot),
       ...this.buildArgs(request),
     ];

@@ -3,6 +3,7 @@ import { BaseWebviewProvider } from './BaseWebviewProvider';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { ResultStore } from '../store/ResultStore';
 import { SelectionState } from '../store/SelectionState';
+import type { ProjectSummary, ProjectViewState } from '../project/ProjectContext';
 
 export class ExplorerView extends BaseWebviewProvider {
   public static readonly viewId = 'liveTestRunner.explorer';
@@ -18,9 +19,23 @@ export class ExplorerView extends BaseWebviewProvider {
     extensionUri: vscode.Uri,
     store: ResultStore,
     selection: SelectionState,
-    private readonly _coverageStore: CoverageStore,
+    private _coverageStore: CoverageStore,
   ) {
     super(extensionUri, store, selection);
+  }
+
+  /** The workspace's projects for the switcher row (shown only when there are two or more). */
+  private _projects: ProjectSummary[] = [];
+
+  bindProject(state: ProjectViewState): void {
+    this._coverageStore = state.coverageStore;
+    super.bindProject(state);
+  }
+
+  /** Updates the switcher row (project list and live state). */
+  setProjects(projects: ProjectSummary[]): void {
+    this._projects = projects;
+    this.postMessage({ type: 'projects', projects });
   }
 
   protected handleExtraMessage(msg: { type: string; filePath?: string; testFullName?: string }): void {
@@ -38,6 +53,11 @@ export class ExplorerView extends BaseWebviewProvider {
     }
     if (msg.type === 'timeline-exit-request') {
       this.onTimelineExitRequest?.();
+      return;
+    }
+    if (msg.type === 'select-project') {
+      const id = (msg as { id?: string }).id;
+      vscode.commands.executeCommand('liveTestRunner.selectProject', id);
     }
   }
 
@@ -59,6 +79,8 @@ export class ExplorerView extends BaseWebviewProvider {
       discoveryTotal:     this._discoveryTotal,
       discoveryDone:      this._discoveryDone,
       selection:          sel ? { fileId: sel.fileId, nodeId: sel.nodeId } : null,
+      running:            this._running ?? null,
+      projects:           this._projects,
     });
   }
 }

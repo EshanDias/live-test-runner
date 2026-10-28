@@ -23,8 +23,24 @@ describe('FrameworkDetector', () => {
     expect(detect({ devDependencies: { vitest: '1' } })).toBe('vitest');
   });
 
+  it('picks Vitest for a workspace package whose test script runs a hoisted Vitest', () => {
+    expect(detect({ scripts: { test: 'vitest run' } })).toBe('vitest');
+    expect(detect({ scripts: { test: 'pnpm build && vitest' } })).toBe('vitest');
+    expect(detect({ scripts: { test: 'vitest-ish' } })).toBe('jest');
+  });
+
   it('picks Jest when a project has Vitest and a Jest config (e.g. jest-dom)', () => {
     expect(detect({ devDependencies: { vitest: '1', 'kcd-scripts': '1' } }, ['jest.config.js'])).toBe('jest');
+  });
+
+  it('the test script decides when it runs only Vitest and there is no Vitest config (svelte-testing-library)', () => {
+    // A jest.config.js for a separate `test:jest`, but `npm test` is Vitest.
+    expect(detect({ devDependencies: { vitest: '4', jest: '30' }, scripts: { test: 'vitest run --coverage', 'test:jest': 'jest' } }, ['jest.config.js', 'vite.config.js'])).toBe('vitest');
+    // Both configs: a mixed project, Jest primary (unchanged).
+    expect(detect({ devDependencies: { vitest: '4', jest: '30' }, scripts: { test: 'vitest run' } }, ['jest.config.js', 'vitest.config.ts'])).toBe('jest');
+    // A script that runs both, or Jest through a wrapper: Jest.
+    expect(detect({ devDependencies: { vitest: '4', jest: '30' }, scripts: { test: 'vitest run && jest' } }, ['jest.config.js'])).toBe('jest');
+    expect(detect({ devDependencies: { vitest: '1', 'kcd-scripts': '1' }, scripts: { test: 'kcd-scripts test' } }, ['jest.config.js'])).toBe('jest');
   });
 
   it('picks Jest when a project has Vitest and Jest dependencies', () => {

@@ -9,6 +9,11 @@
  * Record formats:
  *   {"type":"T","tf":"/abs/test.ts","tn":"Suite name","fh":{"/abs/src.ts":[12,13]}}
  *   {"type":"H","tf":"/abs/test.ts","hk":"hook","fh":{"/abs/src.ts":[1,2]}}
+ *   {"type":"F","tf":"/abs/test.ts"}   the setup file ran for this test file (Vitest)
+ *
+ * Output: $SESSION_TRACE_FILE. With LTR_TRACE_PER_WORKER set (Vitest, whose
+ * workers run in parallel) each worker writes its own file,
+ * `<SESSION_TRACE_FILE>.<pid>-<threadId>`, so records never interleave.
  */
 
 // Inside Jest this module lives in the test's module registry, where the test
@@ -16,7 +21,21 @@
 // eslint-disable-next-line no-undef
 const fs = (typeof jest !== 'undefined' && jest.requireActual) ? jest.requireActual('fs') : require('fs');
 
-const outputFile    = process.env.SESSION_TRACE_FILE;
+const outputFile = (() => {
+  const base = process.env.SESSION_TRACE_FILE;
+  if (!base || !process.env.LTR_TRACE_PER_WORKER) { return base; }
+  let threadId = 0;
+  try { threadId = require('worker_threads').threadId; } catch (_) { /* no worker_threads */ }
+  return `${base}.${process.pid}-${threadId}`;
+})();
+
+function write(rec) {
+  try {
+    fs.appendFileSync(outputFile, JSON.stringify(rec) + '\n', 'utf8');
+  } catch (_e) {
+    process.stderr.write(`[LTR:error] trace: could not write ${outputFile} — ${_e.message}\n`);
+  }
+}
 
 /**
  * The open context: { kind: 'T' | 'H', file, name?, hk?, hits: Map<srcFile, Set<line>> }.
@@ -45,11 +64,7 @@ function flush() {
   const rec = ctx.kind === 'T'
     ? { type: 'T', tf: ctx.file, tn: ctx.name, fh }
     : { type: 'H', tf: ctx.file, hk: ctx.hk, fh };
-  try {
-    fs.appendFileSync(outputFile, JSON.stringify(rec) + '\n', 'utf8');
-  } catch (_e) {
-    process.stderr.write(`[LTR:error] trace: could not write ${outputFile} — ${_e.message}\n`);
-  }
+  write(rec);
 }
 
 function open(kind, file, extra) {
@@ -65,6 +80,8 @@ if (!global.__strace) {
     /** After a test: anything until the next test is a file-wide hook. */
     endTest(testFile) { open('H', testFile, { hk: 'hook' }); },
     finish() { flush(); },
+    /** The setup file ran for this test file (lets the extension tell traced files from untraced ones). */
+    fileSeen(testFile) { if (outputFile) { write({ type: 'F', tf: testFile }); } },
 
     // ── Injected around test / hook callbacks in instrumented files ─────────
     enterTest(name, testFile) {
@@ -102,3 +119,7 @@ if (!global.__strace) {
 // per test file (fresh module registry), so each load added another listener
 // (MaxListenersExceededWarning, N duplicate flushes — BUG-19), and Jest's
 // --forceExit kills workers before 'exit' handlers run anyway.
+
+// The Vitest setup file takes the runtime from here (it may run in a VM
+// context whose globalThis is not this module's).
+module.exports = global.__strace;

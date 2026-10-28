@@ -42,7 +42,7 @@ module.exports = {
     await vscode.window.showTextDocument(doc);
     const hovers = await vscode.commands.executeCommand('vscode.executeHoverProvider', doc.uri, new vscode.Position(1, 4));
     const text = (hovers || []).flatMap((hv) => hv.contents.map((c) => (typeof c === 'string' ? c : c.value))).join('\n');
-    t.check('hover: covered, and says covering tests are not available for Vitest yet', /Covered/.test(text) && /covering tests are not available for Vitest yet/.test(text), text);
+    t.check('hover: covered by the 3 tests that call add() (execution trace, phase 9)', /Covered by 3 tests/.test(text) && /adds numbers/.test(text), text);
 
     t.check('nothing written into the project (no coverage/ folder)', !fs.existsSync(path.join(workspace, 'coverage')));
   },

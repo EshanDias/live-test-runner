@@ -213,7 +213,7 @@ function plainJestJson(workspace) {
   const fs = require('fs');
   const os = require('os');
   // The runner's own parser for the test script (built by `pnpm build`).
-  const { testScriptJestArgs } = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'framework', 'jestConfig.js'));
+  const { testScriptJestArgs, jestNodeEnv } = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'framework', 'jestConfig.js'));
   const scriptArgs = testScriptJestArgs(workspace);
   const pkg = JSON.parse(fs.readFileSync(path.join(workspace, 'package.json'), 'utf8'));
   const cra = /react-scripts/.test(pkg.scripts?.test || '');
@@ -222,7 +222,8 @@ function plainJestJson(workspace) {
     ? path.join(path.dirname(resolveFrom('react-scripts/package.json')), 'bin', 'react-scripts.js')
     : path.join(path.dirname(resolveFrom('jest/package.json')), 'bin', 'jest.js');
   const out = path.join(os.tmpdir(), `ltr-e2e-plain-${process.pid}-${Date.now()}.json`);
-  const env = { ...process.env, CI: 'true' };
+  // NODE_OPTIONS from the test script (e.g. --experimental-vm-modules: Jest's ESM mode).
+  const env = { ...process.env, CI: 'true', ...jestNodeEnv(workspace) };
   delete env.ELECTRON_RUN_AS_NODE;
   const node = process.platform === 'win32' ? 'node.exe' : 'node';
   const r = spawnSync(node, [entry, ...(cra ? ['test'] : []), ...scriptArgs, '--watchAll=false', '--json', `--outputFile=${out}`],
@@ -334,18 +335,26 @@ function plainVitestJson(workspace) {
   const os = require('os');
   const runner = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'index.js'));
   const adapter = new runner.VitestAdapter();
-  const entry = adapter.findInstall(workspace).entry;
+  let entry = adapter.findInstall(workspace).entry;
   const out = path.join(os.tmpdir(), `ltr-e2e-plain-vitest-${process.pid}-${Date.now()}.json`);
   const env = { ...process.env, CI: 'true' };
   delete env.ELECTRON_RUN_AS_NODE;
   const node = process.platform === 'win32' ? 'node.exe' : 'node';
+  // From the real path, as the extension spawns it (toSpawnPath): with a Windows
+  // 8.3 short name (C:\Users\RUNNER~1) as cwd, Vite's server.fs check sees the
+  // long name and refuses the project's own files (workspace file, components).
+  // Vitest's own entry too: its internal files must have the same spelling.
+  let cwd = workspace;
+  try { cwd = fs.realpathSync.native(workspace); entry = fs.realpathSync.native(entry); } catch { /* as given */ }
   const r = spawnSync(node, [entry, 'run', ...adapter.getExtraArgs(workspace), '--reporter=json', `--outputFile=${out}`],
-    { cwd: workspace, env, encoding: 'utf8', timeout: 20 * 60_000, maxBuffer: 1 << 30 });
+    { cwd, env, encoding: 'utf8', timeout: 20 * 60_000, maxBuffer: 1 << 30 });
   if (!fs.existsSync(out)) {
     throw new Error(`plain Vitest wrote no results (exit ${r.status}${r.error ? `, ${r.error.message}` : ''}): ${(r.stderr || '').slice(-1500)}`);
   }
   const json = JSON.parse(fs.readFileSync(out, 'utf8'));
   fs.unlinkSync(out);
+  // For the report when the counts differ (not enumerable: the JSON stays as Vitest wrote it).
+  Object.defineProperty(json, 'stderrTail', { value: String(r.stderr || '').slice(-2000) + String(r.stdout || '').slice(-2000) });
   return json;
 }
 
@@ -355,6 +364,7 @@ function plainVitestJson(workspace) {
  * their discovered tests with the reason; check those separately.
  */
 function checkMatchesPlainVitest(api, t, workspace, label = 'results match plain Vitest', json = plainVitestJson(workspace)) {
+  const tail = json.stderrTail;
   json = { ...json, testResults: json.testResults.filter((f) => f.assertionResults.length > 0 || !f.message) };
   const want = jestJsonCounts(json, workspace);
   const diffs = [];
@@ -370,7 +380,8 @@ function checkMatchesPlainVitest(api, t, workspace, label = 'results match plain
       diffs.push(`${path.basename(file)}: vitest ${JSON.stringify(c)} vs extension ${JSON.stringify(got)}`);
     }
   }
-  t.check(`${label} (${want.size} files)`, want.size > 0 && diffs.length === 0, diffs.slice(0, 20).join('\n') || 'no files');
+  if ((diffs.length || want.size === 0) && tail) { diffs.push(`plain Vitest output (tail):\n${tail}`); }
+  t.check(`${label} (${want.size} files)`, want.size > 0 && diffs.length === 0, diffs.slice(0, 21).join('\n') || 'no files');
 }
 
 module.exports = {

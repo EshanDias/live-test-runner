@@ -131,6 +131,8 @@
     <a href="#coverage">Code coverage</a>
     <a href="#debugging">Debugging</a>
     <a href="#vitest">Vitest</a>
+    <a href="#monorepos">Monorepos</a>
+    <a href="#mixed">Jest + Vitest</a>
     <a href="#timeline">Timeline Debugger</a>
     <div class="group">Reference</div>
     <a href="#commands">Commands</a>
@@ -166,7 +168,7 @@
 <section id="quick-start">
   <h2>Quick start</h2>
   <ol class="steps">
-    <li>Open a Jest or Vitest project (a single folder, or set <code>liveTestRunner.projectRoot</code>).</li>
+    <li>Open a Jest or Vitest project — a single folder, a monorepo or a multi-root workspace (see <a href="#monorepos">Monorepos</a>).</li>
     <li>Click the <b>beaker</b> icon in the Activity Bar. Tests are discovered right away.</li>
     <li>Click <b>▶ Start Testing</b>. The full suite runs once.</li>
     <li>Edit and save. The affected tests rerun automatically.</li>
@@ -240,7 +242,7 @@
   </table></div>
   <ul>
     <li><b>Badge</b>: <code>Stmts · Branch · Fns · Lines</code> in the Explorer.</li>
-    <li><b>Hover</b> a line to see the covering tests and which branch arms were missed. With Vitest the hover shows coverage and branches, but not the covering tests yet.</li>
+    <li><b>Hover</b> a line to see the covering tests and which branch arms were missed (Jest and Vitest).</li>
     <li><b>Stale overlay</b>: a grey tint on a saved file until its rerun finishes.</li>
     <li>Files no test imports count as 0%, so totals cover the whole project.</li>
   </ul>
@@ -263,10 +265,54 @@
     <li><b>Failures</b>: the expected / received diff and the source-mapped line. A failing <code>beforeAll</code> shows its real error and marks the file failed.</li>
     <li><b>Coverage</b> uses Vitest's own provider. Install <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>, whichever your config names); without it the log says once that coverage is off. Nothing is written into your project's <code>coverage/</code> folder.</li>
     <li><b>Projects</b>: a config with <code>test.projects</code> runs once from the root; Vitest runs every project. Browser-mode projects need real browsers, so they are left out unless you turn on <code>vitestIncludeBrowserProjects</code> or your test script picks projects itself.</li>
-    <li><b>Saving a source file</b> reruns the test files that import it (<code>vitest related</code>), live and with fresh coverage. Saving <code>vitest.config.*</code> restarts the session.</li>
-    <li><b>Not yet</b>: "covering tests" in the hover and per-test source-file reruns (they need the execution trace), the Timeline Debugger, and monorepos with several packages.</li>
+    <li><b>Execution trace</b> (on by default, <code>vitestTrace</code>): the extension records which lines each test runs — the coverage hover lists the covering tests, and <b>saving a source file</b> reruns only the tests that ran it (by name; a test file where every test did runs whole, with fresh coverage). It adds a small Vite plugin through a wrapper config in its own temp folder; your config, plugins and setup files apply as usual, and <code>fn.toString()</code> still returns the code you wrote. TypeScript and JSX lines are mapped back to your source, and so are <code>.vue</code>, <code>.svelte</code>, <code>.astro</code> and <code>.marko</code> components (script and template lines, through their Vite plugin's source map). Vitest 3 <code>vitest.workspace.*</code> files and type-check (<code>*.test-d.ts</code>) files are fine.</li>
+    <li><b>When the trace is off</b> — the setting is off, Vitest is older than 3, or a run with the wrapper failed (the batch is then rerun as configured and the log says why, once) — saving a source file reruns the test files that import it (<code>vitest related</code>), live and with fresh coverage. Browser-mode projects (opt-in) always run without it. Saving <code>vitest.config.*</code> restarts the session.</li>
+    <li><b>Not yet</b>: the Timeline Debugger.</li>
   </ul>
   <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — tree fills in, results, coverage bars -->
+</section>
+
+<!-- ───────────────────────── Monorepos ───────────────────────── -->
+<section id="monorepos">
+  <h2>Monorepos &amp; multi-root workspaces</h2>
+  <p>Every test project in the workspace is detected when you open it. <b>None runs until you start it.</b></p>
+  <div class="table-wrap"><table>
+    <tr><th>Your layout</th><th>Projects</th></tr>
+    <tr><td>A folder with its own test config (<code>jest.config.*</code>, <code>vitest.config.*</code>, <code>package.json#jest</code>, CRA)</td><td>One project — its config already covers its packages (Jest <code>projects</code>, Vitest <code>test.projects</code>)</td></tr>
+    <tr><td>A monorepo root (<code>pnpm-workspace.yaml</code>, <code>package.json#workspaces</code>) without a test config</td><td>One project per package that has tests (a Jest / Vitest dependency, config or <code>test</code> script)</td></tr>
+    <tr><td>A multi-root workspace</td><td>Each folder, by the rules above</td></tr>
+  </table></div>
+  <ul>
+    <li><b>Project switcher</b>: the row at the top of the Explorer (<code>web ▾ ● running ✓120 ✗2</code>) lists every project with its state. Pick one and the tree, Results panel and status bar switch to it. Gutter icons, inline durations, CodeLens and coverage bars always show <b>each file's own project</b> — open a file of another package and you see its results; <b>▶ Run</b> / <b>▷ Debug</b> there run in that package. Also: <b>Select Project</b> in the Command Palette.</li>
+    <li><b>Start / Stop act on the project shown.</b> The others keep running — and rerunning on save — in the background; switch back to see their progress.</li>
+    <li><b>How many at once</b>: <code>maxRunningProjects</code> (<code>auto</code> = 2, or 1 on machines with ≤ 4 CPU cores or less than 8 GB of memory (total RAM)). Starting one more asks you to stop a running project first and names the running ones. <b>Stop All Projects</b> stops them all.</li>
+    <li><b>Vitest projects</b>: a package whose config has <code>test.projects</code> is one project; its files are grouped by Vitest project name in the tree.</li>
+    <li><b>Pin one root</b>: <b>Select Project Root</b> (or <code>liveTestRunner.projectRoot</code>) limits Live Test Runner to that folder, exactly as before 3.1; choose "Detect all projects" to go back.</li>
+    <li>The status bar shows the selected project and how many run: <code>Live Tests: web · ✅ 12 passed · 2 running</code>.</li>
+  </ul>
+  <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/monorepo-switcher.png" alt="The project switcher: the shared package is shown while two packages run" style="max-width:100%;border-radius:8px"></p>
+</section>
+
+<!-- ───────────────────────── Mixed frameworks ───────────────────────── -->
+<section id="mixed">
+  <h2>Jest and Vitest in one project</h2>
+  <p>A project with a Jest config <b>and its own</b> <code>vitest.config.*</code> (e.g. while migrating) runs <b>each test file with its own framework</b> — binary, config, flags, coverage. A <code>vitest</code> dependency alone, or a <code>vite.config.*</code>, does not count: such projects stay Jest.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Which framework runs a file</th><th></th></tr>
+    <tr><td>1. <code>liveTestRunner.frameworks</code></td><td>The first matching glob wins, e.g. <code>{ "packages/new/**": "vitest" }</code>. Also makes a Jest project without a Vitest config mixed.</td></tr>
+    <tr><td>2. The configs</td><td>Only the Jest config lists it → Jest; only the Vitest config → Vitest.</td></tr>
+    <tr><td>3. The file</td><td>Both list it: an import from <code>vitest</code> or a <code>vi.</code> call → Vitest; <code>@jest/globals</code> or a <code>jest.</code> call → Jest. Read again when you save the file.</td></tr>
+    <tr><td>4. Nothing says</td><td>The project's main framework (Jest), with one warning in the log naming the setting.</td></tr>
+  </table></div>
+  <ul>
+    <li>The Explorer groups the files by framework; the switcher shows <code>jest + vitest</code>; the status bar splits the counts: <code>✅ 8 passed · Jest 5 · Vitest 3</code>.</li>
+    <li><b>Saving a source file</b> reruns the dependent tests of both frameworks, each by its own execution trace (Vitest falls back to <code>vitest related</code> when its trace is off). Saving either config restarts the session.</li>
+    <li><b>Coverage</b>: a source file tested by both shows the lines either framework ran.</li>
+    <li>Stop kills both frameworks' processes. "Covering tests" on hover list tests of both frameworks; the Timeline debugger works for the Jest files only.</li>
+    <li>In a monorepo each package is still its own project; only a package with both configs is mixed.</li>
+  </ul>
+  <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/mixed-explorer.png" alt="A mixed project: Explorer grouped into Jest and Vitest, status bar Jest 5 · Vitest 3" style="max-width:100%;border-radius:8px"></p>
+  <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/mixed-coverage.png" alt="math.js covered by Jest (add) and Vitest (mul)" style="max-width:100%;border-radius:8px"></p>
 </section>
 
 <!-- ───────────────────────── Timeline ───────────────────────── -->
@@ -291,8 +337,10 @@
     <tr><td>Start Testing</td><td>Runs everything and starts watching for saves</td></tr>
     <tr><td>Stop Testing</td><td>Ends the session and kills running Jest / Vitest processes</td></tr>
     <tr><td>Stop Testing and Clear Cache</td><td>Stop, then wipe the discovery cache (<kbd>Shift</kbd>+<kbd>Delete</kbd> in the views)</td></tr>
-    <tr><td>Clear Cache and Restart Testing</td><td>Wipe the cache and rediscover tests</td></tr>
-    <tr><td>Select Project Root</td><td>Pick the root folder in multi-folder workspaces</td></tr>
+    <tr><td>Clear Cache and Restart Testing</td><td>Wipe the results and cache, rediscover tests and run them all again</td></tr>
+    <tr><td>Select Project</td><td>Switch the project the views show (the Explorer's switcher row)</td></tr>
+    <tr><td>Select Project Root</td><td>Pin Live Test Runner to one folder, or back to every detected project</td></tr>
+    <tr><td>Stop All Projects</td><td>Stops every running project</td></tr>
     <tr><td>Show Logs</td><td>Opens the <b>Live Test Runner</b> log (levelled)</td></tr>
     <tr><td>Show Test Output</td><td>Opens the raw Jest / Vitest output</td></tr>
     <tr><td>Open Guide</td><td>Opens this guide in an editor tab</td></tr>
@@ -309,10 +357,13 @@
   <p class="muted">All under <code>liveTestRunner.*</code>.</p>
   <div class="table-wrap"><table>
     <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-    <tr><td><code>projectRoot</code></td><td><code>""</code></td><td>Project folder. Detected automatically for single-folder workspaces.</td></tr>
+    <tr><td><code>projectRoot</code></td><td><code>""</code></td><td>Pin to one project folder. Empty: every test project in the workspace is detected.</td></tr>
+    <tr><td><code>maxRunningProjects</code></td><td><code>"auto"</code></td><td>Projects running at once: <code>auto</code> = 2 (1 on ≤ 4 cores or &lt; 8 GB total memory), or a number</td></tr>
     <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code> (Jest only).</td></tr>
     <tr><td><code>jestCommand</code></td><td><code>""</code></td><td>Override the Jest binary or command.</td></tr>
     <tr><td><code>vitestCommand</code></td><td><code>""</code></td><td>Override the Vitest command (e.g. <code>npx vitest</code>). Empty = the project's own Vitest.</td></tr>
+    <tr><td><code>frameworks</code></td><td><code>{}</code></td><td>Jest + Vitest projects: glob → <code>"jest"</code> / <code>"vitest"</code>, which framework runs those test files (see <a href="#mixed">Jest and Vitest in one project</a>).</td></tr>
+    <tr><td><code>vitestTrace</code></td><td><code>true</code></td><td>Vitest execution trace: covering tests in the hover, and a saved source file reruns only the tests that ran it. Off: Vitest runs exactly as configured and saves use <code>vitest related</code>.</td></tr>
     <tr><td><code>vitestIncludeBrowserProjects</code></td><td><code>false</code></td><td>Also run Vitest browser-mode projects. They need real browsers, so they are left out by default (unless the test script picks projects itself).</td></tr>
     <tr><td><code>onSaveDebounceMs</code></td><td><code>300</code></td><td>Wait after a save before running.</td></tr>
     <tr><td><code>durationThresholds.*</code></td><td>100 / 500 ms …</td><td>When test, suite and file durations turn amber or red.</td></tr>
@@ -379,6 +430,7 @@
 <section id="support">
   <h2>Support &amp; limits</h2>
   <p>Jest covers babel-jest, ts-jest and @swc/jest; Create React App (react-scripts 4 / 5) has its Jest config extracted automatically. Vitest 3+ is fully supported, Vitest 1–2 run with results only; the framework is detected from the project (a project that lists Vitest but configures Jest runs on Jest).</p>
+  <p><b>Any UI framework.</b> React, Preact, Solid, Lit, Angular and Qwik code is plain JS / TS. Vue, Svelte, Astro and Marko components are compiled by your project's own Jest transformer (vue-jest, svelte-jester…) or Vite plugin, and the extension maps them back to their own lines: saving a component reruns the tests that use it, the coverage hover lists the tests that ran each of its lines, and coverage counts it (an untested component counts from its <code>&lt;script&gt;</code>). Other file types count too when your tests load them — an Angular <code>templateUrl</code>, an HTML file imported with <code>?raw</code>, a template a plugin reads: saving one reruns the tests that use it. More generally: any extension in your Jest config's <code>moduleFileExtensions</code> (e.g. Angular <code>.html</code> templates) reruns its tests on save, and the Vitest trace reaches any file a Vite plugin compiles. With Jest, coverage of a Vue component counts its <code>&lt;script&gt;</code> block only (as <code>jest --coverage</code> does — vue-jest maps only that), but template lines still show the tests that rendered them. Jest's ESM mode is picked up from your test script (<code>NODE_OPTIONS=--experimental-vm-modules jest</code>) or <code>.npmrc</code> (<code>node-options=--experimental-vm-modules</code>) — needed for ESM-only projects and Svelte 4+ with svelte-jester; if a file still fails to load as an ES module, the log says what to change.</p>
   <!-- matrix:start -->
   <div class="table-wrap"><table>
     <tr><th>Feature</th><th>Jest</th><th>CRA</th><th>Vitest</th></tr>
@@ -388,10 +440,11 @@
     <tr><td>Logs / console output</td><td>✅ per file</td><td>✅ per file</td><td>✅ per test</td></tr>
     <tr><td>Coverage (gutter, hover)</td><td>✅</td><td>✅</td><td>✅ needs <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>)</td></tr>
     <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td></tr>
-    <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ whole test files (<code>vitest related</code>)</td></tr>
-    <tr><td>Monorepo / multi-project</td><td>🟡</td><td>—</td><td>🟡 Vitest <code>projects</code>, run from the root</td></tr>
-    <tr><td>Mixed frameworks in one project</td><td>—</td><td>—</td><td>⏳ 3.2</td></tr>
-    <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>⏳ 3.3</td></tr>
+    <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ only the tests that ran it (execution trace); <code>vitest related</code> when the trace is off</td></tr>
+    <tr><td>Monorepo / multi-project (project switcher)</td><td>✅ one project per package; a root <code>projects</code> config stays one</td><td>🟡 a CRA app is detected as a package (not e2e-tested)</td><td>✅ one project per package; <code>test.projects</code> stays one, grouped by name</td></tr>
+    <tr><td>Mixed Jest + Vitest in one project</td><td>✅ each test file runs with its own framework</td><td>—</td><td>✅</td></tr>
+    <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>✅ Vitest ≥ 3 (incl. <code>vitest.workspace</code> files); not in browser mode</td></tr>
+    <tr><td>UI components (<code>.vue</code>, <code>.svelte</code>, <code>.astro</code>, <code>.marko</code>): save reruns, trace, coverage</td><td>✅ through the project's transformer (vue-jest, svelte-jester…)</td><td>— (React is plain JS)</td><td>✅ through the project's Vite plugins</td></tr>
     <tr><td>Timeline debugger</td><td>⏳</td><td>⏳</td><td>⏳ later</td></tr>
   </table></div>
   <!-- matrix:end -->
@@ -442,6 +495,7 @@
     <li><b>Adapter pattern</b>: one adapter per framework in <code>runner</code> plus one in the extension.</li>
     <li><b>One source of truth</b>: <code>ResultStore</code> for results, trace files on disk for trace indexes.</li>
     <li><b>Isolation</b>: each VS Code window gets its own <code>session-&lt;pid&gt;-&lt;ts&gt;</code> temp folder.</li>
+    <li><b>Projects</b>: one <code>ProjectContext</code> per test project (its stores, discovery, framework services and session); the views show the selected one.</li>
   </ul>
   <p class="muted">More detail: <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/architecture.md" target="_blank" rel="noopener">architecture.md</a> · <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/developer-guide.md" target="_blank" rel="noopener">developer-guide.md</a></p>
 </section>

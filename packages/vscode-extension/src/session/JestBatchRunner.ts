@@ -16,20 +16,24 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults, jestNodeEnv, jestEsmHint } from '@live-test-runner/runner';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
-import { mergeCounters as _mergeCounters } from '../coverage/coverageRules';
+import { combineWithEntry } from '../coverage/coverageRules';
 import { CoverageScope, coverageScopeOf } from '../coverage/coverageScope';
 import { logger } from '../utils/logger';
 import { IProjectConfig } from './IProjectConfig';
-import { sourceTransformPattern, upperDrive } from './JestProjectConfig';
+import { ownFilesPattern, sourceTransformPattern, upperDrive } from './JestProjectConfig';
+import { COMPILED_EXTENSIONS, NON_SOURCE_EXTENSIONS, SCRIPT_EXTENSIONS } from './sourceFiles';
 import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
+import { applyTraceRecords, normPath } from './traceRecords';
 
 const log = logger.scope('Runner');
 const covLog = logger.scope('Coverage');
+
+const OWN_FILES_PATTERN = ownFilesPattern();
 
 const SESSION_TRANSFORM_PATH = path.resolve(
   __dirname,
@@ -51,22 +55,6 @@ const COVERAGE_SETUP_PATH = path.resolve(
   'jest',
   'ltrCoverageSetup.js',
 );
-
-/** Light-trace record emitted by sessionTraceRuntime.js */
-interface TestHitRecord {
-  type: 'T';
-  tf: string;
-  tn: string;
-  fh: { [srcFile: string]: number[] };
-}
-interface HookHitRecord {
-  type: 'H';
-  tf: string;
-  /** 'file' = module-level code run while the test file loaded; otherwise a hook. */
-  hk?: string;
-  fh: { [srcFile: string]: number[] };
-}
-type HitRecord = TestHitRecord | HookHitRecord;
 
 /** Per-file record written by liveReporter.js */
 interface ReporterRecord {
@@ -128,6 +116,8 @@ export class JestBatchRunner implements IBatchRunner {
   private readonly _owner = new Map<string, string>();
   private readonly _binaryResolver = new BinaryResolver();
   private _killed = false;
+  /** ES-module load hints already logged this session (jestEsmHint kinds). */
+  private readonly _hintsGiven = new Set<string>();
   /** Bumped by kill(): records from batches started before it are dropped. */
   private _generation = 0;
 
@@ -143,6 +133,7 @@ export class JestBatchRunner implements IBatchRunner {
 
   reset(): void {
     this._killed = false;
+    this._hintsGiven.clear();
   }
 
   private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
@@ -211,6 +202,10 @@ export class JestBatchRunner implements IBatchRunner {
 
     registerProjectRoot(projectRoot);
     const srcPattern = sourceTransformPattern(projectRoot);
+    // Compiled sources (.vue, .svelte, …, and whatever else the project's
+    // moduleFileExtensions name): the pattern for one extension is this prefix
+    // + the extension. Used only when the project transforms that extension itself.
+    const compiledPatternPrefix = sourceTransformPattern(projectRoot, '').replace(/\$$/, '');
 
     // The project's config as Jest resolved it (any format) — see JestProjectConfig.
     const resolvedConfigPath = await this._projectConfig.get(projectRoot);
@@ -300,12 +295,18 @@ if (!_resolvedPath && (!_baseConfigLoaded || !baseConfig.testEnvironment)) {
 }
 
 // Our transform / setup file on top of one project's config. Test files are
-// passed explicitly (--runTestsByPath, already filtered by jest --listTests),
-// so testMatch / testRegex are dropped.
+// passed explicitly (--runTestsByPath, already filtered by jest --listTests
+// with this config), and Jest still checks them against the test patterns —
+// so the project's own pattern stays (dropping both made Jest use its default
+// testMatch and skip e.g. *.jest.js). Only one of the two may be set
+// (--showConfig can fill in both); ts-jest reads them too.
 function _overlay(cfg) {
   const c = { ...cfg };
-  delete c.testMatch;
-  delete c.testRegex;
+  const hasRegex = Array.isArray(c.testRegex) ? c.testRegex.length > 0 : !!c.testRegex;
+  const hasMatch = Array.isArray(c.testMatch) && c.testMatch.length > 0;
+  if (hasRegex) { delete c.testMatch; }
+  else if (hasMatch) { delete c.testRegex; }
+  else { delete c.testMatch; delete c.testRegex; }
 
   const baseTransformObj = Array.isArray(c.transform)
     ? Object.fromEntries(c.transform.map(([p, t, o]) => o ? [p, [t, o]] : [p, t]))
@@ -316,6 +317,17 @@ function _overlay(cfg) {
   const hasGeneralJsTransform = Object.keys(baseTransformObj).some(pattern => {
     try { return new RegExp(pattern).test('src/foo.js'); } catch(_) { return false; }
   });
+  // Sources the project compiles itself (vue-jest, svelte-jester, coffee…):
+  // our transform first, it calls theirs. Candidates: our list + the
+  // project's moduleFileExtensions; never JS / TS (the pattern above) or assets.
+  const componentTransform = {};
+  const _skip = new Set(${JSON.stringify([...SCRIPT_EXTENSIONS, ...NON_SOURCE_EXTENSIONS])});
+  const _candidates = new Set([...${JSON.stringify(COMPILED_EXTENSIONS)}, ...((c.moduleFileExtensions || []).map((e) => String(e).toLowerCase()))]);
+  for (const ext of _candidates) {
+    if (_skip.has(ext) || !/^[\\w-]+$/.test(ext)) { continue; }
+    const handled = Object.keys(baseTransformObj).some((p) => { try { return new RegExp(p).test('src/Comp.' + ext); } catch (_) { return false; } });
+    if (handled) { componentTransform[${JSON.stringify(compiledPatternPrefix)} + ext + '$'] = ${JSON.stringify(SESSION_TRANSFORM_PATH)}; }
+  }
   let fallbackTransform = {};
   if (!hasGeneralJsTransform) {
     try {
@@ -330,9 +342,17 @@ function _overlay(cfg) {
     ...c,
     transform: {
       [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
+      ...componentTransform,
       ...baseTransformObj,
       ...fallbackTransform,
     },
+    // Our own files (setup, runtime) are never the project's to transform:
+    // its Babel config could add imports (@babel/runtime helpers) that cannot
+    // be resolved from the extension's folder.
+    transformIgnorePatterns: [
+      ...(c.transformIgnorePatterns || ['/node_modules/', '\\\\.pnp\\\\.[^\\\\/]+$']),
+      ${JSON.stringify(OWN_FILES_PATTERN)},
+    ],
     // Ours first: its beforeEach opens the per-test trace context before the
     // project's own hooks run, so their hits count for the test.
     setupFilesAfterEnv: [
@@ -434,6 +454,11 @@ module.exports = _projects
         // crash, or an instrumentation problem) — no test inside it executed.
         const firstLine = rec.failureMessage.split('\n').find((l) => l.trim()) ?? '';
         log.warn(`${batch}: ${path.basename(rec.testFilePath)} failed to run — ${firstLine.trim()}`);
+        const hint = jestEsmHint(rec.failureMessage, projectRoot);
+        if (hint && !this._hintsGiven.has(hint.kind)) {
+          this._hintsGiven.add(hint.kind);
+          log.warn(`${path.basename(rec.testFilePath)} could not be loaded: ${hint.text}`);
+        }
       }
       try {
         const prev = applied.get(rec.testFilePath);
@@ -536,6 +561,8 @@ module.exports = _projects
           ],
           cwd: projectRoot,
           extraEnv: {
+            // The test script's Node options (e.g. --experimental-vm-modules: Jest's ESM mode).
+            ...jestNodeEnv(projectRoot),
             SESSION_TRACE_FILE:   traceFile,
             COVERAGE_OUTPUT_FILE: covCountersFile,
             LTR_MANIFEST_DIR:     this._manifestDir(projectRoot),
@@ -693,18 +720,17 @@ module.exports = _projects
         continue;
       }
 
-      const normalizedFilePath = _normPath(manifest.filePath);
+      const normalizedFilePath = normPath(manifest.filePath);
       if (!scope.counts(normalizedFilePath)) {
         excluded++;
         continue;
       }
 
+      // Merge with counters of the same file version (same manifest); with a
+      // Vitest-measured entry (mixed project) by line.
+      // A stale entry (its source was saved) starts over, as before.
       const existing = this._coverageStore.getEntry(normalizedFilePath);
-      // Merge only with counters of the same file version (same manifest).
-      const merged: LiveCov =
-        existing?.state === 'measured' && existing.manifestPath === manifestPath
-          ? _mergeCounters(existing.counters, counters)
-          : counters;
+      const merged: LiveCov = existing?.state === 'measured-stale' ? counters : combineWithEntry(existing, manifestPath, manifest, counters);
 
       const pct = calcCoverage(manifest, merged);
       this._coverageStore.setMeasuredEntry(normalizedFilePath, { manifestPath, counters: merged, pct });
@@ -752,143 +778,8 @@ module.exports = _projects
     }
 
     const lines = raw.split('\n').filter((l) => l.trim().length > 0);
-
-    const testsByFile  = new Map<string, TestHitRecord[]>();
-    const hooksByFile  = new Map<string, HookHitRecord[]>();
-
-    for (const line of lines) {
-      let rec: HitRecord;
-      try { rec = JSON.parse(line) as HitRecord; } catch { continue; }
-      if (!rec || !rec.tf) { continue; }
-      rec.tf = toKey(rec.tf);
-      if (rec.type === 'T') {
-        const bucket = testsByFile.get(rec.tf) ?? [];
-        bucket.push(rec);
-        testsByFile.set(rec.tf, bucket);
-      } else if (rec.type === 'H') {
-        const bucket = hooksByFile.get(rec.tf) ?? [];
-        bucket.push(rec);
-        hooksByFile.set(rec.tf, bucket);
-      }
-    }
-
-    // Coverage index — aggregate all hit lines across every test + hook.
-    for (const recs of testsByFile.values()) {
-      for (const rec of recs) {
-        for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
-          traceStore.addCoveredLines(_normPath(srcFile), linesArr);
-        }
-      }
-    }
-    for (const recs of hooksByFile.values()) {
-      for (const rec of recs) {
-        for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
-          traceStore.addCoveredLines(_normPath(srcFile), linesArr);
-        }
-      }
-    }
-
-    // Line → test reverse index — for each test, record which lines it hit in each source file.
-    for (const [testFilePath, testRecs] of testsByFile) {
-      // Accumulate: sourceFile → line → Set<fullName>
-      const fileLineMap = new Map<string, Map<number, string[]>>();
-      for (const rec of testRecs) {
-        for (const [srcFile, linesArr] of Object.entries(rec.fh)) {
-          if (_normPath(srcFile) === testFilePath) { continue; }
-          const normSrc = _normPath(srcFile);
-          let lineMap = fileLineMap.get(normSrc);
-          if (!lineMap) {
-            lineMap = new Map();
-            fileLineMap.set(normSrc, lineMap);
-          }
-          for (const line of linesArr) {
-            const names = lineMap.get(line) ?? [];
-            if (!names.includes(rec.tn)) { names.push(rec.tn); }
-            lineMap.set(line, names);
-          }
-        }
-      }
-      for (const [srcFile, lineMap] of fileLineMap) {
-        traceStore.mergeLineToTests(srcFile, testFilePath, lineMap);
-      }
-    }
-
-    // sourceToTests index — for each test file, map source files to the tests that hit them.
-    for (const [testFilePath, testRecs] of testsByFile) {
-      const testNames = testRecs.map((r) => r.tn);
-
-      // Hooks (beforeAll/afterAll) affect every test in the file. Module-level
-      // code run at import does not make every test "use" that module — it
-      // counts for coverage only, or every save would rerun whole files.
-      const hookFiles = new Set<string>();
-      for (const hookRec of hooksByFile.get(testFilePath) ?? []) {
-        if (hookRec.hk === 'file') { continue; }
-        for (const srcFile of Object.keys(hookRec.fh)) {
-          if (_normPath(srcFile) !== testFilePath) { hookFiles.add(_normPath(srcFile)); }
-        }
-      }
-
-      const perTestFiles = new Map<string, string[]>();
-      for (const rec of testRecs) {
-        const files: string[] = [];
-        for (const srcFile of Object.keys(rec.fh)) {
-          if (_normPath(srcFile) !== testFilePath) { files.push(_normPath(srcFile)); }
-        }
-        perTestFiles.set(rec.tn, files);
-      }
-
-      const touchedSourceFiles = new Set<string>(hookFiles);
-      for (const files of perTestFiles.values()) {
-        for (const f of files) { touchedSourceFiles.add(f); }
-      }
-
-      for (const sourceFile of touchedSourceFiles) {
-        const touchingTests: string[] = [];
-        for (const tn of testNames) {
-          const files = perTestFiles.get(tn) ?? [];
-          if (files.includes(sourceFile) || hookFiles.has(sourceFile)) {
-            touchingTests.push(tn);
-          }
-        }
-
-        const sourceMap: {
-          [suite: string]: { isSharedVars: boolean; sharedVarNames: string[]; testCases: string[] };
-        } = {};
-        for (const tn of touchingTests) {
-          const suiteName = _extractSuiteName(tn);
-          if (!sourceMap[suiteName]) {
-            sourceMap[suiteName] = { isSharedVars: false, sharedVarNames: [], testCases: [] };
-          }
-          if (!sourceMap[suiteName].testCases.includes(tn)) {
-            sourceMap[suiteName].testCases.push(tn);
-          }
-        }
-
-        const existing = traceStore.getSourceMapping(sourceFile) ?? {};
-        const existingForFile = existing[testFilePath] ?? {};
-        const mergedForFile = { ...existingForFile };
-        for (const [suiteName, suiteInfo] of Object.entries(sourceMap)) {
-          if (mergedForFile[suiteName]) {
-            const existingCases = mergedForFile[suiteName].testCases;
-            const newCases = suiteInfo.testCases.filter((t) => !existingCases.includes(t));
-            mergedForFile[suiteName] = {
-              ...mergedForFile[suiteName],
-              testCases: [...existingCases, ...newCases],
-            };
-          } else {
-            mergedForFile[suiteName] = suiteInfo;
-          }
-        }
-
-        traceStore.setSourceMapping(sourceFile, {
-          ...existing,
-          [testFilePath]: mergedForFile,
-        });
-      }
-    }
-
-    const totalTests = Array.from(testsByFile.values()).reduce((n, recs) => n + recs.length, 0);
-    log.debug(`${batch}: traced ${totalTests} test(s) across ${testsByFile.size} file(s)`);
+    const summary = applyTraceRecords(lines, traceStore, toKey);
+    log.debug(`${batch}: traced ${summary.tests} test(s) across ${summary.files} file(s)`);
   }
 }
 
@@ -900,17 +791,6 @@ function secondsSince(t: number): string {
   return `${((Date.now() - t) / 1000).toFixed(1)}s`;
 }
 
-function _extractSuiteName(fullTestName: string): string {
-  const lastSep = fullTestName.lastIndexOf(' > ');
-  return lastSep !== -1 ? fullTestName.slice(0, lastSep) : fullTestName;
-}
-
-
-
-/** A source path from Jest in the editor's spelling (symlinks, drive-letter case). */
-function _normPath(filePath: string): string {
-  return fromRunnerPath(filePath).replace(/^[A-Z]:/, m => m.toLowerCase());
-}
 
 /** Comparison key for a file path: normalised, and case-insensitive on Windows. */
 function pathKey(filePath: string): string {

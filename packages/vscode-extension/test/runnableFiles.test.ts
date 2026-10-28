@@ -22,6 +22,18 @@ describe('runnable-files cache (jest --listTests answers kept between sessions)'
     expect(cache.read(root, runnableCacheKey(root, [...tests()].reverse(), 'jest|'))).toEqual([tests()[0]]);
   });
 
+  it('keeps the framework\'s file groups (Vitest project names, D12) with the list', () => {
+    const cache = new RunnableFilesCache(cacheDir);
+    const key = runnableCacheKey(root, tests(), 'vitest|');
+    cache.write(root, key, tests(), { [tests()[0]]: 'unit', [tests()[1]]: 'integration' });
+    expect(cache.readEntry(root, key)).toEqual({ files: tests(), groups: { [tests()[0]]: 'unit', [tests()[1]]: 'integration' } });
+    cache.write(root, key, tests());
+    expect(cache.readEntry(root, key)).toEqual({ files: tests(), groups: undefined });
+    // Mixed projects also remember each file's framework.
+    cache.write(root, key, tests(), undefined, { [tests()[0]]: 'vitest:hint' });
+    expect(cache.readEntry(root, key)).toEqual({ files: tests(), frameworks: { [tests()[0]]: 'vitest:hint' } });
+  });
+
   it('asks again when a test file is added or removed', () => {
     const key = runnableCacheKey(root, tests(), 'jest|');
     expect(runnableCacheKey(root, [...tests(), path.join(root, 'c.test.js')], 'jest|')).not.toBe(key);

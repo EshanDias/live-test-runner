@@ -5,7 +5,10 @@ import { ExecutionResult } from './execution/Executor';
 import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { refusingAdapter } from './framework/refusingAdapter';
+import { FrameworkRegistry } from './framework/FrameworkRegistry';
+import { isFrameworkAllowedAt } from './framework/allowedFrameworks';
 import { FRAMEWORK_IDS } from './types';
+import { jestNodeEnv } from './framework/jestConfig';
 import { ResultParser } from './parsing/ResultParser';
 import { createLogger } from './utils/logger';
 import { fromRunnerPath, toRunnerPath } from './resolution/RunnerPaths';
@@ -44,13 +47,26 @@ export class JestRunner extends CommandRunner {
    * Plain Jest or Create React App — whichever the project is. Any other
    * framework (e.g. Vitest) has its own runner: running it with Jest flags
    * would fail confusingly, so its runs are refused — when they start, not
-   * here, so setting the project root never fails.
+   * here, so setting the project root never fails. A mixed-framework project
+   * allows Jest for its Jest files ({@link isFrameworkAllowedAt}).
    */
   protected detectAdapter(projectRoot: string): FrameworkAdapter {
     const adapter = this.detector.detect(projectRoot);
     if (JEST_FAMILY.has(adapter.framework)) { return adapter; }
+    if (isFrameworkAllowedAt(projectRoot, 'jest')) {
+      const jest = FrameworkRegistry.default().get(FRAMEWORK_IDS.jest);
+      if (jest) {
+        log.debug(`${projectRoot} is a "${adapter.framework}" project — running its Jest files with Jest (mixed frameworks)`);
+        return jest;
+      }
+    }
     log.debug(`${projectRoot} is a "${adapter.framework}" project — the Jest runner will refuse to run it`);
     return refusingAdapter(adapter);
+  }
+
+  /** The test script's Node options (e.g. `--experimental-vm-modules` for Jest's ESM mode). */
+  protected override runEnv(_request: RunRequest): Record<string, string> | undefined {
+    return jestNodeEnv(this.requireProjectRoot());
   }
 
   protected buildArgs(request: RunRequest): string[] {

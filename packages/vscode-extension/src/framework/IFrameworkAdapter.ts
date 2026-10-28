@@ -28,6 +28,12 @@ export interface IFrameworkAdapter {
   /** Discover all test file paths in the project. */
   discoverTests(projectRoot: string, log: (msg: string) => void): Promise<string[]>;
 
+  /**
+   * {@link discoverTests} plus the framework's own grouping of the files
+   * (Vitest: `test.projects` names, D12). Optional — without it there are no groups.
+   */
+  listTestFiles?(projectRoot: string, log: (msg: string) => void): Promise<{ files: string[]; groups?: Record<string, string> }>;
+
   /** Glob pattern for watching test files on save (e.g. `{**\/*.test.*,**\/*.spec.*}`). */
   getFileGlob(): string;
 
@@ -80,12 +86,14 @@ export interface IFrameworkAdapter {
    * Use the framework's own static-analysis fallback (e.g. jest --findRelatedTests)
    * to find and run tests related to the changed source file.
    * Called when no trace data exists for the changed file.
+   * @param accept mixed projects: only this framework's test files get results (others are ignored)
    */
   runRelatedTests(
     store: ResultStore,
     sourceFilePath: string,
     projectRoot: string,
     log: (msg: string) => void,
+    accept?: (testFilePath: string) => boolean,
   ): Promise<string[]>;
 
   /**

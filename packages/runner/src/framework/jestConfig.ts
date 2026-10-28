@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { readPackageJson } from './adapters/JestAdapter';
 
@@ -118,6 +119,113 @@ export function testScriptJestArgs(projectRoot: string): string[] {
     }
   }
   return args;
+}
+
+/**
+ * Node options the project's `test` script gives Jest — `NODE_OPTIONS=…
+ * jest`, `cross-env NODE_OPTIONS=… jest`, `node --flag node_modules/.bin/jest`:
+ * most often `--experimental-vm-modules` (Jest's ESM mode — ES-module
+ * projects, Svelte 4+ through svelte-jester). Only flags Node accepts in
+ * NODE_OPTIONS and that change how test code loads are kept.
+ */
+export function testScriptNodeOptions(projectRoot: string, home: string = os.homedir()): string[] {
+  const script = readPackageJson(projectRoot)?.scripts?.test;
+  if (typeof script !== 'string') { return []; }
+  const fromScript = scriptNodeFlags(script);
+  if (fromScript === undefined) { return []; }
+  // npm / pnpm also pass `node-options` from .npmrc to `npm test`.
+  const flags = [...fromScript, ...npmrcNodeOptions(projectRoot, home)];
+  return [...new Set(flags.filter((f) => NODE_FLAG_RE.test(f)))];
+}
+
+/**
+ * `node-options` from .npmrc, as npm applies it to `npm test`: the project's
+ * (the root, or the monorepo root above it), else the user's (~/.npmrc).
+ */
+export function npmrcNodeOptions(projectRoot: string, home: string = os.homedir()): string[] {
+  const candidates = [path.join(path.resolve(projectRoot), '.npmrc')];
+  // Folders above that are packages too (a monorepo root), up to the repository root.
+  let dir = path.resolve(projectRoot);
+  for (let i = 0; i < 8 && !fs.existsSync(path.join(dir, '.git')); i++) {
+    const parent = path.dirname(dir);
+    if (parent === dir) { break; }
+    dir = parent;
+    if (fs.existsSync(path.join(dir, 'package.json'))) { candidates.push(path.join(dir, '.npmrc')); }
+  }
+  if (home) { candidates.push(path.join(home, '.npmrc')); }
+  for (const file of candidates) {
+    let text: string;
+    try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#') || line.startsWith(';')) { continue; }
+      const m = /^node[-_]options\s*=\s*(.*)$/i.exec(line);
+      if (m) { return m[1].trim().replace(/^(["'])(.*)\1$/, '$2').split(/\s+/).filter(Boolean); }
+    }
+  }
+  return [];
+}
+
+/** Node flags in the command that runs Jest; undefined when the script does not run Jest. */
+function scriptNodeFlags(script: string): string[] | undefined {
+  const tokens = tokenize(script);
+  const jestAt = tokens.findIndex((t, idx) =>
+    /(^|[\\/])jest(\.js|\.cmd)?$/i.test(t) ||
+    (/(^|[\\/])react-scripts(\.js|\.cmd)?$/i.test(t) && tokens[idx + 1] === 'test'),
+  );
+  if (jestAt < 0) { return undefined; }
+  // The words of the command that runs Jest: back to the previous && / ; / |.
+  let start = jestAt;
+  while (start > 0 && !/^(&&|\|\||\||;)$/.test(tokens[start - 1])) { start--; }
+  const flags: string[] = [];
+  let afterNode = false;
+  for (let i = start; i < jestAt; i++) {
+    const tok = tokens[i];
+    const env = /^NODE_OPTIONS=(.*)$/.exec(tok);
+    if (env) { flags.push(...env[1].split(/\s+/).filter(Boolean)); continue; }
+    if (/(^|[\\/])node(\.exe)?$/i.test(tok)) { afterNode = true; continue; }
+    if (afterNode && tok.startsWith('-')) { flags.push(tok); }
+  }
+  return flags;
+}
+
+/** Node flags kept from a test script (allowed in NODE_OPTIONS, about loading code). */
+const NODE_FLAG_RE = /^--(?:experimental-vm-modules|experimental-[\w-]+|no-warnings|no-experimental-[\w-]+|enable-source-maps|conditions=\S+|import=\S+|require=\S+|(?:experimental-)?loader=\S+|max-old-space-size=\d+|stack-trace-limit=\d+)$/;
+
+/**
+ * Environment for a Jest process: the test script's Node options (see
+ * {@link testScriptNodeOptions}) added to NODE_OPTIONS; undefined when none.
+ */
+export function jestNodeEnv(projectRoot: string, base: string | undefined = process.env.NODE_OPTIONS, home?: string): Record<string, string> | undefined {
+  const flags = testScriptNodeOptions(projectRoot, home);
+  if (flags.length === 0) { return undefined; }
+  const have = (base ?? '').split(/\s+/).filter(Boolean);
+  return { NODE_OPTIONS: [...have, ...flags.filter((f) => !have.includes(f))].join(' ') };
+}
+
+const ESM_LOAD_ERROR_RE = /Cannot use import statement outside a module|Unexpected token '?export'?|Must use import to load ES Module|require\(\) of ES Module|ERR_REQUIRE_ESM/;
+
+/**
+ * Why Jest could not load a file as an ES module, and what to change — or
+ * undefined when the message is not about ES modules. `kind` lets callers
+ * say each once per session.
+ */
+export function jestEsmHint(message: string, projectRoot: string, home?: string): { kind: 'esm-mode' | 'node-modules'; text: string } | undefined {
+  if (!ESM_LOAD_ERROR_RE.test(message)) { return undefined; }
+  const esmMode = testScriptNodeOptions(projectRoot, home).includes('--experimental-vm-modules');
+  // Jest prints the path relative ("node_modules/pkg/index.mjs") or absolute.
+  const fromPackage = /(^|[\s\\/'"(])node_modules[\\/]/.test(message);
+  const flag = 'add NODE_OPTIONS=--experimental-vm-modules to the test script ("test": "NODE_OPTIONS=--experimental-vm-modules jest") '
+    + 'or node-options=--experimental-vm-modules to .npmrc, then Start again (https://jestjs.io/docs/ecmascript-modules)';
+  if (fromPackage) {
+    return {
+      kind: 'node-modules',
+      text: 'a package in node_modules ships ES modules, which Jest does not transform by default — add it to transformIgnorePatterns '
+        + 'in the Jest config (e.g. "/node_modules/(?!the-package)")' + (esmMode ? '' : `, or run Jest in its ESM mode: ${flag}`),
+    };
+  }
+  if (esmMode) { return undefined; }
+  return { kind: 'esm-mode', text: `Jest runs ES modules only in its ESM mode (npm test fails the same way) — ${flag}` };
 }
 
 /**

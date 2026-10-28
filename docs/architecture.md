@@ -67,7 +67,7 @@ Owns session lifecycle and the coverage map.
 | `CoverageMap.ts` | `Map<SourcePath, Set<TestPath>>` built from Jest coverage output |
 | `SelectionPolicy.ts` | Legacy; minimal use |
 
-**Coverage map:** core's `CoverageMap` (`IFrameworkAdapter.getAffectedTests`) is not consulted by on-save reruns — the execution trace is (Jest), then the framework's related run (`jest --findRelatedTests`, `vitest related`).
+**Coverage map:** core's `CoverageMap` (`IFrameworkAdapter.getAffectedTests`) is not consulted by on-save reruns — the execution trace is (Jest, Vitest), then the framework's related run (`jest --findRelatedTests`, `vitest related`).
 
 ---
 
@@ -274,7 +274,32 @@ TimelineDecorationManager
 
 ### Entry point (`extension.ts`)
 
-Approximately 110 lines. Creates instances, registers VS Code commands and event handlers, hands control to `SessionManager`. Contains no business logic.
+Creates the views and the `ProjectRegistry`, registers VS Code commands and event handlers, and hands each command to the selected project's (or the file's project's) `SessionManager`. Contains no run logic.
+
+### Projects — monorepos & multi-root workspaces (phase 7)
+
+A window holds one **`ProjectContext`** per test project (`src/project/`). Everything that used to exist once per window is per project:
+
+| Per project (`ProjectContext`) | Shared by the window |
+|---|---|
+| `ResultStore`, `ExecutionTraceStore`, `CoverageStore` | `SelectionState`, the views, decorations, CodeLens, hover (these resolve each file to its project) |
+| `TestDiscoveryService` + `DiscoveryCache` (keyed by root) | Output channels, status bar item |
+| framework services (`FrameworkRouter` → Jest / Vitest bundle(s), each with its own batch runner) | Timeline decorations |
+| `SessionManager` (fixed `projectRoot`), runnable-files cache entry (keyed by root) | |
+| session folder (`session-<pid>-<ts>/p<N>-<name>`; the folder itself when there is one project) | |
+
+**Detection** (runner `framework/projectDiscovery.ts`, pure, unit-tested) — for each VS Code workspace folder:
+1. the folder has its own test config (`jest.config.*`, `package.json#jest`, `vitest.config.*` / `vite.config.*` / `vitest.workspace.*`, `react-scripts test`) → **one project at the folder**; its config covers its packages (the `jest` repo's root `projects`, vueuse / slidev `test.projects` — D12);
+2. else a monorepo root (`pnpm-workspace.yaml` `packages:`, `package.json#workspaces`) → **one project per workspace package with tests** (a framework dependency, config, or a test script running jest / vitest / react-scripts);
+3. else the folder, if a framework is detected there.
+
+Projects inside another project's root are dropped; a single folder with nothing recognised is still the project (plain Jest, as before). `liveTestRunner.projectRoot` pins the window to that one root.
+
+**`ProjectRegistry`** owns the contexts and the *selected* project. Nothing runs automatically (D11): only the selected project's static discovery starts at activation, others on first selection or Start. Each project's `SessionManager` notifies one observer, the project's **`ProjectObserverGate`**: it records the project's live state (session active, discovering) for the switcher row and forwards every event to the window's observers **only while the project is selected**. Switching (`onDidChangeSelection`) rebinds the Explorer and Results views to the new project's stores (`bindProject`) and sends them a fresh `init` (with `running` progress when the project is mid-run). **Editor features are per file, not per selection** (owner decision 2026-10-22): `DecorationManager`, `CodeLensProvider`, `CoverageDecorationManager` and `CoverageHoverProvider` take a `FileStoresResolver` (`editor/FileStores.ts` → `ProjectRegistry.forFile`) and decorate every file from its own project; they are `editorObservers`, to which every project's gate forwards regardless of selection. Opening a file of a not-yet-discovered project starts that project's discovery (nothing runs); CodeLens ▶ Run / ▷ Debug go to the file's project (explicit clicks work without a session). Background projects keep running and rerunning on save (`onDidSaveTextDocument` goes to the file's project). Start / Stop act on the selected project; `liveTestRunner.maxRunningProjects` (`auto` = 2, or 1 with ≤ 4 cores / < 8 GB total memory) caps how many sessions are active at once — Start on one more is refused with a message naming the running projects.
+
+Why one `SessionManager` per project instead of one manager over contexts: the manager's run bookkeeping (`_token` for Stop, `_activeRuns`, progress, save timers, runnable set) is per session by nature. Keeping it per project made the phase a re-wiring (fixed root, a status sink, a gated observer list) instead of a rewrite, and every single-project path is unchanged.
+
+The status bar shows the selected project: `Live Tests: ✅ 12 passed` with one project (unchanged), `Live Tests: web · ✅ 12 passed · 2 running` with several. The Explorer's **switcher row** (`projects` message; only with two or more projects) lists each project with its state (`● running 3/10`, `● live`, `⟳ discovering`) and ✓ / ✗ counts; clicking one runs `liveTestRunner.selectProject`. Files of a Vitest config with several `test.projects` carry `FileResult.group` (Vitest's `projectName` from `vitest list --json`, cached with the runnable list) and the test list groups them under one collapsible row per Vitest project (D12).
 
 ### Observer pattern
 
@@ -533,13 +558,20 @@ Adding a new framework = one file implementing `IFrameworkAdapter`, plus that fr
 |---|---|---|---|
 | `adapter` | `IFrameworkAdapter` | `framework/JestAdapter.ts` | `framework/VitestAdapter.ts` |
 | `projectConfig` | `IProjectConfig` (`get(root)`, `reset()`) | `session/JestProjectConfig.ts` (`jest --showConfig`) | `session/VitestProjectConfig.ts` (the config file path) |
-| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, optional `runRelated(RelatedRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` (results + trace + coverage, streamed) | `session/VitestBatchRunner.ts` (results streamed per file from the runner's Vitest reporter; per-test hang limit + no-progress fallback; Vitest's own coverage → `coverage/istanbulCoverage.ts` → CoverageStore) |
+| `batchRunner` | `IBatchRunner` (`runFiles(BatchRunOptions)`, optional `runRelated(RelatedRunOptions)`, `kill()`, `reset()`) | `session/JestBatchRunner.ts` (results + trace + coverage, streamed) | `session/VitestBatchRunner.ts` (results streamed per file from the runner's Vitest reporter; per-test hang limit + no-progress fallback; Vitest's own coverage → `coverage/istanbulCoverage.ts` → CoverageStore; execution trace through `VitestTrace`'s wrapper config → `traceRecords.ts`) |
 | `instrumentedRunner` | `IInstrumentedRunner` (Timeline), optional | `timeline/JestInstrumentedRunner.ts` | — (phase 10) |
 | `createSessionRunner()` | runner `TestRunner` for core's `TestSession` | runner `JestAdapter.createRunner()` → `JestRunner` | runner `VitestAdapter.createRunner()` → `VitestRunner` |
 
 Both adapters extend `framework/RunnerBackedAdapter.ts`, which holds everything that only needs a runner's `RunResult`: single-file, test-case and related runs, and mapping `FileRunResult`s into the `ResultStore` (suites, `.each` templates, scoped reruns, output, and a file's own failure — its tests are failed with `failureMessage` when nothing ran). The adapters add detection, their runner (with the user's command setting) and the debug launch config.
 
-`extension.ts` composes a `DetectingFrameworkProvider`: it detects the project root's framework (runner `FrameworkDetector`) and builds the Vitest bundle (`createVitestServices`) for a Vitest project, the Jest bundle (`createJestServices`) otherwise, on first use. The Timeline command goes through a delegating `IInstrumentedRunner` that reports "not available for Vitest yet". Stop kills the batch runners of `all()` bundles. Mixed-framework projects (phase 8) replace the provider with a router; nothing in `SessionManager` changes.
+Each `ProjectContext` composes its own `FrameworkRouter` (`framework/FrameworkRouter.ts`; one per project, so two projects never share a batch runner). `prepare()` (every Start) detects the root's main framework (runner `FrameworkDetector`) and whether the root is **mixed** (runner `projectFrameworks`: a Jest marker plus a `vitest.config.*` / `vitest.workspace.*` of its own), and reads `liveTestRunner.frameworks`. A single-framework project gets one bundle (`createJestServices` or `createVitestServices`) and lists its files as before. A mixed project (or one where a setting glob sends a discovered file to the other framework) lists with both frameworks in parallel and places every file once — runner `assignFrameworks` (ADR-8):
+
+1. `liveTestRunner.frameworks` (first matching glob);
+2. only one framework's list holds the file → that one (also when the other listing failed);
+3. both list it → an import from `vitest` / a `vi.` call → Vitest, `@jest/globals` / a `jest.` call → Jest (`frameworkHint`);
+4. nothing says → the main framework, one WARN naming the setting (D13).
+
+`servicesFor(file)` then returns the file's bundle (source files and the root: the main framework). The placement is stored with the runnable-files cache (`frameworks: { file: "vitest:hint" }`); placements that came from a file's content are read again on restore and on save (`fileChanged`). Each runner refuses a root detected as the other framework (BUG-37) unless the router called `allowFrameworkAt(root, fw)`. In `SessionManager` batches are queued per framework (never mixed), a source-file save reruns each framework's dependents (`owns` filter: results of the other framework's files are ignored), and any framework's config file restarts the session. A source file loaded by tests of both frameworks gets its coverage merged by line (`coverageRules.combineWithEntry`). The Timeline command goes through a delegating `IInstrumentedRunner` that asks the test file's framework (Vitest: "not available yet"). Stop kills the batch runners of `all()` bundles.
 
 Static discovery (`instrumentation/shared/testDiscovery.js`) uses the project's own `@babel/parser` / `@babel/traverse` when it has them (every Jest project), else `out/vendor/babel-parser.js` (shipped by `esbuild.js`) with a built-in call-expression walker.
 
@@ -554,12 +586,22 @@ The files that run **inside the test process** live in `src/session/instrumentat
 | `jest/` | `sessionTraceTransform.js` | Jest transform: Babel-instruments source files with `__strace.step()` calls and `__cov` counters, writes coverage manifests |
 | `jest/` | `ltrCoverageSetup.js` | `setupFilesAfterEnv`: opens/closes the trace context around each test, flushes `__cov` on exit, test heartbeats |
 | `jest/` | `liveReporter.js` | Reporter: one JSONL record per finished file (`start` record when a file begins) |
+| `vitest/` | `vitestTraceConfig.js` | Helper of the wrapper config (`--config`): loads the project's config with its own Vite, adds the plugin to every `test.projects` entry, writes per-project wrappers, reports to `LTR_VITEST_TRACE_MARKER` |
+| `vitest/` | `vitestTracePlugin.js` | Vite plugin `live-test-runner:trace`: setup file first in `test.setupFiles`, `server.fs.allow`, `resolveId('vitest')` for the setup file, `enforce: 'post'` transform |
+| `shared/` | `sourceMapLookup.js` | Reads a v3 source map back (generated → original line / column; other sources ignored) — Jest and Vitest transforms |
+| `vitest/` | `vitestTraceTransform.js` | Pure: parse (`@babel/parser`), splice `globalThis.__strace?.step(L, F)` calls, source map; `withoutTrace()` undoes it |
+| `vitest/` | `vitestTraceSetup.mjs` | Setup file: per-test trace context (`beforeAll` / `beforeEach` / `afterEach` / `afterAll`), `F` record, `Function.prototype.toString` without the inserted calls |
 
-A framework other than Jest implements the `jest/` column for itself (Vitest: a Vite plugin transform, a setup file, a reporter) and reuses `shared/`. The contract it must keep:
+Vitest's results come from the runner's reporter (`framework/vitestReporter.ts`) and its coverage from Vitest's own provider; only the trace uses `vitest/` (ADR-9 in the Vitest plan). The contract a framework keeps:
 
 - **`globalThis.__strace`** (defined once per worker by `sessionTraceRuntime.js`): `beginFile(testFile)` — module-level code of the test file starts; `beginTest(name, testFile)` / `endTest(testFile)` — around each test body (between tests the context is `hook`); `enterTest` / `exitTest` / `enterHook(type, testFile)` / `exitHook` — injected wrappers, nest into the open context; `step(line, file)` — instrumented code hit a line; `finish()` — flush the last context. `var()` / `log()` are no-ops here (Timeline only).
-- **Trace records** — JSONL appended to `SESSION_TRACE_FILE`, one per test body / hook block: `{"type":"T","tf":"<test file>","tn":"<full test name>","fh":{"<source file>":[lines…]}}` and `{"type":"H","tf":…,"hk":"file"|"hook"|<hook name>,"fh":{…}}`. Paths are the runner's real paths; the batch runner maps them back (`fromRunnerPath`).
-- **Coverage** — instrumented code counts into `globalThis.__cov[<file hash>].s/b/f`; on exit each worker appends `{"workerPid":…, "cov":{…}}` to `COVERAGE_OUTPUT_FILE`; the transform writes a manifest per file (statement / branch / function locations) to `LTR_MANIFEST_DIR`, named by path + content hash.
+- **Trace records** — JSONL appended to `SESSION_TRACE_FILE`, one per test body / hook block: `{"type":"T","tf":"<test file>","tn":"<full test name>","fh":{"<source file>":[lines…]}}` and `{"type":"H","tf":…,"hk":"file"|"hook"|<hook name>,"fh":{…}}`; Vitest's setup adds `{"type":"F","tf":…}` when it ran for a test file. With `LTR_TRACE_PER_WORKER` (Vitest's parallel workers) each worker appends to `<SESSION_TRACE_FILE>.<pid>-<threadId>`. `tn` is the space-joined full name (`ResultStore`'s). Paths are the runner's real paths; `session/traceRecords.ts` (`applyTraceRecords`, both frameworks) maps them back (`fromRunnerPath`) and builds the `ExecutionTraceStore` indexes.
+- **Vitest trace on/off** — `VitestTrace` (extension) writes the wrapper per root and session, or keeps it off with a reason (`liveTestRunner.vitestTrace`, Vitest < 3, no Vite, the marker's `ok: false`, a traced batch with no result → rerun as configured, a result without an `F` record — type-check results, tagged `typecheck` by the reporter, are exempt). Vitest 3 workspaces (`vitest.workspace.*`, `test.workspace`) are loaded by the wrapper and passed inline as `test.workspace`, each entry wrapped like `test.projects`.
+- **Source files beyond JS / TS** (`session/sourceFiles.ts`) — a save reruns tests for the list (`.vue`, `.svelte`, `.astro`, `.marko`, `.mdx`, `.coffee`, …), the Jest config's `moduleFileExtensions` (`IProjectConfig.sourceExtensions`) or any file the trace saw run; never for `NON_SOURCE_EXTENSIONS`. The coverage scan counts untested components from their `<script>` blocks (`scriptOf`). Vitest: the plugin has no list — it instruments any compiled module whose combined map leads back to the file (`mapsBackTo`), after its Vite plugin. Jest: the batch config routes them to the session transform only for extensions the project transforms; it runs the project's transformer (sync, or `processAsync` / `import()` for ESM-only ones) and instruments the output with every location moved back through the transformer's map (`remapLocations`; unmapped compiler code is not counted; a Vue render function marks the `<template>` lines as run — trace only). Both read maps with `shared/sourceMapLookup.js`.
+- **Module graph (Vitest)** — the trace plugin writes Vite's module graph when Vitest closes its server (`LTR_VITEST_DEPS` → `traceRecords.applyDependencyFiles` → `ExecutionTraceStore.addImporters`); a save of a file no line of which ran (HTML, `?raw`, plugin-read templates) reruns `getDependentTestFiles`. Jest has no graph: a non-JS file nothing knows reruns the tests of same-folder sources that name it (`'./x.html'`, `SessionManager.referencingSources`). A Vitest root with type-check files also runs `vitest related <src> --typecheck.only` after a trace rerun.
+- **Jest: our files are never transformed** — `transformIgnorePatterns` gets the extension's instrumentation folder (`ownFilesPattern`). Transformers that reject instrumented code (type-checking: ts-jest, jest-preset-angular, or seen failing) are compiled first; their map (returned or inline) moves locations back to the source.
+- **Jest ESM mode** — the test script's and `.npmrc`'s Node options (runner `testScriptNodeOptions` / `npmrcNodeOptions` / `jestNodeEnv`; `jestEsmHint` for load errors) go into `NODE_OPTIONS` of every Jest the extension starts (`runtimeArgs` when debugging); with `supportsStaticESM` the transform loads the runtime with `import` instead of `require`. `FrameworkServices.traceOffReason(root)` exposes it to `SessionManager` (saves use `vitest related`) and the hover.
+- **Coverage** (Jest) — instrumented code counts into `globalThis.__cov[<file hash>].s/b/f`; on exit each worker appends `{"workerPid":…, "cov":{…}}` to `COVERAGE_OUTPUT_FILE`; the transform writes a manifest per file (statement / branch / function locations) to `LTR_MANIFEST_DIR`, named by path + content hash.
 - **Per-file results** — JSONL appended to `LTR_REPORTER_FILE`: `{"ltrEvent":"start","testFilePath","at"}` when a file begins, then the file's result (`testFilePath`, `status`, `testResults[]`, `console[]`, `startTime`/`endTime`) when it ends; the batch runner polls this file every 200 ms.
 - **Logging** — `[LTR:<level>] message` lines on stderr, filtered by `LTR_LOG_LEVEL` (see developer guide → Logging).
 
@@ -673,6 +715,8 @@ Both views extend `BaseWebviewProvider`, which handles webview lifecycle, `postM
 | `step-changed` | ResultsView → extension | User stepped to a new step; carries `stepId`, `filePath`, `line` |
 | `step-update` | Extension → ExplorerView | Forward of step-changed to sync sidebar panels |
 | `timeline-rerun` | ExplorerView → extension | User clicked Re-run in the timeline sidebar |
+| `projects` | Extension → ExplorerView | Project list + live state for the switcher row (also in `init`) |
+| `select-project` | ExplorerView → extension | User picked a project in the switcher (`liveTestRunner.selectProject`) |
 
 `scope-logs` and `scope-changed` are always sent as separate messages.
 
@@ -741,7 +785,9 @@ User saves a file
                          isSharedVars:true  → run whole test file
                          isSharedVars:false → run individual test cases
                                               (combined --testNamePattern, one Jest process per file)
-                     → No trace data (always for Vitest until phase 9):
+                         (a file where every non-skipped test is affected runs whole, as a batch)
+                     → No trace data, or the framework's trace is off for the root
+                       (services.traceOffReason — Vitest: see VitestTrace):
                          batchRunner.runRelated?  (Vitest: `vitest related <src> --run` as a live batch —
                                                   files claimed on file-start, results streamed, coverage measured,
                                                   started-without-result files retried through _runFiles)
@@ -798,6 +844,9 @@ User stops session
 | `extension.ts` ≤ 110 lines | Wires instances and registers commands only; no business logic |
 | `CONCURRENCY = 3` for parallel runs | Balances throughput against system load; configurable constant |
 | Session guard on all background behavior | No surprise background work; resource usage is predictable |
+| One `ProjectContext` (stores, discovery, services, `SessionManager`) per project; views bound to the selected one | File ids stay naturally namespaced, background projects keep running untouched, single-project behaviour is unchanged (phase 7) |
+| A root with its own test config is one project, never split per package | Its config already runs its packages (Jest `projects`, Vitest `test.projects`); splitting would run tests twice or with the wrong config |
+| Projects are detected, never started automatically; `maxRunningProjects` caps active sessions | A monorepo with 30 packages must not spawn 30 test runners on open (D11) |
 | `step-changed` boundary: playback in webview, editor in host | `PlaybackEngine` drives the timeline UI inside the webview sandbox. The extension host only reacts to `step-changed` — it never drives playback. This keeps the playback loop fast (no round-trips) and the editor highlight authoritative. |
 | `TimelineDecorationManager` separate from `DecorationManager` | Timeline decorations (whole-line highlight, ghost text, hover) never touch pass/fail gutter icons. Two completely independent `TextEditorDecorationType` sets. |
 | Webview router instead of new tabs | Both `ResultsView` and `ExplorerView` implement an internal JS router. Timeline mode is a view swap inside an existing panel — no new VS Code panel is registered. |

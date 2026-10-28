@@ -1,0 +1,39 @@
+{
+  "name": "ltr-fixture-jest-vue",
+  "private": true,
+  "scripts": {
+    "test": "jest"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "testEnvironmentOptions": {
+      "customExportConditions": [
+        "node",
+        "node-addons"
+      ]
+    },
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "vue",
+      "html"
+    ],
+    "transform": {
+      "^.+\\.js$": "babel-jest",
+      "^.+\\.vue$": "@vue/vue3-jest",
+      "^.+\\.html$": "<rootDir>/html-transform.js"
+    },
+    "collectCoverageFrom": [
+      "src/**/*.{js,vue}"
+    ]
+  },
+  "devDependencies": {
+    "jest": "29.7.0",
+    "jest-environment-jsdom": "29.7.0",
+    "babel-jest": "29.7.0",
+    "@babel/core": "7.26.0",
+    "@babel/preset-env": "7.26.0",
+    "@vue/vue3-jest": "29.2.6",
+    "vue": "3.5.13"
+  }
+}

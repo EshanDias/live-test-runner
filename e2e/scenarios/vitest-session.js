@@ -2,8 +2,9 @@
 /**
  * The session with Vitest: nothing runs on save before Start (session
  * guard); during a session a saved test file reruns alone, a saved source
- * file reruns its related tests (`vitest related` — no trace for Vitest
- * yet), ▶ Run on one test runs just that test; after Stop saves run nothing.
+ * file reruns the tests that ran it (execution trace: every test of
+ * math.test.js that is not skipped → the whole file, as a batch), ▶ Run on
+ * one test runs just that test; after Stop saves run nothing.
  */
 const path = require('path');
 const h = require('../lib/harness');
@@ -48,8 +49,9 @@ module.exports = {
     await waitIdle(api);
     cmds = vitestCmds(h.rawSince(api, mark));
     const logs = h.logsSince(api, since);
-    t.check('saved math.js runs `vitest related` (no trace for Vitest)', cmds.some((l) => / related .*math\.js/.test(l)), cmds.join('\n'));
-    t.check('the log names vitest related', logs.some((l) => /using vitest related/.test(l)), logs.join('\n'));
+    t.check('saved math.js: a trace-based rerun', logs.some((l) => /Trace-based rerun for math\.js/.test(l)), logs.join('\n'));
+    t.check('…every test that ran it is every non-skipped test: math.test.js runs whole (a batch)', cmds.some((l) => / run .*math\.test\.js/.test(l) && !/ -t /.test(l)), cmds.join('\n'));
+    t.check('…not `vitest related`', !cmds.some((l) => / related /.test(l)), cmds.join('\n'));
     t.eq('math.test.js still passes', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });
 
     // ── ▶ Run on one test ──

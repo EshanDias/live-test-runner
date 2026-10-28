@@ -127,3 +127,33 @@ describe('static test discovery — Vitest forms', () => {
     expect(discover("suite('mocha style', () => {});")).toEqual([]);
   });
 });
+
+describe('parsing with an older or newer Babel than the plugin list expects', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { _parseDroppingRemoved } = require('../src/session/instrumentation/shared/testDiscovery.js');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const real = require('@babel/parser');
+  /** Babel 8's parser: some proposals and options are gone. */
+  const babel8 = {
+    parse(code: string, options: { plugins: unknown[] }) {
+      const names = options.plugins.map((p) => (Array.isArray(p) ? p[0] : p));
+      if (names.includes('decimal')) { throw new Error("The 'decimal' plugin has been removed in Babel 8. Please remove it from your configuration."); }
+      if (names.includes('importAssertions')) { throw new Error('`importAssertions` has been removed in Babel 8, please use import attributes instead.'); }
+      if (names.includes('pipelineOperator')) { throw new Error('"pipelineOperator" requires "proposal" option whose value must be one of: "fsharp", "hack".'); }
+      return real.parse(code, options);
+    },
+  };
+
+  it('drops only the plugins the parser rejects — decorators and TypeScript still apply (Angular specs)', () => {
+    const code = "@Component({ selector: 'a' })\nclass A { constructor(private x: number) {} }\ndescribe('s', () => { it('t', () => {}); });";
+    const ast = _parseDroppingRemoved(babel8, code, {
+      sourceType: 'module',
+      plugins: ['typescript', 'decimal', ['decorators', { version: '2023-11' }], 'importAssertions', ['pipelineOperator', { proposal: 'minimal' }]],
+    });
+    expect(ast.program.body).toHaveLength(2);
+  });
+
+  it('a syntax error is not a plugin problem: it still throws', () => {
+    expect(() => _parseDroppingRemoved(babel8, 'let = ;', { sourceType: 'module', plugins: ['typescript'] })).toThrow();
+  });
+});

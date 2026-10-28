@@ -1,0 +1,27 @@
+{
+  "name": "ltr-fixture-jest-svelte-esm",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "jest"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "moduleFileExtensions": [
+      "js",
+      "svelte"
+    ],
+    "extensionsToTreatAsEsm": [
+      ".svelte"
+    ],
+    "transform": {
+      "^.+\\.svelte$": "svelte-jester"
+    }
+  },
+  "devDependencies": {
+    "jest": "29.7.0",
+    "jest-environment-jsdom": "29.7.0",
+    "svelte-jester": "3.0.0",
+    "svelte": "4.2.19"
+  }
+}

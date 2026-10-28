@@ -3,12 +3,11 @@
  * bundled, so SessionManager never builds framework classes itself.
  *
  * SessionManager asks an {@link IFrameworkServicesProvider} for the bundle
- * of a file or project root. Today there is one bundle per window (Jest:
- * {@link createJestServices}); mixed-framework projects (phase 8) add a
- * provider that routes each file to its own framework's bundle.
+ * of a file or project root. Each project has a FrameworkRouter
+ * (`FrameworkRouter.ts`): one bundle for a single-framework project, and in
+ * a mixed Jest + Vitest project (phase 8) each test file's own bundle.
  */
-import { FrameworkDetector, FrameworkId, FRAMEWORK_IDS, TestRunner } from '@live-test-runner/runner';
-import { logger } from '../utils/logger';
+import { FrameworkId, TestRunner } from '@live-test-runner/runner';
 import { IFrameworkAdapter } from './IFrameworkAdapter';
 import { IProjectConfig } from '../session/IProjectConfig';
 import { IBatchRunner } from '../session/IBatchRunner';
@@ -53,6 +52,12 @@ export interface FrameworkServices {
   readonly terms: FrameworkTerms;
   /** Features beyond running tests. */
   readonly features: FrameworkFeatures;
+  /**
+   * When the framework has the trace but it is off for this project root
+   * (Vitest: setting off, or the wrapper config could not add it): why.
+   * Undefined = available. Source-file saves then use the related run.
+   */
+  traceOffReason?(projectRoot: string): string | undefined;
   /** Discovery, single-file / test-case runs, debug configs, result mapping. */
   readonly adapter: IFrameworkAdapter;
   /** The project's resolved config, re-read every session. */
@@ -75,14 +80,43 @@ export interface FrameworkServices {
   isConfigFile(filePath: string, projectRoot: string): Promise<boolean>;
 }
 
-export interface IFrameworkServicesProvider {
-  /** The bundle for a test file, source file or project root. */
-  servicesFor(fileOrRoot: string): FrameworkServices;
-  /** Every bundle (Stop kills them all). */
-  all(): FrameworkServices[];
+/** The project's runnable test files, across its frameworks. */
+export interface RunnableListing {
+  files: string[];
+  /** Explorer groups (Vitest project names; the framework in a mixed project), by file. */
+  groups?: Record<string, string>;
+  /**
+   * Mixed projects only: each listed file's framework and why
+   * (`"vitest:hint"`) — remembered with the list, restored by
+   * {@link IFrameworkServicesProvider.restore}.
+   */
+  frameworks?: Record<string, string>;
 }
 
-/** One framework for every file — the only provider until mixed-framework support. */
+export interface IFrameworkServicesProvider {
+  /** The bundle for a test file (its own framework), source file or project root (the main framework). */
+  servicesFor(fileOrRoot: string): FrameworkServices;
+  /** Every bundle in use (Stop kills them all). */
+  all(): FrameworkServices[];
+  /** Every Start, before anything runs: re-detects the framework(s) and re-reads the frameworks setting. */
+  prepare(projectRoot: string): void;
+  /**
+   * Asks the framework(s) which files they run (`jest --listTests`,
+   * `vitest list`). `discovered` = the statically found test files.
+   * @throws when the (only) framework could not answer
+   */
+  listTestFiles(projectRoot: string, discovered: string[], rawLog: (msg: string) => void): Promise<RunnableListing>;
+  /** A remembered listing is used instead of asking again: restore its per-file frameworks. */
+  restore(listing: RunnableListing): void;
+  /** A test file was saved: what it uses may have changed (mixed projects re-read its hint). */
+  fileChanged(filePath: string): void;
+  /** Part of the runnable-files cache key: the settings that change which files run where. */
+  fingerprint(projectRoot: string): string;
+  /** The project runs files with more than one framework. */
+  isMixed(): boolean;
+}
+
+/** One framework for every file (unit tests, simple hosts). */
 export class SingleFrameworkProvider implements IFrameworkServicesProvider {
   constructor(private readonly _services: FrameworkServices) {}
 
@@ -93,53 +127,26 @@ export class SingleFrameworkProvider implements IFrameworkServicesProvider {
   all(): FrameworkServices[] {
     return [this._services];
   }
+
+  prepare(): void { /* nothing to detect */ }
+
+  async listTestFiles(projectRoot: string, _discovered: string[], rawLog: (msg: string) => void): Promise<RunnableListing> {
+    return listWith(this._services.adapter, projectRoot, rawLog);
+  }
+
+  restore(): void { /* one framework */ }
+  fileChanged(): void { /* one framework */ }
+
+  fingerprint(): string {
+    return this._services.settingsFingerprint();
+  }
+
+  isMixed(): boolean { return false; }
 }
 
-/**
- * Picks the bundle by the project's framework: Vitest for a Vitest project,
- * Jest (incl. CRA) otherwise. Bundles are built on first use and kept, so a
- * session's batch runner is the one Stop kills. Files are resolved to the
- * project root first (one root per window until phase 7).
- */
-export class DetectingFrameworkProvider implements IFrameworkServicesProvider {
-  private readonly _bundles = new Map<FrameworkId, FrameworkServices>();
-  private readonly _byRoot = new Map<string, FrameworkId>();
-
-  constructor(
-    private readonly _factories: Record<'jest' | 'vitest', () => FrameworkServices>,
-    /** The project root a file or root belongs to (undefined: no root yet). */
-    private readonly _rootOf: (fileOrRoot: string) => string | undefined,
-    private readonly _detector = new FrameworkDetector(),
-  ) {}
-
-  servicesFor(fileOrRoot: string): FrameworkServices {
-    const root = this._rootOf(fileOrRoot) ?? fileOrRoot;
-    let framework = this._byRoot.get(root);
-    if (!framework) {
-      let detected: FrameworkId = FRAMEWORK_IDS.jest;
-      try { detected = this._detector.detectFramework(root); } catch { /* logged by the detector */ }
-      framework = detected === FRAMEWORK_IDS.vitest ? FRAMEWORK_IDS.vitest : FRAMEWORK_IDS.jest;
-      this._byRoot.set(root, framework);
-      logger.scope('Framework').debug(`${root}: using the ${framework} services (detected "${detected}")`);
-    }
-    return this._bundle(framework as 'jest' | 'vitest');
-  }
-
-  all(): FrameworkServices[] {
-    return [...this._bundles.values()];
-  }
-
-  /** Forget detected frameworks (e.g. the project root changed or package.json was edited). */
-  resetDetection(): void {
-    this._byRoot.clear();
-  }
-
-  private _bundle(framework: 'jest' | 'vitest'): FrameworkServices {
-    let b = this._bundles.get(framework);
-    if (!b) {
-      b = this._factories[framework]();
-      this._bundles.set(framework, b);
-    }
-    return b;
-  }
+/** One framework's listing: its own list command, or discovery when it has none. */
+export async function listWith(adapter: IFrameworkAdapter, projectRoot: string, rawLog: (msg: string) => void): Promise<RunnableListing> {
+  return adapter.listTestFiles
+    ? adapter.listTestFiles(projectRoot, rawLog)
+    : { files: await adapter.discoverTests(projectRoot, rawLog) };
 }

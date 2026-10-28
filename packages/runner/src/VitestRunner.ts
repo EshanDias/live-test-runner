@@ -4,6 +4,8 @@ import { ExecutionResult, ExecutorCommand, tail } from './execution/Executor';
 import { FrameworkDetector } from './framework/FrameworkDetector';
 import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { refusingAdapter } from './framework/refusingAdapter';
+import { FrameworkRegistry } from './framework/FrameworkRegistry';
+import { isFrameworkAllowedAt } from './framework/allowedFrameworks';
 import type { VitestAdapter } from './framework/adapters/VitestAdapter';
 import { VitestConfigInfo, vitestConfigInfo, vitestCoverageInstalled, vitestProjects } from './framework/vitestProjects';
 import { VITEST_EVENTS_ENV, applyVitestEvents, readVitestEvents, vitestReporterFile } from './framework/vitestReporter';
@@ -19,7 +21,9 @@ const log = createLogger('VitestRunner');
  * A test name pattern, built from the space-joined full name the json
  * reporter gives (`Outer Inner adds`), made to match the name Vitest tests
  * `-t` against: `Outer > Inner > adds` in Vitest 5, `Outer Inner adds` in
- * older versions. Every literal space becomes `(?: > | )`.
+ * older versions. Every literal space becomes `(?: > | )`. Vitest 1 counts
+ * the file as an unnamed parent, so its names start with a space
+ * (` Outer Inner adds`): one leading space is allowed.
  *
  * The input is a regex whose literal parts are escaped (spaces are never
  * escaped), as the extension's `nameToPattern` builds it.
@@ -27,7 +31,7 @@ const log = createLogger('VitestRunner');
 export function toVitestNamePattern(testFullName: string, isTestSuite: boolean): string {
   const p = testFullName.replace(/ /g, '(?: > | )');
   // A suite matches the tests under it: its name followed by a separator.
-  return isTestSuite ? `^(?:${p})(?: > | |$)` : `^(?:${p})$`;
+  return isTestSuite ? `^ ?(?:${p})(?: > | |$)` : `^ ?(?:${p})$`;
 }
 
 /**
@@ -121,14 +125,22 @@ export class VitestRunner extends CommandRunner {
    */
   async liveCommand(
     files: string[],
-    options: { coverageDir?: string; related?: string } = {},
+    options: {
+      coverageDir?: string;
+      related?: string;
+      /** Only type-check files (`--typecheck.only`; with `related`: the related ones). */
+      typecheckOnly?: boolean;
+      /** `--config` for this run instead of the project's (the execution trace wrapper). */
+      config?: string;
+    } = {},
   ): Promise<{ command: ExecutorCommand; eventsFile: string; resultFile: string; coverageFile?: string }> {
     // `related`: Vitest finds the test files that import this source file (`vitest related <src> --run`); `files` is ignored.
     const request: RunRequest = options.related ? { kind: 'related', file: options.related } : { kind: 'files', files };
     const root = this.requireProjectRoot();
     const resultFile = path.join(this.tmpDir ?? os.tmpdir(), `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
     const env = this.runEnv(request) ?? {};
-    const args = [...await this.commandArgs(request), ...this.requireAdapter().outputFileArg(resultFile)];
+    const args = [...await this.commandArgs(request, options.config), ...this.requireAdapter().outputFileArg(resultFile)];
+    if (options.typecheckOnly) { args.push('--typecheck.only'); }
     const coverage = options.coverageDir ? await this.coverageArgs(root, options.coverageDir) : undefined;
     if (coverage) { args.push(...coverage); }
     return {
@@ -137,6 +149,11 @@ export class VitestRunner extends CommandRunner {
       resultFile,
       coverageFile: coverage ? path.join(options.coverageDir!, 'coverage-final.json') : undefined,
     };
+  }
+
+  /** The project's own Vitest config file (the test script's `--config`, else vitest/vite.config.*). */
+  async projectConfigPath(): Promise<string | undefined> {
+    return this.requireAdapter().resolveConfig(this.requireProjectRoot());
   }
 
   /**
@@ -167,6 +184,13 @@ export class VitestRunner extends CommandRunner {
   protected detectAdapter(projectRoot: string): FrameworkAdapter {
     const adapter = this.detector.detect(projectRoot);
     if (adapter.framework === FRAMEWORK_IDS.vitest) { return adapter; }
+    if (isFrameworkAllowedAt(projectRoot, 'vitest')) {
+      const vitest = FrameworkRegistry.default().get(FRAMEWORK_IDS.vitest);
+      if (vitest) {
+        log.debug(`${projectRoot} is a "${adapter.framework}" project — running its Vitest files with Vitest (mixed frameworks)`);
+        return vitest;
+      }
+    }
     log.debug(`${projectRoot} is a "${adapter.framework}" project — the Vitest runner will refuse to run it`);
     return refusingAdapter(adapter);
   }
@@ -268,6 +292,30 @@ export class VitestRunner extends CommandRunner {
     }
     log.warn(`vitest list gave no file list in ${projectRoot} — scanning the folder instead. Last output:\n${tail(result.stderr || result.stdout, 10)}`);
     return [];
+  }
+
+  /** `projectName` of each listed file — only when the config has two or more projects (D12). */
+  protected override parseTestGroups(result: ExecutionResult, projectRoot: string): Record<string, string> | undefined {
+    const start = result.stdout.indexOf('[');
+    if (start < 0) { return undefined; }
+    try {
+      const entries = JSON.parse(result.stdout.slice(start)) as { file?: string; projectName?: string }[];
+      const names = new Map<string, Set<string>>();
+      for (const e of entries) {
+        if (typeof e.file !== 'string' || typeof e.projectName !== 'string' || !e.projectName) { continue; }
+        const file = fromRunnerPath(path.resolve(projectRoot, e.file));
+        const set = names.get(file) ?? new Set<string>();
+        set.add(e.projectName);
+        names.set(file, set);
+      }
+      const distinct = new Set([...names.values()].flatMap((s) => [...s]));
+      if (distinct.size < 2) { return undefined; }
+      const groups: Record<string, string> = {};
+      for (const [file, set] of names) { groups[file] = [...set].sort().join(', '); }
+      return groups;
+    } catch {
+      return undefined;
+    }
   }
 
   protected coverageFile(_projectRoot: string): string {

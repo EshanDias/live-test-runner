@@ -7,6 +7,7 @@ import {
   FRAMEWORK_IDS,
   toJestPathArg,
   registerProjectRoot,
+  testScriptNodeOptions,
 } from '@live-test-runner/runner';
 import { RunnerBackedAdapter } from './RunnerBackedAdapter';
 import { nameToPattern } from '../utils/testNames';
@@ -71,6 +72,7 @@ export class JestAdapter extends RunnerBackedAdapter {
       args.push('--testNamePattern', isSuite ? `^(?:${p})(?: |$)` : `^(?:${p})$`);
     }
     args.push('--runInBand', '--no-coverage', '--watchAll=false');
+    const nodeOptions = testScriptNodeOptions(projectRoot);
     return {
       type: 'node',
       request: 'launch',
@@ -78,6 +80,8 @@ export class JestAdapter extends RunnerBackedAdapter {
       program,
       args,
       cwd: projectRoot,
+      // Node options from the test script (e.g. --experimental-vm-modules: Jest's ESM mode).
+      ...(nodeOptions.length ? { runtimeArgs: nodeOptions } : {}),
       console: 'integratedTerminal',
       env: { NODE_ENV: 'test', BABEL_ENV: 'test' },
       skipFiles: ['<node_internals>/**'],

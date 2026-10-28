@@ -70,7 +70,7 @@ describe('VitestRunner command lines', () => {
     await runner.runTestCaseJson(path.join(root, 'src', 'a.test.ts'), 'Suite', true);
     await runner.runRelatedTestsJson(path.join(root, 'src', 'util.ts'));
     expect(calls.map(stable)).toMatchSnapshot();
-    expect(outputFileArgs.map((f) => f('/tmp/out.json'))).toEqual(Array(7).fill(['--outputFile.json=/tmp/out.json']));
+    expect(outputFileArgs.map((f) => f('/tmp/out.json'))).toEqual(Array(7).fill(['--outputFile=/tmp/out.json']));
   });
 
   it('runs an old Vitest best-effort: no task-location flag, related → full run', async () => {
@@ -109,6 +109,16 @@ describe('vitest list output', () => {
     const a = path.join(root, 'a.test.ts');
     listStdout = `some config log\n${JSON.stringify([{ file: a, projectName: 'unit' }, { file: a, projectName: 'server' }, { file: path.join(root, 'b.test.ts') }])}`;
     expect(await new VitestRunner().discoverTests(root)).toEqual([a, path.join(root, 'b.test.ts')]);
+  });
+
+  it('groups files by Vitest project name when the config has several projects (D12)', async () => {
+    project({ devDependencies: { vitest: '5' } });
+    const a = path.join(root, 'a.test.ts');
+    const b = path.join(root, 'b.test.ts');
+    listStdout = JSON.stringify([{ file: a, projectName: 'unit' }, { file: a, projectName: 'server' }, { file: b, projectName: 'unit' }]);
+    expect(await new VitestRunner().listTestFiles(root)).toEqual({ files: [a, b], groups: { [a]: 'server, unit', [b]: 'unit' } });
+    listStdout = JSON.stringify([{ file: a, projectName: '' }, { file: b, projectName: '' }]);
+    expect((await new VitestRunner().listTestFiles(root)).groups).toBeUndefined();
   });
 
   it('falls back to a folder scan when there is no list', async () => {
@@ -151,6 +161,12 @@ describe('toVitestNamePattern', () => {
     expect(test.test('Outer > Inner > adds')).toBe(true);
     expect(test.test('Outer Inner adds')).toBe(true);
     expect(test.test('Outer > Inner > adds more')).toBe(false);
+  });
+
+  it('matches Vitest 1 names, which start with a space (the file is an unnamed parent)', () => {
+    expect(new RegExp(toVitestNamePattern('Outer adds', false)).test(' Outer adds')).toBe(true);
+    expect(new RegExp(toVitestNamePattern('Outer', true)).test(' Outer adds')).toBe(true);
+    expect(new RegExp(toVitestNamePattern('Outer adds', false)).test('x Outer adds')).toBe(false);
   });
 
   it('matches the tests of a suite, not a longer suite name', () => {

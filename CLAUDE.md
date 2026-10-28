@@ -82,7 +82,7 @@ Two interfaces manage framework abstraction:
 
 - **`FrameworkAdapter`** (`packages/runner/`) — binary resolution, config extraction. No VS Code dependency.
 - **`IFrameworkAdapter`** (`packages/vscode-extension/`) — adds VS Code-specific logic (test discovery, debug config, file classification).
-- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. `extension.ts` composes a `DetectingFrameworkProvider` (Jest bundle `createJestServices` or Vitest bundle `createVitestServices`, per project root). Both extension adapters extend `RunnerBackedAdapter`.
+- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. Each project (`ProjectContext`) composes a `FrameworkRouter` (`framework/FrameworkRouter.ts`): the Jest bundle `createJestServices` or the Vitest bundle `createVitestServices` for a single-framework project, both in a mixed Jest + Vitest project, where every test file is placed with one framework (setting `liveTestRunner.frameworks` → the configs' own lists → `vitest` / `@jest/globals` imports and `vi.` / `jest.` calls → the main framework). Both extension adapters extend `RunnerBackedAdapter`.
 
 Adding a framework = one adapter in each package + its services bundle. `SessionManager`, `ResultStore`, views, and observers require zero changes.
 
@@ -235,6 +235,8 @@ Key directories:
 6. **Lazy initialization** — results are never pre-fetched; observers are called when results are ready
 7. **Per-scope output** — only rerun the scope explicitly requested (test name pattern isolation)
 8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Test Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/developer-guide.md` → Logging.
+9. **Never touch the user's project** — never install packages into it (or its environment) and never edit its code, config or files. Everything the tool needs ships inside the extension; anything we write is a temporary file in our session folder, and the user's own terminal runs must keep working side by side. Zero configuration: install, click Start.
+10. **Never overuse the machine** — every kind of parallelism (batches, frameworks, projects, workers) stays within one budget from the free resources (cores, memory); when the budget is 1, things run one at a time. Whatever else the user does must stay responsive.
 
 ---
 

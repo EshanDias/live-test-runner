@@ -2,7 +2,7 @@
   "name": "live-test-runner",
   "displayName": "Live Test Runner",
   "description": "Live testing on save for Jest and other frameworks",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "icon": "resources/images/live-test-runner.png",
   "publisher": "EshLabs",
   "engines": {
@@ -99,6 +99,16 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.selectProject",
+        "title": "Select Project",
+        "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.stopAllProjects",
+        "title": "Stop All Projects",
+        "category": "Live Test Runner"
+      },
+      {
         "command": "liveTestRunner.showOutput",
         "title": "Show Test Output",
         "category": "Live Test Runner"
@@ -166,7 +176,15 @@
         "liveTestRunner.projectRoot": {
           "type": "string",
           "default": "",
-          "description": "Project root directory for testing"
+          "description": "Pin Live Test Runner to one project root (absolute path). Leave empty to detect every test project in the workspace (monorepo packages, workspace folders) and switch between them in the Explorer."
+        },
+        "liveTestRunner.maxRunningProjects": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "default": "auto",
+          "description": "How many projects of a monorepo / multi-root workspace may run at the same time. \"auto\": 2, or 1 on machines with 4 or fewer CPU cores or less than 8 GB of memory (total RAM). A number (1 or more) sets the limit. Starting one more asks you to stop a running project first."
         },
         "liveTestRunner.jestCommand": {
           "type": "string",
@@ -178,10 +196,46 @@
           "default": "",
           "description": "Override the Vitest command for Vitest projects (e.g. 'npx vitest'). Leave empty to run the project's own Vitest install. Live Test Runner adds its own subcommand and flags (run, --reporter=json, …) after it."
         },
+        "liveTestRunner.frameworks": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "jest",
+                  "vitest"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "framework": {
+                    "type": "string",
+                    "enum": [
+                      "jest",
+                      "vitest"
+                    ]
+                  }
+                },
+                "required": [
+                  "framework"
+                ]
+              }
+            ]
+          },
+          "markdownDescription": "Projects that use **both Jest and Vitest**: which framework runs which test files. Keys are globs relative to the workspace folder (a glob without `/` matches the file name anywhere), values `\"jest\"` or `\"vitest\"`; the first matching glob wins. Example: `{ \"packages/new/**\": \"vitest\", \"**/*.jest.js\": \"jest\" }`. Without it, a project with a Jest config and its own `vitest.config.*` runs each file with the framework whose config lists it; a file both list runs with Vitest when it imports from `vitest` or calls `vi.`, with Jest when it imports `@jest/globals` or calls `jest.`, otherwise with the project's main framework (Jest)."
+        },
         "liveTestRunner.vitestIncludeBrowserProjects": {
           "type": "boolean",
           "default": false,
           "description": "Vitest: also run browser-mode projects (Playwright / WebdriverIO). They need real browsers installed, so by default they are left out when the test script does not choose projects itself."
+        },
+        "liveTestRunner.vitestTrace": {
+          "type": "boolean",
+          "default": true,
+          "description": "Vitest: record which lines each test runs (execution trace). Powers \"covering tests\" in the coverage hover and saving a source file reruns only the tests that ran it. Turn off to run Vitest exactly as configured; saves then rerun the related test files (vitest related)."
         },
         "liveTestRunner.runMode": {
           "type": "string",

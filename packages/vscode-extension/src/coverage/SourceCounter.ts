@@ -26,6 +26,7 @@ import { EventEmitter } from 'events';
 import { CoverageStore } from './CoverageStore';
 import { CoverageScope } from './coverageScope';
 import { logger } from '../utils/logger';
+import { scriptOf, sourceFileGlob } from '../session/sourceFiles';
 
 const log = logger.scope('Coverage');
 
@@ -51,7 +52,7 @@ export class SourceCounter extends EventEmitter {
       return;
     }
 
-    const include = new vscode.RelativePattern(this._projectRoot, '**/*.{js,ts,jsx,tsx}');
+    const include = new vscode.RelativePattern(this._projectRoot, sourceFileGlob());
     // Flattened — no nested braces, VS Code glob doesn't support them reliably.
     // With the project's own rules, only what can never count is left out here; the scope decides the rest.
     const defaultExcludeParts = scope.isDefault ? [
@@ -118,7 +119,8 @@ export class SourceCounter extends EventEmitter {
   } {
     let source: string;
     try {
-      source = fs.readFileSync(filePath, 'utf8');
+      // Components (.vue, .svelte, …): their <script> blocks, at their own lines.
+      source = scriptOf(filePath, fs.readFileSync(filePath, 'utf8'));
     } catch {
       return { statements: 0, branches: 0, functions: 0, lines: 0 };
     }

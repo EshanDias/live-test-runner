@@ -81,6 +81,11 @@ export function vitestIncludeBrowserProjects(): boolean {
   return vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('vitestIncludeBrowserProjects') ?? false;
 }
 
+/** `liveTestRunner.vitestTrace`: the execution trace for Vitest runs (on by default, D14). */
+export function vitestTraceSetting(): boolean {
+  return vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('vitestTrace') ?? true;
+}
+
 let _warnedNpmMode = false;
 
 /**
