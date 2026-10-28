@@ -19,7 +19,8 @@ pnpm test -- --watch     # Run tests in watch mode
 node e2e/run.js --all    # End-to-end: real VS Code + real Jest (build first; also runs in CI on Win/Linux/macOS)
 node e2e/run.js basic-stop basic-hang      # selected scenarios
 # Real projects (optional): LTR_E2E_TSJEST_REPO, LTR_E2E_CRA_REPO (+ LTR_E2E_CRA_FULL=1)
-node e2e/real-repos.js   # real-repo matrix on read-only copies (--all incl. the heavy jest monorepo)
+node e2e/real-repos.js   # real-repo matrix on read-only copies (--all incl. the heavy jest monorepo and pytest's own suite)
+python -m pytest packages/runner/python-tests   # the shipped pytest plugin's own tests (needs pytest; coverage for 2 of them)
 
 # Linting
 pnpm lint                # Lint all packages
@@ -82,7 +83,7 @@ Two interfaces manage framework abstraction:
 
 - **`FrameworkAdapter`** (`packages/runner/`) — binary resolution, config extraction. No VS Code dependency.
 - **`IFrameworkAdapter`** (`packages/vscode-extension/`) — adds VS Code-specific logic (test discovery, debug config, file classification).
-- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. Each project (`ProjectContext`) composes a `FrameworkRouter` (`framework/FrameworkRouter.ts`): the Jest bundle `createJestServices` or the Vitest bundle `createVitestServices` for a single-framework project, both in a mixed Jest + Vitest project, where every test file is placed with one framework (setting `liveTestRunner.frameworks` → the configs' own lists → `vitest` / `@jest/globals` imports and `vi.` / `jest.` calls → the main framework). Both extension adapters extend `RunnerBackedAdapter`.
+- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. Each project (`ProjectContext`) composes a `FrameworkRouter` (`framework/FrameworkRouter.ts`): the Jest bundle `createJestServices` or the Vitest bundle `createVitestServices` for a single-framework project, both in a mixed Jest + Vitest project, where every test file is placed with one framework (setting `liveTestRunner.frameworks` → the configs' own lists → `vitest` / `@jest/globals` imports and `vi.` / `jest.` calls → the main framework). All extension adapters extend `RunnerBackedAdapter`. A pytest project gets a single pytest bundle (`createPytestServices`, one process at a time via `batchPolicy`).
 
 Adding a framework = one adapter in each package + its services bundle. `SessionManager`, `ResultStore`, views, and observers require zero changes.
 
@@ -196,7 +197,7 @@ Each `FrameworkAdapter` implements:
 - `outputFileArg(file)` / `parseResult(passed, raw, stderr)` — where the JSON result goes and how it is read
 - `createRunner(options)` — the framework's `TestRunner`
 
-Current adapters: Jest, Create React App, Vitest.
+Current adapters: Jest, Create React App, Vitest, pytest (family `python`: the project's interpreter, the shipped plugin `framework/pytest/ltr_pytest.py`).
 
 ### `packages/core` — Session Lifecycle & Coverage
 

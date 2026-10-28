@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Live Test Runner — Live Jest &amp; Vitest testing in VS Code</title>
-<meta name="description" content="Free VS Code extension that reruns the Jest and Vitest tests affected by every save and shows pass/fail, inline durations and per-line code coverage right in the editor. No terminal, no config.">
-<meta name="keywords" content="VS Code extension, Jest, Vitest, test runner, live testing, continuous testing, code coverage, TDD, Wallaby alternative, Create React App, TypeScript, Vue, Svelte">
+<title>Live Test Runner — Live Jest, Vitest &amp; pytest testing in VS Code</title>
+<meta name="description" content="Free VS Code extension that reruns the Jest, Vitest and pytest tests affected by every save and shows pass/fail, inline durations and per-line code coverage right in the editor. No terminal, no config.">
+<meta name="keywords" content="VS Code extension, Jest, Vitest, pytest, Python, test runner, live testing, continuous testing, code coverage, TDD, Wallaby alternative, Create React App, TypeScript, Vue, Svelte">
 <meta name="author" content="EshLabs">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <link rel="canonical" href="https://eshandias.github.io/live-test-runner/">
@@ -19,7 +19,7 @@
 <!-- Open Graph / social previews -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Live Test Runner">
-<meta property="og:title" content="Live Test Runner — Live Jest &amp; Vitest testing in VS Code">
+<meta property="og:title" content="Live Test Runner — Live Jest, Vitest &amp; pytest testing in VS Code">
 <meta property="og:description" content="Save a file. The affected tests run. Results, durations and coverage appear inline. Free for VS Code and Open VSX editors.">
 <meta property="og:url" content="https://eshandias.github.io/live-test-runner/">
 <meta property="og:image" content="https://eshandias.github.io/live-test-runner/images/editor-decorations.png">
@@ -27,7 +27,7 @@
 <meta property="og:image:height" content="588">
 <meta property="og:image:alt" content="Live Test Runner showing pass/fail gutter icons and inline durations in the VS Code editor">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Live Test Runner — Live Jest &amp; Vitest testing in VS Code">
+<meta name="twitter:title" content="Live Test Runner — Live Jest, Vitest &amp; pytest testing in VS Code">
 <meta name="twitter:description" content="Save a file. The affected tests run. Results appear inline. No terminal, no config.">
 <meta name="twitter:image" content="https://eshandias.github.io/live-test-runner/images/editor-decorations.png">
 
@@ -42,7 +42,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "Visual Studio Code extension",
       "operatingSystem": "Windows, macOS, Linux",
-      "description": "VS Code extension that reruns affected Jest and Vitest tests on save and shows results, durations and per-line code coverage inline in the editor.",
+      "description": "VS Code extension that reruns affected Jest, Vitest and pytest tests on save and shows results, durations and per-line code coverage inline in the editor.",
       "url": "https://eshandias.github.io/live-test-runner/",
       "downloadUrl": "https://marketplace.visualstudio.com/items?itemName=EshLabs.live-test-runner",
       "installUrl": "https://marketplace.visualstudio.com/items?itemName=EshLabs.live-test-runner",
@@ -66,7 +66,7 @@
       "@type": "FAQPage",
       "mainEntity": [
         { "@type": "Question", "name": "Which test frameworks does Live Test Runner support?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5) and Vitest 3+. Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more." } },
+          "acceptedAnswer": { "@type": "Answer", "text": "Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5), Vitest 3+ and pytest 7+ (Python 3.12+). Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more." } },
         { "@type": "Question", "name": "Do I need to change my Jest or Vitest config?",
           "acceptedAnswer": { "@type": "Answer", "text": "No. Live Test Runner uses your existing config and the test binary already in node_modules. Nothing extra is installed into your project." } },
         { "@type": "Question", "name": "Does it run tests in the background all the time?",
@@ -295,9 +295,9 @@
 <!-- ───────── Hero ───────── -->
 <div class="hero">
   <div class="wrap">
-    <a class="pill" href="guide/#mixed" target="_blank" rel="noopener"><b>New in 3.1</b> Monorepos · Jest and Vitest in one project · Vitest covering tests →</a>
+    <a class="pill" href="guide/#pytest" target="_blank" rel="noopener"><b>New in 3.2</b> pytest support · Python projects, live →</a>
     <h1>Save a file. <span class="grad-text">Your tests run.</span><br>Results land in the editor.</h1>
-    <p class="sub">Live Test Runner reruns the Jest and Vitest tests affected by every save, then shows pass/fail, durations and per-line coverage right next to your code. No terminal. No config.</p>
+    <p class="sub">Live Test Runner reruns the Jest, Vitest and pytest tests affected by every save, then shows pass/fail, durations and per-line coverage right next to your code. No terminal. No config.</p>
     <div class="cta">
       <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=EshLabs.live-test-runner" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 2.2 9.3 9.8 4.3 6 2 7.1v9.8L4.3 18l5-3.8 8.3 7.6L22 20V4l-4.4-1.8ZM4.5 14.6V9.4L7.2 12l-2.7 2.6Zm13 1.5L12.8 12l4.7-4.1v8.2Z"/></svg>
@@ -320,7 +320,7 @@
 
 <div class="strip">
   <div class="wrap">
-    <div><b>Jest · Vitest · CRA</b><span>detected automatically</span></div>
+    <div><b>Jest · Vitest · CRA · pytest</b><span>detected automatically</span></div>
     <div><b>0 config</b><span>uses your existing setup</span></div>
     <div><b>Per-line coverage</b><span>updated on every save</span></div>
     <div><b>Free &amp; open source</b><span>MIT licensed</span></div>
@@ -333,7 +333,7 @@
     <div class="section-head">
       <p class="eyebrow">Features</p>
       <h2>Everything you need to test without leaving the code</h2>
-      <p>Wallaby-style feedback for Jest and Vitest, built right into VS Code.</p>
+      <p>Wallaby-style feedback for Jest, Vitest and pytest, built right into VS Code.</p>
     </div>
     <div class="grid">
       <article class="card"><div class="ico">⚡</div><h3>Reruns on save</h3><p>Only the tests affected by the file you just saved run, so feedback comes in seconds, not minutes.</p></article>
@@ -399,7 +399,7 @@
     <div class="section-head">
       <p class="eyebrow">Get started</p>
       <h2>Running in under a minute</h2>
-      <p>Your existing Jest or Vitest setup is all it needs.</p>
+      <p>Your existing Jest, Vitest or pytest setup is all it needs.</p>
     </div>
     <div class="steps">
       <div class="step"><h3>Install</h3><p>From the VS Code Marketplace or Open VSX.</p></div>
@@ -415,22 +415,22 @@
   <div class="wrap">
     <div class="section-head">
       <p class="eyebrow">Frameworks</p>
-      <h2>Works with Jest and Vitest</h2>
-      <p>babel-jest, ts-jest and @swc/jest; Create React App (react-scripts 4 &amp; 5); Vitest 3+. Any UI framework: React, Vue, Svelte, Solid, Angular, Astro and more.</p>
+      <h2>Works with Jest, Vitest and pytest</h2>
+      <p>babel-jest, ts-jest and @swc/jest; Create React App (react-scripts 4 &amp; 5); Vitest 3+; pytest 7+ on Python 3.12+ with your own virtual environment. Any UI framework: React, Vue, Svelte, Solid, Angular, Astro and more.</p>
     </div>
     <div class="table-wrap">
       <table>
-        <tr><th>Feature</th><th>Jest</th><th>CRA</th><th>Vitest</th></tr>
-        <tr><td>Run on save, pass/fail</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>▶ Run / ▷ Debug a single test</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Console output</td><td>✅ per file</td><td>✅ per file</td><td>✅ per test</td></tr>
-        <tr><td>Per-line coverage</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Rerun tests related to a source file</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Monorepos (one project per package, switcher)</td><td>✅</td><td>🟡</td><td>✅</td></tr>
-        <tr><td>Jest and Vitest in one project</td><td>✅</td><td>—</td><td>✅</td></tr>
-        <tr><td>Covering tests on hover</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Vue / Svelte / Astro components (reruns, coverage, covering tests)</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><th>Feature</th><th>Jest</th><th>CRA</th><th>Vitest</th><th>pytest</th></tr>
+        <tr><td>Run on save, pass/fail</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>▶ Run / ▷ Debug a single test</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Console output</td><td>✅ per file</td><td>✅ per file</td><td>✅ per test</td><td>✅ per test</td></tr>
+        <tr><td>Per-line coverage</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Rerun tests related to a source file</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Monorepos (one project per package, switcher)</td><td>✅</td><td>🟡</td><td>✅</td><td>⏳</td></tr>
+        <tr><td>Jest and Vitest in one project</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Covering tests on hover</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Vue / Svelte / Astro components (reruns, coverage, covering tests)</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
       </table>
     </div>
     <p class="legend">✅ supported · 🟡 partial · ⏳ coming soon · <a href="guide/#support" target="_blank" rel="noopener">Full support matrix</a></p>
@@ -471,7 +471,7 @@
       <h2>Questions</h2>
     </div>
     <div class="faq">
-      <details open><summary>Which test frameworks are supported?</summary><p>Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5) and Vitest 3+. Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more.</p></details>
+      <details open><summary>Which test frameworks are supported?</summary><p>Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5), Vitest 3+ and pytest 7+ (Python 3.12+, with your project's own virtual environment). Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more.</p></details>
       <details><summary>Do I need to change my Jest or Vitest config?</summary><p>No. Live Test Runner uses your existing config and the test binary already in <code>node_modules</code>. Nothing extra is installed into your project.</p></details>
       <details><summary>Does it run tests in the background all the time?</summary><p>No. Nothing runs until you click <b>Start Testing</b>, and <b>Stop</b> ends the session. Single ▶ Run and ▷ Debug clicks from the editor always work.</p></details>
       <details><summary>Is it free?</summary><p>Yes. It is free and open source under the MIT license, on the VS Code Marketplace and on Open VSX for VSCodium, Cursor, Windsurf and other compatible editors.</p></details>

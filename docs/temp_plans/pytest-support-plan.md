@@ -646,37 +646,52 @@ Where the work stands, for whoever resumes it (an hourly check resumes after usa
 - Worktree: `/Users/eshandias/Projects/Personal/live-test-runner-pytest` (the main checkout
   belongs to agent 1). Branches: `feat/pytest-phase0` (this doc) → next phases chained on it.
 - Real repos + `.venv`s: `/Users/eshandias/Projects/test/python-projects/{click,httpx,erdantic,pytest}` — read-only.
-- 2026-10-24: phase 0 done (decisions, repos, spike, ADR-9). Next: phase 1 + 2 (decouple + pytest run).
+- 2026-10-24: phase 0 done (decisions, repos, spike, ADR-9).
+- 2026-10-28: phases 1–6 + 9.1 / 9.2 done (owner: covering tests + source saves ship in 3.2.0 too).
+  Branches (rebased on agent 1's `feat/vitest-any-frontend` @ 1a031e7; a force-push was refused,
+  so the rebased chain has new names): `feat/pytest-2-plan` → `feat/pytest-2-decouple` →
+  `feat/pytest-2-run` → `feat/pytest-2-related` (→ docs on the same). The old
+  `feat/pytest-phase0/-decouple/-run` on origin are stale (owner may delete them).
+- Findings during implementation: (1) **one pytest process at a time** — parallel batches
+  deadlocked httpx (session fixture binds a fixed port) → `FrameworkServices.batchPolicy`;
+  (2) copied `__pycache__` in a repo clone points test locations at the original (real-repos
+  drops it); (3) pytest 7 reports a package's `__init__.py` as a collector (not a test file);
+  (4) a stale runnable-files list survives plugin changes → the plugin hash is in the key;
+  (5) httpx `test_write_timeout` is flaky in plain pytest (1 run in 3) → `FLAKY` in `repo-pytest`.
+- Real repos: click 2287 / httpx 1418 / erdantic 153 (pytest 7.4) match plain pytest test for test;
+  pytest's own suite 4811 tests (562 s) matched except a doctest `.txt` file (fixed: any file pytest
+  lists is kept) and a cache-plugin test (the reference run disabled the cache plugin — fixed).
+- Next: full regression, test PR → `release/3.1.0` with CI green (9.3 is the owner's release step).
 
 ## Progress tracker
 
 - [x] 0.1 Branch, plan (no version bump — 3.2.0 changelog section, owner)
-- [ ] 0.2 Python repos + harness
+- [x] 0.2 Python repos + harness
 - [x] 0.3 Spike: plugin & coverage (ADR-9)
-- [ ] 1.1 Test identity: names, not regexes
-- [ ] 1.2 File classification per framework
-- [ ] 1.3 Static discovery behind the bundle
-- [ ] 1.4 Runtime resolution
-- [ ] 1.5 Projects & routing for N frameworks
-- [ ] 1.6 Gate + developer guide
-- [ ] 2.1 Interpreter resolution
-- [ ] 2.2 Runner PytestAdapter + config reader
-- [ ] 2.3 ltr_pytest.py plugin
-- [ ] 2.4 PytestRunner + node-id codec
-- [ ] 2.5 Extension adapter, project config, services, batch runner
-- [ ] 2.6 Static discovery for Python
-- [ ] 2.7 Tests (M1)
-- [ ] 3.1 Per-test output
-- [ ] 3.2 Failures & diagnostics
-- [ ] 3.3 Tests
-- [ ] 4.1 Coverage in the plugin
-- [ ] 4.2 Mapping into CoverageStore
-- [ ] 4.3 Tests (M2)
-- [ ] 5.1 Debug config
-- [ ] 5.2 Tests
-- [ ] 9.1 Docs + feature matrix
-- [ ] 9.2 Real-repo validation
+- [x] 1.1 Test identity: names, not regexes
+- [x] 1.2 File classification per framework
+- [x] 1.3 Static discovery behind the bundle
+- [x] 1.4 Runtime resolution
+- [x] 1.5 Projects & routing for N frameworks
+- [x] 1.6 Gate + developer guide
+- [x] 2.1 Interpreter resolution
+- [x] 2.2 Runner PytestAdapter + config reader
+- [x] 2.3 ltr_pytest.py plugin
+- [x] 2.4 PytestRunner + node-id codec
+- [x] 2.5 Extension adapter, project config, services, batch runner
+- [x] 2.6 Static discovery for Python
+- [x] 2.7 Tests (M1)
+- [x] 3.1 Per-test output
+- [x] 3.2 Failures & diagnostics
+- [x] 3.3 Tests
+- [x] 4.1 Coverage in the plugin
+- [x] 4.2 Mapping into CoverageStore
+- [x] 4.3 Tests (M2)
+- [x] 5.1 Debug config
+- [x] 5.2 Tests
+- [x] 9.1 Docs + feature matrix
+- [x] 9.2 Real-repo validation
 - [ ] 9.3 Release prep → **3.4.0**
-- [ ] 6.1–6.3 Covering tests + related on-save → **3.5.0** (M3)
+- [x] 6.1–6.3 Covering tests + related on-save → in **3.2.0** (owner, 2026-10-28) (M3)
 - [ ] 7.1–7.3 Python monorepos → 3.6.0
 - [ ] 8.1–8.3 JS + Python in one folder → **3.6.0** (M4)

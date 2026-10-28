@@ -14,7 +14,7 @@
 
 > Save a file. Tests run. Results appear inline. No terminal. No config.
 
-> **Works with Jest (incl. Create React App) and Vitest** — see [Supported frameworks](#supported-frameworks) for what each one supports.
+> **Works with Jest (incl. Create React App), Vitest and pytest** — see [Supported frameworks](#supported-frameworks) for what each one supports.
 
 🌐 **[Website](https://eshandias.github.io/live-test-runner/)** · 📖 **[Read the full guide](https://eshandias.github.io/live-test-runner/guide/)** — or run **Live Test Runner: Open Guide** in VS Code.
 
@@ -39,12 +39,12 @@
 
 ## Quick Start
 
-1. Open a Jest or Vitest project in VS Code
+1. Open a Jest, Vitest or pytest project in VS Code
 2. Click the **beaker icon** in the Activity Bar
 3. Click **▶ Start Testing**
 4. Save any file — results update instantly
 
-> No config changes. No extra installs. The framework is detected from your project.
+> No config changes. No extra installs. The framework is detected from your project — for pytest, so is its virtual environment.
 
 ---
 
@@ -121,6 +121,23 @@ The tree groups files by framework, saves rerun both frameworks' related tests, 
 
 ---
 
+### pytest (Python)
+
+Open a Python project and **Start Testing** — same tree, gutter icons, CodeLens, coverage and live reruns as for Jest and Vitest.
+
+- **Your environment, untouched:** the project's `.venv` / `venv`, poetry or pipenv env (or the Python extension's choice) runs the tests. **Select Python Interpreter** picks another; nothing is installed into it.
+- **Same results as `pytest` in your terminal** — your `pyproject.toml` / `pytest.ini` / `tox.ini` / `setup.cfg`, `addopts` and conftest fixtures apply, one pytest process at a time.
+- **Per-test output** — each test shows its own `print`, stderr and logging; failures show pytest's own explanation.
+- **▶ Run / ▷ Debug** one test, class or parametrized function (by node id). Debug uses the Python Debugger extension.
+- **Coverage and covering tests** with the project's own `coverage` settings (pytest-cov not needed): saving `src/cart.py` reruns exactly the tests that ran it.
+- Nothing is written into your project: no `.pytest_cache` changes, no `.coverage`, no `htmlcov`.
+
+<!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a pytest project — tree fills in, results and gutter icons appear, a per-test print in the Results panel, saving a source file reruns only its tests -->
+
+Needs pytest 7 or newer on Python 3.12 or newer (`coverage` for coverage).
+
+---
+
 ### Results panel
 
 3-column view: test tree with search · console output tabbed by level · failure messages and stack traces.
@@ -148,6 +165,7 @@ Step through any test case line by line — variable values as inline ghost text
 | `Clear Cache and Restart Testing` | Fresh restart |
 | `Select Project` | Switch the project shown (same as the Explorer's switcher) |
 | `Select Project Root` | Pin Live Test Runner to one folder (or back to all projects) |
+| `Select Python Interpreter` | pytest projects: choose the Python environment that runs the tests (remembered per project) |
 | `Stop All Projects` | Stop every running project |
 | `Show Logs` | Open the extension log (filter by level) |
 | `Show Test Output` | Open the raw test-runner output |
@@ -183,6 +201,8 @@ All settings under `liveTestRunner.*`.
 | `frameworks` | `{}` | Jest + Vitest projects: glob → `"jest"` / `"vitest"` for those test files |
 | `vitestTrace` | `true` | Vitest execution trace: covering tests on hover, and saves rerun only the tests that ran the file |
 | `vitestIncludeBrowserProjects` | `false` | Also run Vitest browser-mode projects (need Playwright / WebdriverIO browsers) |
+| `pythonPath` | `""` | pytest: the Python that runs the tests; empty = automatic (selected interpreter, the project's venv, the Python extension's, PATH) |
+| `pytestArgs` | `[]` | pytest: extra arguments for every run, e.g. `["-m", "not slow"]` (your `addopts` already apply) |
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
 | `testFilePatterns` | `["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]` | Which files appear in the test tree. Jest's own config still decides what runs, and files it runs are added even when no pattern matches |
@@ -199,20 +219,20 @@ All settings under `liveTestRunner.*`.
 ## Supported frameworks
 
 <!-- matrix:start -->
-| Feature | Jest | CRA | Vitest |
-|---|---|---|---|
-| Run & pass/fail | ✅ | ✅ | ✅ |
-| ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ |
-| Rerun a saved test file | ✅ | ✅ | ✅ |
-| Logs / console output | ✅ per file | ✅ per file | ✅ per test |
-| Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) |
-| Live per-file progress | ✅ | ✅ | ✅ |
-| Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off |
-| Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name |
-| Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ |
-| Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3 (incl. `vitest.workspace` files); not in browser mode |
-| UI components (`.vue`, `.svelte`, `.astro`, `.marko`): save reruns, trace, coverage | ✅ through the project's transformer (vue-jest, svelte-jester…) | — (React is plain JS) | ✅ through the project's Vite plugins |
-| Timeline debugger | ⏳ | ⏳ | ⏳ later |
+| Feature | Jest | CRA | Vitest | pytest |
+|---|---|---|---|---|
+| Run & pass/fail | ✅ | ✅ | ✅ | ✅ pytest ≥ 7, Python ≥ 3.12 |
+| ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ | ✅ by node id; Debug needs the Python Debugger extension |
+| Rerun a saved test file | ✅ | ✅ | ✅ | ✅ |
+| Logs / console output | ✅ per file | ✅ per file | ✅ per test | ✅ per test (stdout, stderr, logging) |
+| Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) | ✅ needs `coverage` (pytest-cov not needed) |
+| Live per-file progress | ✅ | ✅ | ✅ | ✅ |
+| Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off | ✅ only the tests that ran it (coverage contexts); importing test files before that |
+| Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ⏳ later (one pytest project per folder today) |
+| Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ | — |
+| Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3 (incl. `vitest.workspace` files); not in browser mode | ✅ from coverage.py contexts (needs `coverage`) |
+| UI components (`.vue`, `.svelte`, `.astro`, `.marko`): save reruns, trace, coverage | ✅ through the project's transformer (vue-jest, svelte-jester…) | — (React is plain JS) | ✅ through the project's Vite plugins | — |
+| Timeline debugger | ⏳ | ⏳ | ⏳ later | ⏳ later |
 <!-- matrix:end -->
 
 <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — the test tree fills in, results and gutter icons appear, ▶ Run on one test -->
@@ -229,6 +249,8 @@ Vitest 3 or newer is fully supported; Vitest 1–2 run with results only. Projec
 - Jest captures console output per file; it shows on a single test only when that test is rerun on its own. With Vitest every test shows its own output.
 - Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
 - Vitest: the execution trace needs Vitest ≥ 3 and is off for browser-mode projects — saving a source file then reruns the test files that import it (`vitest related`)
+- pytest: one project per folder — Python monorepos and a JS + Python project in one folder are planned; the Timeline debugger is not available for pytest yet
+- pytest with `-s` / `--capture=no` in `addopts`: test output goes to the Test Output channel, not to each test
 - Vue components under Jest: coverage counts the `<script>` block only, as `jest --coverage` does (vue-jest maps only that); template lines still show their covering tests
 
 ---
