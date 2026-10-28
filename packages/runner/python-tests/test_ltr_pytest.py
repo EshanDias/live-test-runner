@@ -291,3 +291,17 @@ def test_each_test_gets_its_own_coverage_context(pytester, run, tmp_path):
     # Lines run at import (the defs) are outside every test: coverage only.
     outside = [r for r in records if r["type"] == "H"]
     assert outside and outside[0]["hk"] == "file" and {1, 4} <= set(src(outside[0])["price.py"])
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="sysmon records contexts from Python 3.14")
+def test_a_core_without_contexts_turns_covering_tests_off_not_the_run(pytester, run, tmp_path):
+    # The project (here: the environment) chose coverage's sysmon core, which records no
+    # per-test contexts before 3.14: tests and coverage still work, covering tests are off.
+    pytester.makepyfile(m="def f():\n    return 1\n", test_m="from m import f\n\ndef test_f():\n    assert f() == 1\n")
+    cov_dir = tmp_path / "cov4"
+    events, result, outcome = run(env={"LTR_PYTEST_COVERAGE": str(cov_dir), "COVERAGE_CORE": "sysmon"})
+    assert result["passed"] is True
+    assert any(e["ev"] == "coverage" for e in events)
+    assert "covering tests are off" in outcome.stderr.str()
+    trace = cov_dir / "trace.jsonl"
+    assert not trace.exists() or not any(json.loads(l)["type"] == "T" for l in trace.read_text().splitlines())

@@ -47,6 +47,7 @@ _events = None
 _cov = None
 _cov_error = None
 _contexts = True  # per-test contexts (off when the project's coverage config sets its own dynamic_context)
+_pending_logs = []  # (level, message) from before pytest_configure: output capture swallows them there
 _nodes = {}  # nodeid -> {"file", "titles", "name", "line"}
 _files = {}  # file -> _FileState
 _tests = {}  # nodeid -> {"reports": {when: report}}
@@ -86,6 +87,9 @@ def _emit(**record):
 
 def _log(level, message):
     """A structured log line for the extension, past pytest's output capture."""
+    if _config is None:
+        _pending_logs.append((level, message))  # written in pytest_configure
+        return
     line = "[LTR:%s] %s\n" % (level, message)
     capman = _config.pluginmanager.getplugin("capturemanager") if _config else None
     try:
@@ -118,6 +122,9 @@ def pytest_configure(config):
     global _config
     _config = config
     _start_coverage(config)
+    for level, message in _pending_logs:
+        _log(level, message)
+    del _pending_logs[:]
     _emit(
         ev="config",
         capture=_option(config, "capture"),
@@ -161,10 +168,45 @@ def _start_coverage(config):
         if sources:
             kwargs["source"] = sources
         _cov = coverage.Coverage(**kwargs)
+        _choose_core(_cov)
         _cov.start()
+        _check_contexts(_cov)
     except Exception as err:  # a broken coverage config must not stop the tests
         _cov = None
         _cov_error = "coverage could not start: %s" % err
+
+
+def _choose_core(cov):
+    """A coverage core that records per-test contexts, unless the project picked one.
+
+    coverage.py's ``sysmon`` core records no dynamic contexts before Python 3.14
+    (it warns and puts every line in one context); it is chosen when the compiled
+    tracer is missing (e.g. Windows wheels without it). Prefer ``ctrace``, else
+    ``pytrace`` below 3.14. Only for this process: the project's settings and
+    the user's own runs are untouched.
+    """
+    if os.environ.get("COVERAGE_CORE") or getattr(cov.config, "core", None):
+        return
+    try:
+        import coverage.tracer  # noqa: F401  (the compiled CTracer)
+        core = "ctrace"
+    except ImportError:
+        core = None if sys.version_info >= (3, 14) else "pytrace"
+    if core is None:
+        return
+    try:
+        cov.config.set_option("run:core", core)
+    except Exception:  # coverage before the [run] core option: the environment variable it reads
+        os.environ["COVERAGE_CORE"] = core
+
+
+def _check_contexts(cov):
+    global _contexts
+    core = getattr(cov, "_core", None)
+    if core is not None and getattr(core, "supports_dynamic_contexts", True) is False:
+        _contexts = False
+        _log("info", "covering tests are off for this run: coverage.py's %s core records no per-test contexts"
+             % type(core).__name__)
 
 
 def _cov_sources(config):

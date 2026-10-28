@@ -33,7 +33,8 @@ module.exports = {
 
   async run({ api, t, vscode, workspace }) {
     await h.waitForDiscovery(api);
-    const key = (p) => api.store.findFileKey(p) ?? p;
+    // The coverage store's spelling: the editor's path, lower-case drive letter (as for Vitest).
+    const key = (p) => p.replace(/^[A-Z]:/, (m) => m.toLowerCase());
     await vscode.commands.executeCommand('liveTestRunner.startTesting');
     await h.waitFor(() => api.coverageStore.isScanComplete(), { what: 'coverage to settle', timeout: 60_000 });
 
