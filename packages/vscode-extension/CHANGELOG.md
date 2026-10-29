@@ -7,6 +7,7 @@ All notable changes to Live Test Runner are documented here.
 ### New
 
 - **pytest support** — open a Python project and Start Testing: the test tree, live results, gutter icons, ▶ Run / ▷ Debug for one test, class or parametrized function, reruns on save, coverage and covering tests work as they do for Jest and Vitest. Your project's own virtual environment runs the tests (or pick one with the new **Select Python Interpreter** command); nothing is installed into it or written into your project. Every test shows its own output, and saving a source file reruns exactly the tests that use it. Needs pytest 7+ and Python 3.12+; `coverage` for coverage, the Python Debugger extension for Debug. New settings `liveTestRunner.pythonPath` and `liveTestRunner.pytestArgs`.
+- **Running card** — while tests run, the Explorer shows a live **Running** count next to Total / Passed / Failed; click it to see just the running tests. It disappears when the run ends.
 
 ## [3.1.0] - 2026-10-28
 

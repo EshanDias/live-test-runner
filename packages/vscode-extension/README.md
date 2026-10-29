@@ -54,6 +54,9 @@
 
 Your full suite — every file, suite, and test — appears in the sidebar on project open before any run. Tests rerun on every save. The status bar shows a live pass/fail count.
 
+- **Score cards** — Total / Passed / Failed, plus **Running** while tests run (live count; gone when the run ends). Click one to filter the tree.
+
+<!-- [TODO: USER_INPUT_NEEDED] Short gif: the Running card counting down during a run, clicked to filter, then disappearing -->
 <!-- [TODO: USER_INPUT_NEEDED] Short gif: sidebar tree populating on open, then a test going red/green on save -->
 ![Explorer Test Cases View](resources/images/explorer-test-run.png)
 

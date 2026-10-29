@@ -185,6 +185,7 @@
     <li><b>Instant tree</b>: test files are parsed statically (Babel AST) when the extension starts, so nothing has to run first.</li>
     <li><b>Discovery cache</b>: parsed results are cached per project and keyed by file modification time, so reopening a project is fast.</li>
     <li><b>Live updates</b>: creating, editing or deleting a test file updates the tree.</li>
+    <li><b>Score cards</b>: <b>Total</b>, <b>Passed</b>, <b>Failed</b> and — only while tests are running — <b>Running</b>, a live count of the tests running right now (Jest, Vitest and pytest alike). Click a card, or pick from the status dropdown, to filter the list; when the run ends the Running card disappears and a Running filter goes back to All.</li>
     <li><b>Dynamic tests</b>: <code>test.each</code> and template-literal names appear as a template that fills in with the real cases after a run.</li>
     <li><b>Coverage tab</b>: project totals plus a per-file list. Click a row to open the file.</li>
   </ul>

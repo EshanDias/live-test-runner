@@ -19,6 +19,12 @@ pytest projects get every feature Jest and Vitest projects have, except the Time
 - **New settings:** `liveTestRunner.pythonPath`, `liveTestRunner.pytestArgs` (D16).
 - Tests: runner `pytest.test.ts` (17), plugin tests `packages/runner/python-tests/test_ltr_pytest.py` (10, pytester; CI job **pytest plugin** on pytest 7.4 / 8.4 / 9.1 × Python 3.12 / 3.13 / 3.14), extension `pythonDiscovery.test.ts` (7), `pythonImports.test.ts` (5). e2e: fixtures `pytest-basic` (own `.venv` built from `requirements-e2e.txt` by `e2e/run.js`; CI gets `actions/setup-python` and `LTR_E2E_PYTHON`) and `pytest-no-pytest`; scenarios `pytest-full-run` (compared test by test with a plain pytest JUnit run), `pytest-scoped-run`, `pytest-on-save`, `pytest-stop`, `pytest-hang`, `pytest-coverage` (totals equal coverage.py's own report), `pytest-debug`, `pytest-no-pytest`, `pytest-related`. Real repos (`e2e/real-repos.js`, scenario `repo-pytest`, baseline `docs/temp_plans/pytest-baseline.json`; clones get their editable installs pointed at the clone and copied `__pycache__` dropped): click (2287 tests), httpx (1418; one known-flaky timing test), erdantic (pytest 7.4, pytest-cov in `addopts`) — all match plain pytest test for test; pytest's own suite (4811 tests, opt-in).
 
+### Explorer: Running card
+
+- **Running score card** next to Total / Passed / Failed: the number of individual tests with status `running` in the `ResultStore` (`getSummary().running`), so it works for Jest, Vitest and pytest alike. Shown only while the count is above 0. Clicking it (or **Running** in the status dropdown, shown with the card) filters the list to files with a running test (`fileMatchesStatus` in `testListLayout.js`). When the count drops to 0 a `running` filter switches back to `all`; a saved `running` filter restored with nothing running falls back the same way.
+- **No new messages:** the count rides on the existing Explorer messages as `runningTests` — `init`, `files-rerunning`, the 50 ms-batched `batch-file-results`, `run-finished` and `session-stopped` (`BaseWebviewProvider`). Summary cards now lay out as a flexible grid (hidden cards take no column).
+- Tests: `statusFilter.test.ts` (webview filter), `resultStore.test.ts` (running count through a run, a single-test rerun and Stop). e2e: scenario `basic-running-count` (counts the Explorer is sent during and after a full run and a scoped rerun).
+
 ## [3.1.0] - 2026-10-28
 
 ### Any UI framework: components, Vitest workspaces, Jest ESM mode

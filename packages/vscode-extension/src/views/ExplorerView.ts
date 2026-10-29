@@ -70,6 +70,7 @@ export class ExplorerView extends BaseWebviewProvider {
       total:              summary.total,
       passed:             summary.passed,
       failed:             summary.failed,
+      runningTests:       summary.running,
       thresholds:         this._getThresholds(),
       coverageThresholds: this._getCoverageThresholds(),
       coverageTotals:     this._coverageStore.getTotals(),
