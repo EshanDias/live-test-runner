@@ -26,6 +26,19 @@ const STATUS_ICON = {
   template: '<span class="status-template">⬚</span>',
 };
 
+/**
+ * Status filter for one file row: 'pending' includes never-run files,
+ * 'running' also matches a file with any test still running.
+ */
+function fileMatchesStatus(file, filter) {
+  if (!filter || filter === 'all') return true;
+  if (filter === 'pending') return file.status === 'pending' || file.status == null;
+  if (filter === 'running' && file.status !== 'running') {
+    return (file.nodes ?? []).some((n) => n.type === 'test' && n.status === 'running');
+  }
+  return file.status === filter;
+}
+
 /* TestListLayout ─────────────────────────────────────────────────────────── */
 class TestListLayout {
   /**
@@ -189,7 +202,7 @@ class TestListLayout {
   }
 
   setStatusFilter(filter) {
-    this.statusFilter = filter; // 'all' | 'passed' | 'failed' | 'pending'
+    this.statusFilter = filter; // 'all' | 'passed' | 'failed' | 'running' | 'pending'
     this._render();
   }
 
@@ -421,10 +434,7 @@ class TestListLayout {
         (f) => f.status === 'failed' || f.status === 'running',
       );
     if (this.statusFilter && this.statusFilter !== 'all') {
-      filtered = filtered.filter((f) => {
-        if (this.statusFilter === 'pending') return f.status === 'pending' || f.status == null;
-        return f.status === this.statusFilter;
-      });
+      filtered = filtered.filter((f) => fileMatchesStatus(f, this.statusFilter));
     }
 
     const savedScroll = this.container.scrollTop;
@@ -895,3 +905,4 @@ function esc(str) {
 
 // Export for use via <script> tag (no bundler)
 window.TestListLayout = TestListLayout;
+window.fileMatchesStatus = fileMatchesStatus;

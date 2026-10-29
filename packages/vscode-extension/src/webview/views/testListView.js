@@ -79,6 +79,10 @@
           <div class="label">Failed</div>
           <div class="value" id="summaryFailed">—</div>
         </div>
+        <div class="summary-cell running hidden" id="summaryRunningCell" data-filter="running" title="Show running tests">
+          <div class="label">Running</div>
+          <div class="value"><span class="status-running">⟳</span> <span id="summaryRunning">0</span></div>
+        </div>
       </div>
       <div class="summary-duration" id="summaryDuration"></div>
     </div>
@@ -91,6 +95,7 @@
         <option value="all">All</option>
         <option value="passed">Passed</option>
         <option value="failed">Failed</option>
+        <option value="running" id="statusFilterRunning" hidden>Running</option>
         <option value="pending">Not Run</option>
       </select>
     </div>
@@ -184,7 +189,8 @@
   let _showFolderView   = false;
   let _coverageThresholds = { red: 50, amber: 80 };
   let _activeTab        = 'tests'; // 'tests' | 'coverage'
-  let _statusFilter     = 'all';  // 'all' | 'passed' | 'failed' | 'pending'
+  let _statusFilter     = 'all';  // 'all' | 'passed' | 'failed' | 'running' | 'pending'
+  let _runningTests     = 0;      // tests with status 'running' (the Running card shows while > 0)
   let _metricMode       = 'pct';   // 'pct' | 'nm'
   let _sortCol          = 'lines'; // 'statements'|'branches'|'functions'|'lines'
   let _sortAsc          = true;
@@ -283,6 +289,22 @@
       sDuration.textContent = `Last full run: ${durationLabel(durationMs)}`;
       sDuration.style.display = '';
     }
+  }
+
+  /**
+   * Running card: shown only while tests run. When it goes away with the
+   * 'running' filter on, the list falls back to 'all'.
+   */
+  function _setRunningCount(n) {
+    if (typeof n !== 'number') { return; }
+    _runningTests = n;
+    const cell = _q('summaryRunningCell');
+    if (!cell) { return; }
+    _q('summaryRunning').textContent = String(n);
+    cell.classList.toggle('hidden', n <= 0);
+    const opt = _q('statusFilterRunning');
+    if (opt) { opt.hidden = n <= 0; }
+    if (n <= 0 && _statusFilter === 'running') { _applyStatusFilter('all'); }
   }
 
   function _updateListCount() {
@@ -573,6 +595,7 @@
       _lastCovFiles     = [];
       _lastCovTotals    = null;
       _statusFilter     = 'all';
+      _runningTests     = 0;
       _covSearchQuery   = '';
       _covFolderView    = false;
       _covExpandedFolders = new Set();
@@ -609,6 +632,7 @@
           btnFolderView.title = 'Switch to flat list';
           _list.setFolderView(true);
         }
+        // A saved 'running' filter waits for the init message's count (0 → back to 'all').
         if (saved.statusFilter && saved.statusFilter !== 'all') {
           _statusFilter = saved.statusFilter;
           _list.setStatusFilter(saved.statusFilter);
@@ -763,6 +787,7 @@
           if (msg.coverageThresholds) { _coverageThresholds = msg.coverageThresholds; }
           _list.setData(msg.files ?? []);
           updateSummary(msg.total, msg.passed, msg.failed, null);
+          _setRunningCount(msg.runningTests ?? 0);
           if (msg.total == null) { const d = _q('summaryDuration'); if (d) { d.style.display = 'none'; d.textContent = ''; } }
           _updateListCount();
           if (msg.selection) { _list.setSelected(msg.selection.fileId, msg.selection.nodeId); }
@@ -793,6 +818,7 @@
 
         case 'session-stopped':
           applySessionState('idle');
+          _setRunningCount(msg.runningTests);
           { const cs = _q('coverageSection'); if (cs) { cs.classList.add('hidden'); } }
           ['covStmts','covBranch','covFns','covLines',
            'covTotalStmts','covTotalBranch','covTotalFns','covTotalLines'].forEach((id) => {
@@ -807,6 +833,7 @@
           _list.setData([]);
           _updateListCount();
           updateSummary(null, null, null, null);
+          _setRunningCount(0);
           { const d = _q('summaryDuration'); if (d) { d.style.display = 'none'; d.textContent = ''; } }
           break;
 
@@ -830,6 +857,7 @@
           _runStartTime = 0;
           applySessionState(msg.sessionActive !== false ? 'watching' : 'idle');
           updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
+          _setRunningCount(msg.runningTests);
           if (msg.failed > 0 && !_isPartialRerun) { _list.scrollToFirstFailure(); }
           _isPartialRerun = true;
           break;
@@ -837,6 +865,7 @@
         case 'files-rerunning':
           _isPartialRerun = true;
           _list.markFilesRunning(msg.fileIds, msg.nodeId);
+          _setRunningCount(msg.runningTests);
           break;
 
         case 'file-started':
@@ -856,6 +885,7 @@
           // suite used to push this past 100%, e.g. "61 / 58").
           for (const file of msg.files ?? []) { _list.updateFile(file); }
           updateSummary(msg.total, msg.passed, msg.failed, null);
+          _setRunningCount(msg.runningTests);
           break;
         }
 
