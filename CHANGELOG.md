@@ -2,7 +2,7 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [3.2.0] - Unreleased
+## [3.2.0] - 2026-10-29
 
 ### pytest support (Python)
 

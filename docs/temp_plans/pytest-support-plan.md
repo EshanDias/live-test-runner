@@ -670,7 +670,10 @@ Where the work stands, for whoever resumes it (an hourly check resumes after usa
   `sysmon` core records no per-test contexts before Python 3.14 — the plugin picks `ctrace` /
   `pytrace` unless the project chose a core, and says so when contexts are off.
 - Left for the owner: merge decision on #53 (test PR — not merged by the agent), deleting the stale
-  `feat/pytest-phase0/-decouple/-run` branches, 9.3 release prep. Next releases: phases 7–8.
+  `feat/pytest-phase0/-decouple/-run` branches. Next releases: phases 7–8.
+- 2026-10-29 (owner: release 3.2.0): `release/3.2.0` created from `main`; `feat/release-prep-3.2.0`
+  (= `feat/pytest-2-docs` + `main`'s v3.1.0 commit) bumps the version to 3.2.0 and dates the
+  changelogs; PR → `release/3.2.0`, then the owner opens `release/3.2.0 → main`.
 
 ## Progress tracker
 
@@ -700,7 +703,7 @@ Where the work stands, for whoever resumes it (an hourly check resumes after usa
 - [x] 5.2 Tests
 - [x] 9.1 Docs + feature matrix
 - [x] 9.2 Real-repo validation
-- [ ] 9.3 Release prep → **3.4.0**
+- [x] 9.3 Release prep → **3.2.0** (2026-10-29: `feat/release-prep-3.2.0` → `release/3.2.0`; full e2e on the packed `.vsix`)
 - [x] 6.1–6.3 Covering tests + related on-save → in **3.2.0** (owner, 2026-10-28) (M3)
 - [ ] 7.1–7.3 Python monorepos → 3.6.0
 - [ ] 8.1–8.3 JS + Python in one folder → **3.6.0** (M4)

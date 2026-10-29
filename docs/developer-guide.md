@@ -648,6 +648,7 @@ engine.jumpTo(stepId)
 
 ## Roadmap
 
+- [x] pytest support (3.2.0) — pytest ≥ 7 / Python ≥ 3.12: run, live results, per-test output, ▶ Run / ▷ Debug, coverage, covering tests + source-save reruns; not yet Python monorepos, JS + Python in one folder, Timeline — see `docs/temp_plans/pytest-support-plan.md`
 - [x] Vitest support (3.0.0) — run, pass/fail, per-test logs, live progress, coverage; related tests on save, monorepos, mixed frameworks, execution trace + any UI framework (3.1.0) — see `docs/temp_plans/vitest-support-plan.md`
 - [x] ~~Suite/test-case level nodes in Test Explorer~~ — completed in 1.2.0 (recursive node tree with unlimited nesting)
 - [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
