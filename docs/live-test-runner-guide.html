@@ -174,6 +174,7 @@
     <li>Click <b>▶ Start Testing</b>. The full suite runs once.</li>
     <li>Edit and save. The affected tests rerun automatically.</li>
   </ol>
+  <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/gifs/demo.gif" alt="Click Start: tests stream in live; save a file: only its tests rerun; pytest; the coverage hover; one test's own output" style="max-width:100%;border-radius:8px"></p>
   <div class="note">Nothing runs in the background until you start a session. <b>Stop</b> ends it. Shift-click Stop (or <kbd>Shift</kbd>+<kbd>Delete</kbd> in the views) also clears the cache.</div>
 </section>
 
@@ -189,7 +190,7 @@
     <li><b>Dynamic tests</b>: <code>test.each</code> and template-literal names appear as a template that fills in with the real cases after a run.</li>
     <li><b>Coverage tab</b>: project totals plus a per-file list. Click a row to open the file.</li>
   </ul>
-  <p class="muted">Test files match <code>*.test.*</code> or <code>*.spec.*</code> with js, ts, jsx, tsx, mjs or cjs. <code>node_modules</code> is skipped.</p>
+  <p class="muted">Test files match <code>*.test.*</code> or <code>*.spec.*</code> with js, ts, jsx, tsx, mjs or cjs (pytest: the files pytest itself collects, <code>test_*.py</code> / <code>*_test.py</code> by default). <code>node_modules</code> and virtual environments are skipped.</p>
 </section>
 
 <!-- ───────────────────────── On save ───────────────────────── -->
@@ -226,9 +227,10 @@
   <p>Opens in the bottom panel and has three columns: <b>test list</b> · <b>console output</b> (tabs per level: log / info / warn / error) · <b>errors</b>.</p>
   <ul>
     <li>Select a file, suite or test to scope the output and errors to it.</li>
-    <li>Output is stored <b>per scope</b>. Jest reports console output per file, so a single test only has its own output after you rerun that test on its own. Until then it shows a placeholder; output from other scopes is never copied in. Vitest says which test or suite printed each line, so with Vitest every test shows its own output right away.</li>
+    <li>Output is stored <b>per scope</b>. Jest reports console output per file, so a single test only has its own output after you rerun that test on its own. Until then it shows a placeholder; output from other scopes is never copied in. Vitest and pytest say which test printed each line, so there every test shows its own output right away.</li>
     <li>Each log line has a copy button.</li>
   </ul>
+  <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/results-panel.png" alt="A pytest test selected: its printed output in the middle column, no failures on the right" style="max-width:100%;border-radius:8px"></p>
 </section>
 
 <!-- ───────────────────────── Coverage ───────────────────────── -->
@@ -244,10 +246,11 @@
   </table></div>
   <ul>
     <li><b>Badge</b>: <code>Stmts · Branch · Fns · Lines</code> in the Explorer.</li>
-    <li><b>Hover</b> a line to see the covering tests and which branch arms were missed (Jest and Vitest).</li>
+    <li><b>Hover</b> a line to see the covering tests and which branch arms were missed (Jest, Vitest and pytest).</li>
     <li><b>Stale overlay</b>: a grey tint on a saved file until its rerun finishes.</li>
     <li>Files no test imports count as 0%, so totals cover the whole project.</li>
   </ul>
+  <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/coverage-hover.png" alt="Coverage bars and a hover listing the four tests that ran the line, with status and duration" style="max-width:100%;border-radius:8px"></p>
 </section>
 
 <!-- ───────────────────────── Debugging ───────────────────────── -->
@@ -272,7 +275,7 @@
     <li><b>When the trace is off</b> — the setting is off, Vitest is older than 3, or a run with the wrapper failed (the batch is then rerun as configured and the log says why, once) — saving a source file reruns the test files that import it (<code>vitest related</code>), live and with fresh coverage. Browser-mode projects (opt-in) always run without it. Saving <code>vitest.config.*</code> restarts the session.</li>
     <li><b>Not yet</b>: the Timeline Debugger.</li>
   </ul>
-  <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a Vitest project — tree fills in, results, coverage bars -->
+  <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/gifs/scene-vitest-save.gif" alt="Vitest: saving pricing.ts reruns only the tests that use it — red after a bad change, green after the fix" style="max-width:100%;border-radius:8px"></p>
 </section>
 
 <!-- ───────────────────────── pytest ───────────────────────── -->
@@ -289,7 +292,7 @@
     <li><b>Coverage and covering tests</b>: measured with your own coverage settings (<code>[tool.coverage.run]</code>, <code>.coveragerc</code>…); each test is measured on its own, so the hover lists the tests that ran a line and <b>saving a source file</b> reruns exactly those tests. Before a file has coverage, saving it reruns the test files that import it; saving a <code>conftest.py</code> reruns the tests under its folder; saving the pytest config restarts the session.</li>
     <li><b>Not yet</b>: Python monorepos, a JS + Python project in one folder, the Timeline Debugger.</li>
   </ul>
-  <!-- [TODO: USER_INPUT_NEEDED] gif: Start Testing on a pytest project — tree fills in, per-test output, a source save rerunning only its tests -->
+  <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/gifs/scene-pytest-run.gif" alt="pytest: Start Testing — the tree fills in, tests run live and pass" style="max-width:100%;border-radius:8px"></p>
 </section>
 
 <!-- ───────────────────────── Monorepos ───────────────────────── -->

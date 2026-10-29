@@ -31,7 +31,7 @@ describe('Cart', () => {
     ['HALF', 18],
     ['TENOFF', 32.4],
     ['', 36],
-  ])('discount code %p', async (code, expected) => {
+  ])('discount code %s', async (code, expected) => {
     await pause(300);
     expect(cart.total(code)).toBe(expected);
   });

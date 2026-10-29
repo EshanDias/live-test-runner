@@ -538,7 +538,7 @@ def _case(node, reports):
         "title": name,
         "fullName": full_name,
         "status": status,
-        "duration": round(duration * 1000, 3),
+        "duration": round(duration * 1000),
         "failureMessages": messages if status == "failed" else [],
     }
     if status == "skipped" and messages:
@@ -567,7 +567,7 @@ def _finish_file(st):
         "status": "failed" if failed else "passed",
         "testCases": st.cases,
         "consoleOutput": st.output,
-        "duration": round((time.time() - (st.started_at or time.time())) * 1000, 3),
+        "duration": round((time.time() - (st.started_at or time.time())) * 1000),
     }
     if st.failure is not None:
         st.result["failureMessage"] = st.failure

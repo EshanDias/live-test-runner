@@ -25,6 +25,17 @@ pytest projects get every feature Jest and Vitest projects have, except the Time
 - **No new messages:** the count rides on the existing Explorer messages as `runningTests` — `init`, `files-rerunning`, the 50 ms-batched `batch-file-results`, `run-finished` and `session-stopped` (`BaseWebviewProvider`). Summary cards now lay out as a flexible grid (hidden cards take no column).
 - Tests: `statusFilter.test.ts` (webview filter), `resultStore.test.ts` (running count through a run, a single-test rerun and Stop). e2e: scenario `basic-running-count` (counts the Explorer is sent during and after a full run and a scoped rerun).
 
+### Docs: demo GIFs, website slider, shorter README
+
+- **README** rewritten short: one hero GIF (`resources/gifs/demo.gif` — Jest Start with the Running card, a Vitest save rerunning only its tests, pytest, the coverage hover, ▶ Run with per-test output), a bullet list of features, two images (`coverage-hover.png`, `monorepo-switcher.png`); commands, settings, the framework matrix and limitations stay. 274 → 166 lines; every `[TODO: USER_INPUT_NEEDED]` placeholder filled (the Timeline one went with its section).
+- **Website** hero: the static screenshot became a slider of the five scenes (`gifs/scene-*.gif`) — labelled tabs with a progress bar, arrows, swipe, auto-advance per scene length (off with reduced motion), each GIF restarted when shown. Feature rows use the new `coverage-hover.png`, `results-panel.png`, `explorer-running.png`. `pages.yml` publishes `resources/gifs/scene-*.gif` at `/gifs/`.
+- **Guide:** the hero GIF in Quick start, the Vitest and pytest scenes, the coverage hover and the Results panel; mentions of "Jest and Vitest" that apply to pytest too updated.
+- Recording tooling: `fixture:demo-jest` / `demo-vitest` / `demo-pytest`, scenarios `diag-demo-*` + `e2e/lib/demo.js`, `devtools.js` `recorder`, `scripts/demo-gifs.js` (developer guide → End-to-end tests). Old unreferenced images removed (`code_coverage.png`, `explorer-test-run.png`, `test-results-column-split.png`, `status_bar.png`, `live test runner demo.gif`).
+
+### Fixes
+
+- **pytest durations in whole milliseconds:** the plugin reported `302.763` ms (3 decimals) and the coverage hover showed it as is; durations are now rounded like Jest's and Vitest's.
+
 ## [3.1.0] - 2026-10-28
 
 ### Any UI framework: components, Vitest workspaces, Jest ESM mode
