@@ -1,0 +1,10 @@
+[project]
+name = "shop"
+version = "1.0.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+source = ["src"]
