@@ -433,6 +433,34 @@ body {
 
 .progress-failed { color: var(--vscode-charts-red, #f44336); }
 
+/* ── Python environment chip (pytest projects) ──────────────────────────────── */
+.python-env {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 24px);
+  margin: 2px 12px 8px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-input-background, transparent);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, transparent));
+  border-radius: 4px;
+  cursor: pointer;
+}
+.python-env.hidden { display: none; }
+.python-env:hover { color: var(--vscode-foreground); background: var(--vscode-list-hoverBackground); }
+.python-env:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+.python-env-icon { flex: none; font-size: 12px; }
+.python-env-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.python-env-caret { flex: none; opacity: .7; }
+.python-env.warn {
+  color: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow, #cca700));
+  border-color: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow, #cca700));
+}
+
 /* ── Run progress ──────────────────────────────────────────────────────────── */
 .run-progress {
   padding: 6px 12px;

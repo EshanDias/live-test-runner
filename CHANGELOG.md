@@ -32,6 +32,12 @@ pytest projects get every feature Jest and Vitest projects have, except the Time
 - **Guide:** the hero GIF in Quick start, the Vitest and pytest scenes, the coverage hover and the Results panel; mentions of "Jest and Vitest" that apply to pytest too updated.
 - Recording tooling: `fixture:demo-jest` / `demo-vitest` / `demo-pytest`, scenarios `diag-demo-*` + `e2e/lib/demo.js`, `devtools.js` `recorder`, `scripts/demo-gifs.js` (developer guide → End-to-end tests). Old unreferenced images removed (`code_coverage.png`, `explorer-test-run.png`, `test-results-column-split.png`, `status_bar.png`, `live test runner demo.gif`).
 
+### Explorer: Python environment chip
+
+- **pytest projects show which Python runs the tests** on a chip under Start / Stop: `🐍 Python 3.12.4 · .venv · pytest 9.1.1` (environment = the venv's folder — `.venv`, a poetry / conda env — else `system`); the tooltip has the interpreter path, where it was found (D7 source) and the coverage version. Click → **Select Python Interpreter**. Amber with a short reason when it can't run the tests (`pytest not installed · .venv`, `Python 3.9.6 · needs 3.12+`, `No Python found`), already before Start. Hidden for JS projects. `python/pythonEnvChip.ts` (text), `ExplorerView.setPythonEnv` (`python-env` message, also in `init`), webview `renderPythonEnv`.
+- **Probed when the project is shown, quietly:** `PythonInterpreters.ensure(root, { quiet: true })` logs at debug level and shows no notification; `PythonInterpreters.status()` / `onDidChange` feed the chip. The first run that uses the interpreter still logs `Python 3.12.4 · pytest 9.1.1 · coverage 7.17.0 — …/.venv/bin/python (.venv)` at INFO — or the warning with every interpreter tried plus one notification (`_announce` / `_warnOnce`; the resolver itself logs at debug only).
+- Tests: `pythonEnvChip.test.ts` (4); e2e `pytest-env-chip` (chip before Start, tooltip, unchanged after a run), `pytest-no-pytest` (+ amber chip before Start), `basic-full-run` (+ no chip on a JS project).
+
 ### Fixes
 
 - **Coverage starts at 0%, not 100%:** when nothing was counted up front (pytest always — coverage.py reports untouched files itself; Jest / Vitest without `collectCoverageFrom` / `coverage.include`), the badge read "0 of 0" as 100% (the per-metric convention: no branches = 100% branches) from Start until the first results. With every total at 0 the Explorer badge and the Coverage tab totals now show 0% (`0/0` in N/M mode); a single 0/0 metric next to real data stays 100% (`testListView.js` `_nothingMeasured`).

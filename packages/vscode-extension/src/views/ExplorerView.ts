@@ -4,6 +4,7 @@ import { CoverageStore } from '../coverage/CoverageStore';
 import { ResultStore } from '../store/ResultStore';
 import { SelectionState } from '../store/SelectionState';
 import type { ProjectSummary, ProjectViewState } from '../project/ProjectContext';
+import type { PythonEnvChip } from '../python/pythonEnvChip';
 
 export class ExplorerView extends BaseWebviewProvider {
   public static readonly viewId = 'liveTestRunner.explorer';
@@ -32,6 +33,15 @@ export class ExplorerView extends BaseWebviewProvider {
     super.bindProject(state);
   }
 
+  /** The Python environment chip of the project shown (pytest projects; null hides it). */
+  private _pythonEnv: PythonEnvChip | null = null;
+
+  setPythonEnv(env: PythonEnvChip | null): void {
+    if (JSON.stringify(env) === JSON.stringify(this._pythonEnv)) { return; }
+    this._pythonEnv = env;
+    this.postMessage({ type: 'python-env', env });
+  }
+
   /** Updates the switcher row (project list and live state). */
   setProjects(projects: ProjectSummary[]): void {
     this._projects = projects;
@@ -53,6 +63,10 @@ export class ExplorerView extends BaseWebviewProvider {
     }
     if (msg.type === 'timeline-exit-request') {
       this.onTimelineExitRequest?.();
+      return;
+    }
+    if (msg.type === 'select-python') {
+      vscode.commands.executeCommand('liveTestRunner.selectPythonInterpreter');
       return;
     }
     if (msg.type === 'select-project') {
@@ -82,6 +96,7 @@ export class ExplorerView extends BaseWebviewProvider {
       selection:          sel ? { fileId: sel.fileId, nodeId: sel.nodeId } : null,
       running:            this._running ?? null,
       projects:           this._projects,
+      pythonEnv:          this._pythonEnv,
     });
   }
 }

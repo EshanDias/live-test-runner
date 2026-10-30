@@ -51,7 +51,7 @@
 
 - **Jest** (incl. Create React App) and **Vitest** — any UI framework: React, Vue, Svelte, Astro, Angular… if Jest or Vitest runs it, it works.
 - **Both in one project** (migrating?) — each test file runs with its own framework; the tree groups them. Override with `liveTestRunner.frameworks`.
-- **pytest** (≥ 7, Python ≥ 3.12) — runs in your project's own `.venv` / poetry / pipenv env (**Select Python Interpreter** to pick another). Same results as `pytest` in your terminal, per-test output, ▶ Run / ▷ Debug, coverage via `coverage` (no pytest-cov needed).
+- **pytest** (≥ 7, Python ≥ 3.12) — runs in your project's own `.venv` / poetry / pipenv env — the Explorer shows which one (`🐍 Python 3.12 · .venv · pytest 9.1`); click it to pick another. Same results as `pytest` in your terminal, per-test output, ▶ Run / ▷ Debug, coverage via `coverage` (no pytest-cov needed).
 - **Nothing is written into your project** — no installs, no config changes, no cache or coverage files.
 
 ![Monorepo: the project switcher, two packages running](resources/images/monorepo-switcher.png)

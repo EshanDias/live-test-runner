@@ -61,6 +61,11 @@
       </span>
     </div>
 
+    <!-- Python environment (pytest projects): click to choose another -->
+    <button class="python-env hidden" id="pythonEnv" type="button" aria-label="Python environment — click to choose another">
+      <span class="python-env-icon" aria-hidden="true">🐍</span><span class="python-env-text" id="pythonEnvText"></span><span class="python-env-caret" aria-hidden="true">▾</span>
+    </button>
+
     <!-- Run progress -->
     <div class="run-progress" id="runProgress">Running — 0 / 0 files complete</div>
 
@@ -296,6 +301,17 @@
    * Running card: shown only while tests run. When it goes away with the
    * 'running' filter on, the list falls back to 'all'.
    */
+  /** The Python environment chip: `env` = { text, tooltip, warn } for a pytest project, null hides it. */
+  function renderPythonEnv(env) {
+    const chip = _q('pythonEnv');
+    if (!chip) { return; }
+    chip.classList.toggle('hidden', !env);
+    if (!env) { return; }
+    _q('pythonEnvText').textContent = env.text;
+    chip.title = env.tooltip;
+    chip.classList.toggle('warn', !!env.warn);
+  }
+
   /**
    * The Running card shows for the whole run — from run-started (or a rerun)
    * to run-finished — so it doesn't blink out in the gaps between tests; the
@@ -629,6 +645,7 @@
       container.innerHTML = TEMPLATE;
       _menuOpen = false;
       _q('projectCurrent').addEventListener('click', () => { _menuOpen = !_menuOpen; renderProjects(); });
+      _q('pythonEnv').addEventListener('click', () => _vscode.postMessage({ type: 'select-python' }));
       renderProjects(payload && payload.projects);
 
       _list = new TestListLayout(_q('testList'), vscode, { showTimelineButton: true });
@@ -807,8 +824,13 @@
           renderProjects(msg.projects);
           break;
 
+        case 'python-env':
+          renderPythonEnv(msg.env ?? null);
+          break;
+
         case 'init':
           if (msg.projects) { renderProjects(msg.projects); }
+          renderPythonEnv(msg.pythonEnv ?? null);
           LiveTestUtils.setThresholds(msg.thresholds);
           if (msg.coverageThresholds) { _coverageThresholds = msg.coverageThresholds; }
           _list.setData(msg.files ?? []);

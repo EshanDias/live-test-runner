@@ -38,6 +38,11 @@ export interface Candidate {
   source: string;
 }
 
+/** The last resolution of a project's interpreter: the one that runs the tests, or why none can. */
+export type PythonStatus =
+  | { state: 'ready'; info: PythonInfo; source: string }
+  | { state: 'unusable'; info?: PythonInfo; source?: string; reason: string };
+
 /** The interpreter chosen for a project. */
 export interface ChosenPython {
   info: PythonInfo;
@@ -172,21 +177,56 @@ export class PythonInterpreters {
   private readonly _chosen = new Map<string, Promise<ChosenPython>>();
   /** Roots already told that no interpreter works — once per root until it changes. */
   private readonly _told = new Set<string>();
+  /** The last resolution of each root, for the Explorer's environment chip. */
+  private readonly _status = new Map<string, PythonStatus>();
+
+  /** Fires with a project root when its interpreter was resolved, failed or was forgotten. */
+  readonly onDidChange = new vscode.EventEmitter<string>();
 
   constructor(private readonly _state?: vscode.Memento) {}
 
   /**
    * The project's interpreter, probed and registered with the runner.
+   * `quiet`: no notification when nothing works (the Explorer probing on its own,
+   * before the user asked for a run) — the next {@link ensure} still tells once.
    * @throws an Error explaining what is missing (shown once as a notification)
    */
-  ensure(projectRoot: string): Promise<ChosenPython> {
+  ensure(projectRoot: string, opts: { quiet?: boolean } = {}): Promise<ChosenPython> {
     let p = this._chosen.get(projectRoot);
     if (!p) {
       p = this._resolve(projectRoot);
       this._chosen.set(projectRoot, p);
       p.catch(() => this._chosen.delete(projectRoot));
     }
+    if (!opts.quiet) {
+      // A run uses it: say which Python (or why none) once per resolution, even when the
+      // Explorer's quiet probe found it earlier — that one only logged at debug level.
+      p.then(
+        (c) => this._announce(projectRoot, c),
+        (err: Error & { tried?: string }) => this._warnOnce(projectRoot, err),
+      );
+    }
     return p;
+  }
+
+  /** Roots whose interpreter was named in the log since it was resolved. */
+  private readonly _announced = new Set<string>();
+
+  private _announce(projectRoot: string, { info, source }: ChosenPython): void {
+    if (this._announced.has(projectRoot)) { return; }
+    this._announced.add(projectRoot);
+    log.info(`${path.basename(projectRoot)}: ${describePython(info)} — ${info.python} (${source})`);
+  }
+
+  private _warnOnce(projectRoot: string, err: Error & { tried?: string }): void {
+    if (this._told.has(projectRoot)) { return; }
+    log.warn(`${err.message} Tried:\n${err.tried || '  (nothing)'}`);
+    this._tellOnce(projectRoot, err.message);
+  }
+
+  /** What the last resolution of a project found (undefined: not resolved yet). */
+  status(projectRoot: string): PythonStatus | undefined {
+    return this._status.get(projectRoot);
   }
 
   /** The interpreter already chosen for a project (undefined until {@link ensure} finished). */
@@ -197,10 +237,13 @@ export class PythonInterpreters {
 
   /** Forget the choice of one project (or all): the next run resolves again. */
   invalidate(projectRoot?: string): void {
-    for (const root of projectRoot ? [projectRoot] : [...this._chosen.keys()]) {
+    for (const root of projectRoot ? [projectRoot] : [...new Set([...this._chosen.keys(), ...this._status.keys()])]) {
       this._chosen.delete(root);
       this._told.delete(root);
+      this._announced.delete(root);
+      this._status.delete(root);
       setPythonFor(root, undefined);
+      this.onDidChange.fire(root);
     }
   }
 
@@ -253,6 +296,7 @@ export class PythonInterpreters {
     };
   }
 
+  /** Finds and probes the interpreter; logs only at debug level — {@link ensure} tells the user. */
   private async _resolve(projectRoot: string): Promise<ChosenPython> {
     const candidates = await findCandidates(projectRoot, this._options(projectRoot, true));
     let fallback: ChosenPython | undefined;
@@ -272,7 +316,8 @@ export class PythonInterpreters {
       const bad = unsupportedReason(info);
       if (!bad) {
         setPythonFor(projectRoot, info);
-        log.info(`${path.basename(projectRoot)}: ${describePython(info)} — ${info.python} (${c.source})`);
+        log.debug(`${path.basename(projectRoot)}: resolved ${describePython(info)} — ${info.python} (${c.source})`);
+        this._setStatus(projectRoot, { state: 'ready', info, source: c.source });
         return { info, source: c.source };
       }
       tried.push(`${info.python} (${c.source}): ${bad}`);
@@ -281,9 +326,15 @@ export class PythonInterpreters {
     }
     const reason = fallback ? unsupportedReason(fallback.info)! : 'no Python interpreter was found';
     const message = `No Python environment that can run pytest was found for ${path.basename(projectRoot)}: ${reason}.`;
-    log.warn(`${message} Tried:\n${tried.map((t) => `  ${t}`).join('\n') || '  (nothing)'}`);
-    this._tellOnce(projectRoot, message);
-    throw new Error(message);
+    const triedText = tried.map((t) => `  ${t}`).join('\n');
+    log.debug(`${message} Tried:\n${triedText || '  (nothing)'}`);
+    this._setStatus(projectRoot, { state: 'unusable', info: fallback?.info, source: fallback?.source, reason });
+    throw Object.assign(new Error(message), { tried: triedText });
+  }
+
+  private _setStatus(projectRoot: string, status: PythonStatus): void {
+    this._status.set(projectRoot, status);
+    this.onDidChange.fire(projectRoot);
   }
 
   private _tellOnce(projectRoot: string, message: string): void {
