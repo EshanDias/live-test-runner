@@ -11,6 +11,8 @@ All notable changes to Live Test Runner are documented here.
 
 ### Fixes
 
+- Coverage starts at 0% while the first run is going (pytest showed 100%).
+- The Running card stays visible for the whole run instead of blinking out between tests.
 - pytest test durations show in whole milliseconds (the coverage hover showed `302.763ms`).
 
 ### Docs

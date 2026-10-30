@@ -34,6 +34,8 @@ pytest projects get every feature Jest and Vitest projects have, except the Time
 
 ### Fixes
 
+- **Coverage starts at 0%, not 100%:** when nothing was counted up front (pytest always — coverage.py reports untouched files itself; Jest / Vitest without `collectCoverageFrom` / `coverage.include`), the badge read "0 of 0" as 100% (the per-metric convention: no branches = 100% branches) from Start until the first results. With every total at 0 the Explorer badge and the Coverage tab totals now show 0% (`0/0` in N/M mode); a single 0/0 metric next to real data stays 100% (`testListView.js` `_nothingMeasured`).
+- **Running card stays up for the whole run:** it hid whenever the count touched 0 — between pytest files, or before the first test started — and came back a moment later. It now shows from `run-started` (or a rerun's `files-rerunning`) to `run-finished` / Stop, counting down to 0 in the gaps; outside a run it shows only while something is still marked running. A Running filter goes back to All when the card hides.
 - **pytest durations in whole milliseconds:** the plugin reported `302.763` ms (3 decimals) and the coverage hover showed it as is; durations are now rounded like Jest's and Vitest's.
 
 ## [3.1.0] - 2026-10-28
