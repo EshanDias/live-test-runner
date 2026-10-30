@@ -88,7 +88,7 @@ JestRunner (orchestrator)
 
 ### Framework adapters
 
-Each adapter implements `FrameworkAdapter` and names itself with a `FrameworkId` — an open string id (`FRAMEWORK_IDS` lists the shipped ones: `jest`, `cra`, `vitest`, `unknown`).
+Each adapter implements `FrameworkAdapter` and names itself with a `FrameworkId` — an open string id (`FRAMEWORK_IDS` lists the shipped ones: `jest`, `cra`, `vitest`, `pytest`, `unknown`). An adapter's optional `family` (`js` default, `python`) keeps projects of different languages apart (`findTestProjects` drops a nested project only when it is the same family).
 
 | Method | Purpose |
 |--------|---------|
@@ -105,10 +105,11 @@ Current adapters:
 | `JestAdapter` | Jest, Next.js + Jest | Reads `jest.config.*` or `package.json#jest` directly |
 | `CRAAdapter` | Create React App | Runs `--showConfig` once per session to extract the hidden config; cached in memory |
 | `VitestAdapter` | Vitest ≥ 3 (older best-effort) | A `vitest` dependency or Vitest config/workspace file, and no Jest dependency/config (BUG-37). Runs `vitest/package.json#bin` (`vitest.mjs`) with node — no `.bin` shim, no npx. Config: `vitest.config.*` > `vite.config.*`. Capabilities per installed major; refuses the editor's built-in Node when it fails Vitest's `engines.node`. Runner: `VitestRunner`. The `test` script's config-relevant flags are passed on, following `nr` / `npm run` / `pnpm` into other scripts (`testScriptVitestArgs`); its `--config` wins over the config files |
+| `PytestAdapter` | pytest ≥ 7 on Python ≥ 3.12 (family `python`) | A pytest config (`pytest.toml` / `pytest.ini` / `pyproject.toml` `[tool.pytest…]` / `tox.ini` / `setup.cfg`), a root `conftest.py`, or pytest in the dependency files next to test files; priority 50, below every JS adapter. Binary: the project's interpreter, registered by the extension (`setPythonFor` / `pythonFor`, probed by `probePython`). Runner: `PytestRunner` (`python -m pytest -p ltr_pytest …`, node ids via `pytestNodeIds.ts`). Results, live events, per-test output, coverage and per-test contexts come from the shipped plugin `framework/pytest/ltr_pytest.py` (embedded as `ltrPytestSource.ts`) |
 
 Adapters also own how a run is read: `outputFileArg(file)` (the result-file flag the `Executor` appends), `parseResult(...)` (raw JSON → `RunResult`; Jest and CRA use `ResultParser`, Vitest `parseVitestResult` — see the runner README for what differs between Vitest versions) and `createRunner(...)`. The runner layer is `CommandRunner` (generic: binary/config/extra-arg assembly, chunking, kill, coverage) with one subclass per framework that only builds that framework's args per run kind (`JestRunner`, `VitestRunner`). Commands are `[user-command words] [leadingArgs] [--config] [adapter extra args] [buildArgs]` — `leadingArgs` holds a subcommand and its positionals (Vitest `run <files>`; empty for Jest). Each runner refuses another framework's project with `refusingAdapter()` (throws `UnsupportedFrameworkError` when a run starts).
 
-`FrameworkDetector` tries the adapters of a `FrameworkRegistry` (default: CRA 300 → Vitest 200 → Jest 100, highest priority first) and returns the first match; `detectWithReason()` also says why. A project nothing matches falls back to plain Jest with one WARN per project root (`matched: 'unknown'`). `VitestAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest. `JestRunner` only runs Jest-family adapters (`jest`, `cra`); for any other project it keeps a stand-in adapter that throws `UnsupportedFrameworkError` when a run starts — setting the project root never fails.
+`FrameworkDetector` tries the adapters of a `FrameworkRegistry` (default: CRA 300 → Vitest 200 → Jest 100 → pytest 50, highest priority first) and returns the first match; `detectWithReason()` also says why. A project nothing matches falls back to plain Jest with one WARN per project root (`matched: 'unknown'`). `VitestAdapter` only matches when nothing marks the project as Jest (a `jest` dependency or a Jest config), so libraries that test with both run on Jest. `JestRunner` only runs Jest-family adapters (`jest`, `cra`); for any other project it keeps a stand-in adapter that throws `UnsupportedFrameworkError` when a run starts — setting the project root never fails.
 
 ### Jest invocation
 
@@ -574,6 +575,23 @@ Each `ProjectContext` composes its own `FrameworkRouter` (`framework/FrameworkRo
 `servicesFor(file)` then returns the file's bundle (source files and the root: the main framework). The placement is stored with the runnable-files cache (`frameworks: { file: "vitest:hint" }`); placements that came from a file's content are read again on restore and on save (`fileChanged`). Each runner refuses a root detected as the other framework (BUG-37) unless the router called `allowFrameworkAt(root, fw)`. In `SessionManager` batches are queued per framework (never mixed), a source-file save reruns each framework's dependents (`owns` filter: results of the other framework's files are ignored), and any framework's config file restarts the session. A source file loaded by tests of both frameworks gets its coverage merged by line (`coverageRules.combineWithEntry`). The Timeline command goes through a delegating `IInstrumentedRunner` that asks the test file's framework (Vitest: "not available yet"). Stop kills the batch runners of `all()` bundles.
 
 Static discovery (`instrumentation/shared/testDiscovery.js`) uses the project's own `@babel/parser` / `@babel/traverse` when it has them (every Jest project), else `out/vendor/babel-parser.js` (shipped by `esbuild.js`) with a built-in call-expression walker.
+
+### pytest (extension side)
+
+A pytest project (`DetectedProject.framework === 'pytest'`) gets a `SingleFrameworkProvider` with `createPytestServices` (`framework/pytestServices.ts`) and the Python `TestFileDiscoverer` (`session/discovery/pythonDiscovery.ts`, a line scanner — `python_files` under `testpaths`, `Test*` classes without `__init__`, `unittest.TestCase` subclasses, `@pytest.mark.parametrize` → template `name[…]`). The bundle:
+
+| Member | Implementation |
+|---|---|
+| `adapter` | `framework/PytestAdapter.ts` — `RunnerBackedAdapter` with `runNamed` → node ids, `buildDebugConfig` (`type: debugpy`, `module: pytest`, the project's interpreter; `getDebugConfig` adds the Python Debugger check) |
+| `projectConfig` | `session/PytestProjectConfig.ts` — the config file pytest uses; coverage scope = what coverage.py reports minus test files / `conftest.py`; `sourceExtensions` `py`, `pyi` |
+| `batchRunner` | `session/PytestBatchRunner.ts` — one pytest process per batch, the plugin's events polled (`file-start` / heartbeats / `file-end` with a ready `FileRunResult`), per-test hang limit, coverage → `applyIstanbulCoverage`, per-test contexts (`trace.jsonl`) → `applyTraceRecords`; `runRelated` = static import graph (`session/pythonImports.ts`) |
+| `batchPolicy` | `{ maxParallel: 1, maxFilesPerBatch: 300 }` — one pytest process at a time (`SessionManager._runFiles` scheduler) |
+| `whyNotReady` | no usable interpreter → `SessionManager.start` runs nothing |
+| `configFileNames` | pytest config files + `conftest.py` pass the save filter → `isConfigFile` restarts the session |
+
+The interpreter comes from `python/PythonInterpreters.ts` (D7 order: selected → `pythonPath` → project venvs → poetry / pipenv / uv → Python extension → activated env inside the project → PATH), probed once per root and registered with the runner. The Explorer shows it on a chip for the pytest project shown (`python/pythonEnvChip.ts`: "Python 3.12.4 · .venv · pytest 9.1.1", amber with the reason when it can't run the tests; click → Select Python Interpreter): `extension.ts` probes quietly when the project is shown (`ensure(root, { quiet: true })` — debug log only, no notification) and refreshes on `PythonInterpreters.onDidChange`; the first run that uses the interpreter logs it at INFO (or warns and notifies once). Nothing is installed or written into the project: the plugin lives in the session folder (`pytest-plugin/ltr_pytest.py`) and is named only with `-p` on our command line; runs add `-o cache_dir=<session>`, `--no-cov` (pytest-cov), `-n 0` (xdist), `--continue-on-collection-errors`, and run without the JS environment (`ExecutorCommand.jsEnv: false`).
+
+**Plugin protocol** (`$LTR_PYTEST_EVENTS`, JSON lines): `{ev:"config", capture, rootdir, inifile, pytest, python, coverage, coverageError}`, `{ev:"file-start", file}`, `{ev:"test-start", file, nodeid, name}`, `{ev:"test-end", file, nodeid, status}`, `{ev:"file-end", file, result: FileRunResult}`, `{ev:"coverage", file}` / `{ev:"coverage-off", reason}`, `{ev:"session-end", exit}`. `--ltr-result=<file>`: the `RunResult` (+ `exitStatus`); `$LTR_PYTEST_LIST`: `{files, errors, rootdir, inifile, python_files, testpaths}` of a `--collect-only` run; `$LTR_PYTEST_COVERAGE=<dir>`: `coverage-final.json` (istanbul-shaped) and `trace.jsonl` (`T` per test from `CoverageData.contexts_by_lineno`, `H hk:"file"` for import-time lines).
 
 ### Session instrumentation protocol
 

@@ -126,4 +126,14 @@ describe('isExcludedFromCoverage', () => {
     expect(isExcludedFromCoverage('src/testing.ts')).toBe(false);
     expect(isExcludedFromCoverage('src/math.js')).toBe(false);
   });
+
+  it('leaves out Python test files, conftest.py and environments, keeps Python sources', () => {
+    expect(isExcludedFromCoverage('test_cart.py')).toBe(true);
+    expect(isExcludedFromCoverage('pkg/cart_test.py')).toBe(true);
+    expect(isExcludedFromCoverage('src/conftest.py')).toBe(true);
+    expect(isExcludedFromCoverage('.venv/lib/python3.12/site-packages/x.py')).toBe(true);
+    expect(isExcludedFromCoverage('pkg/__pycache__/a.py')).toBe(true);
+    expect(isExcludedFromCoverage('src/pkg/cart.py')).toBe(false);
+    expect(isExcludedFromCoverage('src/pkg/testing_utils.py')).toBe(false);
+  });
 });

@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Live Test Runner — Live Jest &amp; Vitest testing in VS Code</title>
-<meta name="description" content="Free VS Code extension that reruns the Jest and Vitest tests affected by every save and shows pass/fail, inline durations and per-line code coverage right in the editor. No terminal, no config.">
-<meta name="keywords" content="VS Code extension, Jest, Vitest, test runner, live testing, continuous testing, code coverage, TDD, Wallaby alternative, Create React App, TypeScript, Vue, Svelte">
+<title>Live Test Runner — Live Jest, Vitest &amp; pytest testing in VS Code</title>
+<meta name="description" content="Free VS Code extension that reruns the Jest, Vitest and pytest tests affected by every save and shows pass/fail, inline durations and per-line code coverage right in the editor. No terminal, no config.">
+<meta name="keywords" content="VS Code extension, Jest, Vitest, pytest, Python, test runner, live testing, continuous testing, code coverage, TDD, Wallaby alternative, Create React App, TypeScript, Vue, Svelte">
 <meta name="author" content="EshLabs">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <link rel="canonical" href="https://eshandias.github.io/live-test-runner/">
@@ -19,7 +19,7 @@
 <!-- Open Graph / social previews -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Live Test Runner">
-<meta property="og:title" content="Live Test Runner — Live Jest &amp; Vitest testing in VS Code">
+<meta property="og:title" content="Live Test Runner — Live Jest, Vitest &amp; pytest testing in VS Code">
 <meta property="og:description" content="Save a file. The affected tests run. Results, durations and coverage appear inline. Free for VS Code and Open VSX editors.">
 <meta property="og:url" content="https://eshandias.github.io/live-test-runner/">
 <meta property="og:image" content="https://eshandias.github.io/live-test-runner/images/editor-decorations.png">
@@ -27,7 +27,7 @@
 <meta property="og:image:height" content="588">
 <meta property="og:image:alt" content="Live Test Runner showing pass/fail gutter icons and inline durations in the VS Code editor">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Live Test Runner — Live Jest &amp; Vitest testing in VS Code">
+<meta name="twitter:title" content="Live Test Runner — Live Jest, Vitest &amp; pytest testing in VS Code">
 <meta name="twitter:description" content="Save a file. The affected tests run. Results appear inline. No terminal, no config.">
 <meta name="twitter:image" content="https://eshandias.github.io/live-test-runner/images/editor-decorations.png">
 
@@ -42,17 +42,17 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "Visual Studio Code extension",
       "operatingSystem": "Windows, macOS, Linux",
-      "description": "VS Code extension that reruns affected Jest and Vitest tests on save and shows results, durations and per-line code coverage inline in the editor.",
+      "description": "VS Code extension that reruns affected Jest, Vitest and pytest tests on save and shows results, durations and per-line code coverage inline in the editor.",
       "url": "https://eshandias.github.io/live-test-runner/",
       "downloadUrl": "https://marketplace.visualstudio.com/items?itemName=EshLabs.live-test-runner",
       "installUrl": "https://marketplace.visualstudio.com/items?itemName=EshLabs.live-test-runner",
-      "softwareVersion": "3.1.0",
+      "softwareVersion": "3.2.0",
       "license": "https://opensource.org/licenses/MIT",
       "image": "https://eshandias.github.io/live-test-runner/images/editor-decorations.png",
       "screenshot": [
         "https://eshandias.github.io/live-test-runner/images/editor-decorations.png",
-        "https://eshandias.github.io/live-test-runner/images/code_coverage.png",
-        "https://eshandias.github.io/live-test-runner/images/test-results-column-split.png"
+        "https://eshandias.github.io/live-test-runner/images/coverage-hover.png",
+        "https://eshandias.github.io/live-test-runner/images/results-panel.png"
       ],
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "author": { "@type": "Organization", "name": "EshLabs", "url": "https://github.com/EshanDias" },
@@ -66,7 +66,7 @@
       "@type": "FAQPage",
       "mainEntity": [
         { "@type": "Question", "name": "Which test frameworks does Live Test Runner support?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5) and Vitest 3+. Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more." } },
+          "acceptedAnswer": { "@type": "Answer", "text": "Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5), Vitest 3+ and pytest 7+ (Python 3.12+). Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more." } },
         { "@type": "Question", "name": "Do I need to change my Jest or Vitest config?",
           "acceptedAnswer": { "@type": "Answer", "text": "No. Live Test Runner uses your existing config and the test binary already in node_modules. Nothing extra is installed into your project." } },
         { "@type": "Question", "name": "Does it run tests in the background all the time?",
@@ -168,6 +168,28 @@
   .shot-bar i { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; }
   .shot-bar i:nth-child(2) { background: #febc2e; } .shot-bar i:nth-child(3) { background: #28c840; }
   .shot-bar span { margin-left: 10px; font: 12px var(--mono); color: #9aa0a6; }
+
+  /* Demo slider (hero) */
+  .demo-tabs { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 52px auto 0; max-width: 1040px; }
+  .demo-tab { position: relative; overflow: hidden; font: 600 13.5px/1 inherit; color: var(--hero-soft); background: rgba(255, 255, 255, .05); border: 1px solid rgba(148, 163, 184, .22); border-radius: 999px; padding: 9px 15px; cursor: pointer; }
+  .demo-tab:hover { color: var(--hero-fg); }
+  .demo-tab[aria-selected="true"] { color: var(--hero-fg); border-color: rgba(34, 197, 94, .55); background: rgba(34, 197, 94, .1); }
+  .demo-tab .bar { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--grad); }
+  .demo-tab[aria-selected="true"] .bar { animation: demo-fill var(--ms, 6s) linear forwards; }
+  .demo-tab:focus-visible, .nav:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+  @keyframes demo-fill { to { width: 100%; } }
+  .demo-caption { margin: 14px auto 0; min-height: 1.5em; font-size: 15px; color: var(--hero-soft); }
+  .slider { position: relative; margin-top: 18px; }
+  .slides { position: relative; aspect-ratio: 1024 / 612; background: #1e1e1e; }
+  .slide { position: absolute; inset: 0; margin: 0; opacity: 0; transition: opacity .35s ease; }
+  .slide.is-active { opacity: 1; }
+  .slide img { display: block; width: 100%; height: 100%; }
+  .nav { position: absolute; top: calc(50% + 18px); transform: translateY(-50%); width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .25); background: rgba(15, 23, 42, .7); color: #fff; font-size: 24px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .2s; }
+  .slider:hover .nav, .nav:focus-visible { opacity: 1; }
+  .prev { left: 12px; } .next { right: 12px; }
+  @media (hover: none) { .nav { opacity: .85; width: 36px; height: 36px; font-size: 20px; } }
+  @media (max-width: 640px) { .demo-tab { font-size: 12.5px; padding: 8px 12px; } .demo-caption { font-size: 14px; } }
+  @media (prefers-reduced-motion: reduce) { .slide { transition: none; } .demo-tab[aria-selected="true"] .bar { animation: none; width: 100%; } }
 
   /* Sections */
   section { padding: 96px 0; }
@@ -295,9 +317,9 @@
 <!-- ───────── Hero ───────── -->
 <div class="hero">
   <div class="wrap">
-    <a class="pill" href="guide/#mixed" target="_blank" rel="noopener"><b>New in 3.1</b> Monorepos · Jest and Vitest in one project · Vitest covering tests →</a>
+    <a class="pill" href="guide/#pytest" target="_blank" rel="noopener"><b>New in 3.2</b> pytest support · Python projects, live →</a>
     <h1>Save a file. <span class="grad-text">Your tests run.</span><br>Results land in the editor.</h1>
-    <p class="sub">Live Test Runner reruns the Jest and Vitest tests affected by every save, then shows pass/fail, durations and per-line coverage right next to your code. No terminal. No config.</p>
+    <p class="sub">Live Test Runner reruns the Jest, Vitest and pytest tests affected by every save, then shows pass/fail, durations and per-line coverage right next to your code. No terminal. No config.</p>
     <div class="cta">
       <a class="btn btn-primary" href="https://marketplace.visualstudio.com/items?itemName=EshLabs.live-test-runner" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 2.2 9.3 9.8 4.3 6 2 7.1v9.8L4.3 18l5-3.8 8.3 7.6L22 20V4l-4.4-1.8ZM4.5 14.6V9.4L7.2 12l-2.7 2.6Zm13 1.5L12.8 12l4.7-4.1v8.2Z"/></svg>
@@ -311,16 +333,32 @@
       <img src="https://img.shields.io/open-vsx/dt/EshLabs/live-test-runner?label=Open%20VSX%20downloads&amp;color=06b6d4" alt="Open VSX downloads" loading="lazy">
       <img src="https://img.shields.io/badge/license-MIT-64748b" alt="MIT license" loading="lazy">
     </div>
-    <div class="shot">
-      <div class="shot-bar"><i></i><i></i><i></i><span>cart.test.ts — Live Test Runner</span></div>
-      <img src="images/editor-decorations.png" width="1272" height="588" alt="VS Code editor with green pass and red fail icons in the gutter, inline test durations and Run / Debug / Results buttons above each test" fetchpriority="high">
+    <div class="demo-tabs" role="tablist" aria-label="Live Test Runner in action">
+      <button class="demo-tab" role="tab" aria-selected="true" aria-controls="demo" data-i="0">Start<span class="bar"></span></button>
+      <button class="demo-tab" role="tab" aria-selected="false" aria-controls="demo" data-i="1">Save a file<span class="bar"></span></button>
+      <button class="demo-tab" role="tab" aria-selected="false" aria-controls="demo" data-i="2">pytest<span class="bar"></span></button>
+      <button class="demo-tab" role="tab" aria-selected="false" aria-controls="demo" data-i="3">Coverage<span class="bar"></span></button>
+      <button class="demo-tab" role="tab" aria-selected="false" aria-controls="demo" data-i="4">▶ Run one test<span class="bar"></span></button>
+    </div>
+    <p class="demo-caption" id="demoCaption" aria-live="polite">Click Start: every test runs and results stream in live (Jest).</p>
+    <div class="shot slider" id="demo" aria-roledescription="carousel">
+      <div class="shot-bar"><i></i><i></i><i></i><span id="demoTitle">cart.test.js — Live Test Runner</span></div>
+      <div class="slides">
+        <figure class="slide is-active" data-ms="7300" data-title="cart.test.js — Live Test Runner" data-caption="Click Start: every test runs and results stream in live (Jest)."><img src="gifs/scene-jest-run.gif" data-src="gifs/scene-jest-run.gif" width="1024" height="612" alt="Clicking Start on a Jest project: the sidebar tree fills in, a Running card counts the running tests, gutter icons turn green" fetchpriority="high"></figure>
+        <figure class="slide" data-ms="12000" data-title="pricing.ts — Live Test Runner" data-caption="Save a file: only the tests that use it rerun (Vitest). Break it, they go red; fix it, green again."><img data-src="gifs/scene-vitest-save.gif" width="1024" height="612" alt="Changing the tax rate in pricing.ts and saving: only the tests that use it rerun and turn red, then green after the fix"></figure>
+        <figure class="slide" data-ms="7000" data-title="test_cart.py — Live Test Runner" data-caption="pytest too: the same tree, live results and gutter icons, in your project's own virtual environment."><img data-src="gifs/scene-pytest-run.gif" width="1024" height="612" alt="Clicking Start on a pytest project: tests stream in and pass"></figure>
+        <figure class="slide" data-ms="5800" data-title="cart.py — Live Test Runner" data-caption="Hover a line: see exactly which tests ran it, with status and duration."><img data-src="gifs/scene-pytest-hover.gif" width="1024" height="612" alt="Hovering a line in cart.py lists the four tests that ran it"></figure>
+        <figure class="slide" data-ms="5800" data-title="cart.test.js — Live Test Runner" data-caption="▶ Run one test: the Results panel shows its own console output and errors."><img data-src="gifs/scene-jest-results.gif" width="1024" height="612" alt="Running one test and its console output appearing in the Results panel"></figure>
+      </div>
+      <button class="nav prev" type="button" aria-label="Previous">&#8249;</button>
+      <button class="nav next" type="button" aria-label="Next">&#8250;</button>
     </div>
   </div>
 </div>
 
 <div class="strip">
   <div class="wrap">
-    <div><b>Jest · Vitest · CRA</b><span>detected automatically</span></div>
+    <div><b>Jest · Vitest · CRA · pytest</b><span>detected automatically</span></div>
     <div><b>0 config</b><span>uses your existing setup</span></div>
     <div><b>Per-line coverage</b><span>updated on every save</span></div>
     <div><b>Free &amp; open source</b><span>MIT licensed</span></div>
@@ -333,7 +371,7 @@
     <div class="section-head">
       <p class="eyebrow">Features</p>
       <h2>Everything you need to test without leaving the code</h2>
-      <p>Wallaby-style feedback for Jest and Vitest, built right into VS Code.</p>
+      <p>Wallaby-style feedback for Jest, Vitest and pytest, built right into VS Code.</p>
     </div>
     <div class="grid">
       <article class="card"><div class="ico">⚡</div><h3>Reruns on save</h3><p>Only the tests affected by the file you just saved run, so feedback comes in seconds, not minutes.</p></article>
@@ -360,7 +398,7 @@
           <li>Updates on every save as you work</li>
         </ul>
       </div>
-      <div class="frame"><img src="images/code_coverage.png" width="1170" height="714" alt="Coverage bars in the editor gutter with a hover listing the tests that cover the line" loading="lazy"></div>
+      <div class="frame"><img src="images/coverage-hover.png" width="2560" height="1528" alt="Coverage bars in the editor gutter with a hover listing the four tests that ran the line, with status and duration" loading="lazy"></div>
     </div>
 
     <div class="row stack">
@@ -371,10 +409,10 @@
         <ul>
           <li>Search and filter across files, suites and tests</li>
           <li>Console output split by level (log, warn, error)</li>
-          <li>Vitest output is attributed to the exact test that printed it</li>
+          <li>Vitest and pytest output is attributed to the exact test that printed it</li>
         </ul>
       </div>
-      <div class="frame"><img src="images/test-results-column-split.png" width="2580" height="702" alt="Results panel with a test list, console output and error details in three columns" loading="lazy"></div>
+      <div class="frame"><img src="images/results-panel.png" width="2560" height="1528" alt="A pytest test selected: its own printed output in the Results panel next to the test list and errors column" loading="lazy"></div>
     </div>
 
     <div class="row">
@@ -384,11 +422,11 @@
         <p>The sidebar tree fills in on project open and turns green and red live as files finish. The status bar keeps a running count.</p>
         <ul>
           <li>File → suite → test, including <code>.each</code> templates</li>
-          <li>Live per-file progress and a run timer</li>
+          <li>Score cards filter the tree; a <b>Running</b> card counts live while tests run</li>
           <li>Rerun or debug any node with one click</li>
         </ul>
       </div>
-      <div class="frame narrow"><img src="images/explorer-test-run.png" width="648" height="886" alt="Live Test Runner sidebar with a tree of test files, suites and tests and their pass/fail status" loading="lazy"></div>
+      <div class="frame narrow"><img src="images/explorer-running.png" width="300" height="620" alt="The sidebar mid-run: Total 8, Passed 6, Failed 0 and a Running card showing 2, the tree turning green as tests finish" loading="lazy"></div>
     </div>
   </div>
 </section>
@@ -399,7 +437,7 @@
     <div class="section-head">
       <p class="eyebrow">Get started</p>
       <h2>Running in under a minute</h2>
-      <p>Your existing Jest or Vitest setup is all it needs.</p>
+      <p>Your existing Jest, Vitest or pytest setup is all it needs.</p>
     </div>
     <div class="steps">
       <div class="step"><h3>Install</h3><p>From the VS Code Marketplace or Open VSX.</p></div>
@@ -415,22 +453,22 @@
   <div class="wrap">
     <div class="section-head">
       <p class="eyebrow">Frameworks</p>
-      <h2>Works with Jest and Vitest</h2>
-      <p>babel-jest, ts-jest and @swc/jest; Create React App (react-scripts 4 &amp; 5); Vitest 3+. Any UI framework: React, Vue, Svelte, Solid, Angular, Astro and more.</p>
+      <h2>Works with Jest, Vitest and pytest</h2>
+      <p>babel-jest, ts-jest and @swc/jest; Create React App (react-scripts 4 &amp; 5); Vitest 3+; pytest 7+ on Python 3.12+ with your own virtual environment. Any UI framework: React, Vue, Svelte, Solid, Angular, Astro and more.</p>
     </div>
     <div class="table-wrap">
       <table>
-        <tr><th>Feature</th><th>Jest</th><th>CRA</th><th>Vitest</th></tr>
-        <tr><td>Run on save, pass/fail</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>▶ Run / ▷ Debug a single test</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Console output</td><td>✅ per file</td><td>✅ per file</td><td>✅ per test</td></tr>
-        <tr><td>Per-line coverage</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Rerun tests related to a source file</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Monorepos (one project per package, switcher)</td><td>✅</td><td>🟡</td><td>✅</td></tr>
-        <tr><td>Jest and Vitest in one project</td><td>✅</td><td>—</td><td>✅</td></tr>
-        <tr><td>Covering tests on hover</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Vue / Svelte / Astro components (reruns, coverage, covering tests)</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><th>Feature</th><th>Jest</th><th>CRA</th><th>Vitest</th><th>pytest</th></tr>
+        <tr><td>Run on save, pass/fail</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>▶ Run / ▷ Debug a single test</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Console output</td><td>✅ per file</td><td>✅ per file</td><td>✅ per test</td><td>✅ per test</td></tr>
+        <tr><td>Per-line coverage</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Rerun tests related to a source file</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Monorepos (one project per package, switcher)</td><td>✅</td><td>🟡</td><td>✅</td><td>⏳</td></tr>
+        <tr><td>Jest and Vitest in one project</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Covering tests on hover</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Vue / Svelte / Astro components (reruns, coverage, covering tests)</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
       </table>
     </div>
     <p class="legend">✅ supported · 🟡 partial · ⏳ coming soon · <a href="guide/#support" target="_blank" rel="noopener">Full support matrix</a></p>
@@ -471,7 +509,7 @@
       <h2>Questions</h2>
     </div>
     <div class="faq">
-      <details open><summary>Which test frameworks are supported?</summary><p>Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5) and Vitest 3+. Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more.</p></details>
+      <details open><summary>Which test frameworks are supported?</summary><p>Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5), Vitest 3+ and pytest 7+ (Python 3.12+, with your project's own virtual environment). Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more.</p></details>
       <details><summary>Do I need to change my Jest or Vitest config?</summary><p>No. Live Test Runner uses your existing config and the test binary already in <code>node_modules</code>. Nothing extra is installed into your project.</p></details>
       <details><summary>Does it run tests in the background all the time?</summary><p>No. Nothing runs until you click <b>Start Testing</b>, and <b>Stop</b> ends the session. Single ▶ Run and ▷ Debug clicks from the editor always work.</p></details>
       <details><summary>Is it free?</summary><p>Yes. It is free and open source under the MIT license, on the VS Code Marketplace and on Open VSX for VSCodium, Cursor, Windsurf and other compatible editors.</p></details>
@@ -519,6 +557,51 @@
       root.setAttribute('data-theme', next);
       try { localStorage.setItem(key, next); } catch (e) {}
     });
+  })();
+
+  (function () {
+    var slider = document.getElementById('demo');
+    if (!slider) return;
+    var slides = slider.querySelectorAll('.slide');
+    var tabs = document.querySelectorAll('.demo-tab');
+    var caption = document.getElementById('demoCaption');
+    var title = document.getElementById('demoTitle');
+    var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var current = 0, timer = null, n = 0;
+    function show(i) {
+      current = (i + slides.length) % slides.length;
+      slides.forEach(function (s, k) { s.classList.toggle('is-active', k === current); });
+      tabs.forEach(function (t, k) {
+        t.setAttribute('aria-selected', String(k === current));
+        t.tabIndex = k === current ? 0 : -1;
+        var bar = t.querySelector('.bar');
+        bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = '';
+      });
+      var slide = slides[current], img = slide.querySelector('img');
+      // A new URL (same file, new fragment) restarts the GIF from its first frame.
+      img.src = img.dataset.src + '#' + (++n);
+      tabs[current].style.setProperty('--ms', slide.dataset.ms + 'ms');
+      caption.textContent = slide.dataset.caption;
+      title.textContent = slide.dataset.title;
+      clearTimeout(timer);
+      if (!still) timer = setTimeout(function () { show(current + 1); }, +slide.dataset.ms);
+    }
+    tabs.forEach(function (t, k) {
+      t.addEventListener('click', function () { show(k); });
+      t.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { show(current + (e.key === 'ArrowRight' ? 1 : -1)); tabs[current].focus(); }
+      });
+    });
+    slider.querySelector('.prev').addEventListener('click', function () { show(current - 1); });
+    slider.querySelector('.next').addEventListener('click', function () { show(current + 1); });
+    var x0 = null;
+    slider.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+    slider.addEventListener('touchend', function (e) {
+      if (x0 === null) return;
+      var dx = e.changedTouches[0].clientX - x0; x0 = null;
+      if (Math.abs(dx) > 40) show(current + (dx < 0 ? 1 : -1));
+    });
+    show(0);
   })();
 </script>
 </body>

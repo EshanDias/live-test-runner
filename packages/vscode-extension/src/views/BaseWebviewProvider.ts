@@ -141,7 +141,7 @@ export abstract class BaseWebviewProvider
   onSessionStopped(): void {
     this._sessionActive = false;
     this._running = undefined;
-    this.postMessage({ type: 'session-stopped' });
+    this.postMessage({ type: 'session-stopped', runningTests: this.store.getSummary().running });
   }
 
   onRunStarted(payload: RunStartedPayload): void {
@@ -150,7 +150,7 @@ export abstract class BaseWebviewProvider
   }
 
   onFilesRerunning(fileIds: string[], nodeId?: string): void {
-    this.postMessage({ type: 'files-rerunning', fileIds, nodeId });
+    this.postMessage({ type: 'files-rerunning', fileIds, nodeId, runningTests: this.store.getSummary().running });
   }
 
   onFileResult(filePath: string): void {
@@ -168,7 +168,7 @@ export abstract class BaseWebviewProvider
     const summary = this.store.getSummary();
     const files = paths.map((fp) => this.store.serialiseFile(fp)).filter(Boolean);
     if (files.length === 0) { return; }
-    this.postMessage({ type: 'batch-file-results', files, total: summary.total, passed: summary.passed, failed: summary.failed });
+    this.postMessage({ type: 'batch-file-results', files, total: summary.total, passed: summary.passed, failed: summary.failed, runningTests: summary.running });
   }
 
   onRunFinished(payload: RunFinishedPayload): void {
@@ -178,7 +178,7 @@ export abstract class BaseWebviewProvider
       clearTimeout(this._resultFlushTimer);
       this._flushFileResults();
     }
-    this.postMessage({ type: 'run-finished', ...payload });
+    this.postMessage({ type: 'run-finished', ...payload, runningTests: this.store.getSummary().running });
   }
 
   onRunProgress(completed: number, total: number, failed: number): void {

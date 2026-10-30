@@ -61,6 +61,11 @@
       </span>
     </div>
 
+    <!-- Python environment (pytest projects): click to choose another -->
+    <button class="python-env hidden" id="pythonEnv" type="button" aria-label="Python environment — click to choose another">
+      <span class="python-env-icon" aria-hidden="true">🐍</span><span class="python-env-text" id="pythonEnvText"></span><span class="python-env-caret" aria-hidden="true">▾</span>
+    </button>
+
     <!-- Run progress -->
     <div class="run-progress" id="runProgress">Running — 0 / 0 files complete</div>
 
@@ -79,6 +84,10 @@
           <div class="label">Failed</div>
           <div class="value" id="summaryFailed">—</div>
         </div>
+        <div class="summary-cell running hidden" id="summaryRunningCell" data-filter="running" title="Show running tests">
+          <div class="label">Running</div>
+          <div class="value"><span class="status-running">⟳</span> <span id="summaryRunning">0</span></div>
+        </div>
       </div>
       <div class="summary-duration" id="summaryDuration"></div>
     </div>
@@ -91,6 +100,7 @@
         <option value="all">All</option>
         <option value="passed">Passed</option>
         <option value="failed">Failed</option>
+        <option value="running" id="statusFilterRunning" hidden>Running</option>
         <option value="pending">Not Run</option>
       </select>
     </div>
@@ -184,7 +194,9 @@
   let _showFolderView   = false;
   let _coverageThresholds = { red: 50, amber: 80 };
   let _activeTab        = 'tests'; // 'tests' | 'coverage'
-  let _statusFilter     = 'all';  // 'all' | 'passed' | 'failed' | 'pending'
+  let _statusFilter     = 'all';  // 'all' | 'passed' | 'failed' | 'running' | 'pending'
+  let _runningTests     = 0;      // tests with status 'running'
+  let _runInFlight      = false;  // run-started … run-finished (keeps the Running card up between tests)
   let _metricMode       = 'pct';   // 'pct' | 'nm'
   let _sortCol          = 'lines'; // 'statements'|'branches'|'functions'|'lines'
   let _sortAsc          = true;
@@ -285,6 +297,40 @@
     }
   }
 
+  /**
+   * Running card: shown only while tests run. When it goes away with the
+   * 'running' filter on, the list falls back to 'all'.
+   */
+  /** The Python environment chip: `env` = { text, tooltip, warn } for a pytest project, null hides it. */
+  function renderPythonEnv(env) {
+    const chip = _q('pythonEnv');
+    if (!chip) { return; }
+    chip.classList.toggle('hidden', !env);
+    if (!env) { return; }
+    _q('pythonEnvText').textContent = env.text;
+    chip.title = env.tooltip;
+    chip.classList.toggle('warn', !!env.warn);
+  }
+
+  /**
+   * The Running card shows for the whole run — from run-started (or a rerun)
+   * to run-finished — so it doesn't blink out in the gaps between tests; the
+   * count itself may drop to 0 meanwhile. Outside a run it shows only while
+   * something is still marked running.
+   */
+  function _setRunningCount(n, inFlight) {
+    if (typeof inFlight === 'boolean') { _runInFlight = inFlight; }
+    if (typeof n === 'number') { _runningTests = n; }
+    const cell = _q('summaryRunningCell');
+    if (!cell) { return; }
+    _q('summaryRunning').textContent = String(_runningTests);
+    const visible = _runInFlight || _runningTests > 0;
+    cell.classList.toggle('hidden', !visible);
+    const opt = _q('statusFilterRunning');
+    if (opt) { opt.hidden = !visible; }
+    if (!visible && _statusFilter === 'running') { _applyStatusFilter('all'); }
+  }
+
   function _updateListCount() {
     const el          = _q('listCount');
     const emptyState  = _q('emptyState');
@@ -330,11 +376,27 @@
     return metric.pct != null ? metric.pct + '%' : '—';
   }
 
-  function _setCovCell(id, metric, stale) {
+  /**
+   * `empty`: nothing measured yet (every total 0 — e.g. pytest, or a project
+   * whose coverage config lists no files, before the first results): 0%, as
+   * a project whose files were counted up front starts. A single 0/0 metric
+   * next to real data (no branches) stays 100%, the usual convention.
+   */
+  function _setCovCell(id, metric, stale, empty) {
     const el = _q(id);
     if (!el) { return; }
+    if (empty) {
+      el.textContent = _metricMode === 'nm' ? '0/0' : '0%';
+      el.className   = 'value ' + _covClass(0, stale);
+      return;
+    }
     el.textContent = _metricText(metric);
     el.className   = 'value ' + _covClass(metric?.total === 0 ? 100 : metric?.pct, stale);
+  }
+
+  /** True when no metric has anything measured or counted yet. */
+  function _nothingMeasured(totals) {
+    return ['statements', 'branches', 'functions', 'lines'].every((k) => !totals[k] || totals[k].total === 0);
   }
 
   function _updateSortIcons() {
@@ -368,10 +430,11 @@
       });
     } else {
       if (st) { st.textContent = totals.scanComplete ? '' : 'Updating…'; }
-      _setCovCell('covStmts',  totals.statements, false);
-      _setCovCell('covBranch', totals.branches,   false);
-      _setCovCell('covFns',    totals.functions,  false);
-      _setCovCell('covLines',  totals.lines,      false);
+      const empty = _nothingMeasured(totals);
+      _setCovCell('covStmts',  totals.statements, false, empty);
+      _setCovCell('covBranch', totals.branches,   false, empty);
+      _setCovCell('covFns',    totals.functions,  false, empty);
+      _setCovCell('covLines',  totals.lines,      false, empty);
     }
 
     // ── project totals row in Coverage panel ────────────────────────────────
@@ -380,10 +443,11 @@
         const el = _q(id); if (el) { el.textContent = '—'; el.className = 'value'; }
       });
     } else {
-      _setCovCell('covTotalStmts',  totals.statements, false);
-      _setCovCell('covTotalBranch', totals.branches,   false);
-      _setCovCell('covTotalFns',    totals.functions,  false);
-      _setCovCell('covTotalLines',  totals.lines,      false);
+      const empty = _nothingMeasured(totals);
+      _setCovCell('covTotalStmts',  totals.statements, false, empty);
+      _setCovCell('covTotalBranch', totals.branches,   false, empty);
+      _setCovCell('covTotalFns',    totals.functions,  false, empty);
+      _setCovCell('covTotalLines',  totals.lines,      false, empty);
     }
 
     _renderCovFiles(_lastCovFiles);
@@ -573,6 +637,7 @@
       _lastCovFiles     = [];
       _lastCovTotals    = null;
       _statusFilter     = 'all';
+      _runningTests     = 0;
       _covSearchQuery   = '';
       _covFolderView    = false;
       _covExpandedFolders = new Set();
@@ -580,6 +645,7 @@
       container.innerHTML = TEMPLATE;
       _menuOpen = false;
       _q('projectCurrent').addEventListener('click', () => { _menuOpen = !_menuOpen; renderProjects(); });
+      _q('pythonEnv').addEventListener('click', () => _vscode.postMessage({ type: 'select-python' }));
       renderProjects(payload && payload.projects);
 
       _list = new TestListLayout(_q('testList'), vscode, { showTimelineButton: true });
@@ -609,6 +675,7 @@
           btnFolderView.title = 'Switch to flat list';
           _list.setFolderView(true);
         }
+        // A saved 'running' filter waits for the init message's count (0 → back to 'all').
         if (saved.statusFilter && saved.statusFilter !== 'all') {
           _statusFilter = saved.statusFilter;
           _list.setStatusFilter(saved.statusFilter);
@@ -757,12 +824,18 @@
           renderProjects(msg.projects);
           break;
 
+        case 'python-env':
+          renderPythonEnv(msg.env ?? null);
+          break;
+
         case 'init':
           if (msg.projects) { renderProjects(msg.projects); }
+          renderPythonEnv(msg.pythonEnv ?? null);
           LiveTestUtils.setThresholds(msg.thresholds);
           if (msg.coverageThresholds) { _coverageThresholds = msg.coverageThresholds; }
           _list.setData(msg.files ?? []);
           updateSummary(msg.total, msg.passed, msg.failed, null);
+          _setRunningCount(msg.runningTests ?? 0, !!msg.running);
           if (msg.total == null) { const d = _q('summaryDuration'); if (d) { d.style.display = 'none'; d.textContent = ''; } }
           _updateListCount();
           if (msg.selection) { _list.setSelected(msg.selection.fileId, msg.selection.nodeId); }
@@ -793,6 +866,7 @@
 
         case 'session-stopped':
           applySessionState('idle');
+          _setRunningCount(msg.runningTests, false);
           { const cs = _q('coverageSection'); if (cs) { cs.classList.add('hidden'); } }
           ['covStmts','covBranch','covFns','covLines',
            'covTotalStmts','covTotalBranch','covTotalFns','covTotalLines'].forEach((id) => {
@@ -807,6 +881,7 @@
           _list.setData([]);
           _updateListCount();
           updateSummary(null, null, null, null);
+          _setRunningCount(0, false);
           { const d = _q('summaryDuration'); if (d) { d.style.display = 'none'; d.textContent = ''; } }
           break;
 
@@ -819,6 +894,7 @@
           _startRunTimer();
           _isPartialRerun  = false;
           applySessionState('running');
+          _setRunningCount(undefined, true);
           updateSummary(null, null, null, null);
           _q('summaryDuration').style.display = 'none';
           if (msg.files) { _list.setData(msg.files); _updateListCount(); }
@@ -830,6 +906,7 @@
           _runStartTime = 0;
           applySessionState(msg.sessionActive !== false ? 'watching' : 'idle');
           updateSummary(msg.total, msg.passed, msg.failed, msg.totalDuration);
+          _setRunningCount(msg.runningTests, false);
           if (msg.failed > 0 && !_isPartialRerun) { _list.scrollToFirstFailure(); }
           _isPartialRerun = true;
           break;
@@ -837,6 +914,7 @@
         case 'files-rerunning':
           _isPartialRerun = true;
           _list.markFilesRunning(msg.fileIds, msg.nodeId);
+          _setRunningCount(msg.runningTests, true);
           break;
 
         case 'file-started':
@@ -856,6 +934,7 @@
           // suite used to push this past 100%, e.g. "61 / 58").
           for (const file of msg.files ?? []) { _list.updateFile(file); }
           updateSummary(msg.total, msg.passed, msg.failed, null);
+          _setRunningCount(msg.runningTests);
           break;
         }
 

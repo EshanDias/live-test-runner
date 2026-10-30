@@ -15,7 +15,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { DetectedProject, FrameworkId } from '@live-test-runner/runner';
+import { DetectedProject, FrameworkId, FRAMEWORK_IDS } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
@@ -26,6 +26,10 @@ import { DiscoveryCache } from '../cache/DiscoveryCache';
 import { FrameworkRouter } from '../framework/FrameworkRouter';
 import { createJestServices } from '../framework/jestServices';
 import { createVitestServices } from '../framework/vitestServices';
+import { createPytestServices } from '../framework/pytestServices';
+import { IFrameworkServicesProvider, SingleFrameworkProvider } from '../framework/FrameworkServices';
+import { TestFileDiscoverer, jsDiscoverer } from '../session/discovery/TestFileDiscoverer';
+import { pythonDiscoverer } from '../session/discovery/pythonDiscovery';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload, CoverageFileRow } from '../IResultObserver';
 import { CoverageTotals } from '../coverage/types';
 import { logger } from '../utils/logger';
@@ -102,8 +106,10 @@ export class ProjectContext implements vscode.Disposable {
   readonly traceStore = new ExecutionTraceStore();
   readonly coverageStore = new CoverageStore();
   readonly discovery = new TestDiscoveryService();
-  /** Which framework runs each file (one, or Jest + Vitest in a mixed project — phase 8). */
-  readonly services: FrameworkRouter;
+  /** Which framework runs each file (one, or Jest + Vitest in a mixed project — phase 8; pytest projects: pytest). */
+  readonly services: IFrameworkServicesProvider;
+  /** How the project's test files are found statically (Babel for JS, the line scanner for pytest). */
+  readonly discoverer: TestFileDiscoverer;
   readonly session: SessionManager;
   readonly gate: ProjectObserverGate;
   discoveryCache: DiscoveryCache | undefined;
@@ -126,15 +132,22 @@ export class ProjectContext implements vscode.Disposable {
     }
 
     const rawLog = (msg: string) => _deps.outputChannel.appendLine(msg);
-    this.services = new FrameworkRouter(
-      {
-        jest: () => createJestServices({ sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog }),
-        vitest: () => createVitestServices({ sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog }),
-      },
-      this.root,
-    );
+    if (project.framework === FRAMEWORK_IDS.pytest) {
+      // A Python project: pytest for every file (JS + Python in one folder is a later release, D13).
+      this.services = new SingleFrameworkProvider(createPytestServices({ sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog }));
+      this.discoverer = pythonDiscoverer();
+    } else {
+      this.services = new FrameworkRouter(
+        {
+          jest: () => createJestServices({ sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog }),
+          vitest: () => createVitestServices({ sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog }),
+        },
+        this.root,
+      );
+      this.discoverer = jsDiscoverer;
+    }
     // Mixed by its configs is known now (switcher label); the setting and listing refine it at Start.
-    this.services.prepare();
+    this.services.prepare(this.root);
     this.gate = new ProjectObserverGate(this, _deps.observers, _deps.editorObservers, () => _deps.isSelected(this), () => _deps.onStateChanged(this));
 
     const statusSink = { text: '' };
@@ -183,7 +196,7 @@ export class ProjectContext implements vscode.Disposable {
   /** (Re)starts discovery from scratch with the project's cache. */
   startDiscovery(): void {
     this._discoveryStarted = true;
-    this.discovery.start(this.root, this.store, this.discoveryCallbacks(), this.discoveryCache);
+    this.discovery.start(this.root, this.store, this.discoveryCallbacks(), this.discoveryCache, this.discoverer);
   }
 
   get discoveryStarted(): boolean { return this._discoveryStarted; }

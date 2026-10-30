@@ -6,6 +6,7 @@ name: Website (GitHub Pages)
 #   /            site/index.html (landing page) + site/sitemap.xml
 #   /guide/      docs/live-test-runner-guide.html
 #   /images/     screenshots from packages/vscode-extension/resources/images
+#   /gifs/       the slider's scene GIFs (resources/gifs/scene-*.gif, scripts/demo-gifs.js)
 # One-time setup: repository Settings → Pages → Source: "GitHub Actions".
 
 on:
@@ -15,6 +16,7 @@ on:
       - 'site/**'
       - 'docs/live-test-runner-guide.html'
       - 'packages/vscode-extension/resources/images/**'
+      - 'packages/vscode-extension/resources/gifs/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -44,6 +46,8 @@ jobs:
           cp site/* _site/
           cp docs/live-test-runner-guide.html _site/guide/index.html
           cp packages/vscode-extension/resources/images/*.png _site/images/
+          mkdir -p _site/gifs
+          cp packages/vscode-extension/resources/gifs/scene-*.gif _site/gifs/
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5

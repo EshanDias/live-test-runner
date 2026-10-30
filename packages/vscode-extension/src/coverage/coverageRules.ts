@@ -9,10 +9,14 @@ import { CoverageEntry, FileCov, LiveCov, Manifest } from './types';
 const COVERAGE_EXCLUDE_RE = [
   /[/\\]node_modules[/\\]/,
   /\.(test|spec)\.(js|ts|jsx|tsx)$/,
+  // pytest's default python_files, and its fixture files
+  /(^|[/\\])(test_[^/\\]*|[^/\\]*_test|conftest)\.py$/,
   /[/\\](__tests__|__mocks__|tests?|specs?)[/\\]/,
   /\.config\.(js|ts|mjs|cjs)$/,
   /\.d\.ts$/,
   /[/\\](dist|build|out|\.next|coverage)[/\\]/,
+  // Python environments and caches
+  /[/\\](site-packages|\.venv|venv|\.tox|\.nox|__pycache__)[/\\]/,
 ];
 
 /** True for a project-relative path that never counts toward coverage. */

@@ -35,6 +35,8 @@ import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
+import { initPythonInterpreters } from './python/PythonInterpreters';
+import { pythonEnvChip } from './python/pythonEnvChip';
 
 const log = logger.scope('Extension');
 
@@ -66,6 +68,9 @@ export function activate(context: vscode.ExtensionContext) {
   log.info(
     `Live Test Runner v${extVersion} · VS Code ${vscode.version} · ${process.platform}-${process.arch} · Node ${process.versions.node}`,
   );
+
+  // pytest projects: which Python runs them (the user's choice is kept in the workspace storage).
+  const pythons = initPythonInterpreters(context.workspaceState);
 
   // Ensure the shared base directories exist up front so no path checks fail later.
   for (const dir of [LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR]) {
@@ -146,7 +151,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
       // Any file can carry lenses — they only appear where discovery mapped tests.
-      { scheme: 'file', pattern: '**/*.{js,ts,jsx,tsx,mjs,cjs,mts,cts}' },
+      { scheme: 'file', pattern: '**/*.{js,ts,jsx,tsx,mjs,cjs,mts,cts,py}' },
       codeLensProvider,
     ),
   );
@@ -335,7 +340,24 @@ export function activate(context: vscode.ExtensionContext) {
     projects.onDidChangeProjects(() => explorerView.setProjects(projects.summaries())),
     projects,
   );
+
+  // ── Python environment chip (pytest projects): which Python runs the tests ──
+  const refreshPythonChip = (): void => {
+    const ctx = projects.selected;
+    if (!ctx || ctx.framework !== 'pytest') { explorerView.setPythonEnv(null); return; }
+    const status = pythons.status(ctx.root);
+    explorerView.setPythonEnv(pythonEnvChip(status));
+    // Probe once, quietly: no notification before the user asked for a run (Start still tells).
+    if (!status) { pythons.ensure(ctx.root, { quiet: true }).catch(() => { /* shown on the chip */ }); }
+  };
+  context.subscriptions.push(
+    projects.onDidChangeSelection(() => refreshPythonChip()),
+    projects.onDidChangeProjects(() => refreshPythonChip()),
+    pythons.onDidChange.event((root) => { if (projects.selected?.root === root) { refreshPythonChip(); } }),
+    pythons.onDidChange,
+  );
   projects.refresh();
+  refreshPythonChip();
 
   _releaseDiscoveryLock = () => { for (const c of projects.contexts) { c.discoveryCache?.releaseLock(); } };
   _cleanTraceDir = () => { for (const c of projects.contexts) { c.cleanTraceDir(); } };
@@ -446,6 +468,18 @@ export function activate(context: vscode.ExtensionContext) {
         return ctx?.id;
       }
       return pickProject(projects);
+    }),
+    vscode.commands.registerCommand('liveTestRunner.selectPythonInterpreter', async (projectRoot?: unknown) => {
+      const ctx = (typeof projectRoot === 'string' ? projects.contexts.find((c) => c.root === projectRoot) : undefined)
+        ?? (projects.selected?.framework === 'pytest' ? projects.selected : projects.contexts.find((c) => c.framework === 'pytest'));
+      if (!ctx) {
+        void vscode.window.showInformationMessage('Live Test Runner: no pytest project is open — the Python interpreter is only used for pytest projects.');
+        return;
+      }
+      if (await pythons.select(ctx.root) && ctx.session.isActive()) {
+        // The next run uses the new interpreter: start over so every result comes from it.
+        await ctx.session.start();
+      }
     }),
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.showLogs',           () => logChannel.show()),
@@ -590,6 +624,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeWorkspaceFolders(() => { projects.refresh(); }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('liveTestRunner.projectRoot')) { projects.refresh(); }
+      if (e.affectsConfiguration('liveTestRunner.pythonPath')) { pythons.invalidate(); }
     }),
 
     outputChannel,

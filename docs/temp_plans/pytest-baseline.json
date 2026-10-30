@@ -1,0 +1,874 @@
+{
+  "click": {
+    "recorded": "2026-10-25T06:03:42.710Z",
+    "head": "2247b35ea1c47c727d7a06e51fa280e12a863ff6",
+    "extensionMatches": true,
+    "files": 43,
+    "total": {
+      "passed": 2261,
+      "failed": 0,
+      "skipped": 26
+    },
+    "perFile": {
+      "tests/test_abort_interrupt.py": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_arguments.py": {
+        "passed": 206,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_basic.py": {
+        "passed": 109,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_chain.py": {
+        "passed": 15,
+        "failed": 0,
+        "skipped": 1
+      },
+      "tests/test_command_decorators.py": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_commands.py": {
+        "passed": 103,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_compat.py": {
+        "passed": 175,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_context.py": {
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_custom_classes.py": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_defaults.py": {
+        "passed": 46,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_deprecations.py": {
+        "passed": 66,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_exceptions/test_FileError.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_formatting.py": {
+        "passed": 37,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_imports.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_info_dict.py": {
+        "passed": 38,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_normalization.py": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_options.py": {
+        "passed": 699,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_parser.py": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_shell_completion.py": {
+        "passed": 58,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_stream_lifecycle.py": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_termui.py": {
+        "passed": 259,
+        "failed": 0,
+        "skipped": 23
+      },
+      "tests/test_testing.py": {
+        "passed": 44,
+        "failed": 0,
+        "skipped": 1
+      },
+      "tests/test_types/test_Choice.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_types/test_convert_type.py": {
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_types/test_File.py": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_types/test_FloatRange.py": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_types/test_FuncParamType.py": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_types/test_IntRange.py": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_types/test_ParamType.py": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_types/test_Path.py": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 1
+      },
+      "tests/test_utils/test__detect_program_name.py": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test__expand_args.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_confirm.py": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_echo_via_pager.py": {
+        "passed": 61,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_echo.py": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_format_filename.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_KeepOpenFile.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_LazyFile.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_make_default_short_help.py": {
+        "passed": 36,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_open_file.py": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_prompt.py": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_sentinel.py": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_utils/test_style.py": {
+        "passed": 105,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "httpx": {
+    "recorded": "2026-10-25T07:29:35.568Z",
+    "head": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+    "extensionMatches": true,
+    "files": 31,
+    "total": {
+      "passed": 1413,
+      "failed": 4,
+      "skipped": 1
+    },
+    "perFile": {
+      "tests/client/test_async_client.py": {
+        "passed": 52,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/client/test_auth.py": {
+        "passed": 79,
+        "failed": 0,
+        "skipped": 1
+      },
+      "tests/client/test_client.py": {
+        "passed": 35,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/client/test_cookies.py": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/client/test_event_hooks.py": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/client/test_headers.py": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/client/test_properties.py": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/client/test_proxies.py": {
+        "passed": 69,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/client/test_queryparams.py": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/client/test_redirects.py": {
+        "passed": 31,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/models/test_cookies.py": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/models/test_headers.py": {
+        "passed": 27,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/models/test_queryparams.py": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/models/test_requests.py": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/models/test_responses.py": {
+        "passed": 106,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/models/test_url.py": {
+        "passed": 90,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/models/test_whatwg.py": {
+        "passed": 563,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_api.py": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_asgi.py": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_auth.py": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_config.py": {
+        "passed": 28,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_content.py": {
+        "passed": 43,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_decoders.py": {
+        "passed": 40,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_exceptions.py": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_exported_members.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_main.py": {
+        "passed": 10,
+        "failed": 1,
+        "skipped": 0
+      },
+      "tests/test_multipart.py": {
+        "passed": 38,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_status_codes.py": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_timeouts.py": {
+        "passed": 9,
+        "failed": 1,
+        "skipped": 0
+      },
+      "tests/test_utils.py": {
+        "passed": 38,
+        "failed": 2,
+        "skipped": 0
+      },
+      "tests/test_wsgi.py": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "erdantic": {
+    "recorded": "2026-10-25T07:31:06.157Z",
+    "head": "f7364af5416c40a2dda435cc968ae81bd4c31252",
+    "extensionMatches": true,
+    "files": 13,
+    "total": {
+      "passed": 133,
+      "failed": 20,
+      "skipped": 0
+    },
+    "perFile": {
+      "tests/test_against_assets.py": {
+        "passed": 56,
+        "failed": 16,
+        "skipped": 0
+      },
+      "tests/test_attrs.py": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_cli.py": {
+        "passed": 10,
+        "failed": 2,
+        "skipped": 0
+      },
+      "tests/test_convenience.py": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_core.py": {
+        "passed": 21,
+        "failed": 1,
+        "skipped": 0
+      },
+      "tests/test_d2.py": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_dataclasses.py": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_msgspec.py": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_plugins.py": {
+        "passed": 4,
+        "failed": 1,
+        "skipped": 0
+      },
+      "tests/test_pydantic_v1.py": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_pydantic.py": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_regressions.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tests/test_typing_utils.py": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "pytest": {
+    "recorded": "2026-10-25T07:45:38.266Z",
+    "head": "4088e1a84ef1cb8ba80aac4e75449459fc092c12",
+    "extensionMatches": false,
+    "files": 77,
+    "total": {
+      "passed": 4656,
+      "failed": 38,
+      "skipped": 72
+    },
+    "perFile": {
+      "testing/_py/test_local.py": {
+        "passed": 168,
+        "failed": 0,
+        "skipped": 13
+      },
+      "testing/acceptance_test.py": {
+        "passed": 103,
+        "failed": 0,
+        "skipped": 3
+      },
+      "testing/code/test_code.py": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/code/test_excinfo.py": {
+        "passed": 190,
+        "failed": 0,
+        "skipped": 11
+      },
+      "testing/code/test_source.py": {
+        "passed": 58,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/deprecated_test.py": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/examples/test_issue519.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/freeze/tests/test_doctest.txt": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/freeze/tests/test_trivial.py": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/io/test_pprint.py": {
+        "passed": 83,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/io/test_saferepr.py": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/io/test_terminalwriter.py": {
+        "passed": 49,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/io/test_wcwidth.py": {
+        "passed": 17,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/logging/test_fixture.py": {
+        "passed": 31,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/logging/test_formatter.py": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/logging/test_reporting.py": {
+        "passed": 57,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/python/approx.py": {
+        "passed": 179,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/python/collect.py": {
+        "passed": 84,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/python/fixtures.py": {
+        "passed": 242,
+        "failed": 0,
+        "skipped": 4
+      },
+      "testing/python/integration.py": {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/python/metafunc.py": {
+        "passed": 133,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/python/raises_group.py": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/python/raises.py": {
+        "passed": 36,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/python/show_fixtures_per_test.py": {
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_argcomplete.py": {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 2
+      },
+      "testing/test_assertion.py": {
+        "passed": 208,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_assertrewrite_coverage.py": {
+        "passed": 86,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_assertrewrite.py": {
+        "passed": 122,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_cacheprovider.py": {
+        "passed": 68,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_capture.py": {
+        "passed": 131,
+        "failed": 1,
+        "skipped": 2
+      },
+      "testing/test_collect_imported_tests.py": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_collection.py": {
+        "passed": 115,
+        "failed": 0,
+        "skipped": 3
+      },
+      "testing/test_compat.py": {
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_config.py": {
+        "passed": 311,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_conftest.py": {
+        "passed": 58,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_debugging.py": {
+        "passed": 20,
+        "failed": 33,
+        "skipped": 7
+      },
+      "testing/test_doctest.py": {
+        "passed": 160,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_entry_points.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_error_diffs.py": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_faulthandler.py": {
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_findpaths.py": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_helpconfig.py": {
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_junitxml.py": {
+        "passed": 151,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_legacypath.py": {
+        "passed": 14,
+        "failed": 1,
+        "skipped": 0
+      },
+      "testing/test_link_resolve.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_main.py": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_mark_expression.py": {
+        "passed": 149,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_mark.py": {
+        "passed": 128,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_meta.py": {
+        "passed": 78,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_monkeypatch.py": {
+        "passed": 45,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_nodeid.py": {
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_nodes.py": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_parseopt.py": {
+        "passed": 49,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_pastebin.py": {
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_pathlib.py": {
+        "passed": 112,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_pluginmanager.py": {
+        "passed": 29,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_pytester.py": {
+        "passed": 51,
+        "failed": 1,
+        "skipped": 1
+      },
+      "testing/test_python_path.py": {
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_recwarn.py": {
+        "passed": 67,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_reports.py": {
+        "passed": 24,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_runner_xunit.py": {
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_runner.py": {
+        "passed": 67,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_scope.py": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_session.py": {
+        "passed": 26,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_setuponly.py": {
+        "passed": 26,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_setupplan.py": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_skipping.py": {
+        "passed": 95,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_stash.py": {
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_stepwise.py": {
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_subtests.py": {
+        "passed": 36,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_terminal.py": {
+        "passed": 239,
+        "failed": 2,
+        "skipped": 1
+      },
+      "testing/test_threadexception.py": {
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_tmpdir.py": {
+        "passed": 58,
+        "failed": 0,
+        "skipped": 1
+      },
+      "testing/test_unittest.py": {
+        "passed": 71,
+        "failed": 0,
+        "skipped": 9
+      },
+      "testing/test_unraisableexception.py": {
+        "passed": 14,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_warning_types.py": {
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0
+      },
+      "testing/test_warnings.py": {
+        "passed": 60,
+        "failed": 0,
+        "skipped": 4
+      }
+    }
+  }
+}

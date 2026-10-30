@@ -43,9 +43,25 @@ export interface FrameworkFeatures {
   timeline: boolean;
 }
 
+/**
+ * How a framework's session runs are split into processes. Jest and Vitest
+ * isolate test files themselves (workers), so several batches run side by
+ * side within the machine's budget. Frameworks whose projects assume one
+ * process at a time — pytest: session fixtures, fixed ports, shared files —
+ * say so here; the budget then never starts a second process of theirs.
+ */
+export interface BatchPolicy {
+  /** Most processes of this framework at once (default: the machine's budget). */
+  maxParallel?: number;
+  /** Most files in one process (default: sized from the run and the budget). */
+  maxFilesPerBatch?: number;
+}
+
 export interface FrameworkServices {
   /** The framework family this bundle serves (`jest` covers CRA too). */
   readonly framework: FrameworkId;
+  /** How session runs are split into processes (see {@link BatchPolicy}); undefined = the default. */
+  readonly batchPolicy?: BatchPolicy;
   /** Name shown to the user ("Jest"). */
   readonly displayName: string;
   /** Wording for log and status messages. */
@@ -66,6 +82,12 @@ export interface FrameworkServices {
   readonly batchRunner: IBatchRunner;
   /** The Timeline debugger's runner; undefined when the framework has none yet (Vitest). */
   readonly instrumentedRunner: IInstrumentedRunner | undefined;
+  /**
+   * Before a session starts: why the framework cannot run this project now
+   * (pytest: no Python environment with pytest — the user was told how to
+   * fix it), or undefined when it can. Nothing runs while there is a reason.
+   */
+  whyNotReady?(projectRoot: string): Promise<string | undefined>;
   /** A runner for core's TestSession (coverage map, stop). Reads the settings when called. */
   createSessionRunner(): TestRunner;
   /**
@@ -73,6 +95,12 @@ export interface FrameworkServices {
    * files it lists) — part of the runnable-files cache key.
    */
   settingsFingerprint(): string;
+  /**
+   * Root-level file names that can be the framework's config although they
+   * are not source files (pytest: `pyproject.toml`, `pytest.ini`, …): their
+   * saves get past the source filter to {@link isConfigFile}.
+   */
+  readonly configFileNames?: readonly string[];
   /**
    * True for the framework's own config file (saving it restarts the
    * session: config, runnable files and every result are re-read).

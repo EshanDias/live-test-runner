@@ -10,9 +10,9 @@
     "directory": "packages/runner"
   },
   "scripts": {
-    "build": "tsc --build",
+    "build": "node scripts/embed-pytest-plugin.js && tsc --build",
     "test": "jest --passWithNoTests",
-    "lint": "eslint \"src/**/*.ts\""
+    "lint": "node scripts/embed-pytest-plugin.js --check && eslint \"src/**/*.ts\""
   },
   "devDependencies": {
     "@types/node": "^25.5.1"

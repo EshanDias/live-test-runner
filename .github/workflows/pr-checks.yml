@@ -49,6 +49,29 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
 
+  # The pytest plugin shipped with the extension (packages/runner/src/framework/pytest/ltr_pytest.py),
+  # tested with pytest itself on every supported pytest major (7 is still widely used — owner, 2026-10-24).
+  pytest-plugin:
+    name: pytest plugin (pytest ${{ matrix.pytest }}, Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { pytest: '7.4.*', python: '3.12' }
+          - { pytest: '8.4.*', python: '3.12' }
+          - { pytest: '8.4.*', python: '3.13' }
+          - { pytest: '9.1.*', python: '3.12' }
+          - { pytest: '9.1.*', python: '3.13' }
+          - { pytest: '9.1.*', python: '3.14' }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --disable-pip-version-check "pytest==${{ matrix.pytest }}" coverage
+      - run: python -m pytest packages/runner/python-tests -p no:cacheprovider -v
+
   # Real VS Code + real Jest against the fixture projects in e2e/fixtures
   # (plain Jest, jest.config.ts / ts-jest, async .mjs config, Create React App).
   # Every fixture's results are also compared with a plain Jest run.
@@ -73,6 +96,13 @@ jobs:
           runtime: node@24
           cache: true
       - run: pnpm run build
+      # Python for the pytest fixtures (each gets its own .venv from requirements-e2e.txt).
+      - uses: actions/setup-python@v6
+        id: python
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: e2e/fixtures/*/requirements-e2e.txt
       # npm cache for the fixtures' own installs (react-scripts is large)
       - uses: actions/cache@v6
         with:
@@ -88,11 +118,13 @@ jobs:
         run: xvfb-run -a node e2e/run.js --all
         env:
           LTR_E2E_RUNS_DIR: ${{ runner.temp }}/e2e
+          LTR_E2E_PYTHON: ${{ steps.python.outputs.python-path }}
       - name: Run e2e
         if: runner.os != 'Linux'
         run: node e2e/run.js --all
         env:
           LTR_E2E_RUNS_DIR: ${{ runner.temp }}/e2e
+          LTR_E2E_PYTHON: ${{ steps.python.outputs.python-path }}
       - name: Upload e2e logs
         if: failure()
         uses: actions/upload-artifact@v7

@@ -63,14 +63,20 @@ export interface IFrameworkAdapter {
   ): void;
 
   /**
-   * Run a single named test case (partial rerun from webview or CodeLens).
-   * Writes results into the store at the appropriate scope.
+   * Run named tests or suites of one file (partial rerun from webview or
+   * CodeLens, or the tests a saved source file touched). Writes results into
+   * the store at the appropriate scope.
+   *
+   * `names` are full names as the store holds them (ancestors + title,
+   * space-joined; templates with their `…` / `%s` placeholders). The
+   * framework turns them into its own selection: an anchored name pattern
+   * (Jest `-t`, Vitest `-t`) or ids (pytest node ids) — callers never build one.
    * @returns false when no result came back (the caller clears the spinners).
    */
   runTestCase(
     store: ResultStore,
     filePath: string,
-    fullName: string,
+    names: string[],
     projectRoot: string,
     log: (msg: string) => void,
     opts?: RerunOptions,

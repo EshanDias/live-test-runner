@@ -103,6 +103,7 @@ module.exports = {
     t.check('second Start reuses the runnable-file list', logs2.some((l) => /remembered from the last session/.test(l)) &&
       !logs2.some((l) => /jest --listTests: \d+ file/.test(l)), logs2.filter((l) => /listTests|Runnable/.test(l)).join('\n'));
     t.eq('second Start: same results', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });
+    t.eq('no Python environment chip on a JS project', api.explorerView._pythonEnv, null);
 
     rec.stop();
   },

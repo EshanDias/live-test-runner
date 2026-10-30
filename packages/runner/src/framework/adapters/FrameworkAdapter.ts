@@ -13,15 +13,27 @@ import { RunnerOptions, TestRunner } from '../../TestRunner';
  *
  * Adding a new framework = implementing this interface + registering it in FrameworkRegistry.
  */
+/**
+ * The language a framework runs. Projects of different families never
+ * swallow each other (a Python project inside a JS project's folder stays a
+ * project of its own), and each family has its own binary rules.
+ */
+export type FrameworkFamily = 'js' | 'python';
+
 export interface FrameworkAdapter {
   readonly framework: FrameworkId;
+
+  /** The language family (default `js`). */
+  readonly family?: FrameworkFamily;
 
   /** Returns true if this adapter handles the given project root. */
   detect(projectRoot: string): boolean;
 
   /**
-   * Resolves the absolute path to the test runner binary.
-   * Must use the project's local node_modules — never assume a global install.
+   * The program to spawn: a JS entry point (run with Node — it must come
+   * from the project's own node_modules, never a global install) or an
+   * absolute executable (pytest: the project's Python interpreter, spawned
+   * directly without a shell).
    */
   resolveBinary(projectRoot: string): string;
 

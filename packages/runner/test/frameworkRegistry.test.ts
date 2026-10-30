@@ -22,8 +22,9 @@ function fake(framework: string, matches: boolean | 'throw'): FrameworkAdapter {
 }
 
 describe('FrameworkRegistry', () => {
-  it('keeps the shipped order: CRA, then Vitest, then Jest', () => {
-    expect(FrameworkRegistry.default().adapters().map((a) => a.framework)).toEqual(['cra', 'vitest', 'jest']);
+  it('keeps the shipped order: CRA, then Vitest, then Jest, then pytest', () => {
+    expect(FrameworkRegistry.default().adapters().map((a) => a.framework)).toEqual(['cra', 'vitest', 'jest', 'pytest']);
+    expect(ADAPTER_PRIORITIES.jest).toBeGreaterThan(ADAPTER_PRIORITIES.pytest);
     expect(ADAPTER_PRIORITIES.cra).toBeGreaterThan(ADAPTER_PRIORITIES.vitest);
     expect(ADAPTER_PRIORITIES.vitest).toBeGreaterThan(ADAPTER_PRIORITIES.jest);
   });

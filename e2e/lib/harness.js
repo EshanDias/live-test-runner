@@ -163,6 +163,30 @@ function vitestProcesses(marker) {
   }
 }
 
+/** Python processes running pytest for `marker` (the workspace — its .venv's python is in the command line). */
+function pytestProcesses(marker) {
+  let real = marker;
+  try { real = require('fs').realpathSync.native(marker); } catch { /* keep marker */ }
+  const isPytest = (l) => / -m pytest\b/.test(l) && !/Code(\.exe)?["\s]|extensionDevelopmentPath|powershell/i.test(l);
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('powershell', [
+        '-NoProfile', '-Command',
+        "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine } | ForEach-Object { \"$($_.ProcessId)`t$($_.Name)`t$($_.CommandLine)\" }",
+      ], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+      const norm = (x) => x.toLowerCase().replace(/\\\\/g, '\\').replace(/\//g, '\\');
+      return out.split(/\r?\n/).filter((l) => (norm(l).includes(norm(marker)) || norm(l).includes(norm(real))) && isPytest(l));
+    }
+    // A framework-build Python on macOS (CI's setup-python) re-executes itself as
+    // …/Python.app/…/Python: the workspace's .venv path is gone from `ps`, so our
+    // own runs (`-m pytest -p ltr_pytest`) count too — e2e runs one workspace at a time.
+    const out = execFileSync('ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    return out.split('\n').filter((l) => isPytest(l) && (l.includes(marker) || l.includes(real) || / -m pytest -p ltr_pytest\b/.test(l)));
+  } catch {
+    return [];
+  }
+}
+
 function isVitest(cmdLine) {
   return /[\\/]node_modules[\\/](\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?vitest[\\/]/i.test(cmdLine) &&
     !/Code(\.exe)?["\s]|extensionDevelopmentPath|powershell/i.test(cmdLine);
@@ -194,6 +218,12 @@ function statusCounts(api, fileSuffix) {
     counts[n.status] = (counts[n.status] || 0) + 1;
   }
   return counts;
+}
+
+/** statusCounts with the keys sorted (stable to compare with t.eq). */
+function sortedCounts(api, fileSuffix) {
+  const c = statusCounts(api, fileSuffix);
+  return Object.fromEntries(Object.keys(c).sort().map((k) => [k, c[k]]));
 }
 
 function isoNow() { return new Date().toISOString(); }
@@ -384,7 +414,88 @@ function checkMatchesPlainVitest(api, t, workspace, label = 'results match plain
   t.check(`${label} (${want.size} files)`, want.size > 0 && diffs.length === 0, diffs.slice(0, 21).join('\n') || 'no files');
 }
 
+/** The python of a workspace's .venv (fixtures and real-repo clones). */
+function workspacePython(workspace) {
+  const fs = require('fs');
+  const win = process.platform === 'win32';
+  for (const dir of ['.venv', 'venv']) {
+    const p = win ? path.join(workspace, dir, 'Scripts', 'python.exe') : path.join(workspace, dir, 'bin', 'python');
+    if (fs.existsSync(p)) { return p; }
+  }
+  throw new Error(`no .venv in ${workspace}`);
+}
+
+/**
+ * A plain pytest run of the project (no Live Test Runner plugin, pytest's own
+ * cache off) as per-test outcomes from its JUnit XML (xunit1 has the file of
+ * each test): Map<file in the workspace's spelling, Map<"Class name", status>>.
+ * Collection errors (a file that cannot be imported) are left out.
+ */
+function plainPytestResults(workspace, extraArgs = []) {
+  const { spawnSync } = require('child_process');
+  const fs = require('fs');
+  const os = require('os');
+  const python = workspacePython(workspace);
+  const out = path.join(os.tmpdir(), `ltr-e2e-plain-pytest-${process.pid}-${Date.now()}.xml`);
+  // --continue-on-collection-errors, as the extension runs: a file that cannot be imported must not hide the others.
+  // pytest's cache in a temp folder, as the extension runs (never `-p no:cacheprovider`: tests of the cache plugin itself differ).
+  const cacheDir = path.join(os.tmpdir(), `ltr-e2e-plain-pytest-cache-${process.pid}-${Date.now()}`);
+  const r = spawnSync(python, ['-m', 'pytest', '-o', `cache_dir=${cacheDir}`, '--continue-on-collection-errors', '-o', 'junit_family=xunit1', `--junitxml=${out}`, '-q', '--color=no', ...extraArgs],
+    { cwd: workspace, encoding: 'utf8', timeout: 20 * 60_000, maxBuffer: 1 << 30, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+  fs.rmSync(cacheDir, { recursive: true, force: true });
+  let xml;
+  try { xml = fs.readFileSync(out, 'utf8'); } catch {
+    throw new Error(`plain pytest wrote no JUnit XML (exit ${r.status}): ${(r.stderr || r.stdout || '').slice(-1500)}`);
+  }
+  fs.unlinkSync(out);
+  const toWorkspace = workspaceSpelling(workspace);
+  const unescape = (v) => v.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  const files = new Map();
+  const re = /<testcase\b([^>]*?)(\/>|>([\s\S]*?)<\/testcase>)/g;
+  for (let m = re.exec(xml); m; m = re.exec(xml)) {
+    const attrs = {};
+    for (const a of m[1].matchAll(/(\w+)="([^"]*)"/g)) { attrs[a[1]] = unescape(a[2]); }
+    if (!attrs.file || !attrs.name) { continue; }
+    const body = m[3] || '';
+    if (/<error\b[^>]*message="collection failure/.test(body)) { continue; }
+    const status = /<(failure|error)\b/.test(body) ? 'failed' : /<skipped\b/.test(body) ? 'skipped' : 'passed';
+    const file = toWorkspace(path.resolve(workspace, attrs.file));
+    const tests = files.get(file) ?? new Map();
+    // classname "tests.test_cart.TestCart.TestNested" → the classes after the module.
+    const modParts = attrs.file.replace(/\\/g, '/').replace(/\.py$/, '').split('/');
+    const cls = (attrs.classname || '').split('.').slice(modParts.length).join(' ');
+    const key = cls ? `${cls} ${attrs.name}` : attrs.name;
+    // A teardown error is a second entry for the same test: failed wins.
+    if (tests.get(key) !== 'failed') { tests.set(key, status); }
+    files.set(file, tests);
+  }
+  return files;
+}
+
+/** Per-file pass / fail / skip in the tree equal a plain pytest run (see plainPytestResults). */
+function checkMatchesPlainPytest(api, t, workspace, label = 'results match plain pytest', results = plainPytestResults(workspace), flaky = []) {
+  const diffs = [];
+  const isFlaky = (name) => flaky.some((f) => name === f || name.startsWith(`${f}[`));
+  const flakyDiffs = [];
+  for (const [file, tests] of results) {
+    const key = api.store.findFileKey(file);
+    if (!key) { diffs.push(`${path.basename(file)}: not in the tree`); continue; }
+    const got = new Map(api.store.getFileNodes(key).filter((n) => n.type === 'test').map((n) => [n.fullName, n.status]));
+    for (const [name, status] of tests) {
+      if (got.get(name) === status) { continue; }
+      const line = `${path.basename(file)} ${name}: pytest ${status} vs extension ${got.get(name) ?? 'missing'}`;
+      (isFlaky(name) && got.has(name) ? flakyDiffs : diffs).push(line);
+    }
+    for (const [name, status] of got) {
+      if (!tests.has(name)) { diffs.push(`${path.basename(file)} ${name}: extension ${status}, not reported by pytest`); }
+    }
+  }
+  if (flakyDiffs.length) { t.info(`known-flaky tests differed (not counted): ${flakyDiffs.join('; ')}`); }
+  t.check(`${label} (${results.size} files)`, results.size > 0 && diffs.length === 0, diffs.slice(0, 25).join('\n') || 'no files');
+}
+
 module.exports = {
+  workspacePython, plainPytestResults, checkMatchesPlainPytest, sortedCounts, pytestProcesses,
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
   statusCounts, isoNow, plainJestCounts, plainJestJson, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,
