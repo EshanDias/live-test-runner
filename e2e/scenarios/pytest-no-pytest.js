@@ -17,6 +17,9 @@ module.exports = {
   async run({ api, t, vscode, workspace }) {
     await h.waitForDiscovery(api);
     t.check('discovery still shows the tests (no Python needed)', !!h.nodeByName(api, 'tests/test_a.py', 'test_a'));
+    // The Explorer's environment chip probes on open, quietly: it says what is wrong before Start.
+    await h.waitFor(() => api.explorerView._pythonEnv && !/detecting/.test(api.explorerView._pythonEnv.text), { what: 'the Python environment chip', timeout: 30_000 });
+    t.eq('chip (before Start): amber, says pytest is missing in .venv', [api.explorerView._pythonEnv.text, api.explorerView._pythonEnv.warn], ['pytest not installed · .venv', true]);
     const since = h.isoNow();
     const mark = h.rawMark(api);
     await vscode.commands.executeCommand('liveTestRunner.startTesting');

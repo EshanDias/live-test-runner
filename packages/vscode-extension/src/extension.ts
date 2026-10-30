@@ -36,6 +36,7 @@ import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
 import { initPythonInterpreters } from './python/PythonInterpreters';
+import { pythonEnvChip } from './python/pythonEnvChip';
 
 const log = logger.scope('Extension');
 
@@ -339,7 +340,24 @@ export function activate(context: vscode.ExtensionContext) {
     projects.onDidChangeProjects(() => explorerView.setProjects(projects.summaries())),
     projects,
   );
+
+  // ── Python environment chip (pytest projects): which Python runs the tests ──
+  const refreshPythonChip = (): void => {
+    const ctx = projects.selected;
+    if (!ctx || ctx.framework !== 'pytest') { explorerView.setPythonEnv(null); return; }
+    const status = pythons.status(ctx.root);
+    explorerView.setPythonEnv(pythonEnvChip(status));
+    // Probe once, quietly: no notification before the user asked for a run (Start still tells).
+    if (!status) { pythons.ensure(ctx.root, { quiet: true }).catch(() => { /* shown on the chip */ }); }
+  };
+  context.subscriptions.push(
+    projects.onDidChangeSelection(() => refreshPythonChip()),
+    projects.onDidChangeProjects(() => refreshPythonChip()),
+    pythons.onDidChange.event((root) => { if (projects.selected?.root === root) { refreshPythonChip(); } }),
+    pythons.onDidChange,
+  );
   projects.refresh();
+  refreshPythonChip();
 
   _releaseDiscoveryLock = () => { for (const c of projects.contexts) { c.discoveryCache?.releaseLock(); } };
   _cleanTraceDir = () => { for (const c of projects.contexts) { c.cleanTraceDir(); } };
