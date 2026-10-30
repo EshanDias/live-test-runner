@@ -22,7 +22,11 @@ export type RunRequest =
   | { kind: 'list' }
   | { kind: 'full'; withCoverage: boolean }
   | { kind: 'files'; files: string[] }
-  | { kind: 'testCase'; file: string; testFullName: string; isTestSuite: boolean }
+  /**
+   * Named tests of one file. `testFullName` is the name pattern (Jest / Vitest
+   * `-t`); `names` the store's full names, for frameworks that select by id (pytest).
+   */
+  | { kind: 'testCase'; file: string; testFullName: string; isTestSuite: boolean; names?: string[] }
   | { kind: 'related'; file: string };
 
 /**
@@ -92,6 +96,12 @@ export abstract class CommandRunner implements TestRunner {
     return result;
   }
 
+  /**
+   * Run with the JS test environment (`NODE_ENV=test`, `CI=true`, …). False
+   * for non-JS frameworks, whose runs must match the user's terminal (pytest).
+   */
+  protected get jsEnv(): boolean { return true; }
+
   /** Forward the runner's stdout to the raw-output sink (Vitest's reporter prints there). */
   protected get forwardsStdout(): boolean { return false; }
 
@@ -141,6 +151,9 @@ export abstract class CommandRunner implements TestRunner {
     this.initAdapter(root);
   }
 
+  /** The limit for single-file runs (0 = none). */
+  protected get fileTimeout(): number { return this.fileTimeoutMs; }
+
   /** Stop single-file runs that take longer than `ms` (a hanging test). 0 disables. */
   setFileTimeout(ms: number): void {
     this.fileTimeoutMs = Math.max(0, ms);
@@ -161,6 +174,7 @@ export abstract class CommandRunner implements TestRunner {
       args: await this.commandArgs({ kind: 'list' }),
       cwd: this.spawnPath(this.requireProjectRoot()),
       label: this.processLabel,
+      jsEnv: this.jsEnv,
     });
     const found = this.parseTestList(result, projectRoot);
     if (found.length > 0) {
@@ -231,13 +245,13 @@ export abstract class CommandRunner implements TestRunner {
 
   // ── Private ─────────────────────────────────────────────────────────────────
 
-  private async runJson(request: RunRequest, timeoutMs?: number): Promise<RunResult> {
+  protected async runJson(request: RunRequest, timeoutMs?: number): Promise<RunResult> {
     const adapter = this.requireAdapter();
     const cwd = this.spawnPath(this.requireProjectRoot());
     const binary = this.spawnPath(this.resolveBinary());
     const args = await this.commandArgs(request);
     const { passed, jsonOutput, stderr } = await this.executor.runWithJsonCapture(
-      { binary, args, cwd, timeoutMs, label: this.processLabel, extraEnv: this.runEnv(request), forwardStdout: this.forwardsStdout },
+      { binary, args, cwd, timeoutMs, label: this.processLabel, extraEnv: this.runEnv(request), forwardStdout: this.forwardsStdout, jsEnv: this.jsEnv },
       (file) => adapter.outputFileArg(file),
     );
     return this.afterRun(request, adapter.parseResult(passed, jsonOutput, stderr));

@@ -31,11 +31,37 @@ export {
 export { CommandRunner, RunRequest, TestFileList } from './CommandRunner';
 export { JestRunner, toJestPathArg } from './JestRunner';
 export { VitestRunner, toVitestNamePattern, toVitestPathArg } from './VitestRunner';
+export { PytestRunner, toPytestPathArg, PytestListing, PYTEST_EVENTS_ENV, PYTEST_LIST_ENV, PYTEST_COVERAGE_ENV, pytestExitReason } from './PytestRunner';
+export { PytestAdapter } from './framework/adapters/PytestAdapter';
+export {
+  PythonInfo,
+  MIN_PYTHON,
+  MIN_PYTEST,
+  probePython,
+  unsupportedReason,
+  describePython,
+  setPythonFor,
+  pythonFor,
+} from './framework/pytest/python';
+export {
+  PytestConfigFile,
+  PytestSettings,
+  PYTEST_CONFIG_FILES,
+  DEFAULT_PYTHON_FILES,
+  findPytestConfig,
+  pytestSettings,
+  isPytestProject,
+  parseIni,
+  parseTomlTables,
+  splitArgs,
+} from './framework/pytest/pytestConfig';
+export { nodeIdFor, nodeIdsFor, isTemplateName } from './framework/pytest/pytestNodeIds';
+export { LTR_PYTEST_SOURCE } from './framework/pytest/ltrPytestSource';
 
 // Framework layer — exposed so callers can detect framework without running
 export { FrameworkDetector, DetectionResult } from './framework/FrameworkDetector';
 export { FrameworkRegistry, ADAPTER_PRIORITIES } from './framework/FrameworkRegistry';
-export { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
+export { FrameworkAdapter, FrameworkFamily } from './framework/adapters/FrameworkAdapter';
 export { JestAdapter, JEST_CAPABILITIES } from './framework/adapters/JestAdapter';
 export { CRAAdapter } from './framework/adapters/CRAAdapter';
 export {
@@ -89,6 +115,7 @@ export {
   pnpmWorkspacePackages,
   expandWorkspaceGlobs,
   isInside,
+  pyprojectName,
 } from './framework/projectDiscovery';
 
 // Lower-level layers — exposed for testing and advanced usage

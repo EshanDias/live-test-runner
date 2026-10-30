@@ -25,7 +25,11 @@ const CONFIG_FILES = [
  * so adding them did not change the key — and the remembered list — of
  * existing Jest projects.
  */
-const OPTIONAL_CONFIG_FILES = [...VITEST_CONFIG_FILES, ...VITE_CONFIG_FILES];
+const OPTIONAL_CONFIG_FILES = [
+  ...VITEST_CONFIG_FILES, ...VITE_CONFIG_FILES,
+  // pytest reads its options (testpaths, python_files, addopts) from these; a root conftest.py can change collection.
+  'pytest.toml', '.pytest.toml', 'pytest.ini', '.pytest.ini', 'pyproject.toml', 'tox.ini', 'setup.cfg', 'conftest.py',
+];
 
 /**
  * Comparable spelling of a path: the editor's spelling (lists remembered by

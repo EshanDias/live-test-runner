@@ -69,6 +69,26 @@ describe('ResultStore summary and lifecycle', () => {
     expect(store.getLineMap(FILE).size).toBe(0);
   });
 
+  it('counts running tests live (the Explorer Running card)', () => {
+    const store = new ResultStore();
+    const suite = discovered(store, ['a', 'b', 'c']);
+    expect(store.getSummary().running).toBe(0);
+    store.markFileRunning(FILE);
+    expect(store.getSummary().running).toBe(3); // tests only, not the suite
+    result(store, 'a', 'passed');
+    expect(store.getSummary().running).toBe(2);
+    result(store, 'b', 'failed');
+    result(store, 'c', 'passed');
+    expect(store.getSummary()).toMatchObject({ running: 0, passed: 2, failed: 1 });
+    // A single-test rerun counts just that test.
+    store.markNodeRunning(makeNodeId(FILE, ['S'], 'b'));
+    expect(store.getSummary().running).toBe(1);
+    store.markNodeRunning(suite);
+    expect(store.getSummary().running).toBe(3);
+    store.resetRunning();
+    expect(store.getSummary().running).toBe(0);
+  });
+
   it('resetRunning reverts spinners and keeps finished results (BUG-23)', () => {
     const store = new ResultStore();
     discovered(store, ['a', 'b']);

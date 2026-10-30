@@ -4,28 +4,11 @@ import * as path from 'path';
 import { ResultStore, makeNodeId } from '../store/ResultStore';
 import { DiscoveryCache } from '../cache/DiscoveryCache';
 import { logger } from '../utils/logger';
+import { DiscoveredStructure, DiscoveredSuite, TestFileDiscoverer, jsDiscoverer, setJsDiscoveryLogger } from './discovery/TestFileDiscoverer';
 
 const log = logger.scope('Discovery');
 
-const { discoverTests, setLogger: setDiscoveryLogger } = require('./instrumentation/shared/testDiscovery.js') as {
-  setLogger: (log: { debug(m: string): void; warn(m: string): void; error(m: string): void }) => void;
-  discoverTests: (
-    source: string,
-    filePath: string,
-    rootDir: string,
-  ) => {
-    suites: Array<{
-      name: string;
-      line: number;
-      tests: Array<{ name: string; line: number; fullName: string }>;
-      children: Array<any>;
-      isSharedVars: boolean;
-      sharedVarNames: string[];
-    }>;
-    rootTests: Array<{ name: string; line: number; fullName: string }>;
-  } | null;
-};
-setDiscoveryLogger(log);
+setJsDiscoveryLogger(log);
 
 /** Per-pass counters, summarised in one log line when discovery finishes. */
 type DiscoveryStats = { cacheHits: number; parsed: number; noTests: number; failed: number };
@@ -46,19 +29,6 @@ export interface DiscoveryCallbacks {
 // Warm (cache hits): larger batches since stat+store is ~10x faster than parse.
 const BATCH_SIZE_COLD = 5;
 const BATCH_SIZE_WARM = 25;
-
-/** Jest's default testMatch: *.test.* / *.spec.* files and anything in __tests__. */
-const DEFAULT_TEST_PATTERNS = ['**/*.test.*', '**/*.spec.*', '**/__tests__/**/*.*'];
-/** Only JS/TS sources can be Jest tests (a pattern like *.test.* also matches .snap files). */
-const JS_TS_RE = /\.(c|m)?[jt]sx?$/i;
-
-/** The liveTestRunner.testFilePatterns setting (BUG-17: it used to be ignored). */
-function testFilePatterns(): string[] {
-  const patterns = vscode.workspace
-    .getConfiguration('liveTestRunner')
-    .get<string[]>('testFilePatterns');
-  return patterns && patterns.length > 0 ? patterns : DEFAULT_TEST_PATTERNS;
-}
 
 /** Yields to the event loop so VS Code can process messages between batches. */
 function yieldToEventLoop(): Promise<void> {
@@ -91,6 +61,8 @@ export class TestDiscoveryService {
   private _callbacks: DiscoveryCallbacks | undefined;
   private _cache: DiscoveryCache | undefined;
   private _stats: DiscoveryStats = { cacheHits: 0, parsed: 0, noTests: 0, failed: 0 };
+  /** The framework's file patterns and parser (Babel for JS, the line scanner for pytest). */
+  private _discoverer: TestFileDiscoverer = jsDiscoverer;
 
   get isDiscovering(): boolean {
     return this._isDiscovering;
@@ -102,7 +74,7 @@ export class TestDiscoveryService {
 
   restart(): void {
     if (!this._projectRoot || !this._store || !this._callbacks) { return; }
-    this.start(this._projectRoot, this._store, this._callbacks, this._cache);
+    this.start(this._projectRoot, this._store, this._callbacks, this._cache, this._discoverer);
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -116,8 +88,10 @@ export class TestDiscoveryService {
     store: ResultStore,
     callbacks: DiscoveryCallbacks,
     cache?: DiscoveryCache,
+    discoverer: TestFileDiscoverer = jsDiscoverer,
   ): void {
     this._disposeWatchers();
+    this._discoverer = discoverer;
     this._isDiscovering = true;
     this._projectRoot = projectRoot;
     this._store = store;
@@ -134,7 +108,7 @@ export class TestDiscoveryService {
         const detail = [
           cache ? `${s.cacheHits} from cache` : undefined,
           `${s.parsed} parsed`,
-          s.noTests ? `${s.noTests} without Jest tests` : undefined,
+          s.noTests ? `${s.noTests} without ${this._discoverer.testsLabel}` : undefined,
           s.failed ? `${s.failed} failed to parse` : undefined,
         ].filter(Boolean).join(', ');
         log.info(`Discovered ${tests} test(s) in ${fileCount - s.noTests - s.failed} file(s) in ${secs}s (${detail})`);
@@ -185,7 +159,7 @@ export class TestDiscoveryService {
     if (!store || !projectRoot) { return 0; }
     const files: unknown[] = [];
     for (const fp of filePaths) {
-      if (store.findFileKey(fp) || !JS_TS_RE.test(fp) || !fs.existsSync(fp)) { continue; }
+      if (store.findFileKey(fp) || !this._discoverer.accepts(fp) || !fs.existsSync(fp)) { continue; }
       // The framework says it runs this file: list it even when no test can be
       // found statically (tests generated at runtime) — results fill it in.
       const data = this._populateFile(fp, projectRoot, store, this._cache, true);
@@ -227,9 +201,10 @@ export class TestDiscoveryService {
     // ── Step 1: find all test files (fast — native VS Code glob) ─────────────
     // One search per pattern: VS Code globs don't nest braces reliably.
     const found = new Set<string>();
-    for (const glob of testFilePatterns()) {
-      const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(projectRoot, glob), '**/node_modules/**');
-      for (const u of uris) { if (JS_TS_RE.test(u.fsPath)) { found.add(u.fsPath); } }
+    const discoverer = this._discoverer;
+    for (const glob of discoverer.patterns(projectRoot)) {
+      const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(projectRoot, glob), discoverer.exclude);
+      for (const u of uris) { if (discoverer.accepts(u.fsPath)) { found.add(u.fsPath); } }
     }
     const paths = [...found].sort();
 
@@ -274,7 +249,7 @@ export class TestDiscoveryService {
     callbacks: DiscoveryCallbacks,
   ): void {
     const handleChange = (uri: vscode.Uri) => {
-      if (!JS_TS_RE.test(uri.fsPath) || /[\\/]node_modules[\\/]/.test(uri.fsPath)) { return; }
+      if (!this._discoverer.accepts(uri.fsPath) || /[\\/](node_modules|site-packages)[\\/]/.test(uri.fsPath)) { return; }
       const existing = store.getFile(uri.fsPath);
       if (existing?.status === 'running') { return; }
 
@@ -303,7 +278,7 @@ export class TestDiscoveryService {
       }
     };
 
-    for (const glob of testFilePatterns()) {
+    for (const glob of this._discoverer.patterns(projectRoot)) {
       const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(projectRoot, glob));
       watcher.onDidChange(handleChange);
       watcher.onDidCreate(handleChange);
@@ -331,10 +306,10 @@ export class TestDiscoveryService {
     keepEmpty = false,
   ): unknown | null {
     // ── Try cache first (skip readFile + Babel if mtime unchanged) ────────────
-    let result: ReturnType<typeof discoverTests> | null = null;
+    let result: DiscoveredStructure | null = null;
 
     if (cache) {
-      result = cache.get(filePath) ?? null;
+      result = (cache.get(filePath) as DiscoveredStructure | undefined) ?? null;
       if (result) { this._stats.cacheHits++; }
     }
 
@@ -349,7 +324,7 @@ export class TestDiscoveryService {
       }
 
       try {
-        result = discoverTests(source, filePath, projectRoot);
+        result = this._discoverer.discover(source, filePath, projectRoot);
       } catch (err) {
         this._stats.failed++;
         log.error(`Test discovery crashed on ${filePath}`, err);
@@ -424,14 +399,7 @@ export class TestDiscoveryService {
    */
   private _populateSuiteTree(
     filePath: string,
-    suites: Array<{
-      name: string;
-      line: number;
-      tests: Array<{ name: string; line: number; fullName: string }>;
-      children: Array<any>;
-      isSharedVars: boolean;
-      sharedVarNames: string[];
-    }>,
+    suites: DiscoveredSuite[],
     ancestorNames: string[],
     parentId: string | null,
     store: ResultStore,

@@ -12,6 +12,7 @@ export const FRAMEWORK_IDS = {
   jest: 'jest',
   cra: 'cra',
   vitest: 'vitest',
+  pytest: 'pytest',
   unknown: 'unknown',
 } as const;
 
@@ -31,7 +32,7 @@ export interface FrameworkCapabilities {
   related: boolean;
   /** Can report per-file results while a run is in progress. */
   liveStream: boolean;
-  /** Writes istanbul-format JSON coverage. */
+  /** Writes coverage the extension can map (istanbul-shaped JSON). */
   coverage: boolean;
 }
 

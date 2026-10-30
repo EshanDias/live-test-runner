@@ -10,6 +10,8 @@ export interface RunnerOptions {
   tmpDir?: string;
   /** Vitest: also run browser-mode projects (they need Playwright / WebdriverIO browsers). Default false. */
   includeBrowserProjects?: boolean;
+  /** pytest: extra arguments for every run (`liveTestRunner.pytestArgs`). */
+  pytestArgs?: string[];
 }
 
 /**

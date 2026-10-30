@@ -220,7 +220,10 @@ export function findTestProjects(folders: string[], registry: FrameworkRegistry 
       if (!all.some((q) => samePath(q.root, p.root))) { all.push(p); }
     }
   }
-  const kept = all.filter((p) => !all.some((q) => q !== p && isInside(p.root, q.root)));
+  // A project inside another of the same language is run by the outer one; a
+  // Python project inside a JS folder (or the other way round) stays its own.
+  const familyOf = (p: DetectedProject) => registry.get(p.framework)?.family ?? 'js';
+  const kept = all.filter((p) => !all.some((q) => q !== p && familyOf(q) === familyOf(p) && isInside(p.root, q.root)));
   if (kept.length === 0 && folders.length === 1) {
     kept.push({ root: folders[0], name: projectName(folders[0]), framework: FRAMEWORK_IDS.unknown, reason: 'the only folder (no test framework recognised)' });
   }
@@ -231,7 +234,24 @@ export function findTestProjects(folders: string[], registry: FrameworkRegistry 
 
 function projectName(dir: string): string {
   const name = readPackageJson(dir)?.name;
-  return typeof name === 'string' && name.trim() ? name.trim() : path.basename(dir);
+  if (typeof name === 'string' && name.trim()) { return name.trim(); }
+  return pyprojectName(dir) ?? path.basename(dir);
+}
+
+/** `[project] name` (PEP 621) or `[tool.poetry] name` of a pyproject.toml. */
+export function pyprojectName(dir: string): string | undefined {
+  let text: string;
+  try { text = fs.readFileSync(path.join(dir, 'pyproject.toml'), 'utf8'); } catch { return undefined; }
+  let table = '';
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    const t = /^\[([^\]]+)\]\s*(#.*)?$/.exec(line);
+    if (t) { table = t[1].trim(); continue; }
+    if (table !== 'project' && table !== 'tool.poetry') { continue; }
+    const m = /^name\s*=\s*["']([^"']+)["']/.exec(line);
+    if (m && m[1].trim()) { return m[1].trim(); }
+  }
+  return undefined;
 }
 
 function uniqueNames(projects: DetectedProject[], folders: string[]): void {

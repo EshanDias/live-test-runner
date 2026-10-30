@@ -116,12 +116,13 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
   async runTestCase(
     store: ResultStore,
     filePath: string,
-    fullName: string,
+    names: string[],
     projectRoot: string,
     rawLog: (msg: string) => void,
     opts?: RerunOptions,
   ): Promise<boolean> {
-    this.log.debug(`Scoped run in ${filePath} — pattern ${fullName}`);
+    const label = names.length === 1 ? `"${names[0]}"` : `${names.length} tests`;
+    this.log.debug(`Scoped run in ${filePath} — ${label}`);
     const runner = this._createRunner(projectRoot, rawLog);
     // Determine if this is a suite-level rerun (no individual test node)
     const isSuiteRun = opts?.nodeId
@@ -129,14 +130,14 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
       : false;
     let jsonResult: Awaited<ReturnType<typeof runner.runTestCaseJson>>;
     try {
-      jsonResult = await runner.runTestCaseJson(filePath, fullName, isSuiteRun);
+      jsonResult = await this.runNamed(runner, filePath, names, isSuiteRun);
     } catch (err) {
-      this.log.error(`Could not run pattern ${fullName} in ${filePath}`, err);
+      this.log.error(`Could not run ${label} in ${filePath}`, err);
       return false;
     }
     const fileResult = jsonResult.fileResults[0];
     if (!fileResult) {
-      this.log.warn(`${this.displayName} returned no result for ${filePath} (pattern ${fullName}) — the test name may no longer match`);
+      this.log.warn(`${this.displayName} returned no result for ${filePath} (${label}) — the test name may no longer match`);
       return false;
     }
     try {
@@ -146,6 +147,20 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
       this.log.error(`Could not apply scoped results for ${filePath}`, err);
       return false;
     }
+  }
+
+  /**
+   * Runs the named tests of a file. Default (Jest, Vitest): one anchored
+   * name pattern — every name escaped, placeholders widened, joined with `|`.
+   * A framework that selects tests by id (pytest node ids) overrides this.
+   */
+  protected runNamed(
+    runner: CommandRunner,
+    filePath: string,
+    names: string[],
+    isSuite: boolean,
+  ): ReturnType<CommandRunner['runTestCaseJson']> {
+    return runner.runTestCaseJson(filePath, names.map(nameToPattern).join('|'), isSuite);
   }
 
   // ── Coverage / affected tests ──────────────────────────────────────────────
