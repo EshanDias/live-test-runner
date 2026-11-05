@@ -4,6 +4,21 @@ All notable changes to Live Test Runner are documented here.
 
 ## [Unreleased]
 
+### Storage: clearing really clears, unused data is pruned
+
+- **Stop Testing and Clear Cache / Clear Cache and Restart** now delete everything cached for the project: besides the discovery cache, the runnable-files list (`runnable-files-*.json`, so a restart asks the framework again), the Jest transform cache + coverage manifests (`transform-cache-*`) and the CRA config (`ltr-cra-config-*.json`). Before, those stayed.
+- **New: Clear All Cached Data** (`liveTestRunner.clearAllCaches`, asks first): stops this window's projects and deletes every cached file, except other live windows' session folders and the discovery caches they hold locked.
+- **Pruning:** on activation, cached data unused for 30 days is deleted (`cache/Storage.ts` `pruneUnused`; transform caches and runnable lists are touched when used). Before, transform caches, runnable lists and CRA configs were never deleted (a project opened once stayed forever; on Windows the temp folder is never cleaned). The 10-project / 500 MB discovery-cache limit is unchanged.
+- `cache/Storage.ts` is the one place that knows every path (`transformCacheDir`, `runnableFilesPath`, runner `craConfigPath`).
+- Tests: `storage.test.ts` (2); e2e `commands` checks the files are gone.
+
+### Commands checked end to end
+
+- New e2e `commands` runs every command the way a user does (Command Palette, no arguments) and checks its effect.
+- **Fixed:** Rerun Test at Line, Debug Test at Line, Focus Test in Results Panel and Show All Covering Tests did nothing useful from the Command Palette (they expected a file and line from a CodeLens or hover link); they now use the active editor's cursor (Show All Covering Tests maps it to the measured line) or say what to open.
+- **Fixed:** Select Project Root picked the only folder of a single-folder workspace without asking and wrote it to `.vscode/settings.json`; it now always asks.
+- Dump Trace Store shows in the Command Palette only with `liveTestRunner.devMode` (as documented).
+
 ### Files changed outside the editor rerun their tests
 
 - While a session is on, a file changed on disk outside the editor (git pull, a branch switch, a code generator, another editor) reruns what depends on it, exactly like a save (`SessionManager.onFilesChangedOnDisk` → `onFileChanged`, the old `onSave` body; log lines say "Changed on disk:"). `session/ExternalChanges.ts` batches file-system events for 500 ms, drops the editor's own save (seen in `onWillSaveTextDocument` / `onDidSaveTextDocument`, 2 s window), files with unsaved edits, `node_modules` and `.git`.

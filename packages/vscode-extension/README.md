@@ -64,8 +64,9 @@
 |---------|-------------|
 | `Start Testing` | Run all tests and start watching |
 | `Stop Testing` | End the session |
-| `Stop Testing and Clear Cache` | Stop + wipe discovery cache |
+| `Stop Testing and Clear Cache` | Stop + delete this project's cached data |
 | `Clear Cache and Restart Testing` | Fresh restart |
+| `Clear All Cached Data` | Delete every project's cached data (asks first) |
 | `Select Project` | Switch the project shown (same as the Explorer's switcher) |
 | `Select Project Root` | Pin Live Test Runner to one folder (or back to all projects) |
 | `Select Python Interpreter` | pytest projects: choose the Python environment that runs the tests (remembered per project) |

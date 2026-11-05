@@ -528,6 +528,10 @@ Runs on extension activate — before the user clicks Start Testing.
 - Template literals: interleaves quasi text with `…` placeholders so interpolated names still appear in the tree (`"accepts valid severity …"`)
 - Returns `{ suites, rootTests }` with accurate `line` numbers for every node
 
+### Storage (`cache/Storage.ts`)
+
+Everything cached lives outside the project: the user cache folder (`<folder>-<hash8>/` discovery caches with a `session.lock`, `ltr-cra-config-*.json`) and the temp folder (`session-<pid>-<time>/` per window, `runnable-files-*.json`, `transform-cache-*/` with coverage manifests). `Storage.ts` knows every path: **Stop Testing and Clear Cache** deletes all of a project's entries; **Clear All Cached Data** deletes everything except other live windows' session folders and locked discovery caches; on activation `pruneUnused` deletes entries unused for 30 days (transform caches and runnable lists are touched on use). Dead windows' session folders are removed on activation; discovery caches are also capped at 10 projects / 500 MB (LRU, on Start).
+
 ### Session management (`SessionManager`)
 
 1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, clears `CoverageStore`, fires `SourceCounter` (background, parallel), runs all test files, enables on-save listener

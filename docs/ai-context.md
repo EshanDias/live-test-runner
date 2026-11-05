@@ -138,6 +138,7 @@ src/
 ├── session/
 │   ├── SessionManager.ts           Session lifecycle, batched run pool (CONCURRENCY=cpus/4), on-save, rerun
 │   ├── ExternalChanges.ts          Files changed on disk outside the editor (git pull, branch switch): drops the editor's own saves, batches 500 ms → SessionManager.onFilesChangedOnDisk (>20 files restart; ignored during our runs)
+│   (cache/Storage.ts)              Every cached path in one place: per-project clear (Stop and Clear Cache), Clear All Cached Data, 30-day pruning on activation
 │   ├── IProjectConfig.ts           Interface: the project's resolved runner config (get / reset)
 │   ├── JestProjectConfig.ts        IProjectConfig for Jest: `jest --showConfig` once per session
 │   ├── IBatchRunner.ts             Interface: runFiles(BatchRunOptions) / kill / reset — SessionManager's only view of batch runs

@@ -94,6 +94,11 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.clearAllCaches",
+        "title": "Clear All Cached Data",
+        "category": "Live Test Runner"
+      },
+      {
         "command": "liveTestRunner.selectProjectRoot",
         "title": "Select Project Root",
         "category": "Live Test Runner"
@@ -398,6 +403,12 @@
           "command": "liveTestRunner.openSettings",
           "when": "view == liveTestRunner.explorer",
           "group": "navigation@99"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "liveTestRunner.dumpTraceStore",
+          "when": "config.liveTestRunner.devMode"
         }
       ]
     }

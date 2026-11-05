@@ -6,9 +6,14 @@ All notable changes to Live Test Runner are documented here.
 
 ### Improved
 
+- **Clearing the cache clears everything** for the project, and the new **Clear All Cached Data** command empties it for every project. Data a project hasn't used for 30 days is deleted automatically.
 - **Changes from outside the editor rerun tests.** While testing is on, a `git pull`, a branch switch or a code generator that changes your files reruns the affected tests, just like saving. A branch switch that changes many files reruns everything once.
 - **Coverage bars stay out of your way.** They now sit on the left edge of each line instead of inside your code, so nothing shifts while you type and breakpoints keep the gutter. While you edit, the bars move with their lines; a line you change, or code you move, has no bar until you save (reformatting spaces keeps them). Rewrite most of a file and its bars wait for the save. Hide or show coverage with the new eye button in the editor title (setting `liveTestRunner.showCoverageInEditor`).
 - **Settings gear** in the Test Explorer title bar opens Live Test Runner's settings.
+### Fixes
+
+- **Rerun / Debug Test at Line, Focus Test in Results Panel and Show All Covering Tests** now work from the Command Palette, using the test or line under your cursor.
+- **Select Project Root** always asks before saving your choice to the workspace settings.
 
 ## [3.2.0] - 2026-10-30
 

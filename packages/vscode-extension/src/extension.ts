@@ -33,6 +33,7 @@ import { rotateAndCheckCapacity } from './cache/DiscoveryCache';
 import { CoverageStore } from './coverage/CoverageStore';
 import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
 import { ExternalChanges } from './session/ExternalChanges';
+import { clearAll, clearProjectCaches, pruneUnused, runnableFilesPath, transformCacheDir } from './cache/Storage';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
@@ -109,6 +110,13 @@ export function activate(context: vscode.ExtensionContext) {
     log.warn('Stale session cleanup failed — continuing', err);
   }
   if (removedDirs > 0) { log.debug(`Removed ${removedDirs} stale session folder(s) from ${LTR_BASE_TMP_DIR}`); }
+  // Cached data no window has used for 30 days (a project opened once is not kept forever).
+  try {
+    const pruned = pruneUnused({ isProcessAlive });
+    if (pruned > 0) { log.debug(`Removed ${pruned} cached item(s) unused for 30 days`); }
+  } catch (err) {
+    log.warn('Cache pruning failed — continuing', err);
+  }
 
   // Create a unique isolated directory for THIS session.
   const sessionDirName = `session-${process.pid}-${Date.now()}`;
@@ -419,6 +427,8 @@ export function activate(context: vscode.ExtensionContext) {
       ctx.discoveryCache.clear();
       ctx.discoveryCache.writeLock();
     }
+    // Everything else cached for the project: runnable-files list, Jest transform cache, CRA config.
+    clearProjectCaches(ctx.root);
     // Yield so session-stopped is processed by the webview before we send init
     await new Promise<void>((r) => setTimeout(r, 0));
     resultsView.syncNow();
@@ -443,6 +453,16 @@ export function activate(context: vscode.ExtensionContext) {
   });
   const diskWatcher = vscode.workspace.createFileSystemWatcher('**/*', false, false, true);
 
+  /** The active editor's file and cursor line (1-based); else a hint saying what to open. */
+  const cursorOrHint = (what: string): { filePath: string; line: number } | undefined => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.uri.scheme !== 'file') {
+      void vscode.window.showInformationMessage(`Live Test Runner: open a test file and put the cursor on a test to ${what}.`);
+      return undefined;
+    }
+    return { filePath: editor.document.uri.fsPath, line: editor.selection.active.line + 1 };
+  };
+
   // ── Commands ───────────────────────────────────────────────────────────────
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ExplorerView.viewId, explorerView, { webviewOptions: { retainContextWhenHidden: true } }),
@@ -465,6 +485,18 @@ export function activate(context: vscode.ExtensionContext) {
       if (!ctx) { return; }
       await stopAndClear(ctx);
       log.info('Session stopped and discovery cache cleared');
+    }),
+    vscode.commands.registerCommand('liveTestRunner.clearAllCaches', async (opts?: { confirmed?: boolean }) => {
+      const choice = opts?.confirmed ? 'Clear All' : await vscode.window.showWarningMessage(
+        'Clear all of Live Test Runner\'s cached data? Testing stops in this window and every project is set up again on its next Start (the first run is slower). Other VS Code windows keep running; their next Start may also be slower.',
+        { modal: true },
+        'Clear All',
+      );
+      if (choice !== 'Clear All') { return; }
+      for (const ctx of projects.contexts) { await stopAndClear(ctx); }
+      const removed = clearAll({ ownSessionDir: LTR_SESSION_TMP_DIR, isProcessAlive });
+      log.info(`Cleared all cached data (${removed} item(s) removed)`);
+      void vscode.window.showInformationMessage('Live Test Runner: all cached data cleared.');
     }),
     vscode.commands.registerCommand('liveTestRunner.clearCacheAndRestart', async () => {
       const ctx = sel();
@@ -523,17 +555,26 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.executeCommand('liveTestRunner.results.focus');
     }),
     vscode.commands.registerCommand('liveTestRunner.rerunScope',         (args) => owner(args?.fileId)?.session.rerunScope(args)),
-    vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath, line) => {
-      const ctx = owner(filePath);
-      return ctx && rerunFromEditor(filePath, line, ctx.store, ctx.session);
+    // CodeLens passes (file, 1-based line); from the Command Palette: the active editor's cursor.
+    vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath?: string, line?: number) => {
+      const at = filePath ? { filePath, line: line ?? 1 } : cursorOrHint('rerun the test under the cursor');
+      const ctx = at && owner(at.filePath);
+      return ctx && at && rerunFromEditor(at.filePath, at.line, ctx.store, ctx.session);
     }),
-    vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath, line) => {
-      const ctx = owner(filePath);
-      return ctx && debugFromEditor(filePath, line, ctx.store, ctx.session);
+    vscode.commands.registerCommand('liveTestRunner.debugFromEditor',    (filePath?: string, line?: number) => {
+      const at = filePath ? { filePath, line: line ?? 1 } : cursorOrHint('debug the test under the cursor');
+      const ctx = at && owner(at.filePath);
+      return ctx && at && debugFromEditor(at.filePath, at.line, ctx.store, ctx.session);
     }),
-    vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId, nodeId) => {
+    vscode.commands.registerCommand('liveTestRunner.focusResult',        (fileId?: string, nodeId?: string) => {
+      if (!fileId) {
+        const at = cursorOrHint('show the test under the cursor in the Results panel');
+        if (!at) { return; }
+        fileId = at.filePath;
+        nodeId = owner(fileId)?.store.getLineMap(fileId).get(at.line)?.nodeId;
+      }
       const ctx = owner(fileId);
-      if (ctx) { projects.select(ctx); focusResult(fileId, nodeId, ctx.store, selection, resultsView); }
+      if (ctx) { projects.select(ctx); focusResult(fileId, nodeId ?? fileId, ctx.store, selection, resultsView); }
     }),
     vscode.commands.registerCommand('liveTestRunner.revealTestInPanel',  (args: { testFileId: string; fullName: string }) => {
       const ctx = owner(args.testFileId);
@@ -554,7 +595,22 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`)),
     vscode.commands.registerCommand('liveTestRunner.showCoverageInEditor', () => coverageDecoMgr.setShown(true)),
     vscode.commands.registerCommand('liveTestRunner.hideCoverageInEditor', () => coverageDecoMgr.setShown(false)),
-    vscode.commands.registerCommand('liveTestRunner.showCoveringTests',   async (args: { filePath: string; line: number }) => {
+    vscode.commands.registerCommand('liveTestRunner.showCoveringTests',   async (args?: { filePath: string; line: number }) => {
+      if (!args?.filePath) {
+        // Command Palette: the cursor's line, as it was measured (the user may have edited since).
+        const editor = vscode.window.activeTextEditor;
+        const entry = editor && owner(editor.document.uri.fsPath)?.coverageStore.getEntry(editor.document.uri.fsPath);
+        if (!editor || !entry || entry.state === 'counted') {
+          void vscode.window.showInformationMessage('Live Test Runner: open a source file with coverage and put the cursor on a line to see the tests that ran it.');
+          return;
+        }
+        const measured = coverageDecoMgr.measuredLines.mappingFor(editor.document, entry.counters).toMeasured(editor.selection.active.line);
+        if (measured < 0) {
+          void vscode.window.showInformationMessage('Live Test Runner: this line changed since the last run — save to see the tests that run it.');
+          return;
+        }
+        args = { filePath: editor.document.uri.fsPath, line: measured + 1 };
+      }
       const ctx = owner(args.filePath);
       if (!ctx) { return; }
       const store = ctx.store;
@@ -675,6 +731,7 @@ export function activate(context: vscode.ExtensionContext) {
       projects,
       observers, editorObservers, decorationManager, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
       explorerView, coverageDecorations: coverageDecoMgr,
+      storagePaths: (root: string) => ({ runnableFiles: runnableFilesPath(root), transformCache: transformCacheDir(root) }),
     };
   }
   return undefined;
@@ -707,10 +764,10 @@ async function selectProjectRoot(projects: ProjectRegistry): Promise<void> {
     ...(pinned ? [{ label: '$(search) Detect all projects', description: 'clear liveTestRunner.projectRoot', root: '' }] : []),
     ...roots.map((r) => ({ label: path.basename(r), description: r, root: r })),
   ];
-  const selected =
-    items.length === 1
-      ? items[0]
-      : await vscode.window.showQuickPick(items, { placeHolder: 'Select the project root Live Test Runner uses (pins the window to it)' });
+  // Always asked, even with one folder: the choice is written to the workspace settings (.vscode/settings.json).
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select the project root Live Test Runner uses (saved in this workspace\'s settings)',
+  });
   if (selected) {
     await config.update('projectRoot', selected.root || undefined, vscode.ConfigurationTarget.Workspace);
   }
