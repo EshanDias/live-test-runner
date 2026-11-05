@@ -4,6 +4,13 @@ All notable changes to Live Test Runner are documented here.
 
 ## [Unreleased]
 
+### Files changed outside the editor rerun their tests
+
+- While a session is on, a file changed on disk outside the editor (git pull, a branch switch, a code generator, another editor) reruns what depends on it, exactly like a save (`SessionManager.onFilesChangedOnDisk` → `onFileChanged`, the old `onSave` body; log lines say "Changed on disk:"). `session/ExternalChanges.ts` batches file-system events for 500 ms, drops the editor's own save (seen in `onWillSaveTextDocument` / `onDidSaveTextDocument`, 2 s window), files with unsaved edits, `node_modules` and `.git`.
+- More than 20 changed project files at once (a branch switch) restart the session instead of one rerun per file.
+- Changes made during one of our own runs are ignored (logged): tests that write files would otherwise rerun themselves forever. Stopped sessions ignore disk changes (session guard).
+- Tests: `externalChanges.test.ts` (4); e2e `disk-changes`.
+
 ### Coverage bars stay out of the way while editing
 
 - **Bars no longer sit in the text.** They were a `▌` character inserted before each line (`before:` decoration), so they took editing space and moved with typing. Each bar is now a thin, faded 1px left border of a whole-line decoration: code never shifts, the gutter stays free for breakpoints. The grey "not executable" bars are gone (they only kept the old text shift even).

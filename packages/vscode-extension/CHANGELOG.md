@@ -6,6 +6,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### Improved
 
+- **Changes from outside the editor rerun tests.** While testing is on, a `git pull`, a branch switch or a code generator that changes your files reruns the affected tests, just like saving. A branch switch that changes many files reruns everything once.
 - **Coverage bars stay out of your way.** They now sit on the left edge of each line instead of inside your code, so nothing shifts while you type and breakpoints keep the gutter. While you edit, the bars move with their lines; a line you change, or code you move, has no bar until you save (reformatting spaces keeps them). Rewrite most of a file and its bars wait for the save. Hide or show coverage with the new eye button in the editor title (setting `liveTestRunner.showCoverageInEditor`).
 - **Settings gear** in the Test Explorer title bar opens Live Test Runner's settings.
 

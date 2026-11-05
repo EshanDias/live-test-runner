@@ -532,6 +532,7 @@ Runs on extension activate — before the user clicks Start Testing.
 
 1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, clears `CoverageStore`, fires `SourceCounter` (background, parallel), runs all test files, enables on-save listener
 2. **On save** — debounced (default 300ms); classifies file as test or source; for source files calls `CoverageStore.markFileStale()` then `_runAffectedBySourceFile()` (trace-store driven with CoverageMap fallback)
+   - **Changed on disk** — `extension.ts` watches `**/*`; `session/ExternalChanges.ts` drops the editor's own saves (`onWillSave` / `onDidSave`, 2 s), dirty documents, `node_modules` and `.git`, batches events for 500 ms and hands each project its files (`onFilesChangedOnDisk`). Same path as a save (`onFileChanged`); more than 20 files restart the session; changes during one of our runs are ignored (tests that write files would loop).
 3. **Stop Testing** — kills child processes, clears decorations, calls `CoverageStore.clear()`, disables on-save
 
 After each file batch, `JestBatchRunner` parses the light-trace JSONL (updates `ExecutionTraceStore`) and then parses the coverage counters JSONL (promotes `CoverageStore` entries from `'counted'` to `'measured'`). Both happen in the same post-Jest-exit phase — no extra process or phase needed.

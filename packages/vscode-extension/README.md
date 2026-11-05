@@ -35,7 +35,7 @@
 
 ## What you get
 
-- ⚡ **Reruns on save** — only the tests that ran the code you changed.
+- ⚡ **Reruns on save** — only the tests that ran the code you changed. Changes from `git pull` or a branch switch rerun too.
 - 🌳 **Test tree** — every file, suite and test on open. Score cards (Total · Passed · Failed, plus **Running** while tests run) filter it with one click.
 - 🎨 **In the editor** — ✓ / ✗ gutter icons, inline durations, `▶ Run` · `▷ Debug` · `◈ Results` above every test.
 - 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it. The bars never shift your code and follow your edits; hide them with the 👁 button in the editor title.

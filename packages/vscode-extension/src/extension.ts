@@ -32,6 +32,7 @@ import { TimelineDecorationManager } from './timeline/TimelineDecorationManager'
 import { rotateAndCheckCapacity } from './cache/DiscoveryCache';
 import { CoverageStore } from './coverage/CoverageStore';
 import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
+import { ExternalChanges } from './session/ExternalChanges';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
@@ -428,6 +429,20 @@ export function activate(context: vscode.ExtensionContext) {
   const byArg = (id: unknown): ProjectContext | undefined =>
     typeof id === 'string' && id ? projects.contexts.find((c) => c.id === id || c.name === id) : sel();
 
+  // ── Files changed outside the editor ───────────────────────────────────────
+  const externalChanges = new ExternalChanges({
+    isDirtyInEditor: (filePath) => vscode.workspace.textDocuments.some((d) => d.isDirty && d.uri.fsPath === filePath),
+    onChanged: (filePaths) => {
+      const byProject = new Map<ProjectContext, string[]>();
+      for (const f of filePaths) {
+        const ctx = owner(f);
+        if (ctx) { byProject.set(ctx, [...(byProject.get(ctx) ?? []), f]); }
+      }
+      for (const [ctx, files] of byProject) { ctx.session.onFilesChangedOnDisk(files); }
+    },
+  });
+  const diskWatcher = vscode.workspace.createFileSystemWatcher('**/*', false, false, true);
+
   // ── Commands ───────────────────────────────────────────────────────────────
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ExplorerView.viewId, explorerView, { webviewOptions: { retainContextWhenHidden: true } }),
@@ -624,7 +639,16 @@ export function activate(context: vscode.ExtensionContext) {
     }),
 
     // Each project reruns its own files (a project in the background too).
-    vscode.workspace.onDidSaveTextDocument((doc) => owner(doc.uri.fsPath)?.session.onSave(doc)),
+    vscode.workspace.onWillSaveTextDocument((e) => externalChanges.noteSave(e.document.uri.fsPath)),
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      externalChanges.noteSave(doc.uri.fsPath);
+      owner(doc.uri.fsPath)?.session.onSave(doc);
+    }),
+    // Files changed outside the editor (git pull, branch switch, generators) rerun like a save.
+    diskWatcher,
+    diskWatcher.onDidChange((uri) => externalChanges.fileChanged(uri.fsPath)),
+    diskWatcher.onDidCreate((uri) => externalChanges.fileChanged(uri.fsPath)),
+    { dispose: () => externalChanges.dispose() },
     vscode.workspace.onDidChangeWorkspaceFolders(() => { projects.refresh(); }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('liveTestRunner.projectRoot')) { projects.refresh(); }
