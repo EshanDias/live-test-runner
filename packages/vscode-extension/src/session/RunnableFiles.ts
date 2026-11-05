@@ -74,6 +74,17 @@ export interface RunnableEntry {
   frameworks?: Record<string, string>;
 }
 
+/** Where a project's runnable-files list is remembered (cache/Storage.ts clears and prunes it). */
+function touchFile(p: string): void {
+  const now = new Date();
+  try { fs.utimesSync(p, now, now); } catch { /* ignore */ }
+}
+
+export function runnableFilesPath(projectRoot: string, dir: string): string {
+  const id = crypto.createHash('sha256').update(runnableKey(projectRoot)).digest('hex').slice(0, 16);
+  return path.join(dir, `runnable-files-${id}.json`);
+}
+
 export class RunnableFilesCache {
   /** @param _dir folder shared by all sessions (survives VS Code restarts) */
   constructor(private readonly _dir: string) {}
@@ -89,8 +100,10 @@ export class RunnableFilesCache {
    */
   readEntry(projectRoot: string, key: string): RunnableEntry | undefined {
     try {
-      const data = JSON.parse(fs.readFileSync(this._file(projectRoot), 'utf8')) as { key?: string; files?: unknown; groups?: unknown; frameworks?: unknown };
+      const file = this._file(projectRoot);
+      const data = JSON.parse(fs.readFileSync(file, 'utf8')) as { key?: string; files?: unknown; groups?: unknown; frameworks?: unknown };
       if (data.key !== key || !Array.isArray(data.files)) { return undefined; }
+      touchFile(file); // in use: kept by the 30-day pruning
       const record = (v: unknown) => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, string> : undefined;
       return { files: data.files.filter((f): f is string => typeof f === 'string'), groups: record(data.groups), frameworks: record(data.frameworks) };
     } catch {
@@ -105,7 +118,6 @@ export class RunnableFilesCache {
   }
 
   private _file(projectRoot: string): string {
-    const id = crypto.createHash('sha256').update(runnableKey(projectRoot)).digest('hex').slice(0, 16);
-    return path.join(this._dir, `runnable-files-${id}.json`);
+    return runnableFilesPath(projectRoot, this._dir);
   }
 }

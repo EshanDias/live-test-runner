@@ -49,11 +49,12 @@ async function shooter(cdp, out, t) {
  * ([{ file, t }], t in seconds; the last entry is the end time); the
  * returned `stop()` ends it. Screenshots, not Page.startScreencast: the
  * screencast leaves webviews (Explorer, Results) blank. `clip` in CSS px,
- * captured at 1× from the 2× window (sharp text). scripts/demo-gifs.js turns
- * a recording into a GIF.
+ * captured at `scale` (default 0.5: 1× from the 2× window, sharp text; 1 =
+ * full 2× size for scenes the GIF zooms into — fewer frames a second).
+ * scripts/demo-gifs.js turns a recording into a GIF.
  */
 function recorder(cdp, out) {
-  return async (name, clip) => {
+  return async (name, clip, scale = 0.5) => {
     const dir = path.join(out, name);
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
@@ -62,7 +63,7 @@ function recorder(cdp, out) {
     const loop = (async () => {
       while (running) {
         const t = Date.now() / 1000;
-        const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', clip: { ...clip, scale: 0.5 } });
+        const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', clip: { ...clip, scale } });
         const file = `${String(frames.length).padStart(5, '0')}.png`;
         fs.writeFileSync(path.join(dir, file), Buffer.from(data, 'base64'));
         frames.push({ file, t });

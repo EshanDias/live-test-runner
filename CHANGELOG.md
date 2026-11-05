@@ -2,6 +2,48 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [3.2.1] - 2026-11-05
+
+### Stop really stops (fix, 3.2.0 bug)
+
+- After **Stop**, the Explorer's "Running — 1 / N files" timer kept counting and the CPU stayed busy. Two causes: the background source scan (`SourceCounter`, parses every source file for the coverage totals) was never cancelled — it now has `cancel()`, called by Stop and restarts; and the webview only cleared its run timer on `run-finished`, which Stop deliberately never sends for the run it abandons — `session-stopped` now clears it. `_postProgress` no longer posts after Stop (a late result of a killed batch brought "Running…" back to the status bar). e2e `basic-stop` checks all three.
+
+### Nothing written into the project
+
+- **Select Project Root** kept its pin in the workspace settings (`.vscode/settings.json`, creating the folder in projects without one). The pin now lives in VS Code's workspace storage (`ProjectRegistry.pinRoot`, key `liveTestRunner.pinnedProjectRoot`); a `liveTestRunner.projectRoot` setting the user writes still works.
+
+### Storage: clearing really clears, unused data is pruned
+
+- **Stop Testing and Clear Cache / Clear Cache and Restart** now delete everything cached for the project: besides the discovery cache, the runnable-files list (`runnable-files-*.json`, so a restart asks the framework again), the Jest transform cache + coverage manifests (`transform-cache-*`) and the CRA config (`ltr-cra-config-*.json`). Before, those stayed.
+- **New: Clear All Cached Data** (`liveTestRunner.clearAllCaches`, asks first): stops this window's projects and deletes every cached file, except other live windows' session folders and the discovery caches they hold locked.
+- **Pruning:** on activation, cached data unused for 30 days is deleted (`cache/Storage.ts` `pruneUnused`; transform caches and runnable lists are touched when used). Before, transform caches, runnable lists and CRA configs were never deleted (a project opened once stayed forever; on Windows the temp folder is never cleaned). The 10-project / 500 MB discovery-cache limit is unchanged.
+- A window's session folder is deleted when the window closes (`deactivate`), not only on the next start.
+- **New: Open Cached Data Folder** (`liveTestRunner.openDataFolder`) opens either base folder in the OS file manager.
+- `cache/Storage.ts` is the one place that knows every path (`transformCacheDir`, `runnableFilesPath`, runner `craConfigPath`).
+- Tests: `storage.test.ts` (2); e2e `commands` checks the files are gone.
+
+### Commands checked end to end
+
+- New e2e `commands` runs every command the way a user does (Command Palette, no arguments) and checks its effect.
+- **Fixed:** Rerun Test at Line, Debug Test at Line, Focus Test in Results Panel and Show All Covering Tests did nothing useful from the Command Palette (they expected a file and line from a CodeLens or hover link); they now use the active editor's cursor (Show All Covering Tests maps it to the measured line) or say what to open.
+- **Fixed:** Select Project Root picked the only folder of a single-folder workspace without asking; it now always asks (and no longer writes settings at all — see above).
+- Dump Trace Store shows in the Command Palette only with `liveTestRunner.devMode` (as documented).
+
+### Files changed outside the editor rerun their tests
+
+- While a session is on, a file changed on disk outside the editor (git pull, a branch switch, a code generator, another editor) reruns what depends on it, exactly like a save (`SessionManager.onFilesChangedOnDisk` → `onFileChanged`, the old `onSave` body; log lines say "Changed on disk:"). `session/ExternalChanges.ts` batches file-system events for 500 ms, drops the editor's own save (seen in `onWillSaveTextDocument` / `onDidSaveTextDocument`, 2 s window), files with unsaved edits, `node_modules` and `.git`.
+- More than 20 changed project files at once (a branch switch) restart the session instead of one rerun per file.
+- Changes made during a run are queued and rerun when the last run ends. A file that changes again during its own queued rerun is not queued again (warned): a test that writes it would otherwise rerun forever. Stopped sessions ignore disk changes (session guard).
+- Tests: `externalChanges.test.ts` (4); e2e `disk-changes`.
+
+### Coverage bars stay out of the way while editing
+
+- **Bars no longer sit in the text.** They were a `▌` character inserted before each line (`before:` decoration), so they took editing space and moved with typing. Each bar is now a thin, faded 1px left border of a whole-line decoration, drawn over the middle of the line only (`border-image` gradient) so neighbouring lines read as separate marks: code never shifts, the gutter stays free for breakpoints. The grey "not executable" bars are gone (they only kept the old text shift even).
+- **Bars and hover follow unsaved edits.** Redraws used the measured file's line numbers, so after an edit bars and the hover landed on the wrong lines. New `src/editor/MeasuredLines.ts` remembers each measurement's file text (keyed by the entry's counters object) and `lineMatch.ts` matches the editor's current lines to it (common prefix / suffix + LCS of the changed middle). Bars are drawn where each measured line is now; edited and new lines get none until the next measurement. Spacing inside or at the end of a line is ignored, indentation is not (code wrapped in a new `if` loses its bars); moved code loses its bars (and the lines it moved across); when less than half the file's lines remain, the whole file shows no bars until saved. Typing redraws after 150 ms. `CoverageHoverProvider` maps the hovered line the same way.
+- **Show / hide coverage in the editor:** setting `liveTestRunner.showCoverageInEditor` (default on), commands **Hide / Show Coverage in Editor** (eye buttons in the editor title while the file has coverage). Hidden clears bars and stale tint and turns the coverage hover off.
+- **Settings gear** in the Test Explorer title bar (`liveTestRunner.openSettings`): opens Settings filtered to the extension.
+- Tests: `lineMatch.test.ts` (12); e2e `coverage-editing` (insert / edit / hide / show / revert on a Jest fixture); `diag-coverage-bars` captures screenshots.
+
 ## [3.2.0] - 2026-10-30
 
 ### pytest support (Python)

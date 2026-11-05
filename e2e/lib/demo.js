@@ -87,7 +87,8 @@ async function recordDemo({ api, t, vscode, workspace }, cfg) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { ...VIEW, deviceScaleFactor: 2, mobile: false });
   const rec = recorder(cdp, out);
   const CLIP = { x: 0, y: 36, width: VIEW.width, height: VIEW.height - 36 };
-  const record = (name) => rec(name, CLIP);
+  /** `sharp`: full-size frames, for the scenes the GIF zooms into. */
+  const record = (name, sharp = false) => rec(name, CLIP, sharp ? 1 : 0.5);
   const abs = (rel) => path.join(workspace, rel);
   const open = async (rel, opts = {}) => vscode.window.showTextDocument(await vscode.workspace.openTextDocument(abs(rel)), { preview: false, ...opts });
   const original = fs.readFileSync(abs(cfg.sourceFile));
@@ -128,7 +129,7 @@ async function recordDemo({ api, t, vscode, workspace }, cfg) {
     hov.selection = new vscode.Selection(line, col, line, col);
     hov.revealRange(new vscode.Range(line, 0, line, 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     await h.sleep(800);
-    stop = await record(`${cfg.fw}-hover`);
+    stop = await record(`${cfg.fw}-hover`, true);
     await h.sleep(600);
     await vscode.commands.executeCommand('editor.action.showHover');
     await h.sleep(3500);
@@ -141,7 +142,7 @@ async function recordDemo({ api, t, vscode, workspace }, cfg) {
     const ed = await open(cfg.output.file);
     if (node.line) { ed.revealRange(new vscode.Range(node.line - 1, 0, node.line - 1, 0), vscode.TextEditorRevealType.AtTop); }
     await h.sleep(800);
-    stop = await record(`${cfg.fw}-results`);
+    stop = await record(`${cfg.fw}-results`, true);
     await h.sleep(800);
     // ▶ Run on that test (its CodeLens), then its own output in the Results panel.
     await vscode.commands.executeCommand('liveTestRunner.rerunScope', { scope: node.type, fileId: node.fileId, nodeId: node.id, fullName: node.fullName });

@@ -71,6 +71,16 @@ import { extensionOf, isSourceFile, NON_SOURCE_EXTENSIONS } from './sourceFiles'
  * Everything framework-specific is delegated to the IFrameworkAdapter.
  * Everything UI-specific is delegated to the observer list.
  */
+/** More files than this changed on disk at once restart the session instead of one rerun per file. */
+const MAX_DISK_CHANGES_PER_FILE = 20;
+
+/** `a.ts`, `a.ts and b.ts`, `a.ts and 3 more` — for log lines. */
+function describeFiles(files: string[]): string {
+  const names = files.map((f) => path.basename(f));
+  if (names.length <= 2) { return names.join(' and '); }
+  return `${names[0]} and ${names.length - 1} more`;
+}
+
 export class SessionManager {
   private _session: TestSession | undefined;
   private readonly _saveTimers = new Map<string, NodeJS.Timeout>();
@@ -87,6 +97,12 @@ export class SessionManager {
    * "finished" is only announced when the last one ends (BUG-15).
    */
   private _activeRuns = 0;
+  /** Files changed on disk during a run: rerun when the runs finish. */
+  private readonly _diskQueue = new Set<string>();
+  /** The files the last queued disk rerun ran for (loop guard). */
+  private _lastDiskRerun = new Set<string>();
+  /** The running background source scan, if any (cancelled by Stop / restart). */
+  private _sourceCounter: SourceCounter | undefined;
   /** Files scheduled / finished across all active runs — drives the progress UI. */
   private _progress = { completed: 0, total: 0, failed: 0 };
   /** Set while a full-suite run is part of the active runs. */
@@ -138,6 +154,9 @@ export class SessionManager {
   /** Stop every framework's running batches (final until a new session). */
   private _killBatches(): void {
     for (const services of this._services.all()) { services.batchRunner.kill(); }
+    // The background source scan (coverage totals) parses every source file — Stop ends it too.
+    this._sourceCounter?.cancel();
+    this._sourceCounter = undefined;
   }
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
@@ -242,7 +261,9 @@ export class SessionManager {
 
       // Background source scan — runs in parallel with test execution.
       this._coverageStore.clear();
+      this._sourceCounter?.cancel();
       const sourceCounter = new SourceCounter(projectRoot, this._coverageStore, coverageScopeOf(services.projectConfig, projectRoot));
+      this._sourceCounter = sourceCounter;
       sourceCounter.on('progress', (scanned: number, total: number) => {
         this._observers.forEach((o) => o.onSourceScanProgress?.(scanned, total));
       });
@@ -275,6 +296,8 @@ export class SessionManager {
   stop(decorationManager: DecorationManager): void {
     if (this._session) { log.info('Session stopped'); }
     this._token++;
+    this._diskQueue.clear();
+    this._lastDiskRerun.clear();
     this._clearSaveTimers();
     this._killBatches();
     if (this._session) {
@@ -429,6 +452,74 @@ export class SessionManager {
   // ── On-save handler ────────────────────────────────────────────────────────
 
   onSave(document: vscode.TextDocument): void {
+    if (document.uri.scheme !== 'file') { return; }
+    this.onFileChanged(document.uri.fsPath, 'Saved');
+  }
+
+  /**
+   * Files changed on disk outside the editor (git pull, a branch switch, a
+   * code generator) while the session is on: rerun what depends on them, as a
+   * save would. Changes during one of our own runs are ignored — tests that
+   * write files would otherwise rerun themselves forever. Many files at once
+   * (a branch switch) restart the session instead of one rerun per file.
+   */
+  onFilesChangedOnDisk(filePaths: string[]): void {
+    if (!this._session?.isTestingActive()) { return; }
+    const root = this._getProjectRoot();
+    if (!root) { return; }
+    const relevant = filePaths.filter((f) => this._isWatchedFile(f, root));
+    if (relevant.length === 0) { return; }
+    if (this.isRunning()) {
+      // Rerun once the runs in flight finish (see _runQueuedDiskChanges).
+      for (const f of relevant) { this._diskQueue.add(f); }
+      log.info(`${describeFiles(relevant)} changed on disk during a run — queued, reruns when the run finishes`);
+      return;
+    }
+    this._lastDiskRerun.clear();
+    if (relevant.length > MAX_DISK_CHANGES_PER_FILE) {
+      log.info(`${relevant.length} files changed on disk (branch switch or pull?) — restarting the session (every test reruns)`);
+      void this.start();
+      return;
+    }
+    log.info(`${describeFiles(relevant)} changed on disk — rerunning what depends on ${relevant.length === 1 ? 'it' : 'them'}`);
+    for (const f of relevant) { this.onFileChanged(f, 'Changed on disk:'); }
+  }
+
+  /**
+   * The runs are over: rerun the files that changed on disk meanwhile. A file
+   * that changed again during its own queued rerun is most likely written by
+   * a test — it is not queued again, or it would rerun forever.
+   */
+  private _runQueuedDiskChanges(): void {
+    if (this._diskQueue.size === 0 || !this._session?.isTestingActive()) { return; }
+    const queued = [...this._diskQueue];
+    this._diskQueue.clear();
+    const looping = queued.filter((f) => this._lastDiskRerun.has(f));
+    const files = queued.filter((f) => !this._lastDiskRerun.has(f));
+    if (looping.length > 0) {
+      log.warn(`${describeFiles(looping)} changed again while ${looping.length === 1 ? 'its' : 'their'} tests reran — probably written by a test, not rerunning again (save to rerun)`);
+    }
+    this._lastDiskRerun = new Set(files);
+    if (files.length === 0) { return; }
+    if (files.length > MAX_DISK_CHANGES_PER_FILE) {
+      log.info(`${files.length} files changed on disk during the run — restarting the session (every test reruns)`);
+      void this.start();
+      return;
+    }
+    log.info(`Rerunning what depends on ${describeFiles(files)} (changed on disk during the run)`);
+    for (const f of files) { this.onFileChanged(f, 'Changed on disk:'); }
+  }
+
+  /** A project file the session reruns tests for (source, test or framework config; not node_modules). */
+  private _isWatchedFile(filePath: string, root: string): boolean {
+    const rel = path.relative(root, filePath);
+    return !rel.startsWith('..') && !path.isAbsolute(rel) &&
+      !/(^|[\\/])node_modules[\\/]/.test(rel) &&
+      (this._isProjectSource(filePath) || this._mayBeConfigFile(filePath, root));
+  }
+
+  /** A save, or a change on disk (`verb` starts its log lines: "Saved", "Changed on disk:"). */
+  onFileChanged(filePath: string, verb = 'Saved'): void {
     if (!this._session?.isTestingActive()) {
       return;
     }
@@ -437,18 +528,11 @@ export class SessionManager {
         .getConfiguration('liveTestRunner')
         .get<number>('onSaveDebounceMs') ?? 300;
 
-    const filePath = document.uri.fsPath;
     // Only the project's own source files matter (JS / TS and components —
     // .vue, .svelte, …) — VS Code also saves its settings.json, untitled
     // buffers, files in other folders, etc.
     const root = this._getProjectRoot();
-    const rel = root ? path.relative(root, filePath) : '';
-    if (
-      !root || document.uri.scheme !== 'file' ||
-      rel.startsWith('..') || path.isAbsolute(rel) ||
-      /(^|[\\/])node_modules[\\/]/.test(rel) ||
-      (!this._isProjectSource(filePath) && !this._mayBeConfigFile(filePath, root))
-    ) {
+    if (!root || !this._isWatchedFile(filePath, root)) {
       return;
     }
     const existing = this._saveTimers.get(filePath);
@@ -470,7 +554,7 @@ export class SessionManager {
       const changedConfig = await this._configFileOf(filePath, projectRoot);
       if (changedConfig) {
         if (token !== this._token) { return; }
-        log.info(`Saved ${path.basename(filePath)} — the ${changedConfig.terms.config} changed, restarting the session (every test reruns)`);
+        log.info(`${verb} ${path.basename(filePath)} — the ${changedConfig.terms.config} changed, restarting the session (every test reruns)`);
         await this.start();
         return;
       }
@@ -483,7 +567,7 @@ export class SessionManager {
         // A test file created after Start is not in Jest's list yet — ask again
         // (a file already known to be excluded is not asked about every save).
         const name = this._terms(projectRoot).name;
-        log.debug(`Saved ${path.basename(filePath)} — not in ${name}'s file list yet, asking ${name} again`);
+        log.debug(`${verb} ${path.basename(filePath)} — not in ${name}'s file list yet, asking ${name} again`);
         const files = this._store.getAllFiles().map((f) => f.filePath);
         if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
         this._runnable = toRunnableSet(await this._askForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings(projectRoot)), files));
@@ -491,10 +575,10 @@ export class SessionManager {
         if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
       }
       if (isTestFile && !this._isRunnable(filePath)) {
-        log.debug(`Saved ${path.basename(filePath)} — not run by this project's ${this._terms(projectRoot).config}, ignoring`);
+        log.debug(`${verb} ${path.basename(filePath)} — not run by this project's ${this._terms(projectRoot).config}, ignoring`);
         return;
       }
-      const run = this._beginRun(`save ${path.basename(filePath)}`);
+      const run = this._beginRun(`${verb === 'Saved' ? 'save' : 'disk change'} ${path.basename(filePath)}`);
       let ran: string[] = [];
       try {
         if (isTestFile) {
@@ -513,7 +597,7 @@ export class SessionManager {
         // Start. A whole-file traced rerun has already replaced the counters.
         if (!isTestFile && token === this._token) { this._coverageStore.clearStale(filePath); }
         if (ran.length === 0) {
-          log.info(`Run #${run.id} save ${path.basename(filePath)} — no tests depend on this file`);
+          log.info(`Run #${run.id} ${run.label} — no tests depend on this file`);
         }
         this._endRun(run, ran, undefined, ran.length === 0);
       }
@@ -1188,6 +1272,8 @@ export class SessionManager {
   }
 
   private _postProgress(): void {
+    // After Stop no run is in flight: a late result of a killed batch must not bring "Running…" back.
+    if (this._activeRuns === 0) { return; }
     const { completed, total, failed } = this._progress;
     this._updateStatusBar(`Running… ${completed}/${total}`);
     for (const o of this._observers) { o.onRunProgress?.(completed, total, failed); }
@@ -1399,7 +1485,7 @@ export class SessionManager {
     }
     if (!quiet) { this._logRunSummary(run, fileIds, nodeId); }
     this._activeRuns = Math.max(0, this._activeRuns - 1);
-    if (this._activeRuns === 0) { this._finishRuns(); }
+    if (this._activeRuns === 0) { this._finishRuns(); this._runQueuedDiskChanges(); }
   }
 
   private _logRunSummary(run: RunHandle, fileIds: string[], nodeId?: string): void {

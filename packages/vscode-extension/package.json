@@ -2,7 +2,7 @@
   "name": "live-test-runner",
   "displayName": "Live Test Runner",
   "description": "Live testing on save for Jest and other frameworks",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "icon": "resources/images/live-test-runner.png",
   "publisher": "EshLabs",
   "engines": {
@@ -94,6 +94,16 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.clearAllCaches",
+        "title": "Clear All Cached Data",
+        "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.openDataFolder",
+        "title": "Open Cached Data Folder",
+        "category": "Live Test Runner"
+      },
+      {
         "command": "liveTestRunner.selectProjectRoot",
         "title": "Select Project Root",
         "category": "Live Test Runner"
@@ -129,6 +139,12 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.openSettings",
+        "title": "Open Settings",
+        "category": "Live Test Runner",
+        "icon": "$(gear)"
+      },
+      {
         "command": "liveTestRunner.copyDiagnostics",
         "title": "Copy Diagnostic Report",
         "category": "Live Test Runner"
@@ -156,6 +172,18 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.hideCoverageInEditor",
+        "title": "Hide Coverage in Editor",
+        "category": "Live Test Runner",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "liveTestRunner.showCoverageInEditor",
+        "title": "Show Coverage in Editor",
+        "category": "Live Test Runner",
+        "icon": "$(eye)"
+      },
+      {
         "command": "liveTestRunner.dumpTraceStore",
         "title": "Dump Trace Store (Debug)",
         "category": "Live Test Runner",
@@ -181,7 +209,7 @@
         "liveTestRunner.projectRoot": {
           "type": "string",
           "default": "",
-          "description": "Pin Live Test Runner to one project root (absolute path). Leave empty to detect every test project in the workspace (monorepo packages, workspace folders) and switch between them in the Explorer."
+          "description": "Pin Live Test Runner to one project root (absolute path). Leave empty to detect every test project in the workspace (monorepo packages, workspace folders) and switch between them in the Explorer. The Select Project Root command pins without this setting (VS Code remembers the choice; nothing is written into the project)."
         },
         "liveTestRunner.maxRunningProjects": {
           "type": [
@@ -289,6 +317,11 @@
           "default": [],
           "description": "Extra glob patterns of source files to leave out of the coverage totals (node_modules, test files, configs and build folders are always excluded), e.g. [\"**/stories/**\"]."
         },
+        "liveTestRunner.showCoverageInEditor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show coverage in the editor: the coloured bar at the left of each line and the coverage hover. Toggle it from the eye button in the editor title."
+        },
         "liveTestRunner.testFilePatterns": {
           "type": "array",
           "items": {
@@ -356,6 +389,33 @@
           }
         }
       }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "liveTestRunner.hideCoverageInEditor",
+          "when": "liveTestRunner.editorHasCoverage && liveTestRunner.coverageInEditorShown",
+          "group": "navigation@90"
+        },
+        {
+          "command": "liveTestRunner.showCoverageInEditor",
+          "when": "liveTestRunner.editorHasCoverage && !liveTestRunner.coverageInEditorShown",
+          "group": "navigation@90"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "liveTestRunner.openSettings",
+          "when": "view == liveTestRunner.explorer",
+          "group": "navigation@99"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "liveTestRunner.dumpTraceStore",
+          "when": "config.liveTestRunner.devMode"
+        }
+      ]
     }
   },
   "scripts": {

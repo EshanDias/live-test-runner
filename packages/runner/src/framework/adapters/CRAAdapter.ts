@@ -237,9 +237,8 @@ export class CRAAdapter implements FrameworkAdapter {
    * across sessions until it's invalidated — avoiding accumulation in /tmp.
    */
   private writeTempConfig(projectRoot: string, configJson: string): string {
-    const hash        = simpleHash(projectRoot);
     fs.mkdirSync(LTR_BASE_CACHE_DIR, { recursive: true });
-    const tmpFilePath = path.join(LTR_BASE_CACHE_DIR, `ltr-cra-config-${hash}.json`);
+    const tmpFilePath = craConfigPath(projectRoot);
     fs.writeFileSync(tmpFilePath, configJson, "utf8");
     return tmpFilePath;
   }
@@ -270,6 +269,11 @@ function platformCmd(bin: string): string {
 }
 
 /** Simple djb2-style hash for stable temp file naming — not cryptographic. */
+/** Where the extracted Jest config of a Create React App project is kept (one file per project). */
+export function craConfigPath(projectRoot: string): string {
+  return path.join(LTR_BASE_CACHE_DIR, `ltr-cra-config-${simpleHash(projectRoot)}.json`);
+}
+
 function simpleHash(str: string): string {
   let h = 5381;
   for (let i = 0; i < str.length; i++) {
