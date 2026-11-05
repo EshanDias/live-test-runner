@@ -79,7 +79,9 @@ module.exports = {
     await vscode.commands.executeCommand('liveTestRunner.focusResult');
     t.check('Focus Test in Results Panel (palette) runs', true);
 
-    await vscode.commands.executeCommand('liveTestRunner.openTestFile', { testFileId: mathTest, fullName: 'Math utils divides numbers' });
+    // The Results panel passes the store's own file id (on Windows the drive letter is lower case).
+    const mathTestId = h.fileBySuffix(api, 'src/math.test.js').fileId;
+    await vscode.commands.executeCommand('liveTestRunner.openTestFile', { testFileId: mathTestId, fullName: 'Math utils divides numbers' });
     await h.sleep(500);
     const active = vscode.window.activeTextEditor;
     const divides = h.nodeByName(api, 'src/math.test.js', 'Math utils divides numbers');
@@ -87,7 +89,7 @@ module.exports = {
     t.check('openTestFile (Results panel link) opens the test at its line',
       same(active?.document.uri.fsPath, mathTest) && active.selection.active.line === divides.line - 1,
       `${active?.document.uri.fsPath}:${active?.selection.active.line} — expected ${mathTest}:${divides.line - 1}`);
-    await vscode.commands.executeCommand('liveTestRunner.revealTestInPanel', { testFileId: mathTest, fullName: 'Math utils divides numbers' });
+    await vscode.commands.executeCommand('liveTestRunner.revealTestInPanel', { testFileId: mathTestId, fullName: 'Math utils divides numbers' });
     t.check('revealTestInPanel (hover link) runs', true);
 
     // Covering tests from the palette: cursor on "return a + b" in math.js.
