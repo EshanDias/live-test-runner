@@ -47,10 +47,12 @@ export class CoverageDecorationManager implements IResultObserver {
     // nothing is inserted into the text, so code does not shift and the
     // gutter stays free for breakpoints and test status icons.
     // overviewRulerColor mirrors state in the scrollbar.
+    // The bar covers the middle of the line only (border-image gradient), so
+    // neighbouring lines read as separate marks instead of one long line.
     const bar = (color: string, ruler: string): vscode.DecorationRenderOptions => ({
       isWholeLine:       true,
       borderStyle:       'solid',
-      borderColor:       color,
+      borderColor:       `${color}; border-image: linear-gradient(to bottom, transparent 18%, ${color} 18%, ${color} 82%, transparent 82%) 1`,
       borderWidth:       '0 0 0 1px',
       overviewRulerColor: ruler,
       overviewRulerLane:  vscode.OverviewRulerLane.Left,

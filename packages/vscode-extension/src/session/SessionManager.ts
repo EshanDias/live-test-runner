@@ -97,6 +97,12 @@ export class SessionManager {
    * "finished" is only announced when the last one ends (BUG-15).
    */
   private _activeRuns = 0;
+  /** Files changed on disk during a run: rerun when the runs finish. */
+  private readonly _diskQueue = new Set<string>();
+  /** The files the last queued disk rerun ran for (loop guard). */
+  private _lastDiskRerun = new Set<string>();
+  /** The running background source scan, if any (cancelled by Stop / restart). */
+  private _sourceCounter: SourceCounter | undefined;
   /** Files scheduled / finished across all active runs — drives the progress UI. */
   private _progress = { completed: 0, total: 0, failed: 0 };
   /** Set while a full-suite run is part of the active runs. */
@@ -148,6 +154,9 @@ export class SessionManager {
   /** Stop every framework's running batches (final until a new session). */
   private _killBatches(): void {
     for (const services of this._services.all()) { services.batchRunner.kill(); }
+    // The background source scan (coverage totals) parses every source file — Stop ends it too.
+    this._sourceCounter?.cancel();
+    this._sourceCounter = undefined;
   }
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
@@ -252,7 +261,9 @@ export class SessionManager {
 
       // Background source scan — runs in parallel with test execution.
       this._coverageStore.clear();
+      this._sourceCounter?.cancel();
       const sourceCounter = new SourceCounter(projectRoot, this._coverageStore, coverageScopeOf(services.projectConfig, projectRoot));
+      this._sourceCounter = sourceCounter;
       sourceCounter.on('progress', (scanned: number, total: number) => {
         this._observers.forEach((o) => o.onSourceScanProgress?.(scanned, total));
       });
@@ -285,6 +296,8 @@ export class SessionManager {
   stop(decorationManager: DecorationManager): void {
     if (this._session) { log.info('Session stopped'); }
     this._token++;
+    this._diskQueue.clear();
+    this._lastDiskRerun.clear();
     this._clearSaveTimers();
     this._killBatches();
     if (this._session) {
@@ -457,9 +470,12 @@ export class SessionManager {
     const relevant = filePaths.filter((f) => this._isWatchedFile(f, root));
     if (relevant.length === 0) { return; }
     if (this.isRunning()) {
-      log.info(`${describeFiles(relevant)} changed on disk during a run — not rerunning (tests may write files); save to rerun`);
+      // Rerun once the runs in flight finish (see _runQueuedDiskChanges).
+      for (const f of relevant) { this._diskQueue.add(f); }
+      log.info(`${describeFiles(relevant)} changed on disk during a run — queued, reruns when the run finishes`);
       return;
     }
+    this._lastDiskRerun.clear();
     if (relevant.length > MAX_DISK_CHANGES_PER_FILE) {
       log.info(`${relevant.length} files changed on disk (branch switch or pull?) — restarting the session (every test reruns)`);
       void this.start();
@@ -467,6 +483,31 @@ export class SessionManager {
     }
     log.info(`${describeFiles(relevant)} changed on disk — rerunning what depends on ${relevant.length === 1 ? 'it' : 'them'}`);
     for (const f of relevant) { this.onFileChanged(f, 'Changed on disk:'); }
+  }
+
+  /**
+   * The runs are over: rerun the files that changed on disk meanwhile. A file
+   * that changed again during its own queued rerun is most likely written by
+   * a test — it is not queued again, or it would rerun forever.
+   */
+  private _runQueuedDiskChanges(): void {
+    if (this._diskQueue.size === 0 || !this._session?.isTestingActive()) { return; }
+    const queued = [...this._diskQueue];
+    this._diskQueue.clear();
+    const looping = queued.filter((f) => this._lastDiskRerun.has(f));
+    const files = queued.filter((f) => !this._lastDiskRerun.has(f));
+    if (looping.length > 0) {
+      log.warn(`${describeFiles(looping)} changed again while ${looping.length === 1 ? 'its' : 'their'} tests reran — probably written by a test, not rerunning again (save to rerun)`);
+    }
+    this._lastDiskRerun = new Set(files);
+    if (files.length === 0) { return; }
+    if (files.length > MAX_DISK_CHANGES_PER_FILE) {
+      log.info(`${files.length} files changed on disk during the run — restarting the session (every test reruns)`);
+      void this.start();
+      return;
+    }
+    log.info(`Rerunning what depends on ${describeFiles(files)} (changed on disk during the run)`);
+    for (const f of files) { this.onFileChanged(f, 'Changed on disk:'); }
   }
 
   /** A project file the session reruns tests for (source, test or framework config; not node_modules). */
@@ -1231,6 +1272,8 @@ export class SessionManager {
   }
 
   private _postProgress(): void {
+    // After Stop no run is in flight: a late result of a killed batch must not bring "Running…" back.
+    if (this._activeRuns === 0) { return; }
     const { completed, total, failed } = this._progress;
     this._updateStatusBar(`Running… ${completed}/${total}`);
     for (const o of this._observers) { o.onRunProgress?.(completed, total, failed); }
@@ -1442,7 +1485,7 @@ export class SessionManager {
     }
     if (!quiet) { this._logRunSummary(run, fileIds, nodeId); }
     this._activeRuns = Math.max(0, this._activeRuns - 1);
-    if (this._activeRuns === 0) { this._finishRuns(); }
+    if (this._activeRuns === 0) { this._finishRuns(); this._runQueuedDiskChanges(); }
   }
 
   private _logRunSummary(run: RunHandle, fileIds: string[], nodeId?: string): void {

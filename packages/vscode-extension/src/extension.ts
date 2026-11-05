@@ -370,6 +370,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   _releaseDiscoveryLock = () => { for (const c of projects.contexts) { c.discoveryCache?.releaseLock(); } };
   _cleanTraceDir = () => { for (const c of projects.contexts) { c.cleanTraceDir(); } };
+  // The window closes: its session folder goes with it (a crash leaves it for the next start's cleanup).
+  _removeSessionDir = () => { try { fs.rmSync(LTR_SESSION_TMP_DIR, { recursive: true, force: true }); } catch { /* next start */ } };
 
   /** The selected project, or an error message offering Select Project Root. */
   async function requireProject(): Promise<ProjectContext | undefined> {
@@ -485,6 +487,15 @@ export function activate(context: vscode.ExtensionContext) {
       if (!ctx) { return; }
       await stopAndClear(ctx);
       log.info('Session stopped and discovery cache cleared');
+    }),
+    vscode.commands.registerCommand('liveTestRunner.openDataFolder', async () => {
+      type Item = vscode.QuickPickItem & { dir: string };
+      const items: Item[] = [
+        { label: 'Cached data', description: LTR_BASE_CACHE_DIR, detail: 'Discovered tests per project (kept between sessions)', dir: LTR_BASE_CACHE_DIR },
+        { label: 'Session and compiled files', description: LTR_BASE_TMP_DIR, detail: 'Each window\'s session, compiled-file caches, runnable-file lists', dir: LTR_BASE_TMP_DIR },
+      ];
+      const picked = await vscode.window.showQuickPick(items, { placeHolder: 'Live Test Runner keeps nothing in your project — open one of its folders' });
+      if (picked) { await vscode.env.openExternal(vscode.Uri.file(picked.dir)); }
     }),
     vscode.commands.registerCommand('liveTestRunner.clearAllCaches', async (opts?: { confirmed?: boolean }) => {
       const choice = opts?.confirmed ? 'Clear All' : await vscode.window.showWarningMessage(
@@ -739,10 +750,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 let _cleanTraceDir: (() => void) | undefined;
 let _releaseDiscoveryLock: (() => void) | undefined;
+let _removeSessionDir: (() => void) | undefined;
 
 export function deactivate() {
   _cleanTraceDir?.();
   _releaseDiscoveryLock?.();
+  _removeSessionDir?.();
 }
 
 /**
@@ -756,20 +769,22 @@ async function selectProjectRoot(projects: ProjectRegistry): Promise<void> {
     vscode.window.showErrorMessage('No workspace folders are open.');
     return;
   }
-  const config = vscode.workspace.getConfiguration('liveTestRunner');
-  const pinned = config.get<string>('projectRoot')?.trim();
+  const fromSetting = vscode.workspace.getConfiguration('liveTestRunner').get<string>('projectRoot')?.trim();
+  const pinned = projects.pinnedRoot ?? fromSetting;
   const roots = [...new Set([...projects.contexts.map((c) => c.root), ...folders.map((f) => f.uri.fsPath)])];
   type Item = vscode.QuickPickItem & { root: string };
   const items: Item[] = [
-    ...(pinned ? [{ label: '$(search) Detect all projects', description: 'clear liveTestRunner.projectRoot', root: '' }] : []),
+    ...(pinned ? [{ label: '$(search) Detect all projects', description: 'unpin', root: '' }] : []),
     ...roots.map((r) => ({ label: path.basename(r), description: r, root: r })),
   ];
-  // Always asked, even with one folder: the choice is written to the workspace settings (.vscode/settings.json).
+  // Always asked. The pin is kept in VS Code's workspace storage — nothing is written into the project.
   const selected = await vscode.window.showQuickPick(items, {
-    placeHolder: 'Select the project root Live Test Runner uses (saved in this workspace\'s settings)',
+    placeHolder: 'Select the project root Live Test Runner uses in this workspace',
   });
-  if (selected) {
-    await config.update('projectRoot', selected.root || undefined, vscode.ConfigurationTarget.Workspace);
+  if (!selected) { return; }
+  await projects.pinRoot(selected.root || undefined);
+  if (!selected.root && fromSetting) {
+    void vscode.window.showInformationMessage(`Live Test Runner: still pinned to ${fromSetting} by the liveTestRunner.projectRoot setting — remove it from your settings to detect every project.`);
   }
 }
 

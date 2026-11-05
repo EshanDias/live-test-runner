@@ -102,6 +102,22 @@ module.exports = {
     await withQuickPickClosed(vscode, 'liveTestRunner.selectProjectRoot');
     const settingsAfter = fs.existsSync(settingsFile) ? fs.readFileSync(settingsFile, 'utf8') : null;
     t.check('Select Project Root asks first: cancelling writes nothing to .vscode/settings.json', settingsBefore === settingsAfter, settingsAfter);
+    // Pick the first entry (the folder): pinned in VS Code's workspace storage, nothing written into the project.
+    const pick = async () => {
+      const p = Promise.resolve(vscode.commands.executeCommand('liveTestRunner.selectProjectRoot'));
+      await h.sleep(800);
+      await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem');
+      await p;
+      await h.sleep(800);
+    };
+    await pick();
+    t.check('Select Project Root pins the root…', !!api.projects.pinnedRoot, String(api.projects.pinnedRoot));
+    t.check('…without creating .vscode/ in the project', !fs.existsSync(path.join(workspace, '.vscode')));
+    await pick(); // first entry is now "Detect all projects"
+    t.check('…and "Detect all projects" unpins it', !api.projects.pinnedRoot, String(api.projects.pinnedRoot));
+    await h.waitForDiscovery(api);
+    await withQuickPickClosed(vscode, 'liveTestRunner.openDataFolder');
+    t.check('Open Cached Data Folder shows its picker', true);
     await withQuickPickClosed(vscode, 'liveTestRunner.selectProject');
     t.check('Select Project (picker) closes without an error', true);
     await vscode.commands.executeCommand('liveTestRunner.selectPythonInterpreter');

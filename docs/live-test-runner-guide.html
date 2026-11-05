@@ -204,7 +204,7 @@
   </table></div>
   <ul>
     <li>Debounced per file (<code>onSaveDebounceMs</code>, default 300 ms).</li>
-    <li><b>Changes from outside the editor</b> (<code>git pull</code>, a branch switch, a code generator) rerun tests the same way while testing is on. More than 20 files at once rerun everything. Files changed while tests are running are not rerun (tests that write files would loop); save to rerun them.</li>
+    <li><b>Changes from outside the editor</b> (<code>git pull</code>, a branch switch, a code generator) rerun tests the same way while testing is on. More than 20 files at once rerun everything. Files changed while tests are running are queued and rerun when the run finishes; a file that keeps changing while its own tests run (a test writes it) is rerun once, then left until you save it.</li>
     <li>Files run in batches across parallel Jest processes. Results stream in file by file.</li>
     <li>If an instrumented batch returns no results, those files are retried with plain Jest, one at a time. This is logged as a warning.</li>
   </ul>
@@ -366,9 +366,10 @@
     <tr><td>Stop Testing</td><td>Ends the session and kills running Jest / Vitest / pytest processes</td></tr>
     <tr><td>Stop Testing and Clear Cache</td><td>Stop, then delete everything cached for this project: discovered tests, the runnable-file list and the compiled-file cache (<kbd>Shift</kbd>+<kbd>Delete</kbd> in the views)</td></tr>
     <tr><td>Clear Cache and Restart Testing</td><td>The same, then rediscover tests and run them all again</td></tr>
+    <tr><td>Open Cached Data Folder</td><td>Opens the folders where Live Test Runner keeps its data</td></tr>
     <tr><td>Clear All Cached Data</td><td>Asks first, then stops testing in this window and deletes the cached data of every project (other open windows keep what they are using)</td></tr>
     <tr><td>Select Project</td><td>Switch the project the views show (the Explorer's switcher row)</td></tr>
-    <tr><td>Select Project Root</td><td>Pin Live Test Runner to one folder, or back to every detected project</td></tr>
+    <tr><td>Select Project Root</td><td>Pin Live Test Runner to one folder, or back to every detected project (remembered by VS Code, nothing written into the project)</td></tr>
     <tr><td>Select Python Interpreter</td><td>pytest projects: choose the Python environment that runs the tests (remembered per project)</td></tr>
     <tr><td>Stop All Projects</td><td>Stops every running project</td></tr>
     <tr><td>Show Logs</td><td>Opens the <b>Live Test Runner</b> log (levelled)</td></tr>
@@ -386,9 +387,10 @@
   <h3>What is stored, and for how long</h3>
   <ul>
     <li>Nothing is written into your project. Cached data lives in your user cache folder (discovered tests) and your temp folder (each window's session, the runnable-file list, compiled files and coverage maps).</li>
-    <li>A window's session folder is removed once the window is closed.</li>
+    <li>A window's session folder is deleted when the window closes (after a crash, on the next start).</li>
+    <li><b>Open Cached Data Folder</b> opens either folder in Finder / Explorer; <b>Clear All Cached Data</b> empties them.</li>
     <li>Cached data no window has used for 30 days is deleted when VS Code starts, so a project you opened once is not kept forever. At most 10 projects (500 MB) keep a discovery cache; the least recently used go first.</li>
-    <li>The Python interpreter you pick for a pytest project is remembered in VS Code's workspace storage.</li>
+    <li>The Python interpreter you pick for a pytest project and the root you pin with <b>Select Project Root</b> are remembered in VS Code's own workspace storage, not in <code>.vscode/settings.json</code>.</li>
   </ul>
 </section>
 

@@ -865,6 +865,10 @@
           break;
 
         case 'session-stopped':
+          // Stop ends the run in flight without a 'run-finished': end its timer here.
+          _clearRunTimer();
+          _runStartTime = 0;
+          { const rp = _q('runProgress'); if (rp) { rp.classList.remove('visible'); } }
           applySessionState('idle');
           _setRunningCount(msg.runningTests, false);
           { const cs = _q('coverageSection'); if (cs) { cs.classList.add('hidden'); } }

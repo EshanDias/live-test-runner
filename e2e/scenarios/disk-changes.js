@@ -28,6 +28,7 @@ module.exports = {
 
     const mathPath = path.join(workspace, 'src', 'math.js');
     const original = fs.readFileSync(mathPath, 'utf8');
+    const extra = [];
     try {
       // 1. Break add() on disk, outside the editor.
       let since = h.isoNow();
@@ -64,7 +65,40 @@ module.exports = {
       for (const f of gen) { fs.rmSync(f, { force: true }); }
       await waitIdle(api);
 
-      // 5. Stopped: disk changes run nothing.
+      // 5. Changed during a run: queued, rerun when the run finishes. A test that
+      //    writes a file every run reruns once more at most (loop guard).
+      const slow = path.join(workspace, 'src', 'slow5.test.js');
+      const writer = path.join(workspace, 'src', 'writer.test.js');
+      const generated = path.join(workspace, 'src', 'generated.js');
+      extra.push(slow, writer, generated);
+      fs.writeFileSync(slow, "test('takes five seconds', () => new Promise((r) => setTimeout(r, 5000)), 20000);\n");
+      fs.writeFileSync(writer, "const fs = require('fs');\nconst path = require('path');\ntest('writes generated.js', () => {\n  fs.writeFileSync(path.join(__dirname, 'generated.js'), 'module.exports = ' + Date.now() + ';\\n');\n  expect(typeof require('./generated')).toBe('number');\n});\n");
+      await h.sleep(2500); // new test files reach discovery
+      await waitIdle(api);
+      since = h.isoNow();
+      const restarted = vscode.commands.executeCommand('liveTestRunner.startTesting'); // restart: every file runs, slow5 keeps the run going
+      await h.waitFor(() => api.session.isRunning(), { what: 'the run to start' });
+      await h.sleep(1500);
+      fs.writeFileSync(mathPath, original.replace('return a + b;', 'return a - b;'));
+      t.check('math.js changed while the run is still going', api.session.isRunning());
+      await restarted;
+      await h.waitFor(() => (h.statusCounts(api, 'src/math.test.js').failed ?? 0) > 0, { what: 'the queued rerun of math.js', timeout: 90_000 });
+      await waitIdle(api);
+      await h.sleep(3000);
+      await waitIdle(api);
+      const runLogs = h.logsSince(api, since);
+      t.check('changed during a run: queued, not dropped', runLogs.some((l) => /changed on disk during a run — queued/.test(l)), runLogs.filter((l) => /disk/.test(l)).join('\n'));
+      t.check('…and rerun when the run finished (math tests now fail)', (h.statusCounts(api, 'src/math.test.js').failed ?? 0) > 0);
+      t.check('a test that writes a file each run: stopped after one extra rerun, with a warning',
+        runLogs.some((l) => /generated\.js.* changed again while .* probably written by a test/.test(l)), runLogs.filter((l) => /disk|generated/.test(l)).join('\n'));
+      const queuedReruns = runLogs.filter((l) => /changed on disk during the run\)/.test(l)).length;
+      t.check('…no endless reruns (at most 2 queued reruns)', queuedReruns <= 2, String(queuedReruns));
+      fs.writeFileSync(mathPath, original);
+      for (const f of extra) { fs.rmSync(f, { force: true }); }
+      await h.sleep(1500);
+      await waitIdle(api);
+
+      // 6. Stopped: disk changes run nothing.
       await vscode.commands.executeCommand('liveTestRunner.stopTesting');
       since = h.isoNow();
       fs.writeFileSync(mathPath, original.replace('return a + b;', 'return a - b;'));
@@ -72,6 +106,7 @@ module.exports = {
       t.check('stopped: a disk change reruns nothing', !h.logsSince(api, since).some((l) => /changed on disk/.test(l)));
     } finally {
       fs.writeFileSync(mathPath, original);
+      for (const f of extra) { fs.rmSync(f, { force: true }); }
     }
   },
 };
