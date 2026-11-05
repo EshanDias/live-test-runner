@@ -2,7 +2,7 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [Unreleased]
+## [3.2.1] - 2026-11-05
 
 ### Improved
 
