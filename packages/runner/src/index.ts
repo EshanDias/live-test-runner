@@ -63,7 +63,7 @@ export { FrameworkDetector, DetectionResult } from './framework/FrameworkDetecto
 export { FrameworkRegistry, ADAPTER_PRIORITIES } from './framework/FrameworkRegistry';
 export { FrameworkAdapter, FrameworkFamily } from './framework/adapters/FrameworkAdapter';
 export { JestAdapter, JEST_CAPABILITIES } from './framework/adapters/JestAdapter';
-export { CRAAdapter } from './framework/adapters/CRAAdapter';
+export { CRAAdapter, craConfigPath } from './framework/adapters/CRAAdapter';
 export {
   VitestAdapter,
   VitestInstall,

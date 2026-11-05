@@ -137,6 +137,8 @@ src/
 │   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
 ├── session/
 │   ├── SessionManager.ts           Session lifecycle, batched run pool (CONCURRENCY=cpus/4), on-save, rerun
+│   ├── ExternalChanges.ts          Files changed on disk outside the editor (git pull, branch switch): drops the editor's own saves, batches 500 ms → SessionManager.onFilesChangedOnDisk (>20 files restart; ignored during our runs)
+│   (cache/Storage.ts)              Every cached path in one place: per-project clear (Stop and Clear Cache), Clear All Cached Data, 30-day pruning on activation
 │   ├── IProjectConfig.ts           Interface: the project's resolved runner config (get / reset)
 │   ├── JestProjectConfig.ts        IProjectConfig for Jest: `jest --showConfig` once per session
 │   ├── IBatchRunner.ts             Interface: runFiles(BatchRunOptions) / kill / reset — SessionManager's only view of batch runs
@@ -174,7 +176,8 @@ src/
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
 │   ├── DecorationManager.ts        Gutter icons + inline duration text
-│   ├── CoverageDecorationManager.ts  Coloured ▌ bar (before pseudo-element) per line: green=covered, amber=partial, red=uncovered, grey=neutral; stale overlay (grey background tint) when rerun is pending
+│   ├── CoverageDecorationManager.ts  Coloured left-edge bar (whole-line border, no text shift) per executable line: green=covered, amber=partial, red=uncovered; stale overlay (grey tint) when rerun is pending; follows unsaved edits via MeasuredLines; hidden by liveTestRunner.showCoverageInEditor
+│   ├── MeasuredLines.ts / lineMatch.ts  Matches the editor's current lines to the lines coverage was measured on (prefix/suffix + LCS), shared by bars and hover
 │   └── CoverageHoverProvider.ts    HoverProvider for JS/TS files: shows which tests cover the hovered line (with status + duration + clickable links), and branch arm hit/miss detail for partially-covered lines. First 5 shown inline; "Show all N" link fires liveTestRunner.showCoveringTests → Quick Pick with fuzzy search over all covering tests
 ├── utils/
 │   └── duration.ts                 durationLabel, durationColorVar, getThresholds

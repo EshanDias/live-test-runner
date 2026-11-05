@@ -16,7 +16,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, LTR_BASE_TMP_DIR, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults, jestNodeEnv, jestEsmHint } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults, jestNodeEnv, jestEsmHint } from '@live-test-runner/runner';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
@@ -29,6 +29,7 @@ import { ownFilesPattern, sourceTransformPattern, upperDrive } from './JestProje
 import { COMPILED_EXTENSIONS, NON_SOURCE_EXTENSIONS, SCRIPT_EXTENSIONS } from './sourceFiles';
 import { BatchRunOptions, IBatchRunner } from './IBatchRunner';
 import { applyTraceRecords, normPath } from './traceRecords';
+import { touch, transformCacheDir } from '../cache/Storage';
 
 const log = logger.scope('Runner');
 const covLog = logger.scope('Coverage');
@@ -150,9 +151,9 @@ export class JestBatchRunner implements IBatchRunner {
    * and the config, so a changed extension or config never reuses stale code.
    */
   private _transformCacheDir(projectRoot: string): string {
-    let h = 5381;
-    for (let i = 0; i < projectRoot.length; i++) { h = ((h << 5) + h) ^ projectRoot.toLowerCase().charCodeAt(i); }
-    return path.join(LTR_BASE_TMP_DIR, `transform-cache-${(h >>> 0).toString(36)}`);
+    const dir = transformCacheDir(projectRoot);
+    touch(dir); // in use: kept by the 30-day pruning
+    return dir;
   }
 
   constructor(

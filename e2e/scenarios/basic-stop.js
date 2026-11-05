@@ -26,8 +26,10 @@ module.exports = {
       { what: 'the fast files to finish', timeout: 60_000 });
     t.check('a Jest process is running before Stop', h.jestProcesses(workspace).length > 0);
 
+    const rec = h.recordEvents(api);
     await vscode.commands.executeCommand('liveTestRunner.stopTesting');
     const stoppedAt = Date.now();
+    const logsFrom = h.isoNow();
     const rawAtStop = h.rawMark(api);
     const statusAtStop = JSON.stringify(h.allNodes(api).map((n) => [n.id, n.status]));
 
@@ -43,6 +45,13 @@ module.exports = {
       JSON.stringify(h.allNodes(api).map((n) => [n.id, n.status])) === statusAtStop || h.nodesWithStatus(api, 'running').length === 0,
       'statuses changed after Stop');
     t.eq('BUG-23 Stop leaves nothing spinning', h.nodesWithStatus(api, 'running').map((n) => n.id), []);
+    // 3.2.0: after Stop the Explorer's "Running — 1 / N files" timer kept counting and the CPU stayed busy.
+    const late = rec.events.filter((e) => e.type === 'run-progress' || e.type === 'run-started');
+    rec.stop();
+    t.check('Stop is announced to the views (they end their run timer)', rec.events.some((e) => e.type === 'session-stopped'));
+    t.check('no "Running…" progress after Stop (it restarted the Explorer timer)', late.length === 0, JSON.stringify(late));
+    t.check('the status bar says Off, not Running…', /Off/.test(api.statusBar.text), api.statusBar.text);
+    t.check('the background source scan does not go on after Stop', !h.logsSince(api, logsFrom).some((l) => /Source scan: \d+ file\(s\) counted/.test(l)));
     t.info(`checked ${((Date.now() - stoppedAt) / 1000).toFixed(0)}s after Stop`);
   },
 };

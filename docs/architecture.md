@@ -440,12 +440,15 @@ Entry lifecycle:
 
 | State | Decoration | Condition |
 |-------|-----------|-----------|
-| covered | green `▌` bar (before pseudo-element) | statement hit count > 0 and all branch arms hit |
-| partial | amber `▌` bar | statement hit > 0 but at least one branch arm missed |
-| uncovered | red `▌` bar | statement hit count = 0 |
-| neutral | faint grey `▌` bar | line not in any statement (comments, blank lines) |
+| covered | green left edge | statement hit count > 0 and all branch arms hit |
+| partial | amber left edge | statement hit > 0 but at least one branch arm missed |
+| uncovered | red left edge | statement hit count = 0 |
 
-When the entry is `measured-stale` an additional full-file grey background tint is applied via a `isWholeLine` decoration type. The overview ruler mirrors the green/amber/red states so uncovered regions are visible in the scrollbar minimap. Breakpoint gutters are never blocked because the `▌` character is injected via the `before` pseudo-element, not drawn in the gutter column.
+Each bar is a thin, faded 1px left border of an `isWholeLine` decoration (owner's option C, 2026-11-05): nothing is inserted into the text (code never shifts) and the gutter stays free for breakpoints and test status icons. Lines in no statement get nothing. When the entry is `measured-stale` an additional full-file grey background tint is applied. The overview ruler mirrors the green/amber/red states so uncovered regions are visible in the scrollbar.
+
+**Unsaved edits** (`src/editor/MeasuredLines.ts`, `lineMatch.ts`): the manifest's lines are the file as it was measured. `MeasuredLines` remembers that text per measurement (keyed by the entry's `counters` object, read from disk the first time it is seen) and matches the editor's current lines against it — common prefix and suffix, then a longest-common-subsequence match of the changed middle (skipped above 2M cells). Lines compare with their indentation exact but inner and trailing spacing ignored (`normalizeLine`), so formatting keeps bars while code wrapped in a new `if` loses them. A move (a distinctive line removed in one place and added in another) clears the matches between the two places, so moved code never keeps a bar. When less than half the measured non-blank lines remain (`keptShare`), the file shows no bars until it is measured again. Bars are drawn on each measured line's current position; edited and new lines get none until the next measurement — a wrong bar is worse than no bar. Typing redraws after 150 ms. `CoverageHoverProvider` uses the same mapping (current line → measured line), so the hover and **Show All Covering Tests** follow the edit too.
+
+**Show / hide:** `liveTestRunner.showCoverageInEditor` (default on), toggled by the `hideCoverageInEditor` / `showCoverageInEditor` commands — eye buttons in the editor title while the file has coverage (context keys `liveTestRunner.editorHasCoverage`, `liveTestRunner.coverageInEditorShown`). Hidden clears bars and stale tint and turns the coverage hover off.
 
 **`CoverageHoverProvider`** (`src/editor/CoverageHoverProvider.ts`): Registered as a `vscode.HoverProvider` for all JS/TS source files. On hover it:
 
@@ -525,10 +528,15 @@ Runs on extension activate — before the user clicks Start Testing.
 - Template literals: interleaves quasi text with `…` placeholders so interpolated names still appear in the tree (`"accepts valid severity …"`)
 - Returns `{ suites, rootTests }` with accurate `line` numbers for every node
 
+### Storage (`cache/Storage.ts`)
+
+Everything cached lives outside the project: the user cache folder (`<folder>-<hash8>/` discovery caches with a `session.lock`, `ltr-cra-config-*.json`) and the temp folder (`session-<pid>-<time>/` per window, `runnable-files-*.json`, `transform-cache-*/` with coverage manifests). `Storage.ts` knows every path: **Stop Testing and Clear Cache** deletes all of a project's entries; **Clear All Cached Data** deletes everything except other live windows' session folders and locked discovery caches; on activation `pruneUnused` deletes entries unused for 30 days (transform caches and runnable lists are touched on use). A window's session folder is deleted in `deactivate`, dead windows' on activation; **Open Cached Data Folder** opens both base folders; discovery caches are also capped at 10 projects / 500 MB (LRU, on Start).
+
 ### Session management (`SessionManager`)
 
 1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, clears `CoverageStore`, fires `SourceCounter` (background, parallel), runs all test files, enables on-save listener
 2. **On save** — debounced (default 300ms); classifies file as test or source; for source files calls `CoverageStore.markFileStale()` then `_runAffectedBySourceFile()` (trace-store driven with CoverageMap fallback)
+   - **Changed on disk** — `extension.ts` watches `**/*`; `session/ExternalChanges.ts` drops the editor's own saves (`onWillSave` / `onDidSave`, 2 s), dirty documents, `node_modules` and `.git`, batches events for 500 ms and hands each project its files (`onFilesChangedOnDisk`). Same path as a save (`onFileChanged`); more than 20 files restart the session; changes during a run are queued (`_diskQueue`) and rerun when the last run ends (`_runQueuedDiskChanges`) — a file that changed again during its own queued rerun is not queued again (`_lastDiskRerun`, a test writing it would loop).
 3. **Stop Testing** — kills child processes, clears decorations, calls `CoverageStore.clear()`, disables on-save
 
 After each file batch, `JestBatchRunner` parses the light-trace JSONL (updates `ExecutionTraceStore`) and then parses the coverage counters JSONL (promotes `CoverageStore` entries from `'counted'` to `'measured'`). Both happen in the same post-Jest-exit phase — no extra process or phase needed.

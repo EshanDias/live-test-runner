@@ -27,14 +27,36 @@ const FPS = 8;
 const BAR = 46;      // caption bar height
 const FONT = ['/System/Library/Fonts/SFNS.ttf', '/System/Library/Fonts/Helvetica.ttc', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'].find((f) => fs.existsSync(f));
 
-// [recording, caption, seconds to cut from the start, seconds to hold the last frame, speed-up]
+// [recording, caption, seconds to cut from the start, seconds to hold the last frame, speed-up, zoom?]
+// zoom: { at, dur, z, cx, cy } — from `at` seconds (of the cut, sped-up clip) ease over `dur`
+// seconds into `z`× around the point (cx, cy) given as fractions of the frame, then stay.
 const SCENES = [
   ['jest-run', 'Click Start — every test runs, results stream in live (Jest)', 0.8, 1.5, 1.4],
   ['vitest-save', 'Save a file — only the tests that use it rerun (Vitest)', 0.5, 1.5, 1.8],
   ['pytest-run', 'pytest too — same tree, live results, gutter icons', 0.8, 1.5, 1.4],
-  ['pytest-hover', 'Hover a line — see exactly which tests ran it', 0.5, 2, 1],
-  ['jest-results', '▶ Run one test — its own console output', 0.5, 2, 1.5],
+  ['pytest-hover', 'Hover a line — see exactly which tests ran it', 0.5, 2.5, 1, { at: 0.5, dur: 0.9, z: 2, cx: 0.5, cy: 0.27 }],
+  ['jest-results', '▶ Run one test — its own console output', 0.5, 2.5, 1.5, { at: 1.2, dur: 0.9, z: 2, cx: 0.5, cy: 0.72 }],
 ];
+
+/** Width and height of a PNG (its IHDR chunk). */
+function pngSize(file) {
+  const b = fs.readFileSync(file);
+  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+}
+
+/** zoompan filter for a zoom spec: full frame, then an eased zoom into (cx, cy), held. */
+function zoomFilter(zoom, w, h) {
+  const t = `(in/${FPS})`;
+  const p = `max(0,min(1,(${t}-${zoom.at})/${zoom.dur}))`;
+  const ease = `(${p}*${p}*(3-2*${p}))`;
+  const z = `(1+${zoom.z - 1}*${ease})`;
+  // Crop centre moves from the frame centre to (cx, cy) with the zoom, clamped inside the frame.
+  const cx = `((0.5+(${zoom.cx}-0.5)*${ease})*iw)`;
+  const cy = `((0.5+(${zoom.cy}-0.5)*${ease})*ih)`;
+  const x = `max(0,min(iw-iw/zoom,${cx}-iw/zoom/2))`;
+  const y = `max(0,min(ih-ih/zoom,${cy}-ih/zoom/2))`;
+  return `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${w}x${h}:fps=${FPS}`;
+}
 
 function ff(args) {
   const r = spawnSync(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', ...args], { stdio: 'inherit' });
@@ -42,7 +64,7 @@ function ff(args) {
 }
 
 /** A recording → a lossless clip at FPS with its caption bar. */
-function clip(tmp, name, caption, cut, hold, speed, withCaption) {
+function clip(tmp, name, caption, cut, hold, speed, withCaption, zoom) {
   const dir = path.join(shots, name);
   const frames = JSON.parse(fs.readFileSync(path.join(dir, 'frames.json'), 'utf8'));
   const lines = [];
@@ -56,6 +78,7 @@ function clip(tmp, name, caption, cut, hold, speed, withCaption) {
   const vf = [
     `setpts=PTS/${speed}`,
     `fps=${FPS}`,
+    ...(zoom ? (() => { const { w, h } = pngSize(path.join(dir, frames[0].file)); return [zoomFilter(zoom, w, h)]; })() : []),
     `scale=${WIDTH}:-2:flags=lanczos`,
     ...(withCaption ? [
       `pad=iw:ih+${BAR}:0:${BAR}:color=0x181818`,
@@ -78,6 +101,6 @@ function gif(inputs, outFile) {
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-gifs-'));
 fs.mkdirSync(OUT, { recursive: true });
-gif(SCENES.map(([name, caption, cut, hold, speed]) => clip(tmp, name, caption, cut, hold, speed, true)), path.join(OUT, 'demo.gif'));
-for (const [name, caption, cut, hold, speed] of SCENES) { gif([clip(tmp, name, caption, cut, hold, speed, false)], path.join(OUT, `scene-${name}.gif`)); }
+gif(SCENES.map(([name, caption, cut, hold, speed, zoom]) => clip(tmp, name, caption, cut, hold, speed, true, zoom)), path.join(OUT, 'demo.gif'));
+for (const [name, caption, cut, hold, speed, zoom] of SCENES) { gif([clip(tmp, name, caption, cut, hold, speed, false, zoom)], path.join(OUT, `scene-${name}.gif`)); }
 fs.rmSync(tmp, { recursive: true, force: true });

@@ -42,9 +42,17 @@ export class SourceCounter extends EventEmitter {
     super();
   }
 
+  private _cancelled = false;
+
+  /** Stop: the scan ends at the next file, without marking the scan complete. */
+  cancel(): void {
+    this._cancelled = true;
+  }
+
   async run(): Promise<void> {
     const startedAt = Date.now();
     const scope = await this._scope;
+    if (this._cancelled) { return; }
     if (!scope.includesUntouched) {
       log.debug(`Coverage counts only the files the tests load (${scope.source} — no include list) — no source scan`);
       this._store.markScanComplete();
@@ -92,11 +100,16 @@ export class SourceCounter extends EventEmitter {
       }
     }
     log.debug(`Source scan: ${files.length} file(s) count toward coverage (${scope.source})`);
+    if (this._cancelled) { return; }
 
     const total = files.length;
     let scanned = 0;
 
     for (const filePath of files) {
+      if (this._cancelled) {
+        log.debug(`Source scan cancelled after ${scanned} of ${total} file(s)`);
+        return;
+      }
       const counts = this._countFile(filePath);
       this._store.setCountedEntry(filePath, counts);
       this.emit('progress', ++scanned, total);

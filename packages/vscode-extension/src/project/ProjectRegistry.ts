@@ -37,13 +37,21 @@ export interface ProjectRegistryDeps {
   memento?: vscode.Memento;
 }
 
-/** The project roots for the window: the projectRoot setting, else every detected project. */
-export function detectWorkspaceProjects(): { projects: DetectedProject[]; pinned: boolean } {
-  const configured = vscode.workspace.getConfiguration('liveTestRunner').get<string>('projectRoot')?.trim();
+/** Where Select Project Root keeps its pin: VS Code's workspace storage, never the project's .vscode/settings.json. */
+export const PINNED_ROOT_KEY = 'liveTestRunner.pinnedProjectRoot';
+
+/**
+ * The project roots for the window: the root pinned with Select Project Root,
+ * else the projectRoot setting (if the user set it), else every detected project.
+ */
+export function detectWorkspaceProjects(pinnedRoot?: string): { projects: DetectedProject[]; pinned: boolean } {
+  const fromSetting = vscode.workspace.getConfiguration('liveTestRunner').get<string>('projectRoot')?.trim();
+  const configured = pinnedRoot?.trim() || fromSetting;
   if (configured) {
     let framework = 'unknown';
     try { framework = new FrameworkDetector().detectFramework(configured); } catch { /* logged by the detector */ }
-    return { projects: [{ root: configured, name: projectName(configured), framework, reason: 'the liveTestRunner.projectRoot setting' }], pinned: true };
+    const reason = pinnedRoot?.trim() ? 'Select Project Root' : 'the liveTestRunner.projectRoot setting';
+    return { projects: [{ root: configured, name: projectName(configured), framework, reason }], pinned: true };
   }
   const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
   return { projects: findTestProjects(folders), pinned: false };
@@ -78,8 +86,19 @@ export class ProjectRegistry implements vscode.Disposable {
    * (Re)detects the projects. Kept when the set of roots is unchanged;
    * otherwise every context is stopped and rebuilt. @returns true when rebuilt.
    */
+  /** The root pinned with Select Project Root (workspace storage), if any. */
+  get pinnedRoot(): string | undefined {
+    return this._deps.memento?.get<string>(PINNED_ROOT_KEY) || undefined;
+  }
+
+  /** Pins the window to one root (undefined: detect every project again) and re-detects. */
+  async pinRoot(root: string | undefined): Promise<void> {
+    await this._deps.memento?.update(PINNED_ROOT_KEY, root || undefined);
+    this.refresh();
+  }
+
   refresh(): boolean {
-    const { projects, pinned } = detectWorkspaceProjects();
+    const { projects, pinned } = detectWorkspaceProjects(this.pinnedRoot);
     const same = projects.length === this._contexts.length && projects.every((p, i) => p.root === this._contexts[i].root);
     if (same && this._contexts.length > 0) { return false; }
 
@@ -103,7 +122,7 @@ export class ProjectRegistry implements vscode.Disposable {
     if (projects.length === 0) {
       log.info('No test project found — open a folder with a package.json, or run "Live Test Runner: Select Project Root"');
     } else if (projects.length === 1) {
-      log.info(`Project root: ${projects[0].root}${pinned ? ' (liveTestRunner.projectRoot)' : ''}`);
+      log.info(`Project root: ${projects[0].root}${pinned ? ` (${projects[0].reason})` : ''}`);
     } else {
       log.info(`${projects.length} test projects found (none is run until you start it): ${projects.map((p) => `${p.name} [${p.framework}]`).join(', ')}`);
     }

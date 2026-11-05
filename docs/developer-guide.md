@@ -606,6 +606,7 @@ unzip -q /tmp/ltr.vsix -d /tmp/ltr-vsix && LTR_E2E_EXTENSION_DIR=/tmp/ltr-vsix/e
 
 - `diag-screenshots`, `diag-screenshots-monorepo` — the mixed-project and monorepo-switcher screenshots.
 - `diag-demo-jest` / `-vitest` / `-pytest` (`e2e/lib/demo.js`) — the same story on the clean `fixture:demo-*` shop projects: Start (live tree, Running card, gutter icons), a source edit + save rerunning only its tests (red, then green), the coverage hover, ▶ Run on one test and its output. Each step is a clip of screenshots taken in a loop (`recorder`: Page.startScreencast leaves webviews blank) plus stills (`<fw>-coverage-hover.png`, `<fw>-results.png`).
+- Scenes the GIF zooms into (the hover, the Results panel) are recorded at full size (`record(name, true)`); `SCENES` in `scripts/demo-gifs.js` gives them a zoom (`{ at, dur, z, cx, cy }`: eased into `z`× around a point, then held). The README / site coverage image is `<fw>-coverage-hover.png` cropped to the editor.
 - `scripts/demo-gifs.js` turns the clips into `resources/gifs/demo.gif` (README hero: five captioned scenes, ~40 s, ~1 MB) and `scene-*.gif` (the website slider, uncaptioned). It needs an ffmpeg with `drawtext`, which is not a dependency of the repo — e.g. `npm i ffmpeg-static` in a temp folder.
 
 ```bash
@@ -661,10 +662,11 @@ engine.jumpTo(stepId)
 
 ## Roadmap
 
+- [x] Editor and storage polish (3.2.1) — coverage bars out of the way while editing (show / hide), files changed outside the editor rerun, Stop ends background work, every cached file cleared / pruned, nothing written into the project, every command tested end to end — see `docs/temp_plans/3.3.0-features.md`
 - [x] pytest support (3.2.0) — pytest ≥ 7 / Python ≥ 3.12: run, live results, per-test output, ▶ Run / ▷ Debug, coverage, covering tests + source-save reruns; not yet Python monorepos, JS + Python in one folder, Timeline — see `docs/temp_plans/pytest-support-plan.md`
 - [x] Vitest support (3.0.0) — run, pass/fail, per-test logs, live progress, coverage; related tests on save, monorepos, mixed frameworks, execution trace + any UI framework (3.1.0) — see `docs/temp_plans/vitest-support-plan.md`
 - [x] ~~Suite/test-case level nodes in Test Explorer~~ — completed in 1.2.0 (recursive node tree with unlimited nesting)
-- [ ] Disk-persisted CRA config cache (`.vscode/live-test-runner/`)
+- [x] Disk-persisted CRA config cache — in the user cache folder (`ltr-cra-config-*.json`), never in the project
 - [ ] Streaming live output during a run (message type stubbed, not wired)
 - [ ] Coverage overlay in the file tree
 - [x] Monorepo / multi-root support (3.1.0, phase 7) — one `ProjectContext` per test project, project switcher, `maxRunningProjects`
