@@ -83,7 +83,10 @@ module.exports = {
     await h.sleep(500);
     const active = vscode.window.activeTextEditor;
     const divides = h.nodeByName(api, 'src/math.test.js', 'Math utils divides numbers');
-    t.check('openTestFile (Results panel link) opens the test at its line', active?.document.uri.fsPath === mathTest && active.selection.active.line === divides.line - 1);
+    const same = (a, b) => process.platform === 'win32' ? a?.toLowerCase() === b?.toLowerCase() : a === b; // Windows: c:\ vs C:\
+    t.check('openTestFile (Results panel link) opens the test at its line',
+      same(active?.document.uri.fsPath, mathTest) && active.selection.active.line === divides.line - 1,
+      `${active?.document.uri.fsPath}:${active?.selection.active.line} — expected ${mathTest}:${divides.line - 1}`);
     await vscode.commands.executeCommand('liveTestRunner.revealTestInPanel', { testFileId: mathTest, fullName: 'Math utils divides numbers' });
     t.check('revealTestInPanel (hover link) runs', true);
 
