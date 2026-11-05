@@ -129,6 +129,12 @@
         "category": "Live Test Runner"
       },
       {
+        "command": "liveTestRunner.openSettings",
+        "title": "Open Settings",
+        "category": "Live Test Runner",
+        "icon": "$(gear)"
+      },
+      {
         "command": "liveTestRunner.copyDiagnostics",
         "title": "Copy Diagnostic Report",
         "category": "Live Test Runner"
@@ -154,6 +160,18 @@
         "command": "liveTestRunner.showCoveringTests",
         "title": "Show All Covering Tests",
         "category": "Live Test Runner"
+      },
+      {
+        "command": "liveTestRunner.hideCoverageInEditor",
+        "title": "Hide Coverage in Editor",
+        "category": "Live Test Runner",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "liveTestRunner.showCoverageInEditor",
+        "title": "Show Coverage in Editor",
+        "category": "Live Test Runner",
+        "icon": "$(eye)"
       },
       {
         "command": "liveTestRunner.dumpTraceStore",
@@ -289,6 +307,11 @@
           "default": [],
           "description": "Extra glob patterns of source files to leave out of the coverage totals (node_modules, test files, configs and build folders are always excluded), e.g. [\"**/stories/**\"]."
         },
+        "liveTestRunner.showCoverageInEditor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show coverage in the editor: the coloured bar at the left of each line and the coverage hover. Toggle it from the eye button in the editor title."
+        },
         "liveTestRunner.testFilePatterns": {
           "type": "array",
           "items": {
@@ -356,6 +379,27 @@
           }
         }
       }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "liveTestRunner.hideCoverageInEditor",
+          "when": "liveTestRunner.editorHasCoverage && liveTestRunner.coverageInEditorShown",
+          "group": "navigation@90"
+        },
+        {
+          "command": "liveTestRunner.showCoverageInEditor",
+          "when": "liveTestRunner.editorHasCoverage && !liveTestRunner.coverageInEditorShown",
+          "group": "navigation@90"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "liveTestRunner.openSettings",
+          "when": "view == liveTestRunner.explorer",
+          "group": "navigation@99"
+        }
+      ]
     }
   },
   "scripts": {

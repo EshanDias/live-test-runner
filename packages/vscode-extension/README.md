@@ -38,7 +38,7 @@
 - ⚡ **Reruns on save** — only the tests that ran the code you changed.
 - 🌳 **Test tree** — every file, suite and test on open. Score cards (Total · Passed · Failed, plus **Running** while tests run) filter it with one click.
 - 🎨 **In the editor** — ✓ / ✗ gutter icons, inline durations, `▶ Run` · `▷ Debug` · `◈ Results` above every test.
-- 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it.
+- 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it. The bars never shift your code and follow your edits; hide them with the 👁 button in the editor title.
 - 🔍 **Results panel** — test list · console output (per test) · failures with the diff and location.
 - 🗂 **Monorepos** — every package is a project; switch between them, run several at once.
 - ⏱ **Timeline Debugger** *(coming soon)* — step through a finished test line by line.
@@ -106,6 +106,7 @@ All settings under `liveTestRunner.*`.
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
 | `testFilePatterns` | `["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]` | Which files appear in the test tree. Jest's own config still decides what runs, and files it runs are added even when no pattern matches |
+| `showCoverageInEditor` | `true` | Coverage bars and hover in the editor (also the 👁 button in the editor title) |
 | `coverageExclude` | `[]` | Extra globs left out of the coverage totals (which otherwise follow your Vitest `coverage.include` / `exclude` or Jest `collectCoverageFrom`) |
 | `durationThresholds.testAmberMs` | `100` | Test turns amber |
 | `durationThresholds.testRedMs` | `500` | Test turns red |

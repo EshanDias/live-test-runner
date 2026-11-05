@@ -174,7 +174,8 @@ src/
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
 │   ├── DecorationManager.ts        Gutter icons + inline duration text
-│   ├── CoverageDecorationManager.ts  Coloured ▌ bar (before pseudo-element) per line: green=covered, amber=partial, red=uncovered, grey=neutral; stale overlay (grey background tint) when rerun is pending
+│   ├── CoverageDecorationManager.ts  Coloured left-edge bar (whole-line border, no text shift) per executable line: green=covered, amber=partial, red=uncovered; stale overlay (grey tint) when rerun is pending; follows unsaved edits via MeasuredLines; hidden by liveTestRunner.showCoverageInEditor
+│   ├── MeasuredLines.ts / lineMatch.ts  Matches the editor's current lines to the lines coverage was measured on (prefix/suffix + LCS), shared by bars and hover
 │   └── CoverageHoverProvider.ts    HoverProvider for JS/TS files: shows which tests cover the hovered line (with status + duration + clickable links), and branch arm hit/miss detail for partially-covered lines. First 5 shown inline; "Show all N" link fires liveTestRunner.showCoveringTests → Quick Pick with fuzzy search over all covering tests
 ├── utils/
 │   └── duration.ts                 durationLabel, durationColorVar, getThresholds

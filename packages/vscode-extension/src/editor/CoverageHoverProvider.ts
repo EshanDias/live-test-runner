@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { FileStoresResolver } from './FileStores';
 import { Manifest } from '../coverage/types';
+import { MeasuredLines } from './MeasuredLines';
 
 const BRANCH_TYPE_LABEL: Record<string, string> = {
   IfStatement:               'if/else',
@@ -21,6 +22,8 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
     private readonly _resolve: FileStoresResolver,
     /** Why a file has no per-test trace by design (e.g. "covering tests are not available for Vitest yet"), else undefined. */
     private readonly _noTraceReason: (filePath: string) => string | undefined = () => undefined,
+    /** The editor's coverage display: hidden → no hover; its line matching follows unsaved edits. */
+    private readonly _editor?: { readonly shown: boolean; readonly measuredLines: MeasuredLines },
   ) {}
 
   provideHover(
@@ -28,7 +31,7 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
     position: vscode.Position,
   ): vscode.Hover | undefined {
     const filePath = document.uri.fsPath;
-    const line = position.line + 1; // VS Code is 0-indexed; our stores are 1-based
+    if (this._editor && !this._editor.shown) { return undefined; }
     const stores = this._resolve(filePath);
     if (!stores) { return undefined; }
     const traceStore = stores.traceStore;
@@ -36,6 +39,13 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
 
     const entry = stores.coverageStore.getEntry(filePath);
     if (!entry) { return undefined; }
+
+    // The line as it was measured (the user may have edited since); an edited or new line has no coverage yet.
+    const measuredLine = entry.state === 'counted' || !this._editor
+      ? position.line
+      : this._editor.measuredLines.mappingFor(document, entry.counters).toMeasured(position.line);
+    if (measuredLine < 0) { return undefined; }
+    const line = measuredLine + 1; // VS Code is 0-indexed; our stores are 1-based
 
     if (entry.state === 'measured-stale') {
       const md = new vscode.MarkdownString('$(warning) **Coverage data is stale** — save the file to rerun', true);

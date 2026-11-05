@@ -305,7 +305,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (!services.features.trace) { return `covering tests are not available for ${services.displayName} yet`; }
     const off = services.traceOffReason?.(ctx.root);
     return off ? `covering tests are off for this project — ${off}` : undefined;
-  });
+  }, coverageDecoMgr);
   context.subscriptions.push(
     vscode.languages.registerHoverProvider(
       // Any file: whatever the tests ran has coverage (the provider answers only where there is some).
@@ -535,6 +535,10 @@ export function activate(context: vscode.ExtensionContext) {
         preserveFocus: false,
       });
     }),
+    vscode.commands.registerCommand('liveTestRunner.openSettings', () =>
+      vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`)),
+    vscode.commands.registerCommand('liveTestRunner.showCoverageInEditor', () => coverageDecoMgr.setShown(true)),
+    vscode.commands.registerCommand('liveTestRunner.hideCoverageInEditor', () => coverageDecoMgr.setShown(false)),
     vscode.commands.registerCommand('liveTestRunner.showCoveringTests',   async (args: { filePath: string; line: number }) => {
       const ctx = owner(args.filePath);
       if (!ctx) { return; }
@@ -646,7 +650,7 @@ export function activate(context: vscode.ExtensionContext) {
       get sessionDir() { return sel()?.sessionDir ?? LTR_SESSION_TMP_DIR; },
       projects,
       observers, editorObservers, decorationManager, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
-      explorerView,
+      explorerView, coverageDecorations: coverageDecoMgr,
     };
   }
   return undefined;

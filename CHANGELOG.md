@@ -2,6 +2,16 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [Unreleased]
+
+### Coverage bars stay out of the way while editing
+
+- **Bars no longer sit in the text.** They were a `▌` character inserted before each line (`before:` decoration), so they took editing space and moved with typing. Each bar is now a thin, faded 1px left border of a whole-line decoration: code never shifts, the gutter stays free for breakpoints. The grey "not executable" bars are gone (they only kept the old text shift even).
+- **Bars and hover follow unsaved edits.** Redraws used the measured file's line numbers, so after an edit bars and the hover landed on the wrong lines. New `src/editor/MeasuredLines.ts` remembers each measurement's file text (keyed by the entry's counters object) and `lineMatch.ts` matches the editor's current lines to it (common prefix / suffix + LCS of the changed middle). Bars are drawn where each measured line is now; edited and new lines get none until the next measurement. Spacing inside or at the end of a line is ignored, indentation is not (code wrapped in a new `if` loses its bars); moved code loses its bars (and the lines it moved across); when less than half the file's lines remain, the whole file shows no bars until saved. Typing redraws after 150 ms. `CoverageHoverProvider` maps the hovered line the same way.
+- **Show / hide coverage in the editor:** setting `liveTestRunner.showCoverageInEditor` (default on), commands **Hide / Show Coverage in Editor** (eye buttons in the editor title while the file has coverage). Hidden clears bars and stale tint and turns the coverage hover off.
+- **Settings gear** in the Test Explorer title bar (`liveTestRunner.openSettings`): opens Settings filtered to the extension.
+- Tests: `lineMatch.test.ts` (12); e2e `coverage-editing` (insert / edit / hide / show / revert on a Jest fixture); `diag-coverage-bars` captures screenshots.
+
 ## [3.2.0] - 2026-10-30
 
 ### pytest support (Python)

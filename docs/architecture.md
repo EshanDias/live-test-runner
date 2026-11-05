@@ -440,12 +440,15 @@ Entry lifecycle:
 
 | State | Decoration | Condition |
 |-------|-----------|-----------|
-| covered | green `▌` bar (before pseudo-element) | statement hit count > 0 and all branch arms hit |
-| partial | amber `▌` bar | statement hit > 0 but at least one branch arm missed |
-| uncovered | red `▌` bar | statement hit count = 0 |
-| neutral | faint grey `▌` bar | line not in any statement (comments, blank lines) |
+| covered | green left edge | statement hit count > 0 and all branch arms hit |
+| partial | amber left edge | statement hit > 0 but at least one branch arm missed |
+| uncovered | red left edge | statement hit count = 0 |
 
-When the entry is `measured-stale` an additional full-file grey background tint is applied via a `isWholeLine` decoration type. The overview ruler mirrors the green/amber/red states so uncovered regions are visible in the scrollbar minimap. Breakpoint gutters are never blocked because the `▌` character is injected via the `before` pseudo-element, not drawn in the gutter column.
+Each bar is a thin, faded 1px left border of an `isWholeLine` decoration (owner's option C, 2026-11-05): nothing is inserted into the text (code never shifts) and the gutter stays free for breakpoints and test status icons. Lines in no statement get nothing. When the entry is `measured-stale` an additional full-file grey background tint is applied. The overview ruler mirrors the green/amber/red states so uncovered regions are visible in the scrollbar.
+
+**Unsaved edits** (`src/editor/MeasuredLines.ts`, `lineMatch.ts`): the manifest's lines are the file as it was measured. `MeasuredLines` remembers that text per measurement (keyed by the entry's `counters` object, read from disk the first time it is seen) and matches the editor's current lines against it — common prefix and suffix, then a longest-common-subsequence match of the changed middle (skipped above 2M cells). Lines compare with their indentation exact but inner and trailing spacing ignored (`normalizeLine`), so formatting keeps bars while code wrapped in a new `if` loses them. A move (a distinctive line removed in one place and added in another) clears the matches between the two places, so moved code never keeps a bar. When less than half the measured non-blank lines remain (`keptShare`), the file shows no bars until it is measured again. Bars are drawn on each measured line's current position; edited and new lines get none until the next measurement — a wrong bar is worse than no bar. Typing redraws after 150 ms. `CoverageHoverProvider` uses the same mapping (current line → measured line), so the hover and **Show All Covering Tests** follow the edit too.
+
+**Show / hide:** `liveTestRunner.showCoverageInEditor` (default on), toggled by the `hideCoverageInEditor` / `showCoverageInEditor` commands — eye buttons in the editor title while the file has coverage (context keys `liveTestRunner.editorHasCoverage`, `liveTestRunner.coverageInEditorShown`). Hidden clears bars and stale tint and turns the coverage hover off.
 
 **`CoverageHoverProvider`** (`src/editor/CoverageHoverProvider.ts`): Registered as a `vscode.HoverProvider` for all JS/TS source files. On hover it:
 
