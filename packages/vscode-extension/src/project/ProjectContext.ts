@@ -1,5 +1,5 @@
 /**
- * ProjectContext — one test project of the workspace (phase 7, D11) with
+ * ProjectContext — one test project of the workspace with
  * everything that used to exist once per window: its result / trace /
  * coverage stores, discovery (+ cache), framework services, session dir and
  * its own SessionManager.
@@ -106,7 +106,7 @@ export class ProjectContext implements vscode.Disposable {
   readonly traceStore = new ExecutionTraceStore();
   readonly coverageStore = new CoverageStore();
   readonly discovery = new TestDiscoveryService();
-  /** Which framework runs each file (one, or several in a mixed project — phase 8). */
+  /** Which framework runs each file (one, or several in a mixed project). */
   readonly services: IFrameworkServicesProvider;
   private _discoverers: { python?: TestFileDiscoverer; mixed?: TestFileDiscoverer } = {};
   readonly session: SessionManager;
@@ -198,7 +198,7 @@ export class ProjectContext implements vscode.Disposable {
 
   /**
    * How the project's test files are found statically: Babel for JS, the line
-   * scanner for pytest, both in a JS + Python project (phase 8 — what the
+   * scanner for pytest, both in a JS + Python project (what the
    * root configures, known from activation).
    */
   get discoverer(): TestFileDiscoverer {

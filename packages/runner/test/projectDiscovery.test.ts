@@ -73,7 +73,7 @@ describe('project discovery', () => {
     expect(ps[0]).toMatchObject({ name: 'jest-mono', framework: 'jest' });
   });
 
-  it('a root with a Vitest config using test.projects is one project (D12)', () => {
+  it('a root with a Vitest config using test.projects is one project', () => {
     const root = make({
       'package.json': { name: 'vue-mono', devDependencies: { vitest: '4' } },
       'pnpm-workspace.yaml': "packages:\n  - packages/*\n",
@@ -154,7 +154,7 @@ describe('project discovery', () => {
     expect(findTestProjects([js, path.join(js, 'pkg')], registry).map((p) => p.root)).toEqual([js]);
   });
 
-  describe('Python monorepos (uv workspaces, pytest plan phase 7)', () => {
+  describe('Python monorepos (uv workspaces)', () => {
     const registry = () => new FrameworkRegistry().register(new JestAdapter(), 100).register(new PytestAdapter(), 10);
     const projects = (root: string) => findTestProjects([root], registry()).map((p) => [path.relative(root, p.root).split(path.sep).join('/') || '.', p.framework, p.name]);
     const UV_ROOT = '[project]\nname = "ws"\n\n[tool.uv.workspace]\nmembers = [\n  "packages/*",  # libraries\n  "apps/api",\n]\nexclude = ["packages/legacy"]\n\n[dependency-groups]\ndev = ["pytest>=8"]\n';
@@ -226,7 +226,7 @@ describe('project discovery', () => {
     });
   });
 
-  describe('JS and Python in one folder (pytest plan phase 8)', () => {
+  describe('JS and Python in one folder', () => {
     const registry = () => new FrameworkRegistry().register(new JestAdapter(), 100).register(new PytestAdapter(), 10);
     const projects = (root: string) => findTestProjects([root], registry()).map((p) => [path.relative(root, p.root).split(path.sep).join('/') || '.', p.framework]);
 

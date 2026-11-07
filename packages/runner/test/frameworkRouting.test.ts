@@ -43,7 +43,7 @@ describe('framework routing', () => {
       expect(routedFrameworkOf(FRAMEWORK_IDS.vitest)).toBe('vitest');
     });
 
-    it('a JS root that is a pytest project too lists pytest (phase 8)', () => {
+    it('a JS root that is a pytest project too lists pytest', () => {
       const both = make({ 'package.json': { devDependencies: { jest: '29' } }, 'pytest.ini': '[pytest]\n' });
       expect(projectFrameworks(both, FRAMEWORK_IDS.jest)).toMatchObject({ primary: 'jest', frameworks: ['jest', 'pytest'], mixed: true });
       const three = make({ 'package.json': { devDependencies: { jest: '29', vitest: '3' } }, 'jest.config.js': '', 'vitest.config.ts': '', 'requirements.txt': 'pytest\n', 'tests/test_a.py': '' });

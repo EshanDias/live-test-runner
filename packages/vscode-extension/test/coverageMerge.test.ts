@@ -4,7 +4,7 @@ import * as path from 'path';
 import { combineWithEntry, mergeByLine } from '../src/coverage/coverageRules';
 import { CoveragePct, Manifest } from '../src/coverage/types';
 
-/** Phase 8: a source file loaded by Jest and Vitest tests keeps the lines either ran. */
+/** Mixed projects: a source file loaded by Jest and Vitest tests keeps the lines either ran. */
 
 const st = (line: number) => ({ start: { line, col: 0 }, end: { line, col: 10 } });
 const pct = {} as CoveragePct;

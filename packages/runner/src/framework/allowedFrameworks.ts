@@ -1,6 +1,6 @@
 /**
  * Roots where a runner may run although detection picked the other framework
- * (mixed-framework projects, phase 8). No imports from the adapters, so the
+ * (mixed-framework projects). No imports from the adapters, so the
  * runners can use it without an import cycle.
  */
 import * as path from 'path';

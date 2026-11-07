@@ -38,13 +38,13 @@ export class CoverageDecorationManager implements IResultObserver {
   private readonly _drawn = new Map<string, DrawnCoverage>();
   private _shown = true;
 
-  /** Every file shows its own project's coverage (phase 7). */
+  /** Every file shows its own project's coverage. */
   constructor(
     private readonly _resolve: FileStoresResolver,
     /** Shared with the hover, so both follow the user's unsaved edits the same way. */
     readonly measuredLines: MeasuredLines = new MeasuredLines(),
   ) {
-    // A thin, faded coloured left edge on each executable line (1px whole-line border, owner's option C):
+    // A thin, faded coloured left edge on each executable line (1px whole-line border):
     // nothing is inserted into the text, so code does not shift and the
     // gutter stays free for breakpoints and test status icons.
     // overviewRulerColor mirrors state in the scrollbar.

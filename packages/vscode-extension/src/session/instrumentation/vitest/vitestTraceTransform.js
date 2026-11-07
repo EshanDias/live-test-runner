@@ -3,7 +3,7 @@
  * vitestTraceTransform.js — the light-trace instrumentation for Vitest.
  *
  * Same contract as the Jest transform (`__strace.step(line, file)` before
- * every statement, see docs/architecture.md → Session instrumentation
+ * every statement, see docs/development/architecture.md → Session instrumentation
  * protocol) but without coverage counters — Vitest measures coverage with its
  * own provider — and without Babel's traverse / generator, which Vitest
  * projects usually lack: the source is parsed with @babel/parser and the

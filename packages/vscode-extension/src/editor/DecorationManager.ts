@@ -12,7 +12,7 @@ import { getThresholds, durationColorVar, durationLabel } from '../utils/duratio
  * All public IResultObserver methods trigger a refresh for the affected file
  * so editors update in real-time as results arrive.
  *
- * Every file is decorated from its own project's store (phase 7): the
+ * Every file is decorated from its own project's store: the
  * selected project only decides what the Explorer / Results panel show.
  * It receives every project's events (not only the selected one's).
  */

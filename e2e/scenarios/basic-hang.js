@@ -18,7 +18,7 @@ module.exports = {
       "test('spins forever', () => { while (true) { /* hang */ } });\n");
     fs.writeFileSync(path.join(workspace, 'src', 'never.test.js'),
       "test('never resolves', () => new Promise(() => {}));\n");
-    // Learnt from copy-requisition: a file that is merely slow to LOAD (App.test.js
+    // Learnt from a large Create React App project: a file that is merely slow to LOAD (App.test.js
     // took 229 s on a cold cache) must not be stopped as hung — only a test may.
     fs.writeFileSync(path.join(workspace, 'src', 'slowload.js'),
       'const end = Date.now() + 20000;\nwhile (Date.now() < end) { /* slow import */ }\nmodule.exports = { ready: true };\n');

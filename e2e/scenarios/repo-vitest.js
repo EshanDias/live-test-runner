@@ -112,12 +112,12 @@ module.exports = {
       }
     }
 
-    // Execution trace (phase 9): on, and it mapped source files to tests.
+    // Execution trace: on, and it mapped source files to tests.
     const covered = api.traceStore.getAllCoveredFiles().length;
     t.check('the execution trace recorded source lines', covered > 0, `covered files: ${covered}`);
     t.check('…and stayed on', !allLogs(api).some((l) => /execution trace is off/.test(l)), allLogs(api).filter((l) => /trace/i.test(l)).join('\n'));
 
-    // Save a source file a passing test file imports: it reruns live (phase 6 / 9). Restored afterwards.
+    // Save a source file a passing test file imports: it reruns live. Restored afterwards.
     const testFile = h.allNodes(api).find((n) => n.type === 'test' && n.status === 'passed')?.fileId;
     const src = testFile && relativeImport(testFile);
     if (src) {
@@ -131,7 +131,7 @@ module.exports = {
         const cmds3 = h.rawSince(api, mark3).filter((l) => /^\[vitest#\d+\] > /.test(l));
         const logs3 = h.logsSince(api, since3);
         const rel = path.relative(workspace, src);
-        // Phase 9: by the execution trace (only the tests that ran it); `vitest related` when no test ran the file.
+        // By the execution trace (only the tests that ran it); `vitest related` when no test ran the file.
         const traced = logs3.some((l) => l.includes(`Trace-based rerun for ${path.basename(src)}`));
         const related = cmds3.some((l) => / related /.test(l) && l.includes(path.basename(src))) && logs3.some((l) => /No trace data for/.test(l));
         t.check(`saving ${rel} reruns by the trace (or \`vitest related\` when no test ran it)`, traced || related, `${cmds3.join('\n')}\n${logs3.join('\n')}`);

@@ -50,7 +50,7 @@ jobs:
       - run: pnpm test
 
   # The pytest plugin shipped with the extension (packages/runner/src/framework/pytest/ltr_pytest.py),
-  # tested with pytest itself on every supported pytest major (7 is still widely used — owner, 2026-10-24).
+  # tested with pytest itself on every supported pytest major (7 is still widely used).
   pytest-plugin:
     name: pytest plugin (pytest ${{ matrix.pytest }}, Python ${{ matrix.python }})
     runs-on: ubuntu-latest

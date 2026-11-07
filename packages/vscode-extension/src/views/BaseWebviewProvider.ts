@@ -38,7 +38,7 @@ export abstract class BaseWebviewProvider
   ) {}
 
   /**
-   * Shows another project (phase 7): its store and live state replace the
+   * Shows another project: its store and live state replace the
    * current ones and the webview gets a fresh 'init'. Pending batched file
    * results of the previous project are dropped.
    */

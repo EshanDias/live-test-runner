@@ -179,7 +179,7 @@ export async function findCandidates(projectRoot: string, opts: {
 /**
  * Folders whose virtual environments a project may use, nearest first: the
  * project, every folder above it up to the workspace folder (a uv workspace
- * keeps one `.venv` at its own root for all members, pytest plan phase 7),
+ * keeps one `.venv` at its own root for all members),
  * then the workspace folder. A project outside the workspace folder: the
  * project, then the workspace folder.
  */

@@ -135,7 +135,7 @@ export class SessionManager {
   private readonly _sourceExtensionsBy = new Map<FrameworkServices, Set<string>>();
 
   constructor(
-    /** The project this manager runs (one SessionManager per project, phase 7). */
+    /** The project this manager runs (one SessionManager per project). */
     private readonly _projectRoot: string,
     /** The framework bundle (adapter, batch runner, config, …) for each file / project root. */
     private readonly _services: IFrameworkServicesProvider,
@@ -192,7 +192,7 @@ export class SessionManager {
 
     vscode.commands.executeCommand('liveTestRunner.results.focus');
 
-    // Which framework(s) the project runs, re-read every Start (phase 8: a mixed project has two).
+    // Which framework(s) the project runs, re-read every Start (a mixed project has several).
     this._services.prepare(projectRoot);
     this._sourceExtensions = new Set();
     this._sourceExtensionsBy.clear();
@@ -1311,7 +1311,7 @@ export class SessionManager {
     };
 
     // Build batch queue up-front and drain it with CONCURRENCY workers. In a
-    // mixed project each batch holds one framework's files (phase 8).
+    // mixed project each batch holds one framework's files.
     const byFramework = new Map<FrameworkServices, string[]>();
     for (const fp of filePaths) {
       const s = this._services.servicesFor(fp);

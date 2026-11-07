@@ -48,7 +48,7 @@ export function createVitestServices(options: {
       plainRun: 'plain Vitest',
       fallbackLoss: 'slower',
     },
-    // The trace comes from the Vite plugin (phase 9, VitestTrace); the Timeline needs its runner (phase 10).
+    // The trace comes from the Vite plugin; the Timeline needs its runner.
     features: { trace: true, timeline: false },
     traceOffReason: (projectRoot) => batchRunner.traceOffReason(projectRoot),
     // Neither provider package: Vitest cannot measure (the run logs which one its config names).
@@ -58,7 +58,7 @@ export function createVitestServices(options: {
     adapter: new VitestAdapter(sessionDir),
     projectConfig,
     batchRunner,
-    // The Timeline debugger needs the Vite trace plugin (phase 10).
+    // The Timeline debugger needs the Vite trace plugin.
     instrumentedRunner: undefined,
     createSessionRunner: () => newRunner(rawLog),
     settingsFingerprint: () => {

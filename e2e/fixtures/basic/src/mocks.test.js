@@ -1,4 +1,4 @@
-// Learnt from copy-requisition: its test script is `react-scripts test
+// Learnt from a large Create React App project: its test script is `react-scripts test
 // --resetMocks`. This project's script is `jest --resetMocks`; the second test
 // only passes when that flag is honoured, as `npm test` does.
 const spy = jest.fn();

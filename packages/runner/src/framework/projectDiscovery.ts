@@ -12,7 +12,7 @@ const log = createLogger('Projects');
 
 /**
  * One test project in the workspace — a folder that is run as a whole, from
- * its own root, with its own framework and config (phase 7, D11/D12).
+ * its own root, with its own framework and config.
  */
 export interface DetectedProject {
   /** Absolute folder the framework runs from. */
@@ -211,7 +211,7 @@ function segmentRegExp(seg: string): RegExp {
  * The test projects of one workspace folder — its JavaScript projects
  * ({@link jsProjectsInFolder}) and its Python projects
  * ({@link pythonProjectsInFolder}). A folder both claim stays one project, the
- * JavaScript one (JS + Python at one root: pytest plan phase 8).
+ * JavaScript one (JS + Python at one root).
  */
 export function projectsInFolder(folder: string, registry: FrameworkRegistry = FrameworkRegistry.default()): DetectedProject[] {
   const js = jsProjectsInFolder(folder, registry);
@@ -258,7 +258,7 @@ export function jsProjectsInFolder(folder: string, registry: FrameworkRegistry =
 }
 
 /**
- * The Python test projects of one workspace folder (pytest plan phase 7):
+ * The Python test projects of one workspace folder:
  *  1. The folder configures pytest itself (a pytest config or a root
  *     `conftest.py`) → one project, the folder. pytest run from there
  *     collects the members too (`testpaths`, or the whole tree), and a
@@ -287,7 +287,7 @@ export function pythonProjectsInFolder(folder: string, registry: FrameworkRegist
     const root = single('pytest detected in the folder');
     if (root.length > 0 || !scan) { return root; }
     // Nothing Python at the folder itself: a Python project in a subfolder
-    // (`backend/` next to a JS app, pytest plan phase 8).
+    // (`backend/` next to a JS app).
     return nestedPythonRoots(folder).flatMap((dir) => pythonProjectsInFolder(dir, registry, false));
   }
   const inherited = mentionsPytest(folder);

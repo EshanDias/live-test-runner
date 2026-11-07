@@ -12,7 +12,7 @@
   const TEMPLATE = `
 <div class="explorer-layout">
 
-  <!-- Project switcher (phase 7): only with two or more projects -->
+  <!-- Project switcher: only with two or more projects -->
   <div class="project-switcher hidden" id="projectSwitcher">
     <button class="project-current" id="projectCurrent" title="Switch project — Start / Stop act on the project shown">
       <span class="project-name" id="projectName"></span><span class="project-caret">▾</span>

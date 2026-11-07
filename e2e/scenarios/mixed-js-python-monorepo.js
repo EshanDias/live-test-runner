@@ -1,7 +1,7 @@
 'use strict';
 /**
  * A JS root without Python of its own and a backend/ folder with its own
- * pytest config (pytest plan phase 8): two projects — Jest at the root,
+ * pytest config: two projects — Jest at the root,
  * pytest in backend/ with the root's .venv. Each runs on its own; the Jest
  * project never runs Python files and the other way round.
  */

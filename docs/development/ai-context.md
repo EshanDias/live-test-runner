@@ -115,7 +115,7 @@ ConsoleEntry   // console output per file; Vitest adds scope ('file'|'suite'|'te
 ```
 src/
 ├── extension.ts                    Entry point — wires views + ProjectRegistry, registers commands
-├── project/                        Monorepos & multi-root workspaces (phase 7)
+├── project/                        Monorepos & multi-root workspaces
 │   ├── ProjectRegistry.ts          Detects the projects (runner findTestProjects / projectRoot setting), owns one ProjectContext each, the selected one, status bar text, start limit
 │   ├── ProjectContext.ts           Per project: ResultStore / ExecutionTraceStore / CoverageStore, TestDiscoveryService + DiscoveryCache, FrameworkRouter, SessionManager, session dir; ProjectObserverGate (forwards events only while selected)
 │   └── projectLimits.ts            maxRunningProjects: auto (2, or 1 with ≤ 4 cores / < 8 GB total memory) and the refusal message (pure)
@@ -142,7 +142,7 @@ src/
 │   ├── JestProjectConfig.ts        IProjectConfig for Jest: `jest --showConfig` once per session
 │   ├── IBatchRunner.ts             Interface: runFiles(BatchRunOptions) / kill / reset — SessionManager's only view of batch runs
 │   ├── JestBatchRunner.ts          Runs combined test+trace+coverage batches; populates ResultStore + ExecutionTraceStore + CoverageStore
-│   │   instrumentation/            (protocol: docs/architecture.md → Session instrumentation protocol)
+│   │   instrumentation/            (protocol: docs/development/architecture.md → Session instrumentation protocol)
 │   │   ├── shared/
 │   │   │   ├── sessionTraceRuntime.js  __strace global: accumulates hit-maps per test/hook; flushes T/H records to JSONL — framework-neutral
 │   │   │   ├── sourceMapLookup.js      reads a source map back (generated → original line/column) — Jest + Vitest transforms (TS, components)
@@ -151,7 +151,7 @@ src/
 │   │   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest; components via the project's transformer + its map; processAsync (ESM)
 │   │   │   ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
 │   │   │   └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
-│   │   └── vitest/                    Vitest execution trace (ADR-9)
+│   │   └── vitest/                    Vitest execution trace
 │   │       ├── vitestTraceConfig.js      wrapper-config helper: project config via its own Vite + plugin into every test.projects / Vitest 3 workspace entry
 │   │       ├── vitestTracePlugin.js      Vite plugin: setup file first, enforce:'post' transform of project sources (JS/TS + .vue/.svelte/.astro/.marko)
 │   │       ├── vitestTraceTransform.js   splices globalThis.__strace?.step(L,F) (lines via the incoming source map); withoutTrace()
@@ -220,7 +220,7 @@ src/
 
 ## Session lifecycle
 
-**Projects (phase 7):** on activate `ProjectRegistry.refresh()` detects the test projects (one per workspace folder with its own test config; one per workspace package with tests under a monorepo root without one; Python: a folder configuring pytest is one, a uv workspace root without a pytest config gives one per member with tests (`pythonProjectsInFolder`, 3.3.0); the `liveTestRunner.projectRoot` setting pins one root) and builds a `ProjectContext` each — none is started (D11). The first (or remembered / active-editor) project is selected; the views show it, Start / Stop act on it, and only its discovery runs now (the others on first selection or Start). Everything below happens **per project**. Several projects may run at once, up to `liveTestRunner.maxRunningProjects`; a background project keeps running and rerunning on save, its events held back from the Explorer / Results by its `ProjectObserverGate` until it is selected again. **Mixed projects (phase 8):** a project with a Jest config and its own `vitest.config.*` lists with both frameworks at Start and its `FrameworkRouter` places each test file with one of them; batches, plain runs, ▶ Run / ▷ Debug and on-save reruns use the file's framework, and a source-file save reruns both frameworks' dependents. Editor features (gutter, inline durations, CodeLens, coverage bars, hover) always resolve each file to its own project (`editor/FileStores.ts`) and get every project's events (`editorObservers`).
+**Projects:** on activate `ProjectRegistry.refresh()` detects the test projects (one per workspace folder with its own test config; one per workspace package with tests under a monorepo root without one; Python: a folder configuring pytest is one, a uv workspace root without a pytest config gives one per member with tests (`pythonProjectsInFolder`, 3.3.0); the `liveTestRunner.projectRoot` setting pins one root) and builds a `ProjectContext` each — none is started. The first (or remembered / active-editor) project is selected; the views show it, Start / Stop act on it, and only its discovery runs now (the others on first selection or Start). Everything below happens **per project**. Several projects may run at once, up to `liveTestRunner.maxRunningProjects`; a background project keeps running and rerunning on save, its events held back from the Explorer / Results by its `ProjectObserverGate` until it is selected again. **Mixed projects:** a project with a Jest config and its own `vitest.config.*` lists with both frameworks at Start and its `FrameworkRouter` places each test file with one of them; batches, plain runs, ▶ Run / ▷ Debug and on-save reruns use the file's framework, and a source-file save reruns both frameworks' dependents. Editor features (gutter, inline durations, CodeLens, coverage bars, hover) always resolve each file to its own project (`editor/FileStores.ts`) and get every project's events (`editorObservers`).
 
 **On extension activate (before any user action):**
 1. `DiscoveryCache` loaded from `globalStorageUri/cache/<folderName>-<hash8>/discovery-cache.json` (if exists). A `session.lock` PID file is written.
@@ -396,7 +396,7 @@ Identity only — **never status or duration**. `DecorationManager` always queri
 | `projects` | Extension → ExplorerView | Switcher row: `ProjectSummary[]` (name, framework, state idle/discovering/running/watching, counts, progress, selected) — also in `init`; shown with 2+ projects |
 | `select-project` | ExplorerView → extension | User picked a project → `liveTestRunner.selectProject` |
 
-`init` also carries `running` (`{completed,total,failed}` or null) so a project switched to mid-run shows its progress. File objects carry `group` (Vitest project name, D12) when the config has several `test.projects`.
+`init` also carries `running` (`{completed,total,failed}` or null) so a project switched to mid-run shows its progress. File objects carry `group` (Vitest project name) when the config has several `test.projects`.
 
 **Rule:** `scope-logs` and `scope-changed` are always sent as separate messages. Different lifecycles; keeping them separate prevents double-renders.
 
@@ -570,9 +570,9 @@ All in `packages/vscode-extension/package.json`:
 |-----------|--------|
 | Jest | Fully supported |
 | Create React App | Fully supported (via `--showConfig` + direct Jest invocation) |
-| Vitest | Supported since 3.0.0 (Vitest 3+; 1–2 results only) — run, pass/fail, per-test output, failures, live progress, coverage, related tests on save. Execution trace / "covering tests" + precise source-file reruns since 3.1.0 (phase 9, ADR-9 — `VitestTrace` wrapper config + `instrumentation/vitest/` Vite plugin; setting `liveTestRunner.vitestTrace`). Vitest 3 workspaces, type-check files and components (`.vue` / `.svelte` / `.astro` / `.marko`, both frameworks — Jest through the project's transformer + its source map, `shared/sourceMapLookup.js`) included; Jest ESM mode from the test script's NODE_OPTIONS or `.npmrc` (runner `jestNodeEnv`, `jestEsmHint`). Loaded files rerun their tests: Vitest module graph (`LTR_VITEST_DEPS`, `ExecutionTraceStore.addImporters`), Jest same-folder referrers (`referencingSources`); type-check files via `vitest related --typecheck.only`. Real-repo matrix includes vue-testing-library, vue-multiselect, jest-preset-angular example (Angular 22), svelte-testing-library (`repo-components`). Not yet: Timeline. See `docs/framework-features.md` |
-| pytest | Since 3.2.0 (`docs/temp_plans/pytest-support-plan.md`) — pytest ≥ 7 / Python ≥ 3.12: run, pass/fail, per-test output, failures, live progress, hang limit, Stop, ▶ Run / ▷ Debug (debugpy) by node id, saved-test reruns, coverage (coverage.py, istanbul-shaped), covering tests + precise source-save reruns (per-test coverage contexts → trace records), import-graph fallback. Shipped plugin `runner/src/framework/pytest/ltr_pytest.py` loaded only with `-p`; interpreter from `python/PythonInterpreters.ts` (Select Python Interpreter, `liveTestRunner.pythonPath`; shown on the Explorer's environment chip, `python/pythonEnvChip.ts`); one pytest process at a time (`FrameworkServices.batchPolicy`). uv workspaces (3.3.0): one project per member, the shared `.venv` found above the member (`venvRoots`). JS + Python in one folder (3.3.0): the JS project's router adds the pytest bundle (`projectFrameworks`), `mixedDiscoverer`, saves rerun only their language (`FrameworkServices.language`), a framework that cannot run is left out (`disable`); a Python subfolder with a pytest config is its own project (`nestedPythonRoots`). Not yet: Timeline |
-| Jest + Vitest in one project | Since 3.1.0 (phase 8) — a Jest root with its own `vitest.config.*` (or a `liveTestRunner.frameworks` rule) runs each test file with its own framework; `FrameworkRouter` |
+| Vitest | Supported since 3.0.0 (Vitest 3+; 1–2 results only) — run, pass/fail, per-test output, failures, live progress, coverage, related tests on save. Execution trace / "covering tests" + precise source-file reruns since 3.1.0. Vitest 3 workspaces, type-check files and components (`.vue` / `.svelte` / `.astro` / `.marko`, both frameworks — Jest through the project's transformer + its source map, `shared/sourceMapLookup.js`) included; Jest ESM mode from the test script's NODE_OPTIONS or `.npmrc` (runner `jestNodeEnv`, `jestEsmHint`). Loaded files rerun their tests: Vitest module graph (`LTR_VITEST_DEPS`, `ExecutionTraceStore.addImporters`), Jest same-folder referrers (`referencingSources`); type-check files via `vitest related --typecheck.only`. Real-repo matrix includes vue-testing-library, vue-multiselect, jest-preset-angular example (Angular 22), svelte-testing-library (`repo-components`). Not yet: Timeline. See `docs/development/framework-features.md` |
+| pytest | Since 3.2.0 — pytest ≥ 7 / Python ≥ 3.12: run, pass/fail, per-test output, failures, live progress, hang limit, Stop, ▶ Run / ▷ Debug (debugpy) by node id, saved-test reruns, coverage (coverage.py, istanbul-shaped), covering tests + precise source-save reruns (per-test coverage contexts → trace records), import-graph fallback. Shipped plugin `runner/src/framework/pytest/ltr_pytest.py` loaded only with `-p`; interpreter from `python/PythonInterpreters.ts` (Select Python Interpreter, `liveTestRunner.pythonPath`; shown on the Explorer's environment chip, `python/pythonEnvChip.ts`); one pytest process at a time (`FrameworkServices.batchPolicy`). uv workspaces (3.3.0): one project per member, the shared `.venv` found above the member (`venvRoots`). JS + Python in one folder (3.3.0): the JS project's router adds the pytest bundle (`projectFrameworks`), `mixedDiscoverer`, saves rerun only their language (`FrameworkServices.language`), a framework that cannot run is left out (`disable`); a Python subfolder with a pytest config is its own project (`nestedPythonRoots`). Not yet: Timeline |
+| Jest + Vitest in one project | Since 3.1.0 — a Jest root with its own `vitest.config.*` (or a `liveTestRunner.frameworks` rule) runs each test file with its own framework; `FrameworkRouter` |
 
 ---
 
@@ -618,7 +618,7 @@ All in `packages/vscode-extension/package.json`:
 | Which lines a statement's coverage bar covers | `packages/vscode-extension/src/coverage/statementLines.ts` |
 | Vitest batches | `packages/vscode-extension/src/session/VitestBatchRunner.ts` |
 | Vitest-specific logic | `packages/vscode-extension/src/framework/VitestAdapter.ts`, `packages/runner/src/VitestRunner.ts` |
-| Known bugs + root causes | `docs/bugs-and-issues.md` |
+| Fixed bugs + root causes | `docs/development/bug-history.md` (new bugs: GitHub Issues) |
 | Framework detection | `packages/runner/src/framework/FrameworkDetector.ts` |
 | CRA config extraction | `packages/runner/src/framework/adapters/CRAAdapter.ts` |
 | Source save → which tests rerun | `SessionManager._runAffectedBySourceFile`, `store/ExecutionTraceStore.ts` |

@@ -1,0 +1,17 @@
+# Developer documentation
+
+Everything needed to understand and change Live Test Runner without reading the code first.
+
+| Document | What it covers |
+|----------|----------------|
+| [developer-guide.md](developer-guide.md) | Setup, build, logging, adding a framework, unit and end-to-end tests, the real-repository matrix, releases, the website |
+| [architecture.md](architecture.md) | System design: packages, VS Code layout, data model (result, trace and coverage stores), execution flow, instrumentation protocol, editor decorations, views, key design decisions |
+| [framework-features.md](framework-features.md) | What each framework supports (the matrix the README and guide are generated from: `node scripts/framework-matrix.js`) |
+| [bug-history.md](bug-history.md) | Bugs fixed since 3.0, each with cause, fix and how it was verified. Code comments and e2e checks refer to these IDs (`BUG-04`, …) |
+| [ai-context.md](ai-context.md) | A dense summary of the whole codebase for AI coding assistants (see also [CLAUDE.md](../../CLAUDE.md)) |
+
+Package-level READMEs: [runner](../../packages/runner/README.md) · [core](../../packages/core/README.md) · [extension](../../packages/vscode-extension/README.md) (the Marketplace page).
+
+User documentation: the [user guide](../live-test-runner-guide.html) (published at the website's `/guide/`, and shown in VS Code by **Live Test Runner: Open Guide**).
+
+New bugs and feature ideas go to [GitHub Issues](https://github.com/EshanDias/live-test-runner/issues); see [CONTRIBUTING.md](../../CONTRIBUTING.md).

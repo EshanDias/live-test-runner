@@ -1,4 +1,4 @@
-# A uv workspace (pytest plan phase 7): no pytest config at the root, so each
+# A uv workspace: no pytest config at the root, so each
 # member with tests is its own project. pytest is the shared dev dependency.
 [project]
 name = "monorepo-pytest-fixture"

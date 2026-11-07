@@ -1,16 +1,19 @@
-# Bugs & Issues — Analysis
+# Bug history
 
-> Audit of the whole app (runner · core · extension · instrumentation), done on branch `feat/logging-overhaul` (2026-10-19).
-> Fixed on `bugfix/audit-fixes` (2026-10-20). Each entry: **cause → fix → how it was verified**.
-> All entries verified on Windows and macOS (2026-10-20: every e2e scenario, plus vscode-jest, jest-dom and a CRA app on macOS).
+Bugs found and fixed since the 3.0 audit, kept as a record of **why** the code
+works the way it does. Each entry: **cause → fix → how it was verified**. Code
+comments and e2e checks refer to these IDs (`BUG-04`, …).
+
+This file is a frozen record, not a tracker: report new bugs on
+[GitHub Issues](https://github.com/EshanDias/live-test-runner/issues).
 
 **Severity:** 🔴 High (wrong results / feature broken) · 🟠 Medium (flaky or misleading) · 🟡 Low (cleanup / polish)
-**Status:** ✅ fixed and verified (e2e) · 🔲 open
+**Status:** ✅ fixed and verified (e2e)
 
 **How things were verified.** `e2e/` launches a real VS Code with the extension and drives real commands against real Jest processes:
 - fixture projects, copied to a temp folder whose path contains spaces: `basic` (plain Jest 29, `verbose: true`), `ts-config` (`jest.config.ts` + ts-jest), `esm-fn-config` (async `jest.config.mjs`);
 - **vscode-jest** (ts-jest, `automock`, 49 files / 2012 tests) — every file's pass/fail/skip counts compared with a plain `jest --json` run;
-- **copy-requisition** (Create React App, react-scripts 5 / Jest 27, 197 files) — sample files compared with plain `react-scripts test`, plus a full run: 1789 tests, 1769 passed / 7 failed / 13 skipped — the same totals as plain Jest (two timing-sensitive UI tests swapped pass/fail between the runs). 25.7 min with a warm transform cache vs 32 min plain Jest; no fallback, no hang stop, nothing left spinning.
+- **a large Create React App project** (Create React App, react-scripts 5 / Jest 27, 197 files) — sample files compared with plain `react-scripts test`, plus a full run: 1789 tests, 1769 passed / 7 failed / 13 skipped — the same totals as plain Jest (two timing-sensitive UI tests swapped pass/fail between the runs). 25.7 min with a warm transform cache vs 32 min plain Jest; no fallback, no hang stop, nothing left spinning.
 
 Run them with `node e2e/run.js --all` (see [developer-guide.md](developer-guide.md#end-to-end-tests)). Scenario names are given below as `scenario`.
 
@@ -61,7 +64,6 @@ Run them with `node e2e/run.js --all` (see [developer-guide.md](developer-guide.
 | [BUG-39](#bug-39) | 🔴 | ✅ | **New:** a file run by several Jest projects kept only the last project's result |
 | [BUG-40](#bug-40) | 🔴 | ✅ | **New:** coverage dropped on every Start after the first (cached transforms) |
 | [BUG-42](#bug-42) | 🔴 | ✅ | **New (Windows):** 8.3 short paths (`RUNNER~1`) — nothing ran on GitHub's Windows runners |
-| [BUG-43](#bug-43) | 🔴 | 🔲 | jest-runtime tests fail under the session run (jest monorepo) |
 | [BUG-44](#bug-44) | 🟡 | ✅ | Concurrent batches race with tests that write into the project (jest monorepo) |
 | [BUG-41](#bug-41) | 🟠 | ✅ | **New:** tooling — pnpm 10+ could not install or test; e2e could not start VS Code ≥ 1.142 on macOS |
 
@@ -152,10 +154,10 @@ Removed (the setup file's `afterAll` flushes coverage).
 Shared `toInputConfig` keeps `[path, options]`. **Verified:** unit test.
 
 <a id="bug-21"></a>
-### BUG-21 🟡 ✅ Debug leftovers — fixed in `feat/logging-overhaul`.
+### BUG-21 🟡 ✅ Debug leftovers — fixed in 3.0.0.
 
 <a id="bug-22"></a>
-### BUG-22 🟡 ✅ Logging — fixed in `feat/logging-overhaul`.
+### BUG-22 🟡 ✅ Logging — fixed in 3.0.0.
 
 <a id="bug-23"></a>
 ### BUG-23 🔴 ✅ Endless spinners
@@ -164,7 +166,7 @@ Shared `toInputConfig` keeps `[path, options]`. **Verified:** unit test.
 - A save no longer kills the batch running the same file: the newest run owns the file, older results for it are ignored.
 - Hangs: a single **test** running longer than `liveTestRunner.hangTimeoutSeconds` (default 300, measured with setup-file heartbeats, so slow file loading doesn't count) is stopped and its file failed with an explanation; the rest of the batch is retried. Plain fallback runs have a 3× wall-clock limit.
 
-**Verified:** `basic-hang` (infinite loop stopped and explained, never-resolving promise fails on Jest's timeout, other files fine), `basic-stop`, `basic-save-during-run`. On copy-requisition the first version (per-file limit) stopped `App.test.js`, which takes 229 s to load even in plain Jest — hence the per-test limit.
+**Verified:** `basic-hang` (infinite loop stopped and explained, never-resolving promise fails on Jest's timeout, other files fine), `basic-stop`, `basic-save-during-run`. On a large Create React App project the first version (per-file limit) stopped `App.test.js`, which takes 229 s to load even in plain Jest — hence the per-test limit.
 
 <a id="bug-24"></a>
 ### BUG-24 🟠 ✅ Never-started tests
@@ -188,7 +190,7 @@ Project setup files are instrumented; their wrapped `beforeEach` / `afterEach` r
 
 <a id="bug-29"></a>
 ### BUG-29 🟠 ✅ Transform cache per session (new)
-The cache lived in the per-window session folder, so every Start re-transformed the whole project (minutes per file on copy-requisition). It is now per project under the temp root; entries are keyed by the transform's own hash and the config.
+The cache lived in the per-window session folder, so every Start re-transformed the whole project (minutes per file on a large Create React App project). It is now per project under the temp root; entries are keyed by the transform's own hash and the config.
 
 <a id="bug-30"></a>
 ### BUG-30 🟡 ✅ Saves outside the project triggered runs (new)
@@ -196,11 +198,11 @@ VS Code saving its own `settings.json` started `jest --findRelatedTests`. Only J
 
 <a id="bug-31"></a>
 ### BUG-31 🔴 ✅ Instrumentation crash failed whole test files (new)
-**Found by:** copy-requisition's full run — `App.test.js` and others "failed to run" with `ReferenceError: Container is falsy`. **Cause:** an optional chain inside the call arguments of another optional chain (`a?.b?.c().includes(x?.d())`): the outer rewrite detached the inner node, and branch counting threw. The exception escaped the transform, so every test file importing that module failed. **Fix:** that `?.` is skipped for branch counting; any instrumentation error now falls back to the plain transpiled code (no coverage for that file, tests run normally). **Verified:** `basic-full-run` (`invoice.js` fixture, crashes the old transform); all 421 copy-requisition sources instrument without error.
+**Found by:** a large Create React App project's full run — `App.test.js` and others "failed to run" with `ReferenceError: Container is falsy`. **Cause:** an optional chain inside the call arguments of another optional chain (`a?.b?.c().includes(x?.d())`): the outer rewrite detached the inner node, and branch counting threw. The exception escaped the transform, so every test file importing that module failed. **Fix:** that `?.` is skipped for branch counting; any instrumentation error now falls back to the plain transpiled code (no coverage for that file, tests run normally). **Verified:** `basic-full-run` (`invoice.js` fixture, crashes the old transform); all 421 a large Create React App project sources instrument without error.
 
 <a id="bug-32"></a>
 ### BUG-32 🟠 ✅ Start waited for `jest --listTests` every time (new)
-**Found by:** "tests take forever to start". copy-requisition's log: Start waited 20.4 s for `jest --listTests` (added for BUG-24) before the first test ran; 3.7 s even on the 2-file CRA fixture. **Fix:** the answer is kept per project (`RunnableFiles.ts`) under a key of the discovered test files, `package.json` / `jest.config.*` size and mtime, and the run settings; Start asks Jest only when one of those changed. The status bar says "Asking Jest which files it runs…" while it does. **Verified:** `basic-full-run` (second Start uses the list), unit tests for the key.
+**Found by:** "tests take forever to start". The project's log: Start waited 20.4 s for `jest --listTests` (added for BUG-24) before the first test ran; 3.7 s even on the 2-file CRA fixture. **Fix:** the answer is kept per project (`RunnableFiles.ts`) under a key of the discovered test files, `package.json` / `jest.config.*` size and mtime, and the run settings; Start asks Jest only when one of those changed. The status bar says "Asking Jest which files it runs…" while it does. **Verified:** `basic-full-run` (second Start uses the list), unit tests for the key.
 
 <a id="bug-33"></a>
 ### BUG-33 🟠 ✅ A test file created after Start was ignored on save (new)
@@ -247,17 +249,8 @@ The file row of both test lists shows a duration when the store has one, but not
 ### BUG-42 🔴 ✅ Windows 8.3 short paths: nothing ran (new)
 **Found by:** the first real CI run of the e2e suite on `windows-latest` — every scenario failed with Jest's "No files found". **Cause:** the runner's temp folder is `C:\Users\RUNNER~1\…`, an 8.3 short name for `C:\Users\runneradmin\…`. VS Code opened the project by the short name; Jest resolves its rootDir with `realpathSync.native`, which expands it — the same mismatch as BUG-36, which had left Windows out. Users hit it when a project is opened through a short path (e.g. under `%TEMP%` with a long user name), a junction or a `subst` drive. **Fix:** `JestPaths` now applies on Windows too, resolves roots with `realpathSync.native` like Jest, and compares paths case- and slash-insensitively there. The e2e harness maps plain-Jest paths the same way. **Verified:** unit tests simulating the runner's paths; all e2e scenarios still pass on macOS; Windows CI.
 
-<a id="bug-43"></a>
-### BUG-43 🔴 🔲 jest-runtime tests fail under the session run (new, open)
-**Found by:** the first full `repo-tsjest` run on the Jest monorepo (`node e2e/real-repos.js jest`, 2026-10-20). 470 of 484 files match plain Jest test-for-test; the rest do not, nearly all in `packages/jest-runtime/src/__tests__/` (`runtime_require_module`, `runtime_mock`, `runtime_jest_fn`, `runtime_environment`, `runtime_node_path`, `runtime_require_cache`, `runtime_jest_spy_on`, … — every test fails in the extension, passes in plain Jest), plus `intro.test.js` (4 tests with an unexpected status) and one test in `watch.test.js`. A full session reports 4141 passed / 1122 failed vs plain Jest's 4269 / 1006. **Not a regression:** the 2.0.4-equivalent build (`release/3.0.0` @ `e2ba4ae`) gives the identical totals. **Suspected cause (unverified):** these tests create their own Jest `Runtime` over fixture folders; the session run's injected transform / `setupFilesAfterEnv` (trace + coverage instrumentation) is applied to the whole project root and so also reaches the code those inner runtimes load. **Next step:** run one such file through the session config and compare the failure message with plain Jest. The rest of the scenario passes on the monorepo (▶ Run, ▷ Debug, trace-based save rerun, timeline, Stop). **Re-checked 2026-10-22 (3.0.0 release validation, task 11.2):** unchanged — 23 files differ, all in `jest-runtime/src/__tests__/` plus `intro.test.js` and one test in `watch.test.js` (flaky); session 4149 passed / 1126 failed vs plain Jest 4273 / 1002 (plain Jest itself moves by ±1 between runs). The earlier "470 of 484" undercounted the same set.
-
 <a id="bug-44"></a>
 ### BUG-44 🟡 ✅ Concurrent batches race with tests that write into the project
-**Found by:** the phase-1 gate on the Jest monorepo (2026-10-21): "instrumented Jest run returned no results for 50 file(s)" — `jest-haste-map` failed with `ENOENT … e2e/timeouts/package.json`. **Cause:** the repo's own `e2e/__tests__/timeouts.test.ts` writes `e2e/timeouts/` into the project and deletes it again; the session runs several Jest processes at once (CONCURRENCY), and a batch whose haste-map crawl starts in that window sees the file listed and then gone. Plain Jest builds its haste map once, before any test runs, so it never hits this. **Effect:** the batch falls back to plain Jest one file at a time (BUG-07 path) — results are recovered, but slower, and the `repo-tsjest` check "no fallback to plain Jest" fails. Timing-dependent: earlier runs passed that check, and a rerun of the same build right after passed it too (totals identical to the pre-refactor build). Not caused by phase-1 changes (no scheduling / concurrency / crawl code changed). **Fix (3.3.0):** a batch that returns nothing and whose output names a file Jest could not open (`ENOENT … open '<file>'`) that no longer exists is run once more before the plain-Jest fallback (`vanishedFile` in `JestBatchRunner`, `IBatchRunner.runFiles` → `retry`; `SessionManager` retries once, INFO line). A real config error (the file exists, or another message) falls back as before. **Verified:** `vanishedFile.test.ts`; `node e2e/real-repos.js jest`.
+**Found by:** a regression run on the Jest monorepo (2026-10-21): "instrumented Jest run returned no results for 50 file(s)" — `jest-haste-map` failed with `ENOENT … e2e/timeouts/package.json`. **Cause:** the repo's own `e2e/__tests__/timeouts.test.ts` writes `e2e/timeouts/` into the project and deletes it again; the session runs several Jest processes at once (CONCURRENCY), and a batch whose haste-map crawl starts in that window sees the file listed and then gone. Plain Jest builds its haste map once, before any test runs, so it never hits this. **Effect:** the batch falls back to plain Jest one file at a time (BUG-07 path) — results are recovered, but slower, and the `repo-tsjest` check "no fallback to plain Jest" fails. Timing-dependent: earlier runs passed that check, and a rerun of the same build right after passed it too (totals identical to the pre-refactor build). Not caused by phase-1 changes (no scheduling / concurrency / crawl code changed). **Fix (3.3.0):** a batch that returns nothing and whose output names a file Jest could not open (`ENOENT … open '<file>'`) that no longer exists is run once more before the plain-Jest fallback (`vanishedFile` in `JestBatchRunner`, `IBatchRunner.runFiles` → `retry`; `SessionManager` retries once, INFO line). A real config error (the file exists, or another message) falls back as before. **Verified:** `vanishedFile.test.ts`; `node e2e/real-repos.js jest`.
 
 ---
-
-## Still to do
-
-- `test.todo` shares the skipped icon; a distinct todo icon was not added.
-- The Jest monorepo (`jest-test-projects/jest`) now runs through the e2e suite (`node e2e/real-repos.js jest`); it fails only on BUG-43.

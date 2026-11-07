@@ -5,7 +5,7 @@
  * SessionManager asks an {@link IFrameworkServicesProvider} for the bundle
  * of a file or project root. Each project has a FrameworkRouter
  * (`FrameworkRouter.ts`): one bundle for a single-framework project, and in
- * a mixed project (Jest + Vitest, phase 8) each test file's own bundle.
+ * a mixed project (Jest + Vitest) each test file's own bundle.
  */
 import { FrameworkId, TestRunner } from '@live-test-runner/runner';
 import { IFrameworkAdapter } from './IFrameworkAdapter';

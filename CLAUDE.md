@@ -19,7 +19,7 @@ pnpm test -- --watch     # Run tests in watch mode
 node e2e/run.js --all    # End-to-end: real VS Code + real Jest (build first; also runs in CI on Win/Linux/macOS)
 node e2e/run.js basic-stop basic-hang      # selected scenarios
 # Real projects (optional): LTR_E2E_TSJEST_REPO, LTR_E2E_CRA_REPO (+ LTR_E2E_CRA_FULL=1)
-node e2e/real-repos.js   # real-repo matrix on read-only copies (--all incl. the heavy jest monorepo and pytest's own suite)
+node e2e/real-repos.js   # real-repo matrix on read-only copies (repos from the gitignored e2e/real-repos.local.json — start from real-repos.example.json; --all incl. heavy ones)
 # README / website GIFs + screenshots from the real UI: diag-demo-* scenarios → scripts/demo-gifs.js (developer guide → End-to-end tests)
 python -m pytest packages/runner/python-tests   # the shipped pytest plugin's own tests (needs pytest; coverage for 2 of them)
 
@@ -234,7 +234,7 @@ Key directories:
 5. **Indexes rebuild on reset** — trace files are ground truth; indexes are derived caches
 6. **Lazy initialization** — results are never pre-fetched; observers are called when results are ready
 7. **Per-scope output** — only rerun the scope explicitly requested (test name pattern isolation)
-8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Test Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/developer-guide.md` → Logging.
+8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Test Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/development/developer-guide.md` → Logging.
 9. **Never touch the user's project** — never install packages into it (or its environment) and never edit its code, config or files. Everything the tool needs ships inside the extension; anything we write is a temporary file in our session folder, and the user's own terminal runs must keep working side by side. Zero configuration: install, click Start.
 10. **Never overuse the machine** — every kind of parallelism (batches, frameworks, projects, workers) stays within one budget from the free resources (cores, memory); when the budget is 1, things run one at a time. Whatever else the user does must stay responsive.
 
@@ -286,7 +286,7 @@ Rules:
 
 When asked to make a change while on `main` or `release/*`, create the appropriately named branch before editing anything. Never push or merge to either from a local checkout.
 
-Enforcement: `.github/workflows/pr-checks.yml` validates branch names/targets, runs tests, and checks the version bump on PRs to `main`. It must be paired with GitHub branch protection on `main` and `release/*` (require PR, require the checks `Branch rules`, `Tests`, plus `Version bump (PRs to main)` on `main`, block direct pushes) — see `docs/developer-guide.md`.
+Enforcement: `.github/workflows/pr-checks.yml` validates branch names/targets, runs tests, and checks the version bump on PRs to `main`. It must be paired with GitHub branch protection on `main` and `release/*` (require PR, require the checks `Branch rules`, `Tests`, plus `Version bump (PRs to main)` on `main`, block direct pushes) — see `docs/development/developer-guide.md`.
 
 ---
 
@@ -300,14 +300,17 @@ When making changes, update the relevant documentation files:
 
 | Change Type | Update These Files |
 |---|---|
-| **Architecture or system design changes** | `docs/architecture.md`, `docs/ai-context.md` |
-| **Core package API or lifecycle changes** | `packages/core/README.md`, `docs/developer-guide.md`, `docs/ai-context.md` |
-| **Runner package API, layer changes, or framework adapter updates** | `packages/runner/README.md`, `docs/developer-guide.md`, `docs/ai-context.md` |
-| **Extension features, UI changes, new commands, or configuration options** | `packages/vscode-extension/README.md` (marketplace-facing), `CHANGELOG.md`, `docs/ai-context.md` |
-| **Dev setup, build process, or development patterns** | `docs/developer-guide.md`, `CLAUDE.md` |
+| **Architecture or system design changes** | `docs/development/architecture.md`, `docs/development/ai-context.md` |
+| **Core package API or lifecycle changes** | `packages/core/README.md`, `docs/development/developer-guide.md`, `docs/development/ai-context.md` |
+| **Runner package API, layer changes, or framework adapter updates** | `packages/runner/README.md`, `docs/development/developer-guide.md`, `docs/development/ai-context.md` |
+| **Extension features, UI changes, new commands, or configuration options** | `packages/vscode-extension/README.md` (marketplace-facing), `CHANGELOG.md`, `docs/development/ai-context.md` |
+| **Dev setup, build process, or development patterns** | `docs/development/developer-guide.md`, `CLAUDE.md` |
 | **Any user-visible change (features, fixes, behaviour)** | `CHANGELOG.md` (full detail) + `packages/vscode-extension/CHANGELOG.md` (brief user summary) |
 | **Anything important for users or contributors** (new feature, setting, command, framework support, changed behaviour, known limitation) | `docs/live-test-runner-guide.html` (the guide — published at `/guide/` and shown by **Open Guide**) |
-| **Headline features, supported frameworks, install / review links** | `site/index.html` (landing page) — and bump `lastmod` in `site/sitemap.xml` |
+| **Headline features, supported frameworks, install / review links** | `site/index.html` (landing page) — and bump `lastmod` in `site/sitemap.xml`; the root `README.md` (GitHub landing page) |
+| **A bug fixed whose cause is worth remembering** | `docs/development/bug-history.md` (frozen record: add the entry when code or e2e checks refer to its ID) |
+
+**Public repository — keep it professional.** Everything committed is public. No personal notes, local paths (`/Users/…`), private project names, or "who decided what" in code, comments or docs; cite the reason, not the person or a private plan. Working notes, plans and trackers live in **`dev-personal-docs/`** (gitignored, local only: `plans/master-tracker.md` is the live to-do list). New bugs and feature ideas are GitHub Issues (forms in `.github/ISSUE_TEMPLATE/`).
 
 **For the HTML pages (`site/index.html`, `docs/live-test-runner-guide.html`):**
 - Keep them in step with the README and the changelogs — if a change is worth a README line, it is worth a guide update.
@@ -322,10 +325,12 @@ When making changes, update the relevant documentation files:
 
 ## References
 
-- [docs/architecture.md](docs/architecture.md) — Full system design, data flow, UI details, key decisions
-- [docs/developer-guide.md](docs/developer-guide.md) — Dev setup, core patterns, adding frameworks, publishing
-- [docs/ai-context.md](docs/ai-context.md) — Complete AI context for full codebase understanding
-- [docs/bugs-and-issues.md](docs/bugs-and-issues.md) — Known bugs with root-cause analysis and suggested fixes
+- [docs/development/](docs/development/README.md) — developer documentation index
+- [docs/development/architecture.md](docs/development/architecture.md) — Full system design, data flow, UI details, key decisions
+- [docs/development/developer-guide.md](docs/development/developer-guide.md) — Dev setup, core patterns, adding frameworks, publishing
+- [docs/development/ai-context.md](docs/development/ai-context.md) — Complete AI context for full codebase understanding
+- [docs/development/bug-history.md](docs/development/bug-history.md) — Fixed bugs (BUG-01 …) with root causes; new bugs go to GitHub Issues
+- [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) — how people report bugs, request features and contribute
 - [docs/live-test-runner-guide.html](docs/live-test-runner-guide.html) — User & contributor guide (open in a browser; published at `/guide/`)
 - [site/index.html](site/index.html) — Marketing landing page + `sitemap.xml` (GitHub Pages, see developer guide → Website)
 - [packages/core/README.md](packages/core/README.md) — Core API and design

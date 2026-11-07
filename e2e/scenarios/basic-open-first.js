@@ -1,7 +1,7 @@
 'use strict';
 /**
  * On Start, the test files open in the editor run first, in a batch of their
- * own (master tracker C16 #4): the first Jest process runs only the open file,
+ * own: the first Jest process runs only the open file,
  * and the full run still covers every file once.
  */
 const path = require('path');

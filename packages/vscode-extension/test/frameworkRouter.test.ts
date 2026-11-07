@@ -5,7 +5,7 @@ import { isFrameworkAllowedAt } from '@live-test-runner/runner';
 import { FrameworkRouter } from '../src/framework/FrameworkRouter';
 import { FrameworkServices } from '../src/framework/FrameworkServices';
 
-/** Phase 8: which framework runs each test file of a project. */
+/** Which framework runs each test file of a project. */
 
 function tree(files: Record<string, string | object>): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr router '));
@@ -178,7 +178,7 @@ describe('FrameworkRouter', () => {
     expect(listing.frameworks).toMatchObject({ [f('plain.test.ts')]: 'jest:ownership', [f('vi.test.ts')]: 'vitest:hint', [f('only-vitest.test.ts')]: 'vitest:ownership' });
   });
 
-  describe('any number of frameworks (master tracker A2)', () => {
+  describe('any number of frameworks', () => {
     /** A bundle with its own test-file rule. */
     const bundle = (name: string, isTestFile: (f: string) => boolean, files: () => string[] = () => []): FrameworkServices => ({
       ...fakeBundle(name as 'Jest', files),

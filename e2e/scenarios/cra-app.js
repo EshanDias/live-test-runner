@@ -2,7 +2,7 @@
 /**
  * Create React App fixture (react-scripts 5 → its own Jest 27, jsdom, a
  * setupTests.js with hooks, --resetMocks in the test script): everything that
- * copy-requisition exercised, small enough for CI.
+ * a large real CRA app exercised, small enough for CI.
  */
 const { spawnSync } = require('child_process');
 const path = require('path');

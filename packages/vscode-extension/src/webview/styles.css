@@ -1121,7 +1121,7 @@ body {
   50%       { opacity: 0.3; }
 }
 
-/* ── Project switcher (phase 7) — one row at the top of the Explorer ───────── */
+/* ── Project switcher — one row at the top of the Explorer ───────── */
 .project-switcher {
   position: relative;
   border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border));
@@ -1173,7 +1173,7 @@ body {
 .project-item-meta { grid-column: 1; font-size: 11px; color: var(--vscode-descriptionForeground); }
 .project-item-state { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 11px; white-space: nowrap; }
 
-/* ── Vitest project groups (D12) ──────────────────────────────────────────── */
+/* ── Vitest project groups ──────────────────────────────────────────── */
 .test-row.level-group { padding-left: 8px; font-weight: 600; cursor: pointer; }
 .test-row.level-group:hover { background: var(--vscode-list-hoverBackground); }
 .row-group-count { margin-left: 8px; font-size: 11px; font-weight: normal; color: var(--vscode-descriptionForeground); }

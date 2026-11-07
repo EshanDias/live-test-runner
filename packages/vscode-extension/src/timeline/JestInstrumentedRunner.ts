@@ -72,7 +72,7 @@ export class JestInstrumentedRunner implements IInstrumentedRunner {
 
     // Regex that matches any JS/TS source file under the project root (excluding
     // node_modules, which Jest already skips via transformIgnorePatterns).
-    // This ensures imported source files (axiosConfig.js, incidentApi.js, etc.)
+    // This ensures imported source files (api clients, helpers, etc.)
     // are also instrumented — not just the test file itself. Windows-safe:
     // either separator, either drive-letter case.
     registerProjectRoot(projectRoot);

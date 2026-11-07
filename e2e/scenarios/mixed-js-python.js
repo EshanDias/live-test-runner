@@ -1,6 +1,6 @@
 'use strict';
 /**
- * JS and Python in one folder (pytest plan phase 8): a Jest root that is a
+ * JS and Python in one folder: a Jest root that is a
  * pytest project too is one project that runs both. Before Start the
  * Explorer shows both kinds of test files; Start lists with Jest and pytest,
  * groups the files by framework, splits the status bar, and shows what plain

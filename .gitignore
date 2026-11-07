@@ -35,3 +35,10 @@ Thumbs.db
 *.temp
 # Python bytecode (pytest plugin tests)
 __pycache__/
+
+# Personal working notes (plans, trackers) — never committed
+dev-personal-docs/
+
+# Local real-repo test config and its recorded baselines (repo names and file lists) — never committed
+e2e/real-repos.local.json
+e2e/baselines/

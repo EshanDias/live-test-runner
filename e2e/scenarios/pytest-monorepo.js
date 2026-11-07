@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Python monorepo (pytest plan phase 7): a uv workspace without a pytest
+ * Python monorepo: a uv workspace without a pytest
  * config at its root is one project per member with tests (a member with its
  * own pytest config, one with tests only, a member without tests is none).
  * Each member runs from its own folder with the workspace's shared .venv,

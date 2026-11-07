@@ -18,7 +18,7 @@ const BRANCH_TYPE_LABEL: Record<string, string> = {
 const MAX_TESTS_SHOWN = 5;
 
 export class CoverageHoverProvider implements vscode.HoverProvider {
-  /** The hovered file's own project's stores (phase 7). */
+  /** The hovered file's own project's stores. */
   constructor(
     private readonly _resolve: FileStoresResolver,
     /** Why a file has no per-test trace by design (e.g. "covering tests are not available for Vitest yet"), else undefined. */

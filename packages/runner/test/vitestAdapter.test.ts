@@ -158,9 +158,15 @@ describe('VitestAdapter (runner)', () => {
   });
 
   it('works on the real Vitest repos when present (read-only)', () => {
-    const reposDir = process.env.LTR_E2E_VITEST_REPOS_DIR ?? '/Users/eshandias/Projects/test/vitest-projects';
-    for (const repo of ['unplugin', 'slidev', 'vueuse']) {
-      const root = path.join(reposDir, repo);
+    // The Vitest repos of the local real-repo config (e2e/real-repos.local.json, never committed).
+    const configFile = process.env.LTR_E2E_REPOS_CONFIG ?? path.resolve(__dirname, '..', '..', '..', 'e2e', 'real-repos.local.json');
+    if (!fs.existsSync(configFile)) { return; }
+    const cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    const base = path.resolve(path.dirname(configFile), cfg.reposDir ?? '.');
+    const roots = Object.values(cfg.repos ?? {})
+      .filter((r: any) => r.kind === 'vitest')
+      .map((r: any) => path.resolve(base, r.path));
+    for (const root of roots) {
       if (!fs.existsSync(path.join(root, 'node_modules'))) { continue; }
       const adapter = new VitestAdapter(() => pathNode);
       expect(adapter.detect(root)).toBe(true);

@@ -5,7 +5,7 @@ import * as path from 'path';
 import { VitestTrace } from '../src/session/VitestTrace';
 
 /**
- * Vitest execution trace (phase 9, ADR-9): the wrapper config. Its helper is
+ * Vitest execution trace: the wrapper config. Its helper is
  * ESM-loaded by Vitest, so it runs here in a plain Node child process with a
  * stand-in for Vite (loadConfigFromFile / mergeConfig).
  */

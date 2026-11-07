@@ -31,7 +31,7 @@ module.exports = {
     t.eq('the suite shows its beforeAll output', texts(api.store.getNodeOutput(node('logs').id)), ['setup log']);
     t.check('the math test shows its console.log', texts(api.store.getNodeOutput(h.nodeByName(api, 'src/math.test.js', 'Math utils adds numbers').id)).includes('adding ✓ ünïcödé'));
 
-    // Failure details the json report lacks (task 3.2).
+    // Failure details the json report lacks.
     const fails = h.nodeByName(api, 'src/strings.test.ts', 'strings fails on purpose');
     const msg = (fails?.failureMessages || []).join('\n');
     t.check('a failed expectation shows the diff', /Expected: "hi"/.test(msg) && /Received: "HI!"/.test(msg), msg);

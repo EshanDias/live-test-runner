@@ -1,19 +1,19 @@
 /**
- * Mixed-framework projects (phase 8): which framework runs each test file.
+ * Mixed-framework projects: which framework runs each test file.
  *
  * Principle: a test file's framework decides its binary, config, flags,
  * runner, reporter and coverage. Pure logic (file system reads only) — the
  * extension's FrameworkRouter feeds it the listings and the setting.
  *
- * Resolution order for one test file (ADR-8):
+ * Resolution order for one test file:
  *  1. `liveTestRunner.frameworks` — the first glob that matches wins (explicit).
  *  2. A single-framework project — its framework (every pure Jest / Vitest
- *     project, and every package of a monorepo: phase 7 makes each its own project).
+ *     project, and every package of a monorepo is its own project).
  *  3. Ownership — the framework whose own list (`jest --listTests`,
  *     `vitest list --filesOnly`) contains the file.
  *  4. Both list it — what the file uses: an import from `vitest` / a `vi.` call
  *     → Vitest; `@jest/globals` / a `jest.` call → Jest; nothing (or both)
- *     → the project's primary framework, with one WARN naming the setting (D13).
+ *     → the project's primary framework, with one WARN naming the setting.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -46,7 +46,7 @@ export interface ProjectFrameworks {
 }
 
 /**
- * Whether a root is a mixed Jest + Vitest project. Conservative (ADR-8 §1):
+ * Whether a root is a mixed Jest + Vitest project. Conservative:
  * a Jest marker (a `jest` dependency, a `jest.config.*`, `package.json#jest`
  * or Create React App) **and** a Vitest config file of the root's own
  * (`vitest.config.*` / `vitest.workspace.*`). A `vitest` dependency alone is
@@ -75,7 +75,7 @@ export function projectFrameworks(root: string, detected: FrameworkId): ProjectF
       reasons.push(jestMarker ? `${jestMarker}, no Vitest config` : 'no Vitest config');
     }
   }
-  // JS and Python in one folder (pytest plan phase 8): the root is a pytest project too.
+  // JS and Python in one folder: the root is a pytest project too.
   const pytest = pytestMarker(root);
   if (pytest) {
     frameworks.push('pytest');
@@ -285,7 +285,7 @@ export interface AssignInput {
 export interface AssignOutput {
   /** File key → its assignment. */
   assignments: Map<string, FrameworkAssignment>;
-  /** Files both frameworks list with no hint — they ran with the primary framework (D13). */
+  /** Files both frameworks list with no hint — they ran with the primary framework. */
   defaulted: string[];
   /** Files listed by both and settled by a hint (for a DEBUG line). */
   hinted: string[];
@@ -294,7 +294,7 @@ export interface AssignOutput {
 /**
  * Places every file in exactly one group (pure). See the module comment for
  * the order; a file no group lists stays with the primary group, not runnable
- * (it shows as excluded, as before phase 8).
+ * (it shows as excluded, as in a single-framework project).
  */
 export function assignFrameworks(input: AssignInput): AssignOutput {
   const { files, keyOf, groups, primary } = input;

@@ -82,7 +82,7 @@ function testFilePatterns(): string[] {
 }
 
 /**
- * JS and Python tests in one project (pytest plan phase 8): JS / TS files go
+ * JS and Python tests in one project: JS / TS files go
  * to `js`, `.py` files to `python`; each pattern keeps its part's exclude.
  */
 export function mixedDiscoverer(js: TestFileDiscoverer, python: TestFileDiscoverer): TestFileDiscoverer {

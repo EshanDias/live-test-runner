@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: User guide
+    url: https://eshandias.github.io/live-test-runner/guide/
+    about: How to use Live Test Runner — setup, frameworks, settings, troubleshooting.
+  - name: Security issue
+    url: https://github.com/EshanDias/live-test-runner/security/advisories/new
+    about: Please report security problems privately, not as a public issue.

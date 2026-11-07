@@ -1,7 +1,7 @@
 /**
  * FrameworkRouter — a project's {@link IFrameworkServicesProvider}: which
- * framework runs each of its test files (phase 8, ADR-8; any number of
- * frameworks since 3.3.0, master tracker A2).
+ * framework runs each of its test files (any number of frameworks
+ * since 3.3.0).
  *
  * A single-framework project (every pure Jest / Vitest / pytest project, and
  * each package of a monorepo) gets one bundle — the framework detection
@@ -15,7 +15,7 @@
  *  2. the framework whose own list holds the file;
  *  3. listed by several: an import from `vitest` / a `vi.` call → Vitest,
  *     `@jest/globals` / a `jest.` call → Jest;
- *  4. nothing in the file says → the main framework + one WARN naming the setting (D13).
+ *  4. nothing in the file says → the main framework + one WARN naming the setting.
  *
  * A file's framework then decides everything about its runs: binary,
  * config, flags, batch runner, reporter, coverage.
@@ -75,7 +75,7 @@ export class FrameworkRouter implements IFrameworkServicesProvider {
   private _mixed = false;
   /** Mixed projects: file key → its framework and the rule that placed it. */
   private _byFile = new Map<string, { fw: RoutedFramework; rule: string }>();
-  /** WARN lines already shown (setting errors, D13 defaults) — once per message. */
+  /** WARN lines already shown (setting errors defaults) — once per message. */
   private readonly _warned = new Set<string>();
 
   constructor(

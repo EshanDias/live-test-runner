@@ -57,7 +57,7 @@ export function vitestCapabilities(major: number | undefined): FrameworkCapabili
  *
  * Detection: a `vitest` dependency or a Vitest config / workspace file — and
  * nothing that marks the project as Jest (BUG-37: libraries like jest-dom
- * list Vitest but run their tests on Jest). Mixed projects are phase 8.
+ * list Vitest but run their tests on Jest). Mixed Jest + Vitest projects: frameworkRouting.ts.
  *
  * Binary: `vitest/package.json#bin` → `vitest.mjs`, resolved the way Node
  * would (local, hoisted, pnpm) and run with `node` — no `.bin` shim, so it
@@ -86,7 +86,7 @@ export class VitestAdapter implements FrameworkAdapter {
     const hasVitest =
       'vitest' in deps ||
       [...VITEST_CONFIG_FILES, ...VITEST_WORKSPACE_FILES].some((f) => fs.existsSync(path.join(projectRoot, f))) ||
-      // A workspace package whose test script runs Vitest installed in the monorepo root (phase 7).
+      // A workspace package whose test script runs Vitest installed in the monorepo root.
       /(^|[\s;&|(])vitest(\s|$)/.test(String(pkg.scripts?.test ?? ''));
     return hasVitest && !new JestAdapter().detect(projectRoot);
   }

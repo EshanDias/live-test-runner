@@ -135,7 +135,7 @@ export function activate(context: vscode.ExtensionContext) {
   statusBar.show();
 
   // ── State ──────────────────────────────────────────────────────────────────
-  // Every store lives in a ProjectContext (one per test project, phase 7).
+  // Every store lives in a ProjectContext (one per test project).
   // Views start on an empty placeholder and are bound to the selected project.
   const selection     = new SelectionState();
   const emptyStore    = new ResultStore();

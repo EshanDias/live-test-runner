@@ -1,4 +1,4 @@
-// Vitest-only syntax that static discovery must understand (task 2.5).
+// Vitest-only syntax that static discovery must understand.
 import { describe, expect, test as base } from 'vitest';
 
 const test = base.extend<{ answer: number }>({

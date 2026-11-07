@@ -36,7 +36,7 @@ const STATUSES = new Set<TestCaseRunResult['status']>(['passed', 'failed', 'pend
  *  - `location` needs `--includeTaskLocation` (Vitest ≥ 3). Vitest 1 sets it
  *    on failed tests only, to the assertion's position — not the test's line.
  *  - Durations are fractional milliseconds.
- *  - No console output (the json reporter drops it; task 3.1).
+ *  - No console output (the json reporter drops it).
  */
 export function parseVitestResult(passed: boolean, raw: string, stderr: string): RunResult {
   let json: { testResults?: unknown[] };

@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Stop with two projects running (phase 7, D11): Stop on one kills only its
+ * Stop with two projects running: Stop on one kills only its
  * Jest processes — the other keeps running and finishes; stopping the second
  * leaves no process behind.
  */

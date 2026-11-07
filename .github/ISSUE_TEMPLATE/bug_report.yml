@@ -1,0 +1,101 @@
+name: Bug report
+description: Something does not work as it should
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **First, a quick search:** [search all issues, open and closed](https://github.com/EshanDias/live-test-runner/issues?q=is%3Aissue) — your bug may already be reported (add a 👍 and any details there) or fixed in a newer version.
+
+        Otherwise, the more of the fields below you fill in, the faster it can be fixed.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: "I clicked Start Testing, saved src/math.ts, and…"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: A small public repository or a minimal set of files helps most.
+      placeholder: |
+        1. Open a Vitest project with …
+        2. Click Start Testing
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: framework
+    attributes:
+      label: Test framework
+      multiple: true
+      options:
+        - Jest
+        - Create React App (react-scripts)
+        - Vitest
+        - pytest
+        - Other / not detected
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Extension, VS Code, and your test framework (e.g. `jest 29.7`, `vitest 3.2`, `pytest 8.3` / Python 3.12).
+      placeholder: "Live Test Runner 3.3.0 · VS Code 1.142 · Vitest 3.2.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: project
+    attributes:
+      label: Project layout
+      options:
+        - Single project
+        - Monorepo (several packages)
+        - Multi-root workspace
+        - Mixed frameworks in one folder
+  - type: textarea
+    id: logs
+    attributes:
+      label: Extension log
+      description: |
+        **View → Output**, pick **Live Test Runner** in the dropdown, and paste the lines around the problem.
+        For more detail, set the log level to Debug first (**Developer: Set Log Level…** → Live Test Runner). Remove anything private.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, your test config, whether plain `jest` / `vitest run` / `pytest` in a terminal gives a different result…
+  - type: input
+    id: related
+    attributes:
+      label: Related issues
+      description: Links to issues that look similar or related, if you found any (e.g. `#12`).
+      placeholder: "#12, #34"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I am on the latest version of Live Test Runner.
+          required: true
+        - label: I [searched the existing issues](https://github.com/EshanDias/live-test-runner/issues?q=is%3Aissue) and this is not already reported.
+          required: true
+        - label: I removed anything private (paths, project names, secrets) from the log and screenshots.
+          required: true

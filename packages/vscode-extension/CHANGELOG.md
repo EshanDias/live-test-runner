@@ -11,6 +11,8 @@ All notable changes to Live Test Runner are documented here.
 - **The Coverage tab says when coverage is off** — and what to install (`coverage` for pytest, `@vitest/coverage-v8` for Vitest), instead of showing an empty table. The tests still run.
 - **Open test files run first**: on Start, the test files you have open get their results first; open another test file during the run and it runs next.
 
+- **Report a bug or request a feature** with the new forms on [GitHub](https://github.com/EshanDias/live-test-runner/issues/new/choose).
+
 ### Fixes
 
 - **Test suites that write many files no longer restart testing over and over** (since 3.2.1, a suite writing more than 20 files looked like a branch switch).
