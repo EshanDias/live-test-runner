@@ -9,6 +9,10 @@ All notable changes to Live Test Runner are documented here.
 - **Python monorepos**: in a uv workspace every member with tests is its own project in the project switcher, run from its own folder with the workspace's shared `.venv`. A workspace whose root configures pytest itself stays one project.
 - **JS and Python in one folder**: a JS project that also has pytest tests runs both — Jest or Vitest for the JS files, pytest for the Python ones — with the counts split in the status bar. Saving a `.py` file reruns only Python tests, saving a `.js` / `.ts` file only JS tests. A `backend/` folder with its own pytest config becomes its own project.
 
+### Fixes
+
+- **Tests that write files into your project no longer trigger extra runs.** A file written during a run that no test uses is ignored instead of starting a search for related tests.
+
 ## [3.2.1] - 2026-11-05
 
 ### Improved

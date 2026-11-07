@@ -4,6 +4,7 @@
  *  - a source file changed on disk reruns the tests that use it
  *  - the editor's own save is not counted twice
  *  - many files at once (a branch switch) restart the session
+ *  - a file a test writes during a run that no test loads starts nothing
  *  - nothing reruns once the session is stopped
  */
 const fs = require('fs');
@@ -70,9 +71,10 @@ module.exports = {
       const slow = path.join(workspace, 'src', 'slow5.test.js');
       const writer = path.join(workspace, 'src', 'writer.test.js');
       const generated = path.join(workspace, 'src', 'generated.js');
-      extra.push(slow, writer, generated);
+      const unused = path.join(workspace, 'src', 'unused-output.js');
+      extra.push(slow, writer, generated, unused);
       fs.writeFileSync(slow, "test('takes five seconds', () => new Promise((r) => setTimeout(r, 5000)), 20000);\n");
-      fs.writeFileSync(writer, "const fs = require('fs');\nconst path = require('path');\ntest('writes generated.js', () => {\n  fs.writeFileSync(path.join(__dirname, 'generated.js'), 'module.exports = ' + Date.now() + ';\\n');\n  expect(typeof require('./generated')).toBe('number');\n});\n");
+      fs.writeFileSync(writer, "const fs = require('fs');\nconst path = require('path');\ntest('writes generated.js', () => {\n  fs.writeFileSync(path.join(__dirname, 'generated.js'), 'module.exports = ' + Date.now() + ';\\n');\n  fs.writeFileSync(path.join(__dirname, 'unused-output.js'), 'module.exports = ' + Date.now() + ';\\n');\n  expect(typeof require('./generated')).toBe('number');\n});\n");
       await h.sleep(2500); // new test files reach discovery
       await waitIdle(api);
       since = h.isoNow();
@@ -93,6 +95,8 @@ module.exports = {
         runLogs.some((l) => /generated\.js.* changed again while .* probably written by a test/.test(l)), runLogs.filter((l) => /disk|generated/.test(l)).join('\n'));
       const queuedReruns = runLogs.filter((l) => /changed on disk during the run\)/.test(l)).length;
       t.check('…no endless reruns (at most 2 queued reruns)', queuedReruns <= 2, String(queuedReruns));
+      t.check('a file a test writes that no test loads: no rerun for it',
+        !runLogs.some((l) => /Run #\d+ disk change unused-output\.js/.test(l)), runLogs.filter((l) => /unused-output/.test(l)).join('\n'));
       fs.writeFileSync(mathPath, original);
       for (const f of extra) { fs.rmSync(f, { force: true }); }
       await h.sleep(1500);

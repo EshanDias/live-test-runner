@@ -204,7 +204,7 @@
   </table></div>
   <ul>
     <li>Debounced per file (<code>onSaveDebounceMs</code>, default 300 ms).</li>
-    <li><b>Changes from outside the editor</b> (<code>git pull</code>, a branch switch, a code generator) rerun tests the same way while testing is on. More than 20 files at once rerun everything. Files changed while tests are running are queued and rerun when the run finishes; a file that keeps changing while its own tests run (a test writes it) is rerun once, then left until you save it.</li>
+    <li><b>Changes from outside the editor</b> (<code>git pull</code>, a branch switch, a code generator) rerun tests the same way while testing is on. More than 20 files at once rerun everything. Files changed while tests are running are queued and rerun when the run finishes; a file that keeps changing while its own tests run (a test writes it) is rerun once, then left until you save it, and a file written during a run that no test uses starts nothing.</li>
     <li>Files run in batches across parallel Jest processes. Results stream in file by file.</li>
     <li>If an instrumented batch returns no results, those files are retried with plain Jest, one at a time. This is logged as a warning.</li>
   </ul>

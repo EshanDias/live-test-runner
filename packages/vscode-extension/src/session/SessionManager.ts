@@ -467,8 +467,9 @@ export class SessionManager {
   /**
    * Files changed on disk outside the editor (git pull, a branch switch, a
    * code generator) while the session is on: rerun what depends on them, as a
-   * save would. Changes during one of our own runs are ignored — tests that
-   * write files would otherwise rerun themselves forever. Many files at once
+   * save would. Changes during one of our own runs wait for it to finish, and
+   * then rerun only files a test ran or loaded, once — tests that write files
+   * would otherwise rerun themselves forever. Many files at once
    * (a branch switch) restart the session instead of one rerun per file.
    */
   onFilesChangedOnDisk(filePaths: string[]): void {
@@ -502,12 +503,22 @@ export class SessionManager {
     if (this._diskQueue.size === 0 || !this._session?.isTestingActive()) { return; }
     const queued = [...this._diskQueue];
     this._diskQueue.clear();
+    const root = this._getProjectRoot();
+    if (!root) { return; }
     const looping = queued.filter((f) => this._lastDiskRerun.has(f));
-    const files = queued.filter((f) => !this._lastDiskRerun.has(f));
+    let files = queued.filter((f) => !this._lastDiskRerun.has(f));
     if (looping.length > 0) {
       log.warn(`${describeFiles(looping)} changed again while ${looping.length === 1 ? 'its' : 'their'} tests reran — probably written by a test, not rerunning again (save to rerun)`);
     }
     this._lastDiskRerun = new Set(files);
+    // Written during our run and no test ran or loaded it then: most likely
+    // the tests' own output (unplugin writes `output.js` into its fixtures).
+    // Starting a related run per file would only find nothing.
+    const unused = files.filter((f) => this._unusedByLastRun(f, root));
+    if (unused.length > 0) {
+      log.debug(`${describeFiles(unused)} changed on disk during the run, but no test ran or loaded ${unused.length === 1 ? 'it' : 'them'} — not rerunning (probably written by a test; save to rerun)`);
+      files = files.filter((f) => !unused.includes(f));
+    }
     if (files.length === 0) { return; }
     if (files.length > MAX_DISK_CHANGES_PER_FILE) {
       log.info(`${files.length} files changed on disk during the run — restarting the session (every test reruns)`);
@@ -516,6 +527,20 @@ export class SessionManager {
     }
     log.info(`Rerunning what depends on ${describeFiles(files)} (changed on disk during the run)`);
     for (const f of files) { this.onFileChanged(f, 'Changed on disk:'); }
+  }
+
+  /**
+   * A source file the last run's execution trace knows no test of: none ran
+   * a line of it or loaded it. False for test files, possible config files,
+   * and whenever a framework's trace is off (then only its related run knows).
+   */
+  private _unusedByLastRun(filePath: string, root: string): boolean {
+    if (this._adapterFor(filePath).isTestFile(filePath) || this._runnable?.has(runnableKey(filePath))) { return false; }
+    if (this._mayBeConfigFile(filePath, root)) { return false; }
+    if (this._services.all().some((s) => s.traceOffReason?.(root))) { return false; }
+    if (this._traceStore.getAllCoveredFiles().length === 0) { return false; }
+    if (this._traceStore.isLoaded(filePath)) { return false; }
+    return this._traceStore.getAffectedTestFiles(filePath).length === 0;
   }
 
   /** A project file the session reruns tests for (source, test or framework config; not node_modules). */

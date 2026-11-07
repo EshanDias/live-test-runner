@@ -26,6 +26,11 @@ All notable changes to Live Test Runner are documented here.
 - `FrameworkRouter` takes a factory per framework (`FrameworkFactories`, missing = never used), lists with every framework in play, allows each non-primary one in the root (and disallows ones no longer in play), and places a file the listing missed with the framework in play whose test-file rules take it (its hint, then the main framework, when several do). New `IFrameworkServicesProvider.frameworks()` (main first) drives the switcher label and the session log line.
 - pytest projects use the router too (primary `pytest`) instead of a `SingleFrameworkProvider`: the step that lets phase 8 put JS and Python in one project. No user-visible change; tests: `frameworkRouter.test.ts` (4), `frameworkRouting.test.ts` (2).
 
+### Files tests write no longer start extra runs (fix, master tracker C20)
+
+- A file that changed on disk during one of our runs is rerun when the run finishes (3.2.1) — but projects whose tests write into the project (unplugin writes `output.js` / `main.js` into its fixtures) got one `vitest related` / `jest --findRelatedTests` process per written file, each finding nothing (11 extra Vitest processes after unplugin's full run). `SessionManager._runQueuedDiskChanges` now drops a queued file the last run's execution trace knows no test of — no line of it ran and no test loaded it (`_unusedByLastRun`; DEBUG line). Test files, possible config files, and frameworks whose trace is off keep the related run. Changes while nothing runs (a pull, a branch switch) are handled as before.
+- The real-repo matrix failed on unplugin, slidev and vueuse ("nothing left running") also on `main`: `repo-vitest` restored its edited files by writing them on disk, which is itself an outside change and started a rerun right before the check. It now restores through the editor and waits for that rerun. e2e `disk-changes` checks that a file a test writes and no test loads starts no rerun.
+
 ## [3.2.1] - 2026-11-05
 
 ### Stop really stops (fix, 3.2.0 bug)
