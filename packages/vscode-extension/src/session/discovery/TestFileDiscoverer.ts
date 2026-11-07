@@ -38,6 +38,8 @@ export interface TestFileDiscoverer {
   patterns(projectRoot: string): string[];
   /** One VS Code glob of folders never searched (dependencies, environments). */
   readonly exclude: string;
+  /** The exclude glob for one of {@link patterns} (a combined discoverer: its part's); default {@link exclude}. */
+  excludeFor?(pattern: string): string;
   /** A file the parser can read (a `*.test.*` glob also matches `.snap` files). */
   accepts(filePath: string): boolean;
   /** The file's tests, or null when it cannot be parsed (logged by the parser). */
@@ -77,6 +79,32 @@ function testFilePatterns(): string[] {
     .getConfiguration('liveTestRunner')
     .get<string[]>('testFilePatterns');
   return patterns && patterns.length > 0 ? patterns : DEFAULT_JS_TEST_PATTERNS;
+}
+
+/**
+ * JS and Python tests in one project (pytest plan phase 8): JS / TS files go
+ * to `js`, `.py` files to `python`; each pattern keeps its part's exclude.
+ */
+export function mixedDiscoverer(js: TestFileDiscoverer, python: TestFileDiscoverer): TestFileDiscoverer {
+  const owner = new Map<string, TestFileDiscoverer>();
+  const isPython = (fp: string) => /\.pyi?$/i.test(fp);
+  return {
+    patterns: (root) => {
+      owner.clear();
+      const out: string[] = [];
+      for (const part of [js, python]) {
+        for (const p of part.patterns(root)) {
+          if (!owner.has(p)) { owner.set(p, part); out.push(p); }
+        }
+      }
+      return out;
+    },
+    exclude: python.exclude,
+    excludeFor: (pattern) => owner.get(pattern)?.exclude ?? js.exclude,
+    accepts: (fp) => (isPython(fp) ? python.accepts(fp) : js.accepts(fp)),
+    discover: (source, fp, root) => (isPython(fp) ? python : js).discover(source, fp, root),
+    testsLabel: 'tests',
+  };
 }
 
 /** Jest / Vitest: the testFilePatterns setting, parsed with Babel. */

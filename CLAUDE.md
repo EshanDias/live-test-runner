@@ -48,7 +48,7 @@ packages/
 ├── runner/            @live-test-runner/runner
 │   └── Framework-agnostic test execution engine (no VS Code dependency)
 ├── core/              @live-test-runner/core
-│   └── Session lifecycle + coverage map (depends on runner)
+│   └── Session state (depends on runner)
 └── vscode-extension/  live-test-runner
     └── VS Code UI (depends on core)
 ```
@@ -84,7 +84,7 @@ Two interfaces manage framework abstraction:
 
 - **`FrameworkAdapter`** (`packages/runner/`) — binary resolution, config extraction. No VS Code dependency.
 - **`IFrameworkAdapter`** (`packages/vscode-extension/`) — adds VS Code-specific logic (test discovery, debug config, file classification).
-- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. Each project (`ProjectContext`) composes a `FrameworkRouter` (`framework/FrameworkRouter.ts`): the Jest bundle `createJestServices` or the Vitest bundle `createVitestServices` for a single-framework project, both in a mixed Jest + Vitest project, where every test file is placed with one framework (setting `liveTestRunner.frameworks` → the configs' own lists → `vitest` / `@jest/globals` imports and `vi.` / `jest.` calls → the main framework). All extension adapters extend `RunnerBackedAdapter`. A pytest project gets a single pytest bundle (`createPytestServices`, one process at a time via `batchPolicy`).
+- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. Each project (`ProjectContext`) composes a `FrameworkRouter` (`framework/FrameworkRouter.ts`) with a factory per routable framework (runner `ROUTED_FRAMEWORKS`: `createJestServices`, `createVitestServices`, `createPytestServices`); it builds only the bundles the project uses — one for a single-framework project, several in a mixed project (runner `projectFrameworks` lists what the root configures), where every test file is placed with one framework (setting `liveTestRunner.frameworks` → the configs' own lists → `vitest` / `@jest/globals` imports and `vi.` / `jest.` calls → the main framework). All extension adapters extend `RunnerBackedAdapter`. pytest runs one process at a time (`batchPolicy`).
 
 Adding a framework = one adapter in each package + its services bundle. `SessionManager`, `ResultStore`, views, and observers require zero changes.
 
@@ -119,7 +119,7 @@ Jest always runs in a spawned child process (`Executor.ts`). The extension host 
 
 ### 6. Smart On-Save Reruns
 
-After the first full run, saving a source file triggers targeted test reruns via `jest --findRelatedTests` or the coverage map. Suite/test-level execution uses name patterns to isolate scope. This is implemented in `SessionManager._runAffectedBySourceFile()`.
+After the first full run, saving a source file triggers targeted test reruns via the execution trace, else the framework's related run (`jest --findRelatedTests`, `vitest related`). Suite/test-level execution uses name patterns to isolate scope. This is implemented in `SessionManager._runAffectedBySourceFile()`.
 
 ### 7. Session Guard
 
@@ -200,15 +200,13 @@ Each `FrameworkAdapter` implements:
 
 Current adapters: Jest, Create React App, Vitest, pytest (family `python`: the project's interpreter, the shipped plugin `framework/pytest/ltr_pytest.py`).
 
-### `packages/core` — Session Lifecycle & Coverage
+### `packages/core` — Session Lifecycle
 
 | File | Responsibility |
 |------|---|
-| `TestSession.ts` | Start, stop, reset a session |
-| `CoverageMap.ts` | `Map<SourcePath, Set<TestPath>>` built during warm-up run, updated incrementally |
-| `SelectionPolicy.ts` | Legacy; minimal use |
+| `TestSession.ts` | Whether a project's session is on (`activate` / `stop`) and the runner it uses |
 
-**Coverage map** is built once during full suite run with coverage, then incremented on each on-save run. When a source file is saved, the map is checked before falling back to `jest --findRelatedTests`.
+Which tests a source save reruns is decided in the extension: the execution trace (`ExecutionTraceStore`), then the framework's related run (`jest --findRelatedTests`, `vitest related`, the test files that import it for pytest).
 
 ### `packages/vscode-extension` — VS Code Extension
 

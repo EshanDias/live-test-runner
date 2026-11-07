@@ -120,16 +120,35 @@ function preparePythonEnv(src, dest) {
   fs.writeFileSync(stamp, hash);
 }
 
+/** Empties a fixture copy, keeping every node_modules and .venv folder (at any depth) for the next run. */
+function cleanKeepingEnvs(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === '.venv') { continue; }
+    const p = path.join(dir, entry.name);
+    if (!entry.isDirectory()) { fs.rmSync(p, { force: true }); continue; }
+    cleanKeepingEnvs(p);
+    if (fs.readdirSync(p).length === 0) { fs.rmdirSync(p); }
+  }
+}
+
+/** The fixture's folders (relative) with a requirements-e2e.txt — each gets its own .venv. */
+function pythonEnvDirs(src, rel = '') {
+  const dir = path.join(src, rel);
+  const out = fs.existsSync(path.join(dir, 'requirements-e2e.txt')) ? [rel] : [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name !== 'node_modules' && entry.name !== '.venv') { out.push(...pythonEnvDirs(src, path.join(rel, entry.name))); }
+  }
+  return out;
+}
+
 /** Fresh copy of a fixture (node_modules and .venv kept between runs). */
 function prepareFixture(name) {
   const src = path.join(__dirname, 'fixtures', name);
   const dest = path.join(WORK_ROOT, `${name} project`);
   fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(dest)) {
-    if (entry !== 'node_modules' && entry !== '.venv') { fs.rmSync(path.join(dest, entry), { recursive: true, force: true }); }
-  }
+  cleanKeepingEnvs(dest);
   copyDir(src, dest);
-  if (fs.existsSync(path.join(src, 'requirements-e2e.txt'))) { preparePythonEnv(src, dest); }
+  for (const rel of pythonEnvDirs(src)) { preparePythonEnv(path.join(src, rel), path.join(dest, rel)); }
   if (!fs.existsSync(path.join(src, 'package.json'))) { return dest; }
 
   const pkgHash = crypto.createHash('sha1').update(fs.readFileSync(path.join(src, 'package.json'))).digest('hex');
@@ -174,14 +193,20 @@ function runScenario(name, exe) {
   const file = path.join(SCENARIO_DIR, `${name}.js`);
   if (!fs.existsSync(file)) { throw new Error(`No scenario ${file}`); }
   const scenario = require(file);
-  const workspace = resolveWorkspace(scenario.workspace);
-  if (!workspace) {
-    console.log(`[e2e] SKIP ${name}: workspace ${scenario.workspace} is not available`);
+  // An array: a multi-root window, one workspace folder per entry (scenario gets `workspaces`).
+  const specs = Array.isArray(scenario.workspace) ? scenario.workspace : [scenario.workspace];
+  const folders = specs.map(resolveWorkspace);
+  if (folders.some((f) => !f)) {
+    console.log(`[e2e] SKIP ${name}: workspace ${specs.join(', ')} is not available`);
     return Promise.resolve({ name, skipped: true });
   }
+  const workspace = folders[0];
 
   const runDir = path.join(RUNS_ROOT, name);
   fs.rmSync(runDir, { recursive: true, force: true });
+  fs.mkdirSync(runDir, { recursive: true });
+  const opened = folders.length === 1 ? workspace : path.join(runDir, 'e2e.code-workspace');
+  if (folders.length > 1) { fs.writeFileSync(opened, JSON.stringify({ folders: folders.map((f) => ({ path: f })) }, null, 2)); }
   const userData = path.join(runDir, 'ud');
   const extensions = path.join(runDir, 'ext');
   fs.mkdirSync(path.join(userData, 'User'), { recursive: true });
@@ -199,7 +224,7 @@ function runScenario(name, exe) {
 
   const report = path.join(runDir, 'report.json');
   const args = [
-    workspace,
+    opened,
     `--extensionDevelopmentPath=${EXT_DIR}`,
     `--extensionTestsPath=${path.join(__dirname, 'lib', 'hostEntry.js')}`,
     `--user-data-dir=${userData}`,
@@ -219,7 +244,7 @@ function runScenario(name, exe) {
 
   const timeoutMs = (scenario.timeoutMs || 5 * 60_000) + 60_000;
   const started = Date.now();
-  console.log(`[e2e] RUN  ${name} — workspace: ${workspace}`);
+  console.log(`[e2e] RUN  ${name} — workspace: ${folders.join(' + ')}`);
 
   return new Promise((resolve) => {
     const child = spawn(exe, args, {
@@ -228,6 +253,7 @@ function runScenario(name, exe) {
         LTR_E2E_SCENARIO: file,
         LTR_E2E_REPORT: report,
         LTR_E2E_WORKSPACE: workspace,
+        LTR_E2E_WORKSPACES: JSON.stringify(folders),
       }),
       stdio: ['ignore', 'pipe', 'pipe'],
     });

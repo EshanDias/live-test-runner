@@ -29,6 +29,7 @@ export function createPytestServices(options: {
     runnerAdapter.createRunner({ logger, tmpDir: sessionDir, pytestArgs: pytestArgsSetting() }) as CommandRunner;
   return {
     framework: FRAMEWORK_IDS.pytest,
+    language: 'python',
     displayName: 'pytest',
     // One pytest process at a time, every file in it — as the user's own `pytest`:
     // projects share session fixtures, ports and files between tests (httpx's
@@ -51,6 +52,9 @@ export function createPytestServices(options: {
     features: { trace: true, timeline: false },
     traceOffReason: (projectRoot) => pythonFor(projectRoot) && !pythonFor(projectRoot)!.coverage
       ? "the coverage package is not installed in the project's Python environment"
+      : undefined,
+    coverageOffReason: (projectRoot) => pythonFor(projectRoot) && !pythonFor(projectRoot)!.coverage
+      ? "pytest: install the coverage package in the project's Python environment (pip install coverage)"
       : undefined,
     adapter: new PytestAdapter(sessionDir),
     projectConfig,

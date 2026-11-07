@@ -16,6 +16,7 @@ import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import type { IBatchRunner } from './IBatchRunner';
 import { RunnableFilesCache, runnableCacheKey, runnableKey } from './RunnableFiles';
+import { buildBatchQueue, promoteInQueue } from './batchQueue';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
 import { coverageScopeOf } from '../coverage/coverageScope';
@@ -97,10 +98,18 @@ export class SessionManager {
    * "finished" is only announced when the last one ends (BUG-15).
    */
   private _activeRuns = 0;
+  /** The queues of the runs in flight: each moves a waiting test file to its front. */
+  private readonly _promoters = new Set<(filePath: string) => boolean>();
+
   /** Files changed on disk during a run: rerun when the runs finish. */
   private readonly _diskQueue = new Set<string>();
   /** The files the last queued disk rerun ran for (loop guard). */
   private _lastDiskRerun = new Set<string>();
+  /** When our last runs started and ended (see _writtenDuringLastRuns). */
+  private _runsStartedAt = 0;
+  private _runsEndedAt = 0;
+  /** The files of the last restart for disk changes — the same set again does not restart again. */
+  private _lastDiskRestart = '';
   /** The running background source scan, if any (cancelled by Stop / restart). */
   private _sourceCounter: SourceCounter | undefined;
   /** Files scheduled / finished across all active runs — drives the progress UI. */
@@ -122,6 +131,8 @@ export class SessionManager {
 
   /** Module extensions the project's framework(s) load beyond the list (Jest's moduleFileExtensions), per session. */
   private _sourceExtensions = new Set<string>();
+  /** Each framework's own module extensions (see {@link _loadsSource}). */
+  private readonly _sourceExtensionsBy = new Map<FrameworkServices, Set<string>>();
 
   constructor(
     /** The project this manager runs (one SessionManager per project, phase 7). */
@@ -184,7 +195,8 @@ export class SessionManager {
     // Which framework(s) the project runs, re-read every Start (phase 8: a mixed project has two).
     this._services.prepare(projectRoot);
     this._sourceExtensions = new Set();
-    // Bootstrap a session with the main framework's runner to hold the coverage map
+    this._sourceExtensionsBy.clear();
+    // The session's on/off state, with the main framework's runner (Stop kills its processes)
     const services = this._services.servicesFor(projectRoot);
     this._session = new TestSession(services.createSessionRunner());
 
@@ -202,10 +214,15 @@ export class SessionManager {
         await this._discovery.awaitDiscovery();
       }
 
-      // A framework that cannot run the project now (pytest: no usable Python) — nothing runs.
+      // A framework that cannot run the project now (pytest: no usable Python) — nothing runs;
+      // in a mixed project only the main framework's absence stops the session, another one is left out.
       for (const s of this._services.all()) {
         const why = await s.whyNotReady?.(projectRoot);
         if (token !== this._token) { return; }
+        if (why && s !== services && this._services.disable) {
+          this._services.disable(s.framework, why);
+          continue;
+        }
         if (why) {
           log.warn(`Not started — ${why}`);
           this._session.stop();
@@ -231,7 +248,7 @@ export class SessionManager {
         if (s !== services) { s.projectConfig.reset(); void s.projectConfig.get(projectRoot); }
       }
       void this._loadSourceExtensions(projectRoot, token);
-      if (this._services.isMixed()) { framework = `${framework} + ${services.framework === 'vitest' ? 'jest' : 'vitest'}`; }
+      if (this._services.isMixed()) { framework = [framework, ...this._services.frameworks().filter((f) => f !== services.framework)].join(' + '); }
       this._runnable = toRunnableSet(runnableList);
       if (runnableList) {
         // Files Jest runs that the glob patterns missed (custom testMatch / testRegex).
@@ -261,6 +278,9 @@ export class SessionManager {
 
       // Background source scan — runs in parallel with test execution.
       this._coverageStore.clear();
+      // A framework that cannot measure here says so in the Coverage tab (the tests still run).
+      const off = this._services.all().map((s) => s.coverageOffReason?.(projectRoot)).filter((r): r is string => !!r);
+      if (off.length > 0) { this._coverageStore.setOffReasons(off); }
       this._sourceCounter?.cancel();
       const sourceCounter = new SourceCounter(projectRoot, this._coverageStore, coverageScopeOf(services.projectConfig, projectRoot));
       this._sourceCounter = sourceCounter;
@@ -282,7 +302,7 @@ export class SessionManager {
       // ── Run the tests ──────────────────────────────────────────────────────
       const run = this._beginRun('full suite', { fullSuite: true });
       try {
-        await this._runFiles(testFiles, projectRoot, token);
+        await this._runFiles(testFiles, projectRoot, token, { openFirst: true });
       } finally {
         this._endRun(run, testFiles);
       }
@@ -449,6 +469,19 @@ export class SessionManager {
     }
   }
 
+  /**
+   * A file was opened in the editor: if it is a test file still waiting in a
+   * run's queue, it runs next (its result shows sooner).
+   */
+  promote(filePath: string): void {
+    for (const promote of this._promoters) {
+      if (promote(filePath)) {
+        log.debug(`${path.basename(filePath)} was opened — running it next`);
+        return;
+      }
+    }
+  }
+
   // ── On-save handler ────────────────────────────────────────────────────────
 
   onSave(document: vscode.TextDocument): void {
@@ -459,15 +492,16 @@ export class SessionManager {
   /**
    * Files changed on disk outside the editor (git pull, a branch switch, a
    * code generator) while the session is on: rerun what depends on them, as a
-   * save would. Changes during one of our own runs are ignored — tests that
-   * write files would otherwise rerun themselves forever. Many files at once
+   * save would. Changes during one of our own runs wait for it to finish, and
+   * then rerun only files a test ran or loaded, once — tests that write files
+   * would otherwise rerun themselves forever. Many files at once
    * (a branch switch) restart the session instead of one rerun per file.
    */
   onFilesChangedOnDisk(filePaths: string[]): void {
     if (!this._session?.isTestingActive()) { return; }
     const root = this._getProjectRoot();
     if (!root) { return; }
-    const relevant = filePaths.filter((f) => this._isWatchedFile(f, root));
+    let relevant = filePaths.filter((f) => this._isWatchedFile(f, root));
     if (relevant.length === 0) { return; }
     if (this.isRunning()) {
       // Rerun once the runs in flight finish (see _runQueuedDiskChanges).
@@ -475,8 +509,31 @@ export class SessionManager {
       log.info(`${describeFiles(relevant)} changed on disk during a run — queued, reruns when the run finishes`);
       return;
     }
+    // The watcher reports a run's last writes after it ended: a file last
+    // written while our runs were going is theirs — handled as changed during
+    // them (the tests' output must not restart the session, or it is written
+    // again and restarts forever). A pull after the run is newer than that.
+    const byRun = relevant.filter((f) => this._writtenDuringLastRuns(f));
+    if (byRun.length > 0) {
+      for (const f of byRun) { this._diskQueue.add(f); }
+      log.debug(`${describeFiles(byRun)} changed on disk during the last run (reported late) — handled as changed during it`);
+      this._runQueuedDiskChanges();
+      relevant = relevant.filter((f) => !byRun.includes(f));
+      if (relevant.length === 0) { return; }
+    }
     this._lastDiskRerun.clear();
     if (relevant.length > MAX_DISK_CHANGES_PER_FILE) {
+      // A run's last writes reach us after it ended (the watcher batches
+      // them): many files right then, some of which also changed during the
+      // run, are the tests' output — and a restart for the same files as the
+      // last one would only write them again. Either way: restarting would
+      // write them again and restart forever.
+      const key = [...relevant].sort().join('\n');
+      if (key === this._lastDiskRestart) {
+        log.info(`${relevant.length} files changed on disk as a run ended (${describeFiles(relevant)}) — probably written by the tests, not rerunning them (save a file or Start to rerun)`);
+        return;
+      }
+      this._lastDiskRestart = key;
       log.info(`${relevant.length} files changed on disk (branch switch or pull?) — restarting the session (every test reruns)`);
       void this.start();
       return;
@@ -494,20 +551,61 @@ export class SessionManager {
     if (this._diskQueue.size === 0 || !this._session?.isTestingActive()) { return; }
     const queued = [...this._diskQueue];
     this._diskQueue.clear();
+    const root = this._getProjectRoot();
+    if (!root) { return; }
     const looping = queued.filter((f) => this._lastDiskRerun.has(f));
-    const files = queued.filter((f) => !this._lastDiskRerun.has(f));
+    let files = queued.filter((f) => !this._lastDiskRerun.has(f));
     if (looping.length > 0) {
       log.warn(`${describeFiles(looping)} changed again while ${looping.length === 1 ? 'its' : 'their'} tests reran — probably written by a test, not rerunning again (save to rerun)`);
     }
     this._lastDiskRerun = new Set(files);
+    // Written during our run and no test ran or loaded it then: most likely
+    // the tests' own output (unplugin writes `output.js` into its fixtures).
+    // Starting a related run per file would only find nothing.
+    const unused = files.filter((f) => this._unusedByLastRun(f, root));
+    if (unused.length > 0) {
+      log.debug(`${describeFiles(unused)} changed on disk during the run, but no test ran or loaded ${unused.length === 1 ? 'it' : 'them'} — not rerunning (probably written by a test; save to rerun)`);
+      files = files.filter((f) => !unused.includes(f));
+    }
+    // Test files the project's config does not run (fixtures a test writes —
+    // Jest's own e2e tests write `__tests__/snapshot.test.js` into fixtures).
+    const notRun = files.filter((f) => this._runnable && this._adapterFor(f).isTestFile(f) && !this._isRunnable(f));
+    if (notRun.length > 0) {
+      log.debug(`${describeFiles(notRun)} changed on disk during the run — test files this project's config does not run, ignoring`);
+      files = files.filter((f) => !notRun.includes(f));
+    }
     if (files.length === 0) { return; }
+    // Many files written during our own run are the tests' doing, not a branch
+    // switch: restarting would wipe the results and write them all again, forever.
     if (files.length > MAX_DISK_CHANGES_PER_FILE) {
-      log.info(`${files.length} files changed on disk during the run — restarting the session (every test reruns)`);
-      void this.start();
+      log.info(`${files.length} files changed on disk during the run (${describeFiles(files)}) — probably written by the tests, not rerunning them (save a file or Start to rerun)`);
       return;
     }
     log.info(`Rerunning what depends on ${describeFiles(files)} (changed on disk during the run)`);
     for (const f of files) { this.onFileChanged(f, 'Changed on disk:'); }
+  }
+
+  /** The file was last written while our last runs were going (by their tests), by its modified time. */
+  private _writtenDuringLastRuns(filePath: string): boolean {
+    if (this._runsEndedAt < this._runsStartedAt) { return false; }
+    try {
+      const t = fs.statSync(filePath).mtimeMs;
+      return t >= this._runsStartedAt - 50 && t <= this._runsEndedAt + 50;
+    } catch { return false; }
+  }
+
+  /**
+   * A source file the last run's execution trace knows no test of: none ran
+   * a line of it or loaded it. False for test files, possible config files,
+   * and whenever a framework's trace is off (then only its related run knows).
+   */
+  private _unusedByLastRun(filePath: string, root: string): boolean {
+    if (this._adapterFor(filePath).isTestFile(filePath) || this._runnable?.has(runnableKey(filePath))) { return false; }
+    if (this._mayBeConfigFile(filePath, root)) { return false; }
+    if (this._services.all().some((s) => s.traceOffReason?.(root))) { return false; }
+    if (this._traceStore.getAllCoveredFiles().length === 0) { return false; }
+    if (this._traceStore.isLoaded(filePath)) { return false; }
+    return this._traceStore.getAffectedTestFiles(filePath).length === 0;
   }
 
   /** A project file the session reruns tests for (source, test or framework config; not node_modules). */
@@ -653,8 +751,8 @@ export class SessionManager {
    *  1. Trace store has data → run each affected test file, but only the
    *     individual test cases that actually touched this source file. Suites
    *     with isSharedVars:true are run as a whole-suite pattern instead.
-   *  2. No trace data yet → fall back to the adapter's CoverageMap /
-   *     jest --findRelatedTests (existing behaviour).
+   *  2. No trace data → the framework's related run (`jest
+   *     --findRelatedTests`, `vitest related`, pytest: the test files that import it).
    */
   /** @returns the test files that were rerun (empty when nothing depends on the file). */
   private async _runAffectedBySourceFile(
@@ -668,7 +766,7 @@ export class SessionManager {
     // Mixed project: each framework reruns its own test files that depend on
     // the source file (by its trace, else its related run — `jest
     // --findRelatedTests`, `vitest related`).
-    const bundles = this._services.all();
+    const bundles = this._services.all().filter((s) => this._loadsSource(s, sourceFilePath));
     const ran = await Promise.all(bundles.map((s) =>
       this._runAffectedWith(s, sourceFilePath, projectRoot, token, (fp) => this._services.servicesFor(fp) === s)));
     return [...new Set(ran.flat())];
@@ -1059,6 +1157,8 @@ export class SessionManager {
     filePaths: string[],
     projectRoot: string,
     token: number,
+    /** openFirst (the full run): the test files on screen run first, in batches of their own. */
+    opts: { openFirst?: boolean } = {},
   ): Promise<void> {
     const CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
     const totalFiles  = filePaths.length;
@@ -1122,11 +1222,12 @@ export class SessionManager {
     };
 
     /** Split-on-crash: retry files that produced no result by halving the batch. */
-    const runBatch = async (batch: string[]): Promise<void> => {
+    const runBatch = async (batch: string[], retried = false): Promise<void> => {
       if (batch.length === 0 || !live()) { return; }
       // A single-file batch starts right away — show it running now.
       if (batch.length === 1) { markRunning(batch[0]); }
       let missing: string[];
+      let retry: string | undefined;
       try {
         // Batches never mix frameworks (see the queue below): the first file's is the batch's.
         const r = await this._services.servicesFor(batch[0]).batchRunner.runFiles({
@@ -1155,6 +1256,7 @@ export class SessionManager {
           log: rawLog,
         });
         missing = r.missing;
+        retry = r.retry;
       } catch (err) {
         log.error(`Batch of ${batch.length} file(s) crashed — retrying without instrumentation`, err);
         missing = batch.slice();
@@ -1162,6 +1264,13 @@ export class SessionManager {
 
       // Stopped (or restarted) meanwhile: no retries, no fallback (BUG-15).
       if (missing.length === 0 || !live()) { return; }
+
+      // A failure a second try may not meet (BUG-44): once, before falling back.
+      if (retry && !retried && missing.length === batch.length) {
+        log.info(`Batch of ${batch.length} file(s) failed (${retry}) — running it once more`);
+        await runBatch(batch, true);
+        return;
+      }
 
       // When the whole batch produced no results the most likely cause is a
       // jest config incompatibility rather than individual test crashes.
@@ -1211,13 +1320,16 @@ export class SessionManager {
     }
     // A framework's BatchPolicy caps its batch size and how many of its
     // processes run at once (pytest: one, with every file) within the budget.
-    const batchQueue: { batch: string[]; services: FrameworkServices }[] = [];
-    for (const [services, files] of byFramework) {
-      const size = Math.max(1, services.batchPolicy?.maxFilesPerBatch ?? BATCH_SIZE);
-      for (let i = 0; i < files.length; i += size) {
-        batchQueue.push({ batch: files.slice(i, i + size), services });
-      }
+    // The test files on screen run first (full run), and a test file opened
+    // while it waits moves to the front (promote()).
+    const onScreen = new Set(opts.openFirst ? vscode.window.visibleTextEditors.map((e) => runnableKey(e.document.uri.fsPath)) : []);
+    const batchQueue = buildBatchQueue(byFramework, (s) => s.batchPolicy?.maxFilesPerBatch ?? BATCH_SIZE, onScreen);
+    const first = batchQueue.filter((q) => q.batch.every((f) => onScreen.has(runnableKey(f))));
+    if (first.length > 0) {
+      log.debug(`Running the ${first.reduce((n, q) => n + q.batch.length, 0)} test file(s) open in the editor first`);
     }
+    const promote = (filePath: string) => promoteInQueue(batchQueue, filePath);
+    this._promoters.add(promote);
     const batchCount = batchQueue.length;
     const runningOf = new Map<FrameworkServices, number>();
     const waiters: (() => void)[] = [];
@@ -1250,7 +1362,7 @@ export class SessionManager {
           wakeAll();
         },
       ),
-    );
+    ).finally(() => this._promoters.delete(promote));
 
     if (live()) {
       log.debug(`${totalFiles} file(s) finished in ${secondsSince(totalStart)} (${batchCount} batch(es), concurrency ${CONCURRENCY})`);
@@ -1390,6 +1502,21 @@ export class SessionManager {
     return this._traceStore.getAffectedTestFiles(filePath).length > 0;
   }
 
+  /**
+   * Whether a framework can load a saved source file (mixed projects): a
+   * Python framework its own extensions (`.py`, `.pyi`); a JS framework
+   * anything another language's framework does not claim — as before
+   * JS + Python projects.
+   */
+  private _loadsSource(services: FrameworkServices, filePath: string): boolean {
+    const ext = extensionOf(filePath);
+    if ((services.language ?? 'js') !== 'js') { return this._sourceExtensionsBy.get(services)?.has(ext) ?? false; }
+    for (const [other, exts] of this._sourceExtensionsBy) {
+      if ((other.language ?? 'js') !== 'js' && exts.has(ext)) { return false; }
+    }
+    return true;
+  }
+
   /** A root-level file a framework names as a possible config (pytest's pyproject.toml, …) — checked by isConfigFile after the debounce. */
   private _mayBeConfigFile(filePath: string, root: string): boolean {
     if (path.dirname(filePath) !== root) { return false; }
@@ -1402,6 +1529,7 @@ export class SessionManager {
     for (const s of this._services.all()) {
       const exts = await s.projectConfig.sourceExtensions?.(projectRoot).catch(() => undefined);
       if (token !== this._token || !exts) { continue; }
+      this._sourceExtensionsBy.set(s, new Set(exts));
       // Jest's JSON / native addons are data, not code a test reruns for.
       for (const e of exts) { if (e !== 'json' && e !== 'node') { this._sourceExtensions.add(e); } }
     }
@@ -1461,6 +1589,7 @@ export class SessionManager {
     this._outputChannel.appendLine(`──── Run #${id} · ${label} · ${new Date().toLocaleTimeString()} ────`);
     log.debug(`Run #${id} started: ${label}`);
     if (this._activeRuns++ === 0) {
+      this._runsStartedAt = Date.now();
       this._progress = { completed: 0, total: 0, failed: 0 };
     }
     if (opts.fullSuite) { this._fullSuiteStartedAt = Date.now(); }
@@ -1485,7 +1614,11 @@ export class SessionManager {
     }
     if (!quiet) { this._logRunSummary(run, fileIds, nodeId); }
     this._activeRuns = Math.max(0, this._activeRuns - 1);
-    if (this._activeRuns === 0) { this._finishRuns(); this._runQueuedDiskChanges(); }
+    if (this._activeRuns === 0) {
+      this._runsEndedAt = Date.now();
+      this._finishRuns();
+      this._runQueuedDiskChanges();
+    }
   }
 
   private _logRunSummary(run: RunHandle, fileIds: string[], nodeId?: string): void {

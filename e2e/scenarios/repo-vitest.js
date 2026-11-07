@@ -5,7 +5,8 @@
  * (LTR_E2E_VITEST_BASELINE) test for test, discovery finds the tests before
  * Start, coverage is measured when the provider package is installed (else
  * one "coverage is off" line), ▶ Run on one test works, a saved test file reruns, and Stop ends
- * every Vitest process. A saved file is restored to its exact content.
+ * every Vitest process. A saved file is restored to its exact content, through
+ * the editor (a write on disk would start an outside-change rerun of its own).
  */
 const fs = require('fs');
 const path = require('path');
@@ -105,7 +106,9 @@ module.exports = {
         const cmds2 = h.rawSince(api, mark2).filter((l) => /^\[vitest#\d+\] > /.test(l));
         t.check(`saving ${path.basename(one.fileId)} reruns it`, cmds2.some((l) => l.includes(path.basename(one.fileId))), cmds2.join('\n'));
       } finally {
-        fs.writeFileSync(one.fileId, original);
+        // Through the editor, and wait: a write on disk is an outside change that reruns too.
+        await h.editAndSave(vscode, one.fileId, () => original);
+        await waitIdle(api);
       }
     }
 
@@ -137,7 +140,8 @@ module.exports = {
         t.eq('…nothing left running', h.nodesWithStatus(api, 'running').length, 0);
       } finally {
         rec2.stop();
-        fs.writeFileSync(src, original);
+        await h.editAndSave(vscode, src, () => original);
+        await waitIdle(api);
       }
     } else {
       t.info('no relative source import found in a passing test file — source-save check skipped');

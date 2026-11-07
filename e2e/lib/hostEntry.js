@@ -17,7 +17,8 @@ exports.run = async function run() {
     const api = await ext.activate();
     if (!api || !api.store) { throw new Error('extension did not return the e2e API (is LTR_E2E set?)'); }
     const scenario = require(process.env.LTR_E2E_SCENARIO);
-    await scenario.run({ api, t, vscode, workspace: process.env.LTR_E2E_WORKSPACE });
+    const workspaces = JSON.parse(process.env.LTR_E2E_WORKSPACES || '[]');
+    await scenario.run({ api, t, vscode, workspace: process.env.LTR_E2E_WORKSPACE, workspaces });
   } catch (err) {
     error = err && err.stack ? err.stack : String(err);
   }

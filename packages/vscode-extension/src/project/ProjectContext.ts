@@ -27,8 +27,8 @@ import { FrameworkRouter } from '../framework/FrameworkRouter';
 import { createJestServices } from '../framework/jestServices';
 import { createVitestServices } from '../framework/vitestServices';
 import { createPytestServices } from '../framework/pytestServices';
-import { IFrameworkServicesProvider, SingleFrameworkProvider } from '../framework/FrameworkServices';
-import { TestFileDiscoverer, jsDiscoverer } from '../session/discovery/TestFileDiscoverer';
+import { IFrameworkServicesProvider } from '../framework/FrameworkServices';
+import { TestFileDiscoverer, jsDiscoverer, mixedDiscoverer } from '../session/discovery/TestFileDiscoverer';
 import { pythonDiscoverer } from '../session/discovery/pythonDiscovery';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload, CoverageFileRow } from '../IResultObserver';
 import { CoverageTotals } from '../coverage/types';
@@ -106,10 +106,9 @@ export class ProjectContext implements vscode.Disposable {
   readonly traceStore = new ExecutionTraceStore();
   readonly coverageStore = new CoverageStore();
   readonly discovery = new TestDiscoveryService();
-  /** Which framework runs each file (one, or Jest + Vitest in a mixed project — phase 8; pytest projects: pytest). */
+  /** Which framework runs each file (one, or several in a mixed project — phase 8). */
   readonly services: IFrameworkServicesProvider;
-  /** How the project's test files are found statically (Babel for JS, the line scanner for pytest). */
-  readonly discoverer: TestFileDiscoverer;
+  private _discoverers: { python?: TestFileDiscoverer; mixed?: TestFileDiscoverer } = {};
   readonly session: SessionManager;
   readonly gate: ProjectObserverGate;
   discoveryCache: DiscoveryCache | undefined;
@@ -132,20 +131,16 @@ export class ProjectContext implements vscode.Disposable {
     }
 
     const rawLog = (msg: string) => _deps.outputChannel.appendLine(msg);
-    if (project.framework === FRAMEWORK_IDS.pytest) {
-      // A Python project: pytest for every file (JS + Python in one folder is a later release, D13).
-      this.services = new SingleFrameworkProvider(createPytestServices({ sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog }));
-      this.discoverer = pythonDiscoverer();
-    } else {
-      this.services = new FrameworkRouter(
-        {
-          jest: () => createJestServices({ sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog }),
-          vitest: () => createVitestServices({ sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog }),
-        },
-        this.root,
-      );
-      this.discoverer = jsDiscoverer;
-    }
+    const deps = { sessionDir: this.sessionDir, coverageStore: this.coverageStore, rawLog };
+    // Every project gets the router; bundles are built only for the frameworks it uses.
+    this.services = new FrameworkRouter(
+      {
+        jest: () => createJestServices(deps),
+        vitest: () => createVitestServices(deps),
+        pytest: () => createPytestServices(deps),
+      },
+      this.root,
+    );
     // Mixed by its configs is known now (switcher label); the setting and listing refine it at Start.
     this.services.prepare(this.root);
     this.gate = new ProjectObserverGate(this, _deps.observers, _deps.editorObservers, () => _deps.isSelected(this), () => _deps.onStateChanged(this));
@@ -201,6 +196,24 @@ export class ProjectContext implements vscode.Disposable {
 
   get discoveryStarted(): boolean { return this._discoveryStarted; }
 
+  /**
+   * How the project's test files are found statically: Babel for JS, the line
+   * scanner for pytest, both in a JS + Python project (phase 8 — what the
+   * root configures, known from activation).
+   */
+  get discoverer(): TestFileDiscoverer {
+    if (this.framework === FRAMEWORK_IDS.pytest) { return (this._discoverers.python ??= pythonDiscoverer()); }
+    if (this.usesFramework(FRAMEWORK_IDS.pytest)) {
+      return (this._discoverers.mixed ??= mixedDiscoverer(jsDiscoverer, this._discoverers.python ??= pythonDiscoverer()));
+    }
+    return jsDiscoverer;
+  }
+
+  /** The project runs (some of) its files with this framework. */
+  usesFramework(framework: string): boolean {
+    return this.framework === framework || this.services.frameworks().includes(framework);
+  }
+
   discoveryCallbacks(): DiscoveryCallbacks {
     return {
       onFilesFound: (total) => this.gate.onDiscoveryStarted(total),
@@ -216,10 +229,12 @@ export class ProjectContext implements vscode.Disposable {
     this.traceStore.clearAll();
   }
 
-  /** "jest", "vitest", or "jest + vitest" once a Start found a mixed project. */
+  /** "jest", "vitest", "pytest", or "jest + vitest" once a Start found a mixed project. */
   get frameworkLabel(): string {
     if (!this.services.isMixed()) { return this.framework; }
-    return this.framework === 'vitest' ? 'vitest + jest' : `${this.framework} + vitest`;
+    // The detected id first (`cra`, not the router's `jest`), then the others.
+    const [, ...others] = this.services.frameworks();
+    return [this.framework, ...others].join(' + ');
   }
 
   /** Run state for the switcher row. */

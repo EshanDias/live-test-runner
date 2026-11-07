@@ -175,7 +175,7 @@ export class JestBatchRunner implements IBatchRunner {
    * - Returns the list of files that produced no result (crashed mid-batch).
    *   Result paths are always the caller's own keys (`filePaths` entries).
    */
-  async runFiles(options: BatchRunOptions): Promise<{ missing: string[] }> {
+  async runFiles(options: BatchRunOptions): Promise<{ missing: string[]; retry?: string }> {
     const { filePaths, projectRoot, traceStore, store: _store, applyFileResult, onFileDone, log: rawLog } = options;
     const hangTimeoutMs = options.hangTimeoutMs ?? 0;
     if (filePaths.length === 0) { return { missing: [] }; }
@@ -485,6 +485,8 @@ module.exports = _projects
     const executor = new Executor();
     /** Set when the watchdog stopped the batch because a file hung. */
     let timedOut: { file: string; seconds: number; test?: string } | undefined;
+    /** A file Jest failed on that is gone again (BUG-44). */
+    let vanished: string | undefined;
 
     // Watchdog: a batch with no finished file for a long time is either slow
     // or hung. Say which file it is on so the two can be told apart.
@@ -579,6 +581,10 @@ module.exports = _projects
         log.debug(`${batch}: stopped by the user after ${secondsSince(startedAt)}`);
       } else if (timedOut) {
         log.debug(`${batch}: stopped after ${secondsSince(startedAt)} — ${path.basename(timedOut.file)} hung`);
+      } else if (received.size === 0 && (vanished = vanishedFile(result.stderr + '\n' + result.stdout))) {
+        // A test of another batch created and deleted a file while this
+        // batch's haste map crawled the project (BUG-44): worth one more try.
+        log.debug(`${batch}: Jest failed on ${vanished}, which no longer exists (written by a test during the crawl) — retrying the batch once`);
       } else if (received.size === 0) {
         // Whole batch produced nothing — Jest itself failed (config, transform,
         // environment). SessionManager falls back to plain Jest next; this line
@@ -624,7 +630,7 @@ module.exports = _projects
       covLog.error(`${batch}: could not parse coverage counters`, err);
     }
 
-    return { missing };
+    return vanished && missing.length === filePaths.length ? { missing, retry: `${path.basename(vanished)} vanished during Jest's crawl` } : { missing };
   }
 
   // ── Private: binary resolution ────────────────────────────────────────────
@@ -797,4 +803,16 @@ function secondsSince(t: number): string {
 function pathKey(filePath: string): string {
   const p = path.normalize(filePath);
   return process.platform === 'win32' ? p.toLowerCase() : p;
+}
+
+/**
+ * The file a failed Jest run could not open, when it no longer exists — a
+ * test created and deleted it while Jest's haste map crawled the project
+ * (BUG-44). Undefined for any other failure.
+ */
+export function vanishedFile(output: string): string | undefined {
+  for (const m of output.matchAll(/ENOENT: no such file or directory, (?:open|stat|lstat|scandir|realpath) '([^']+)'/g)) {
+    if (!fs.existsSync(m[1])) { return m[1]; }
+  }
+  return undefined;
 }

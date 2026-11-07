@@ -1,6 +1,6 @@
 {
   "click": {
-    "recorded": "2026-10-25T06:03:42.710Z",
+    "recorded": "2026-11-07T06:17:18.388Z",
     "head": "2247b35ea1c47c727d7a06e51fa280e12a863ff6",
     "extensionMatches": true,
     "files": 43,
@@ -228,7 +228,7 @@
     }
   },
   "httpx": {
-    "recorded": "2026-10-25T07:29:35.568Z",
+    "recorded": "2026-11-07T06:18:02.882Z",
     "head": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
     "extensionMatches": true,
     "files": 31,
@@ -396,7 +396,7 @@
     }
   },
   "erdantic": {
-    "recorded": "2026-10-25T07:31:06.157Z",
+    "recorded": "2026-11-07T06:18:41.220Z",
     "head": "f7364af5416c40a2dda435cc968ae81bd4c31252",
     "extensionMatches": true,
     "files": 13,

@@ -13,4 +13,9 @@ function divide(a, b) {
   return a / b;
 }
 
-module.exports = { add, multiply, divide };
+// One statement over five lines: every line of it gets a coverage bar.
+module.exports = {
+  add,
+  multiply,
+  divide,
+};

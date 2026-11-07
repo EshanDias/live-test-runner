@@ -7,6 +7,7 @@ const log = logger.scope('Coverage');
 export class CoverageStore {
   private readonly _entries = new Map<string, CoverageEntry>();
   private _scanComplete = false;
+  private _off: string[] = [];
 
   readonly onDidChange = new vscode.EventEmitter<void>();
   private _fireTimer: ReturnType<typeof setTimeout> | undefined;
@@ -65,9 +66,16 @@ export class CoverageStore {
     this._changed();
   }
 
+  /** Why coverage is off this session (see CoverageTotals.off); [] when it is measured. */
+  setOffReasons(reasons: string[]): void {
+    this._off = [...reasons];
+    this._changed();
+  }
+
   clear(): void {
     this._entries.clear();
     this._scanComplete = false;
+    this._off = [];
     if (this._fireTimer) { clearTimeout(this._fireTimer); this._fireTimer = undefined; }
     this.onDidChange.fire();
   }
@@ -137,6 +145,7 @@ export class CoverageStore {
       functions:  { covered: fnsCovered, total: fnsTotal, pct: _pct(fnsCovered, fnsTotal) },
       lines:      { covered: linesCovered, total: linesTotal, pct: _pct(linesCovered, linesTotal) },
       scanComplete: this._scanComplete,
+      ...(this._off.length > 0 ? { off: [...this._off] } : {}),
     };
   }
 

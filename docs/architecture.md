@@ -16,7 +16,7 @@ The solution is a fully custom webview UI. This gives cross-platform control ove
 
 ```
 packages/
-├── core/              @live-test-runner/core      Session lifecycle + coverage map
+├── core/              @live-test-runner/core      Session state
 ├── runner/            @live-test-runner/runner     Framework-agnostic execution engine
 └── vscode-extension/  live-test-runner             VS Code extension
 ```
@@ -59,15 +59,13 @@ Dependency direction: `vscode-extension` → `core` → `runner`. The runner has
 
 ## Package: `core`
 
-Owns session lifecycle and the coverage map.
+Owns the session's on / off state.
 
 | File | Responsibility |
 |------|---|
-| `TestSession.ts` | Start, stop, reset a test session |
-| `CoverageMap.ts` | `Map<SourcePath, Set<TestPath>>` built from Jest coverage output |
-| `SelectionPolicy.ts` | Legacy; minimal use |
+| `TestSession.ts` | Whether a project's session is on (`activate` / `stop`) and the runner it uses |
 
-**Coverage map:** core's `CoverageMap` (`IFrameworkAdapter.getAffectedTests`) is not consulted by on-save reruns — the execution trace is (Jest, Vitest), then the framework's related run (`jest --findRelatedTests`, `vitest related`).
+On-save reruns use the execution trace (Jest, Vitest), then the framework's related run (`jest --findRelatedTests`, `vitest related`). The old `CoverageMap` (always empty) and `SelectionPolicy` were removed in 3.3.0.
 
 ---
 
@@ -294,7 +292,9 @@ A window holds one **`ProjectContext`** per test project (`src/project/`). Every
 2. else a monorepo root (`pnpm-workspace.yaml` `packages:`, `package.json#workspaces`) → **one project per workspace package with tests** (a framework dependency, config, or a test script running jest / vitest / react-scripts);
 3. else the folder, if a framework is detected there.
 
-Projects inside another project's root are dropped; a single folder with nothing recognised is still the project (plain Jest, as before). `liveTestRunner.projectRoot` pins the window to that one root.
+These are the JavaScript rules (`jsProjectsInFolder`). Python projects (`pythonProjectsInFolder`, 3.3.0) follow the same shape: a folder that configures pytest (a pytest config or a root `conftest.py`) → one project; else a **uv workspace** root (`[tool.uv.workspace] members` / `exclude`) → one project per member with tests (a pytest project itself, or test files when the root names pytest); else the folder, if it is a pytest project. Each member finds the workspace's shared `.venv` (the interpreter search walks up from the project to the workspace folder). A folder both families claim is one project, the JS one, whose router also runs pytest there (`projectFrameworks` adds `pytest`; JS + Python in one folder, 3.3.0). A folder with no Python of its own is searched two levels down for folders that configure pytest or are a uv workspace root (`nestedPythonRoots`) — each is a Python project by these rules.
+
+Projects inside another project's root of the same language family are dropped; a single folder with nothing recognised is still the project (plain Jest, as before). `liveTestRunner.projectRoot` pins the window to that one root.
 
 **`ProjectRegistry`** owns the contexts and the *selected* project. Nothing runs automatically (D11): only the selected project's static discovery starts at activation, others on first selection or Start. Each project's `SessionManager` notifies one observer, the project's **`ProjectObserverGate`**: it records the project's live state (session active, discovering) for the switcher row and forwards every event to the window's observers **only while the project is selected**. Switching (`onDidChangeSelection`) rebinds the Explorer and Results views to the new project's stores (`bindProject`) and sends them a fresh `init` (with `running` progress when the project is mid-run). **Editor features are per file, not per selection** (owner decision 2026-10-22): `DecorationManager`, `CodeLensProvider`, `CoverageDecorationManager` and `CoverageHoverProvider` take a `FileStoresResolver` (`editor/FileStores.ts` → `ProjectRegistry.forFile`) and decorate every file from its own project; they are `editorObservers`, to which every project's gate forwards regardless of selection. Opening a file of a not-yet-discovered project starts that project's discovery (nothing runs); CodeLens ▶ Run / ▷ Debug go to the file's project (explicit clicks work without a session). Background projects keep running and rerunning on save (`onDidSaveTextDocument` goes to the file's project). Start / Stop act on the selected project; `liveTestRunner.maxRunningProjects` (`auto` = 2, or 1 with ≤ 4 cores / < 8 GB total memory) caps how many sessions are active at once — Start on one more is refused with a message naming the running projects.
 
@@ -535,7 +535,7 @@ Everything cached lives outside the project: the user cache folder (`<folder>-<h
 ### Session management (`SessionManager`)
 
 1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, clears `CoverageStore`, fires `SourceCounter` (background, parallel), runs all test files, enables on-save listener
-2. **On save** — debounced (default 300ms); classifies file as test or source; for source files calls `CoverageStore.markFileStale()` then `_runAffectedBySourceFile()` (trace-store driven with CoverageMap fallback)
+2. **On save** — debounced (default 300ms); classifies file as test or source; for source files calls `CoverageStore.markFileStale()` then `_runAffectedBySourceFile()` (the execution trace, else the framework's related run)
    - **Changed on disk** — `extension.ts` watches `**/*`; `session/ExternalChanges.ts` drops the editor's own saves (`onWillSave` / `onDidSave`, 2 s), dirty documents, `node_modules` and `.git`, batches events for 500 ms and hands each project its files (`onFilesChangedOnDisk`). Same path as a save (`onFileChanged`); more than 20 files restart the session; changes during a run are queued (`_diskQueue`) and rerun when the last run ends (`_runQueuedDiskChanges`) — a file that changed again during its own queued rerun is not queued again (`_lastDiskRerun`, a test writing it would loop).
 3. **Stop Testing** — kills child processes, clears decorations, calls `CoverageStore.clear()`, disables on-save
 
@@ -554,7 +554,7 @@ Concurrency is controlled by a `CONCURRENCY = 3` constant in `SessionManager`.
 | `isTestFile(filePath)` | Classify a saved file |
 | `runFile(...)` | Run a file and write to `ResultStore` |
 | `runTestCase(...)` | Run a single test by name |
-| `getAffectedTests(session, changedFile)` | Test files affected by a source change |
+| `runRelatedTests(store, sourceFile, root, log)` | The framework's related run for a source file no trace knows |
 | `getDebugConfig(...)` | VS Code debug launch config for `▷ Debug` |
 
 Adding a new framework = one file implementing `IFrameworkAdapter`, plus that framework's batch runner and project config, bundled as `FrameworkServices`. `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
@@ -586,7 +586,7 @@ Static discovery (`instrumentation/shared/testDiscovery.js`) uses the project's 
 
 ### pytest (extension side)
 
-A pytest project (`DetectedProject.framework === 'pytest'`) gets a `SingleFrameworkProvider` with `createPytestServices` (`framework/pytestServices.ts`) and the Python `TestFileDiscoverer` (`session/discovery/pythonDiscovery.ts`, a line scanner — `python_files` under `testpaths`, `Test*` classes without `__init__`, `unittest.TestCase` subclasses, `@pytest.mark.parametrize` → template `name[…]`). The bundle:
+A pytest project (`DetectedProject.framework === 'pytest'`) gets the same `FrameworkRouter` as every project — its primary framework is `pytest`, so it builds only `createPytestServices` (`framework/pytestServices.ts`) — and the Python `TestFileDiscoverer` (`session/discovery/pythonDiscovery.ts`, a line scanner — `python_files` under `testpaths`, `Test*` classes without `__init__`, `unittest.TestCase` subclasses, `@pytest.mark.parametrize` → template `name[…]`). The bundle:
 
 | Member | Implementation |
 |---|---|
@@ -794,7 +794,6 @@ User clicks "Start Testing"
                   → ResultParser               parses JSON → RunResult
               → JestAdapter._applyFileResult() writes to ResultStore + LineMap (replaces AST line numbers with Jest's authoritative location.line)
               → IResultObserver.notify() → ExplorerView, ResultsView, DecorationManager
-      → CoverageMap built from coverage data
       → On-save listener enabled
 
 **Session Isolation** — every window uses a unique `session-<pid>-<ts>` directory. The extension host creates this on startup and injects it into all internal components (`SessionManager`, `JestAdapter`, `JestBatchRunner`). This ensures that multiple VS Code windows never conflict on shared temporary filenames.

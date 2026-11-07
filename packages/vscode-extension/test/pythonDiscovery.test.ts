@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { discoverPythonTests, logicalLines, matchesPytestName, matchesPythonFile } from '../src/session/discovery/pythonDiscovery';
-import { findCandidates, venvPython } from '../src/python/PythonInterpreters';
+import { findCandidates, venvPython, venvRoots } from '../src/python/PythonInterpreters';
 
 const names = (src: string) => {
   const r = discoverPythonTests(src);
@@ -136,5 +136,23 @@ describe('python interpreter candidates', () => {
     fs.writeFileSync(path.join(dir, 'poetry.lock'), '');
     await findCandidates(dir, { env: {}, tool: async (cmd) => { asked.push(cmd); return undefined; } });
     expect(asked).toEqual(['poetry']);
+  });
+
+  it('a uv workspace member uses the workspace root\'s .venv (folders between the member and the workspace folder)', async () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr uv ws '));
+    const uvRoot = path.join(ws, 'python');
+    const member = path.join(uvRoot, 'packages', 'core');
+    fs.mkdirSync(member, { recursive: true });
+    expect(venvRoots(member, ws)).toEqual([member, path.join(uvRoot, 'packages'), uvRoot, ws]);
+    expect(venvRoots(member, member)).toEqual([member]);
+    expect(venvRoots(member)).toEqual([member]);
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr other '));
+    expect(venvRoots(member, elsewhere)).toEqual([member, elsewhere]);
+
+    const shared = venvPython(path.join(uvRoot, '.venv'));
+    fs.mkdirSync(path.dirname(shared), { recursive: true });
+    fs.writeFileSync(shared, '');
+    const list = await findCandidates(member, { workspaceFolder: ws, env: {}, tool: async () => undefined });
+    expect(list[0]).toEqual({ python: shared, source: '.venv (python)' });
   });
 });

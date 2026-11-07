@@ -2,6 +2,66 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [3.3.0] - 2026-11-07
+
+### Python monorepos (pytest plan phase 7)
+
+- **uv workspaces**: a folder whose `pyproject.toml` has `[tool.uv.workspace] members` (and `exclude`) and no pytest config or `conftest.py` of its own is split into one pytest project per member with tests — a member that is a pytest project itself (config, `conftest.py`, pytest in its own dependency files), or one with test files when the workspace root names pytest (the usual shared dev group). A root with its own pytest config or `conftest.py` stays one project (pytest run from a member would miss the root's options and fixtures). Members without tests are no project.
+- Detection is split per language family in `projectDiscovery.ts`: `jsProjectsInFolder` (unchanged rules) and the new `pythonProjectsInFolder`; `projectsInFolder` returns both (a root both claim stays the JS project until phase 8). A JS monorepo and a uv workspace in one folder give both kinds of members. New runner exports: `uvWorkspaceGlobs`, `configuresPytest`, `mentionsPytest`, `hasPytestTestFiles`; `testFrameworkOf(dir, registry, family?)`; `expandWorkspaceGlobs(root, globs, marker?)`.
+- **Interpreter per member**: virtual environments are looked for in the project, then every folder above it up to the workspace folder (`venvRoots`) — a uv workspace's shared `.venv` at its root is found for each member (shown as `.venv (<folder>)`). The Python extension is asked for the project's own folder instead of the workspace folder.
+- Tests: `projectDiscovery.test.ts` (6 uv cases), `pythonDiscovery.test.ts` (`venvRoots`); e2e `pytest-monorepo` on the new `fixture:monorepo-pytest` (uv workspace: a member with its own pytest config, one with tests only, one without tests; shared `.venv`) — per-member results vs plain pytest in the member's folder, a save reruns only its member, Stop All. The harness's `workspacePython` finds the nearest `.venv` above a folder.
+
+- **Per-service environments, multi-root windows (e2e)**: `fixture:monorepo-pytest-venvs` (two services, each with its own `.venv`, nothing shared at the root) runs `pytest-venv-per-service` — each service uses its own `.venv` (its tests assert `sys.prefix`), matches plain pytest, a save reruns only its service. `multi-root-js-python` opens a Vitest front end and a pytest project as two workspace folders: two projects in the switcher, the Python chip only for pytest, each matches its plain runner, a save wakes only its own project, Stop All. Harness: a scenario's `workspace` may be an array (a `.code-workspace` is written and opened; the scenario gets `workspaces`), and every fixture folder with a `requirements-e2e.txt` gets its own `.venv`. No product change was needed: venvs are looked up in the project before folders above it.
+
+### JS and Python in one folder (pytest plan phase 8)
+
+- **One project, both languages**: a JS root (Jest, CRA or Vitest) that is a pytest project too (a pytest config, a root `conftest.py`, or pytest named next to test files) is one project whose router lists with every framework (runner `projectFrameworks` adds `pytest`; reason `… + a pytest config`). `.py` files go to pytest by ownership; the switcher shows `jest + pytest`, the Explorer groups by framework, the status bar splits (`Jest 2 · pytest 3`), the session log line says `framework: jest + pytest`.
+- **Static discovery for both**: `mixedDiscoverer` (JS / TS → Babel, `.py` → the line scanner, each pattern with its own exclude — `TestFileDiscoverer.excludeFor`); `ProjectContext.discoverer` is chosen from what the root configures; `ProjectContext.usesFramework('pytest')` shows the Python environment chip and drives Select Python Interpreter for mixed projects.
+- **Saves wake only their language**: `FrameworkServices.language` (`python` for pytest); in a mixed project a saved source file reruns only the frameworks that load it (`SessionManager._loadsSource`: a Python framework its own extensions, a JS framework anything no other language claims).
+- **No Python → the JS tests still run**: Start asks every framework in play whether it can run (`all()` builds them); a framework other than the main one that cannot (`whyNotReady`) is left out for the session (`IFrameworkServicesProvider.disable`, INFO line), its files are not run. Before, a missing interpreter stopped the session.
+- **Python subfolders**: a folder with no Python of its own is searched two levels down (`nestedPythonRoots`, skipping dependencies, environments and build output) for folders that configure pytest or are a uv workspace root — each is a project by the Python rules (`backend/` next to a JS app).
+- Tests: `projectDiscovery.test.ts` (3), `frameworkRouting.test.ts` (1); e2e `mixed-js-python` (one project, both frameworks, results vs plain Jest and plain pytest, groups, status-bar split, saves wake only their language, Stop) and `mixed-js-python-monorepo` (JS root + `backend/` pytest project with the root's `.venv`), fixtures of the same names.
+
+### Framework router for any number of frameworks (master tracker A2, internal)
+
+- `RoutedFramework` is the list `ROUTED_FRAMEWORKS` (`jest`, `vitest`, `pytest`) instead of the fixed `'jest' | 'vitest'` pair; `projectFrameworks` returns every framework a root configures (`frameworks`, primary first; `routedFrameworkOf` maps detection, CRA / unknown → `jest`); `parseFrameworkRules(setting, base, allowed)` validates against a list (`SETTING_FRAMEWORKS` = Jest, Vitest by default — a `.py` file only runs with pytest).
+- `FrameworkRouter` takes a factory per framework (`FrameworkFactories`, missing = never used), lists with every framework in play, allows each non-primary one in the root (and disallows ones no longer in play), and places a file the listing missed with the framework in play whose test-file rules take it (its hint, then the main framework, when several do). New `IFrameworkServicesProvider.frameworks()` (main first) drives the switcher label and the session log line.
+- pytest projects use the router too (primary `pytest`) instead of a `SingleFrameworkProvider`: the step that lets phase 8 put JS and Python in one project. No user-visible change; tests: `frameworkRouter.test.ts` (4), `frameworkRouting.test.ts` (2).
+
+### Cleanup: core's dead coverage map removed (master tracker C19)
+
+- `@live-test-runner/core` no longer has `CoverageMap` or `SelectionPolicy`, and `TestSession` lost its unused warm-up `start()` and `getCoverageMap()`. The map was always empty (it expected a `coveredBy` field Jest / Vitest coverage JSON never has) and nothing reran by it: source saves go by the execution trace, then the framework's related run. `IFrameworkAdapter.getAffectedTests` (read the map) is gone too. Docs (CLAUDE.md, architecture, ai-context, developer guide, core README, guide) no longer describe it. No user-visible change.
+
+### Docs
+
+- The guide's settings table now lists `hangTimeoutSeconds`, `coverageExclude` and `testFilePatterns` (gap audit, master tracker A1).
+
+### Tests that write many files no longer restart the session forever (fix, 3.2.1 bug)
+
+- Found on the Jest monorepo: its e2e tests write ~50 files into the project during a full run. The 3.2.1 disk-change watcher took that for a branch switch ("53 files changed on disk during the run — restarting the session") — the restart wiped the results and its run wrote the same files again, so results never stayed. Reproduced on a small fixture as a restart every 2 s.
+- Now: (1) changes queued during our runs never restart the session — more than 20 left after filtering are logged ("probably written by the tests … save a file or Start to rerun") and not rerun; (2) test files the project's config does not run (fixtures a test writes) are dropped like files no test loads; (3) the watcher reports a run's last writes after it ended — a file whose modified time falls inside our last runs is handled as changed during them (`_writtenDuringLastRuns`), so a pull after the run still reruns as before; (4) a restart for disk changes never repeats for the same set of files. e2e `disk-changes` step 5b (a test writing 25 modules it loads and 3 test files under the ignored `e2e/`).
+
+### A Jest batch retries once when a test deleted a file mid-crawl (BUG-44, master tracker C17)
+
+- In a project whose tests create and delete files (the Jest monorepo's `e2e/timeouts/`), a batch whose haste-map crawl saw such a file come and go failed before any test and fell back to plain Jest one file at a time. Now a batch that returns nothing and names a vanished file (`ENOENT … '<file>'`, gone again) is run once more first (`vanishedFile`, `IBatchRunner.runFiles` → `retry`). Other failures fall back as before. BUG-43 (jest-runtime's own tests under the session run) stays open. Tests: `vanishedFile.test.ts` (3).
+
+### The Coverage tab says when coverage is off (master tracker A4)
+
+- A framework that cannot measure coverage for the root says so in the Coverage tab, with what to install: `FrameworkServices.coverageOffReason(root)` (pytest: no `coverage` package in the project's environment; Vitest: neither `@vitest/coverage-v8` nor `-istanbul`). `SessionManager.start` collects the reasons into the project's `CoverageStore` (`setOffReasons`, cleared with the data); `CoverageTotals.off` carries them to both coverage views (`cov-off-note` under the project totals). Before, the tab showed a table of 0 % rows with no reason. The other per-framework gaps were already handled: covering tests say why in the hover (`features.trace`, `traceOffReason`), ▶ Run and ▷ Debug work for every framework, and the dormant Timeline refuses with a message. Tests: `coverageOff.test.ts`; e2e `pytest-no-coverage` on the new `fixture:pytest-no-coverage` (pytest without coverage.py).
+
+### Open test files run first (master tracker C16 #4)
+
+- On Start the test files on screen (`visibleTextEditors`) run first, in batches of their own (a framework orders a batch's files itself, so being first in a shared batch would not help). A test file opened while it still waits in a run's queue moves to a batch of its own at the front (`SessionManager.promote`, from `onDidChangeActiveTextEditor`). Saves are unchanged. The queue logic moved to `session/batchQueue.ts` (`buildBatchQueue`, `promoteInQueue`). Tests: `batchQueue.test.ts` (5); e2e `basic-open-first` (the first Jest run is the open file alone, every file still runs once).
+
+### Coverage bars on every line of a multi-line statement (master tracker C18)
+
+- A statement spanning several lines got a bar on its first line only (`CoverageDecorationManager` used `start.line`). New `coverage/statementLines.ts`: a statement with no other statement inside it marks every line it spans; one holding others (`const f = () => { … }`) only its first line, so an uncalled function body never looks green. Used by the bars and the hover's counter fallback; coverage totals are unchanged (statements, not lines). Works for every framework without the trace — the old `trace-driven-decorations.md` plan is replaced and removed. Tests: `statementLines.test.ts` (5); e2e `coverage-editing` (the `basic` fixture's `module.exports = { … }` now spans five lines).
+
+### Files tests write no longer start extra runs (fix, master tracker C20)
+
+- A file that changed on disk during one of our runs is rerun when the run finishes (3.2.1) — but projects whose tests write into the project (unplugin writes `output.js` / `main.js` into its fixtures) got one `vitest related` / `jest --findRelatedTests` process per written file, each finding nothing (11 extra Vitest processes after unplugin's full run). `SessionManager._runQueuedDiskChanges` now drops a queued file the last run's execution trace knows no test of — no line of it ran and no test loaded it (`_unusedByLastRun`; DEBUG line). Test files, possible config files, and frameworks whose trace is off keep the related run. Changes while nothing runs (a pull, a branch switch) are handled as before.
+- The real-repo matrix failed on unplugin, slidev and vueuse ("nothing left running") also on `main`: `repo-vitest` restored its edited files by writing them on disk, which is itself an outside change and started a rerun right before the check. It now restores through the editor and waits for that rerun. e2e `disk-changes` checks that a file a test writes and no test loads starts no rerun.
+
 ## [3.2.1] - 2026-11-05
 
 ### Stop really stops (fix, 3.2.0 bug)

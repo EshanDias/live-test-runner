@@ -1,6 +1,6 @@
 {
   "sample-react-project": {
-    "recorded": "2026-10-27T17:15:27.017Z",
+    "recorded": "2026-11-07T06:08:35.801Z",
     "head": "",
     "extensionMatches": true,
     "files": 14,
@@ -83,7 +83,7 @@
     }
   },
   "jest-dom": {
-    "recorded": "2026-10-27T17:12:42.336Z",
+    "recorded": "2026-11-07T06:05:45.999Z",
     "head": "0ff8904ff4683d676ff70ab68b7f08465c44d0d0",
     "extensionMatches": true,
     "files": 31,
@@ -251,7 +251,7 @@
     }
   },
   "vscode-jest": {
-    "recorded": "2026-10-27T17:14:09.995Z",
+    "recorded": "2026-11-07T06:07:05.059Z",
     "head": "b71edf0b1b80aa22a16222775fbd37dabab3aea0",
     "extensionMatches": true,
     "files": 49,
@@ -2942,9 +2942,9 @@
     }
   },
   "unplugin": {
-    "recorded": "2026-10-27T17:15:54.404Z",
+    "recorded": "2026-11-07T06:09:17.054Z",
     "head": "bd0f8ddba859b2ca1d0e91269afb8eac42785576",
-    "extensionMatches": true,
+    "extensionMatches": false,
     "files": 26,
     "total": {
       "passed": 138,
@@ -3085,9 +3085,9 @@
     }
   },
   "slidev": {
-    "recorded": "2026-10-27T17:16:21.228Z",
+    "recorded": "2026-11-07T06:10:07.675Z",
     "head": "73053ab2b9653ed475960301b56e1ce4439d9c75",
-    "extensionMatches": true,
+    "extensionMatches": false,
     "files": 34,
     "total": {
       "passed": 334,
@@ -3268,9 +3268,9 @@
     }
   },
   "vueuse": {
-    "recorded": "2026-10-27T17:19:19.173Z",
+    "recorded": "2026-11-07T06:13:03.282Z",
     "head": "279bac0230c56a5707e3f92f2f5f2225acda6c5d",
-    "extensionMatches": true,
+    "extensionMatches": false,
     "files": 134,
     "total": {
       "passed": 940,
@@ -3951,7 +3951,7 @@
     }
   },
   "vue-testing-library": {
-    "recorded": "2026-10-27T17:19:55.095Z",
+    "recorded": "2026-11-07T06:13:46.526Z",
     "head": "d46ed8f757e77fe85b369847c21d394bb9706066",
     "extensionMatches": true,
     "files": 26,
@@ -4094,7 +4094,7 @@
     }
   },
   "vue-multiselect": {
-    "recorded": "2026-10-27T17:20:24.073Z",
+    "recorded": "2026-11-07T06:14:21.134Z",
     "head": "8092917041f0ae02cbe4c6982deddc931c6adecd",
     "extensionMatches": true,
     "files": 1,
@@ -4112,7 +4112,7 @@
     }
   },
   "example-app-v22": {
-    "recorded": "2026-10-27T17:21:27.733Z",
+    "recorded": "2026-11-07T06:15:27.071Z",
     "head": "4bdc805d5c9721c96492d0ede2f4c08bc6af0166",
     "extensionMatches": true,
     "files": 23,
@@ -4240,7 +4240,7 @@
     }
   },
   "svelte-testing-library": {
-    "recorded": "2026-10-27T17:22:27.708Z",
+    "recorded": "2026-11-07T06:16:21.239Z",
     "head": "7d5ebf855a176f5e3fdc6cead18e67c3488c0433",
     "extensionMatches": true,
     "files": 23,

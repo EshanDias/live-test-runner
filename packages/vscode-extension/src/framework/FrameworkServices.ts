@@ -5,7 +5,7 @@
  * SessionManager asks an {@link IFrameworkServicesProvider} for the bundle
  * of a file or project root. Each project has a FrameworkRouter
  * (`FrameworkRouter.ts`): one bundle for a single-framework project, and in
- * a mixed Jest + Vitest project (phase 8) each test file's own bundle.
+ * a mixed project (Jest + Vitest, phase 8) each test file's own bundle.
  */
 import { FrameworkId, TestRunner } from '@live-test-runner/runner';
 import { IFrameworkAdapter } from './IFrameworkAdapter';
@@ -60,6 +60,12 @@ export interface BatchPolicy {
 export interface FrameworkServices {
   /** The framework family this bundle serves (`jest` covers CRA too). */
   readonly framework: FrameworkId;
+  /**
+   * The language of the code the framework loads (default `js`). In a JS +
+   * Python project a saved source file reruns only the frameworks of its
+   * language (a `.py` save never wakes Jest).
+   */
+  readonly language?: 'js' | 'python';
   /** How session runs are split into processes (see {@link BatchPolicy}); undefined = the default. */
   readonly batchPolicy?: BatchPolicy;
   /** Name shown to the user ("Jest"). */
@@ -68,6 +74,11 @@ export interface FrameworkServices {
   readonly terms: FrameworkTerms;
   /** Features beyond running tests. */
   readonly features: FrameworkFeatures;
+  /**
+   * Why this framework measures no coverage for the root (its coverage package
+   * is missing), else undefined. Shown in the Coverage tab — the tests still run.
+   */
+  coverageOffReason?(projectRoot: string): string | undefined;
   /**
    * When the framework has the trace but it is off for this project root
    * (Vitest: setting off, or the wrapper config could not add it): why.
@@ -88,7 +99,7 @@ export interface FrameworkServices {
    * fix it), or undefined when it can. Nothing runs while there is a reason.
    */
   whyNotReady?(projectRoot: string): Promise<string | undefined>;
-  /** A runner for core's TestSession (coverage map, stop). Reads the settings when called. */
+  /** A runner for core's TestSession (Stop kills its processes). Reads the settings when called. */
   createSessionRunner(): TestRunner;
   /**
    * The user settings that change how the framework is called (and so which
@@ -142,6 +153,14 @@ export interface IFrameworkServicesProvider {
   fingerprint(projectRoot: string): string;
   /** The project runs files with more than one framework. */
   isMixed(): boolean;
+  /** The frameworks the project runs files with, the main one first (labels: "jest + vitest"). */
+  frameworks(): string[];
+  /**
+   * Mixed projects: leave a framework out until the next {@link prepare}
+   * (it cannot run now — pytest without a usable Python); its files are
+   * not run, the other frameworks' are.
+   */
+  disable?(framework: string, why: string): void;
 }
 
 /** One framework for every file (unit tests, simple hosts). */
@@ -170,6 +189,8 @@ export class SingleFrameworkProvider implements IFrameworkServicesProvider {
   }
 
   isMixed(): boolean { return false; }
+
+  frameworks(): string[] { return [this._services.framework]; }
 }
 
 /** One framework's listing: its own list command, or discovery when it has none. */

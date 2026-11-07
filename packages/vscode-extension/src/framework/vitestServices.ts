@@ -4,7 +4,7 @@
  */
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { CommandRunner, FRAMEWORK_IDS, VitestAdapter as VitestRunnerAdapter } from '@live-test-runner/runner';
+import { CommandRunner, FRAMEWORK_IDS, VitestAdapter as VitestRunnerAdapter, vitestCoverageInstalled } from '@live-test-runner/runner';
 import { FrameworkServices } from './FrameworkServices';
 import { VitestAdapter, vitestCommandSetting, vitestIncludeBrowserProjects, vitestTraceSetting } from './VitestAdapter';
 import { VitestTrace } from '../session/VitestTrace';
@@ -51,6 +51,10 @@ export function createVitestServices(options: {
     // The trace comes from the Vite plugin (phase 9, VitestTrace); the Timeline needs its runner (phase 10).
     features: { trace: true, timeline: false },
     traceOffReason: (projectRoot) => batchRunner.traceOffReason(projectRoot),
+    // Neither provider package: Vitest cannot measure (the run logs which one its config names).
+    coverageOffReason: (projectRoot) => vitestCoverageInstalled(projectRoot, 'v8') || vitestCoverageInstalled(projectRoot, 'istanbul')
+      ? undefined
+      : 'Vitest: install @vitest/coverage-v8 in the project (npm i -D @vitest/coverage-v8)',
     adapter: new VitestAdapter(sessionDir),
     projectConfig,
     batchRunner,

@@ -1,0 +1,10 @@
+{
+  "name": "ltr-fixture-mixed-js-python-monorepo",
+  "private": true,
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "29.7.0"
+  }
+}

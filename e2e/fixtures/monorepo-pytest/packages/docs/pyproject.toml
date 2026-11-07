@@ -1,0 +1,4 @@
+# A member without tests: not a project.
+[project]
+name = "ws-docs"
+version = "0.0.0"

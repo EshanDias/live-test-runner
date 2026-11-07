@@ -2,6 +2,22 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [3.3.0] - 2026-11-07
+
+### New
+
+- **Python monorepos**: in a uv workspace every member with tests is its own project in the project switcher, run from its own folder with the workspace's shared `.venv`. A workspace whose root configures pytest itself stays one project. Python services that each have their own `.venv` are a project each, run with their own environment.
+- **JS and Python in one folder**: a JS project that also has pytest tests runs both — Jest or Vitest for the JS files, pytest for the Python ones — with the counts split in the status bar. Saving a `.py` file reruns only Python tests, saving a `.js` / `.ts` file only JS tests. A `backend/` folder with its own pytest config becomes its own project.
+- **The Coverage tab says when coverage is off** — and what to install (`coverage` for pytest, `@vitest/coverage-v8` for Vitest), instead of showing an empty table. The tests still run.
+- **Open test files run first**: on Start, the test files you have open get their results first; open another test file during the run and it runs next.
+
+### Fixes
+
+- **Test suites that write many files no longer restart testing over and over** (since 3.2.1, a suite writing more than 20 files looked like a branch switch).
+- **Tests that write files into your project no longer trigger extra runs.** A file written during a run that no test uses is ignored instead of starting a search for related tests.
+- **Fewer slow fallbacks in projects whose tests create and delete files** — a batch that failed because a file vanished mid-start is retried once.
+- **Coverage bars on every line of a multi-line statement** — a `return {` object or a call split over several lines no longer shows a bar on its first line only.
+
 ## [3.2.1] - 2026-11-05
 
 ### Improved

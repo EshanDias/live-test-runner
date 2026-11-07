@@ -21,7 +21,7 @@ A VS Code extension that runs Jest tests automatically on file save, showing res
 
 | Package | Name | Purpose |
 |---------|------|---------|
-| `packages/core` | `@live-test-runner/core` | Session lifecycle + coverage map |
+| `packages/core` | `@live-test-runner/core` | Session state |
 | `packages/runner` | `@live-test-runner/runner` | Framework-agnostic test execution engine |
 | `packages/vscode-extension` | `live-test-runner` | VS Code extension |
 

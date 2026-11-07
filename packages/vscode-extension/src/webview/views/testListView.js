@@ -156,6 +156,7 @@
         <div class="cov-cell"><div class="label">Fns</div><div class="value" id="covTotalFns">—</div></div>
         <div class="cov-cell"><div class="label">Lines</div><div class="value" id="covTotalLines">—</div></div>
       </div>
+      <div class="cov-off-note hidden" id="covOffNote"></div>
     </div>
 
     <!-- File table -->
@@ -411,9 +412,24 @@
     });
   }
 
+  /** "Coverage is off" lines (CoverageTotals.off): which framework measures nothing here, and what to install. */
+  function _renderOffNote(totals) {
+    const el = _q('covOffNote');
+    if (!el) { return; }
+    const off = (totals && totals.off) || [];
+    el.classList.toggle('hidden', off.length === 0);
+    el.textContent = '';
+    for (const reason of off) {
+      const line = document.createElement('div');
+      line.textContent = 'Coverage is off — ' + reason + '. Tests still run.';
+      el.appendChild(line);
+    }
+  }
+
   function updateCoverage(totals, files) {
     _lastCovTotals = totals ?? null;
     _lastCovFiles = files ?? [];
+    _renderOffNote(totals);
 
     // ── compact badge in Tests panel ────────────────────────────────────────
     const sec = _q('coverageSection');
