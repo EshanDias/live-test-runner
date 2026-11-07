@@ -11,6 +11,8 @@ All notable changes to Live Test Runner are documented here.
 
 ### Fixes
 
+- **Coverage bars on every line of a multi-line statement** — a `return {` object or a call split over several lines no longer shows a bar on its first line only.
+
 - **Tests that write files into your project no longer trigger extra runs.** A file written during a run that no test uses is ignored instead of starting a search for related tests.
 
 ## [3.2.1] - 2026-11-05

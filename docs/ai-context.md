@@ -614,6 +614,7 @@ All in `packages/vscode-extension/package.json`:
 | Diagnostic report | `packages/vscode-extension/src/utils/diagnostics.ts` |
 | User guide tab | `packages/vscode-extension/src/views/GuidePanel.ts` |
 | Vitest coverage → CoverageStore | `packages/vscode-extension/src/coverage/istanbulCoverage.ts` |
+| Which lines a statement's coverage bar covers | `packages/vscode-extension/src/coverage/statementLines.ts` |
 | Vitest batches | `packages/vscode-extension/src/session/VitestBatchRunner.ts` |
 | Vitest-specific logic | `packages/vscode-extension/src/framework/VitestAdapter.ts`, `packages/runner/src/VitestRunner.ts` |
 | Known bugs + root causes | `docs/bugs-and-issues.md` |

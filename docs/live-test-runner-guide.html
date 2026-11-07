@@ -245,7 +245,7 @@
     <tr><td><span style="color:var(--err)">▌</span> red</td><td>Never executed</td></tr>
   </table></div>
   <ul>
-    <li><b>Bars</b> sit on the left edge of each executable line: they never push your code sideways, and the gutter stays free for breakpoints.</li>
+    <li><b>Bars</b> sit on the left edge of each executable line: they never push your code sideways, and the gutter stays free for breakpoints. A statement written over several lines (a <code>return {</code> object, a long call) has a bar on each of its lines.</li>
     <li><b>While you edit</b>, the bars move with their lines. A line you change or add, or code you move, has no bar until you save and its tests rerun. Spacing changes (formatting) keep their bars; if you rewrite most of a file, all its bars wait for the save.</li>
     <li><b>Settings</b>: the gear in the Test Explorer title bar opens Live Test Runner's settings.</li>
     <li><b>Hide / show</b> coverage with the eye button in the editor title (or the <b>Hide / Show Coverage in Editor</b> commands, setting <code>liveTestRunner.showCoverageInEditor</code>). Hidden also turns off the coverage hover.</li>
