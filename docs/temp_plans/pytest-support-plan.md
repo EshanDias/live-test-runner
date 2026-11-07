@@ -720,3 +720,7 @@ Where the work stands, for whoever resumes it (an hourly check resumes after usa
 - [x] 7.1–7.3 Python monorepos → **3.3.0** (2026-11-07, `feat/pytest-monorepos`: uv workspaces split per member, shared `.venv` found above the member; e2e `pytest-monorepo`)
 - [x] A2 N-framework router (master tracker) → **3.3.0** (2026-11-07, `feat/framework-router-n`)
 - [x] 8.1–8.3 JS + Python in one folder → **3.3.0** (M4) (2026-11-07, `feat/pytest-mixed-js`; no separate `LanguageRouter` — the N-framework router holds the pytest bundle next to the JS ones)
+- 2026-11-07 (owner follow-ups): per-service `.venv`s with nothing shared (C21) and a front end +
+  pytest project as two workspace folders (C22) work without product changes — e2e
+  `pytest-venv-per-service` and `multi-root-js-python` prove them (`feat/pytest-workspace-checks`).
+  The real-repo `repo-vitest` failure (C20) is fixed on `bugfix/save-rerun-stuck-running`.

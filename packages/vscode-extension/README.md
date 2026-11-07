@@ -40,7 +40,7 @@
 - 🎨 **In the editor** — ✓ / ✗ gutter icons, inline durations, `▶ Run` · `▷ Debug` · `◈ Results` above every test.
 - 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it. The bars never shift your code and follow your edits; hide them with the 👁 button in the editor title.
 - 🔍 **Results panel** — test list · console output (per test) · failures with the diff and location.
-- 🗂 **Monorepos** — every package (or uv workspace member) is a project; switch between them, run several at once.
+- 🗂 **Monorepos and multi-root workspaces** — every package (or Python service / uv workspace member) is a project, each with its own `.venv` or the shared one; switch between them, run several at once.
 - ⏱ **Timeline Debugger** *(coming soon)* — step through a finished test line by line.
 
 ![Hover a line: the tests that ran it, with status and duration](resources/images/coverage-hover.png)
