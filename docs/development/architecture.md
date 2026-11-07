@@ -543,7 +543,7 @@ Everything cached lives outside the project: the user cache folder (`<folder>-<h
 
 After each file batch, `JestBatchRunner` parses the light-trace JSONL (updates `ExecutionTraceStore`) and then parses the coverage counters JSONL (promotes `CoverageStore` entries from `'counted'` to `'measured'`). Both happen in the same post-Jest-exit phase — no extra process or phase needed.
 
-Concurrency is controlled by a `CONCURRENCY = 3` constant in `SessionManager`.
+Parallel batches are limited to a quarter of the CPU cores (`CONCURRENCY` in `SessionManager._runFiles`), and per framework by its `batchPolicy` (pytest: one process). See [test runs](design/test-runs.md).
 
 ### Framework adapter layer (extension side)
 
@@ -869,7 +869,7 @@ User stops session
 | `DecorationManager.clearAll()` instead of `dispose()` on session stop | Decoration types stay alive so pending icons from discovery survive session stop/start cycles. `dispose()` is reserved for full extension deactivation. |
 | `LineMap` stores identity only | Status and duration always read from `ResultStore` — single source of truth, never stale |
 | `extension.ts` ≤ 110 lines | Wires instances and registers commands only; no business logic |
-| `CONCURRENCY = 3` for parallel runs | Balances throughput against system load; configurable constant |
+| Parallel batches = a quarter of the CPU cores | Balances throughput against system load; the machine stays responsive |
 | Session guard on all background behavior | No surprise background work; resource usage is predictable |
 | One `ProjectContext` (stores, discovery, services, `SessionManager`) per project; views bound to the selected one | File ids stay naturally namespaced, background projects keep running untouched, single-project behaviour is unchanged |
 | A root with its own test config is one project, never split per package | Its config already runs its packages (Jest `projects`, Vitest `test.projects`); splitting would run tests twice or with the wrong config |

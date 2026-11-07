@@ -12,4 +12,5 @@
 
 - [ ] Branch name starts with `feat/`, `bugfix/`, `hotfix/` or `release/`, and targets the right branch (see [CONTRIBUTING.md](../CONTRIBUTING.md))
 - [ ] `CHANGELOG.md` (full detail) and `packages/vscode-extension/CHANGELOG.md` (short, user-facing) updated for user-visible changes
-- [ ] Docs updated where behaviour changed (README, user guide, `docs/development/`)
+- [ ] Docs updated in this PR where behaviour changed: the feature's pages in `docs/features/`, `docs/requirements/` (new tests named, ⚠️ dropped) and `docs/development/design/`, the user guide, the README (see [Documentation](../CONTRIBUTING.md#documentation))
+- [ ] `node scripts/build-wiki.js --check` passes

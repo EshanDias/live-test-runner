@@ -622,6 +622,7 @@ All in `packages/vscode-extension/package.json`:
 | CRA config extraction | `packages/runner/src/framework/adapters/CRAAdapter.ts` |
 | Source save → which tests rerun | `SessionManager._runAffectedBySourceFile`, `store/ExecutionTraceStore.ts` |
 | All user settings | `packages/vscode-extension/package.json` → `contributes.configuration` |
+| Per-feature docs (what it does · requirements with their tests · design) | `docs/features/`, `docs/requirements/`, `docs/development/design/`, listed in `docs/README.md` — update them with every behaviour change |
 
 ---
 

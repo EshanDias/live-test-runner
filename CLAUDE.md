@@ -292,6 +292,13 @@ Enforcement: `.github/workflows/pr-checks.yml` validates branch names/targets, r
 
 ## Documentation Maintenance
 
+**A change is not done until its docs match it, in the same commit or PR.** Before finishing any change to behaviour, a setting, a command, a test or the design, go through the table below and update every page it names. Each feature has three pages, all listed in `docs/README.md`:
+- `docs/features/<feature>.md` — what it does, in plain language, for everyone
+- `docs/requirements/<feature>.md` — what it must do; each requirement names the tests that check it (⚠️ = none yet: when you add a test for one, name it and drop the ⚠️)
+- `docs/development/design/<feature>.md` — how it is built: key files, flow, design decisions
+
+The features: test runs, Test Explorer and editor, on-save reruns, Results panel, coverage, debugging, monorepos and mixed frameworks. Run `node scripts/build-wiki.js --check` afterwards (broken links fail it and the PR checks). The GitHub Wiki is generated from `docs/`; never suggest editing the Wiki directly.
+
 When making changes, update the relevant documentation files:
 
 **Changelogs:**

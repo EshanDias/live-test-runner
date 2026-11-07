@@ -43,10 +43,29 @@ These keep the extension safe to install in anyone's project:
 
 - Work happens on a branch; `main` and `release/*` only change through pull requests.
 - PRs must pass the checks (`pnpm test`; PRs to `main` also need a version bump).
-- Update `CHANGELOG.md` (full detail) and `packages/vscode-extension/CHANGELOG.md` (short, user-facing) for anything users notice, and the docs where behaviour changes (for a feature: its pages in `docs/features/`, `docs/requirements/` and `docs/development/design/`).
+- Update `CHANGELOG.md` (full detail) and `packages/vscode-extension/CHANGELOG.md` (short, user-facing) for anything users notice.
+- Update the docs in the same pull request (see [Documentation](#documentation) below).
 - Add or update tests: unit tests next to the package, and an e2e scenario (`e2e/scenarios/`) for behaviour in the editor.
 
 Merging a `release/*` branch into `main` builds, tests and publishes the extension; tags and GitHub Releases are created by the pipeline, never by hand.
+
+## Documentation
+
+Each feature has three pages: what it does (`docs/features/`), what it must do and which tests check it (`docs/requirements/`), and how it is built (`docs/development/design/`). They are listed in [docs/README.md](docs/README.md) and copied to the [Wiki](https://github.com/EshanDias/live-test-runner/wiki), which is never edited directly.
+
+A pull request that changes behaviour updates its docs too:
+
+| You change… | Update |
+|---|---|
+| What users see a feature do (behaviour, UI, a limit) | `docs/features/<feature>.md`, the user guide (`docs/live-test-runner-guide.html`), both changelogs |
+| What a feature must do, or a test that checks it | `docs/requirements/<feature>.md`: add or edit the row; when you add a test for a ⚠️ row, name it and drop the ⚠️ |
+| How a feature is built (key files, flow, a design decision) | `docs/development/design/<feature>.md`; `docs/development/architecture.md` when the big picture changes |
+| A setting or command | The feature page's settings table, the guide's settings or commands table, `packages/vscode-extension/README.md` |
+| A project-wide rule | `docs/requirements/project-rules.md` and `CLAUDE.md` |
+| A new feature | All three pages (copy an existing set as the template), and list them in `docs/README.md` |
+| A removed feature | Delete its pages and every link to them |
+
+Run `node scripts/build-wiki.js --check` before pushing. It fails on a broken docs link.
 
 ## License
 

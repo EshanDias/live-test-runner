@@ -69,8 +69,11 @@ function build() {
     out.set(`${name}.md`, `${text.trimEnd()}\n\n---\n\n<sub>Source: [${rel(file)}](${source}). This Wiki is generated from the repository; to change a page, open a pull request that edits its file in \`docs/\`.</sub>\n`);
   }
 
-  // Sidebar: the same sections as the contents page.
+  // Sidebar: the same sections, in the same order, as the contents page (docs/README.md).
+  const contents = fs.readFileSync(path.join(DOCS, 'README.md'), 'utf8');
+  const order = (f) => { const i = contents.indexOf(`(${rel(f).replace(/^docs\//, '')})`); return i < 0 ? Infinity : i; };
   const section = (dir) => [...pages].filter(([f]) => path.dirname(f) === path.join(DOCS, dir) && path.basename(f) !== 'README.md')
+    .sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b))
     .map(([, p]) => `- [${p.title}](${p.name})`);
   const pageAt = (p) => pages.get(path.join(DOCS, p));
   const sidebar = [
