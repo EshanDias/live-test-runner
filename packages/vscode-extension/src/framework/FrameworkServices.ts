@@ -60,6 +60,12 @@ export interface BatchPolicy {
 export interface FrameworkServices {
   /** The framework family this bundle serves (`jest` covers CRA too). */
   readonly framework: FrameworkId;
+  /**
+   * The language of the code the framework loads (default `js`). In a JS +
+   * Python project a saved source file reruns only the frameworks of its
+   * language (a `.py` save never wakes Jest).
+   */
+  readonly language?: 'js' | 'python';
   /** How session runs are split into processes (see {@link BatchPolicy}); undefined = the default. */
   readonly batchPolicy?: BatchPolicy;
   /** Name shown to the user ("Jest"). */
@@ -144,6 +150,12 @@ export interface IFrameworkServicesProvider {
   isMixed(): boolean;
   /** The frameworks the project runs files with, the main one first (labels: "jest + vitest"). */
   frameworks(): string[];
+  /**
+   * Mixed projects: leave a framework out until the next {@link prepare}
+   * (it cannot run now — pytest without a usable Python); its files are
+   * not run, the other frameworks' are.
+   */
+  disable?(framework: string, why: string): void;
 }
 
 /** One framework for every file (unit tests, simple hosts). */

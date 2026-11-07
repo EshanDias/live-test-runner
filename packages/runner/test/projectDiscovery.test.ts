@@ -225,4 +225,38 @@ describe('project discovery', () => {
       expect(projects(root)).toEqual([['web/app', 'jest', 'app'], ['packages/core', 'pytest', 'core']]);
     });
   });
+
+  describe('JS and Python in one folder (pytest plan phase 8)', () => {
+    const registry = () => new FrameworkRegistry().register(new JestAdapter(), 100).register(new PytestAdapter(), 10);
+    const projects = (root: string) => findTestProjects([root], registry()).map((p) => [path.relative(root, p.root).split(path.sep).join('/') || '.', p.framework]);
+
+    it('a root that is both a Jest and a pytest project is one project (the JS one runs pytest too)', () => {
+      const root = make({ 'package.json': { devDependencies: { jest: '30' } }, 'pytest.ini': '[pytest]\n', 'tests/test_a.py': '' });
+      expect(projects(root)).toEqual([['.', 'jest']]);
+    });
+
+    it('a Python subfolder with its own pytest config is its own project', () => {
+      const root = make({
+        'package.json': { devDependencies: { jest: '30' } },
+        'backend/pyproject.toml': '[project]\nname = "api"\n[tool.pytest.ini_options]\n',
+        'backend/tests/test_api.py': '',
+        'services/worker/conftest.py': '',
+        'tools/scripts/deep/pytest.ini': '[pytest]\n', // deeper than the scan
+        'node_modules/pkg/pytest.ini': '[pytest]\n',
+        '.venv/lib/pytest.ini': '[pytest]\n',
+        'docs/notes.md': '',
+      });
+      expect(projects(root)).toEqual([['.', 'jest'], ['backend', 'pytest'], ['services/worker', 'pytest']]);
+    });
+
+    it('a uv workspace in a subfolder of a JS repo gives its members', () => {
+      const root = make({
+        'package.json': { devDependencies: { jest: '30' } },
+        'python/pyproject.toml': '[tool.uv.workspace]\nmembers = ["libs/*"]\n[dependency-groups]\ndev = ["pytest"]\n',
+        'python/libs/a/pyproject.toml': '[project]\nname = "a"\n',
+        'python/libs/a/tests/test_a.py': '',
+      });
+      expect(projects(root)).toEqual([['.', 'jest'], ['python/libs/a', 'pytest']]);
+    });
+  });
 });

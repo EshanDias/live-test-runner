@@ -28,7 +28,7 @@ import { createJestServices } from '../framework/jestServices';
 import { createVitestServices } from '../framework/vitestServices';
 import { createPytestServices } from '../framework/pytestServices';
 import { IFrameworkServicesProvider } from '../framework/FrameworkServices';
-import { TestFileDiscoverer, jsDiscoverer } from '../session/discovery/TestFileDiscoverer';
+import { TestFileDiscoverer, jsDiscoverer, mixedDiscoverer } from '../session/discovery/TestFileDiscoverer';
 import { pythonDiscoverer } from '../session/discovery/pythonDiscovery';
 import { IResultObserver, RunStartedPayload, RunFinishedPayload, CoverageFileRow } from '../IResultObserver';
 import { CoverageTotals } from '../coverage/types';
@@ -108,8 +108,7 @@ export class ProjectContext implements vscode.Disposable {
   readonly discovery = new TestDiscoveryService();
   /** Which framework runs each file (one, or several in a mixed project — phase 8). */
   readonly services: IFrameworkServicesProvider;
-  /** How the project's test files are found statically (Babel for JS, the line scanner for pytest). */
-  readonly discoverer: TestFileDiscoverer;
+  private _discoverers: { python?: TestFileDiscoverer; mixed?: TestFileDiscoverer } = {};
   readonly session: SessionManager;
   readonly gate: ProjectObserverGate;
   discoveryCache: DiscoveryCache | undefined;
@@ -142,8 +141,6 @@ export class ProjectContext implements vscode.Disposable {
       },
       this.root,
     );
-    // JS + Python in one folder is a later release (pytest plan phase 8, D13).
-    this.discoverer = project.framework === FRAMEWORK_IDS.pytest ? pythonDiscoverer() : jsDiscoverer;
     // Mixed by its configs is known now (switcher label); the setting and listing refine it at Start.
     this.services.prepare(this.root);
     this.gate = new ProjectObserverGate(this, _deps.observers, _deps.editorObservers, () => _deps.isSelected(this), () => _deps.onStateChanged(this));
@@ -198,6 +195,24 @@ export class ProjectContext implements vscode.Disposable {
   }
 
   get discoveryStarted(): boolean { return this._discoveryStarted; }
+
+  /**
+   * How the project's test files are found statically: Babel for JS, the line
+   * scanner for pytest, both in a JS + Python project (phase 8 — what the
+   * root configures, known from activation).
+   */
+  get discoverer(): TestFileDiscoverer {
+    if (this.framework === FRAMEWORK_IDS.pytest) { return (this._discoverers.python ??= pythonDiscoverer()); }
+    if (this.usesFramework(FRAMEWORK_IDS.pytest)) {
+      return (this._discoverers.mixed ??= mixedDiscoverer(jsDiscoverer, this._discoverers.python ??= pythonDiscoverer()));
+    }
+    return jsDiscoverer;
+  }
+
+  /** The project runs (some of) its files with this framework. */
+  usesFramework(framework: string): boolean {
+    return this.framework === framework || this.services.frameworks().includes(framework);
+  }
 
   discoveryCallbacks(): DiscoveryCallbacks {
     return {

@@ -27,6 +27,10 @@ export interface DetectedProject {
 
 /** Folders never searched for workspace packages. */
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', 'out']);
+/** Also never searched for Python projects (environments, caches, packaging output). */
+const PYTHON_SKIP_DIRS = new Set([...SKIP_DIRS, 'venv', 'env', 'site-packages', '__pycache__', 'htmlcov']);
+/** How deep below a folder a Python project of its own is looked for (`backend/`, `services/api/`). */
+const PYTHON_SCAN_DEPTH = 2;
 /** `**` in a workspace glob descends at most this far. */
 const MAX_GLOB_DEPTH = 6;
 
@@ -145,6 +149,26 @@ export function expandWorkspaceGlobs(root: string, globs: string[], marker = 'pa
     .sort();
 }
 
+/**
+ * Subfolders (nearest first, at most {@link PYTHON_SCAN_DEPTH} deep) that
+ * configure pytest or are a uv workspace root; a found folder is not
+ * searched further (its own rules cover what is below it).
+ */
+function nestedPythonRoots(folder: string): string[] {
+  const found: string[] = [];
+  let level = [folder];
+  for (let depth = 1; depth <= PYTHON_SCAN_DEPTH && level.length > 0; depth++) {
+    const next: string[] = [];
+    for (const dir of level) {
+      for (const child of subdirs(dir, PYTHON_SKIP_DIRS)) {
+        if (configuresPytest(child) || uvWorkspaceGlobs(child).length > 0) { found.push(child); } else { next.push(child); }
+      }
+    }
+    level = next;
+  }
+  return found.sort();
+}
+
 function walk(dir: string, segments: string[], depth: number, out: Set<string>): void {
   if (segments.length === 0) { out.add(dir); return; }
   const [seg, ...rest] = segments;
@@ -165,10 +189,10 @@ function walk(dir: string, segments: string[], depth: number, out: Set<string>):
   }
 }
 
-function subdirs(dir: string): string[] {
+function subdirs(dir: string, skip: ReadonlySet<string> = SKIP_DIRS): string[] {
   try {
     return fs.readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !SKIP_DIRS.has(e.name))
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !skip.has(e.name))
       .map((e) => path.join(dir, e.name));
   } catch {
     return [];
@@ -191,6 +215,8 @@ function segmentRegExp(seg: string): RegExp {
  */
 export function projectsInFolder(folder: string, registry: FrameworkRegistry = FrameworkRegistry.default()): DetectedProject[] {
   const js = jsProjectsInFolder(folder, registry);
+  // A root both families claim is one project: the JS one, which also runs
+  // pytest there (its router lists both — runner projectFrameworks).
   const python = pythonProjectsInFolder(folder, registry).filter((p) => !js.some((q) => samePath(q.root, p.root)));
   return [...js, ...python];
 }
@@ -243,8 +269,11 @@ export function jsProjectsInFolder(folder: string, registry: FrameworkRegistry =
  *     itself, or one with test files when the root names pytest (the usual
  *     shared dev dependency).
  *  3. Otherwise the folder, if it is a pytest project.
+ *  4. Nothing Python at the folder itself: subfolders up to
+ *     {@link PYTHON_SCAN_DEPTH} deep that configure pytest or are a uv
+ *     workspace root, each by these rules (`scan` false: not searched).
  */
-export function pythonProjectsInFolder(folder: string, registry: FrameworkRegistry = FrameworkRegistry.default()): DetectedProject[] {
+export function pythonProjectsInFolder(folder: string, registry: FrameworkRegistry = FrameworkRegistry.default(), scan = true): DetectedProject[] {
   const adapter = registry.adapters().find((a) => familyOfAdapter(a) === 'python');
   if (!adapter) { return []; }
   const single = (reason: string): DetectedProject[] =>
@@ -255,7 +284,11 @@ export function pythonProjectsInFolder(folder: string, registry: FrameworkRegist
   }
   const globs = uvWorkspaceGlobs(folder);
   if (globs.length === 0) {
-    return single('pytest detected in the folder');
+    const root = single('pytest detected in the folder');
+    if (root.length > 0 || !scan) { return root; }
+    // Nothing Python at the folder itself: a Python project in a subfolder
+    // (`backend/` next to a JS app, pytest plan phase 8).
+    return nestedPythonRoots(folder).flatMap((dir) => pythonProjectsInFolder(dir, registry, false));
   }
   const inherited = mentionsPytest(folder);
   const members: DetectedProject[] = [];

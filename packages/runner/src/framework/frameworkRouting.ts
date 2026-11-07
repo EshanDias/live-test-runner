@@ -21,6 +21,7 @@ import { FrameworkId } from '../types';
 import { JEST_CONFIG_FILES, JestAdapter, readPackageJson } from './adapters/JestAdapter';
 import { CRAAdapter } from './adapters/CRAAdapter';
 import { VITEST_CONFIG_FILES } from './adapters/VitestAdapter';
+import { configuresPytest, isPytestProject } from './pytest/pytestConfig';
 import { ROUTED_FRAMEWORKS, RoutedFramework } from './allowedFrameworks';
 export { allowFrameworkAt, isFrameworkAllowedAt, ROUTED_FRAMEWORKS } from './allowedFrameworks';
 export type { RoutedFramework };
@@ -56,20 +57,41 @@ export interface ProjectFrameworks {
  */
 export function projectFrameworks(root: string, detected: FrameworkId): ProjectFrameworks {
   const primary = routedFrameworkOf(detected);
-  const single = (reason: string): ProjectFrameworks => ({ primary, frameworks: [primary], mixed: false, reason });
   if (primary === 'pytest') {
-    return single('a pytest project');
+    return { primary, frameworks: [primary], mixed: false, reason: 'a pytest project' };
   }
+  const frameworks: RoutedFramework[] = [primary];
+  const reasons: string[] = [];
   if (primary === 'vitest') {
-    // Vitest is picked only when nothing marks the root as Jest (BUG-37 rule) — never mixed by detection.
-    return single('a Vitest project');
+    // Vitest is picked only when nothing marks the root as Jest (BUG-37 rule) — never Jest-mixed by detection.
+    reasons.push('a Vitest project');
+  } else {
+    const jestMarker = hasJestMarker(root);
+    const vitestConfig = [...VITEST_CONFIG_FILES, ...VITEST_WORKSPACE_FILES].find((f) => exists(path.join(root, f)));
+    if (jestMarker && vitestConfig) {
+      frameworks.push('vitest');
+      reasons.push(`${jestMarker} and ${vitestConfig}`);
+    } else {
+      reasons.push(jestMarker ? `${jestMarker}, no Vitest config` : 'no Vitest config');
+    }
   }
-  const jestMarker = hasJestMarker(root);
-  const vitestConfig = [...VITEST_CONFIG_FILES, ...VITEST_WORKSPACE_FILES].find((f) => exists(path.join(root, f)));
-  if (jestMarker && vitestConfig) {
-    return { primary, frameworks: [primary, 'vitest'], mixed: true, reason: `${jestMarker} and ${vitestConfig}` };
+  // JS and Python in one folder (pytest plan phase 8): the root is a pytest project too.
+  const pytest = pytestMarker(root);
+  if (pytest) {
+    frameworks.push('pytest');
+    reasons.push(pytest);
   }
-  return single(jestMarker ? `${jestMarker}, no Vitest config` : 'no Vitest config');
+  return { primary, frameworks, mixed: frameworks.length > 1, reason: reasons.join(' + ') };
+}
+
+/** What makes a JS root a pytest project too (for the log line), or undefined. */
+function pytestMarker(root: string): string | undefined {
+  try {
+    if (configuresPytest(root)) { return 'a pytest config'; }
+    return isPytestProject(root) ? 'pytest tests' : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The router's framework for what detection picked (Create React App and unknown roots run with Jest). */

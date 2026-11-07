@@ -43,6 +43,17 @@ describe('framework routing', () => {
       expect(routedFrameworkOf(FRAMEWORK_IDS.vitest)).toBe('vitest');
     });
 
+    it('a JS root that is a pytest project too lists pytest (phase 8)', () => {
+      const both = make({ 'package.json': { devDependencies: { jest: '29' } }, 'pytest.ini': '[pytest]\n' });
+      expect(projectFrameworks(both, FRAMEWORK_IDS.jest)).toMatchObject({ primary: 'jest', frameworks: ['jest', 'pytest'], mixed: true });
+      const three = make({ 'package.json': { devDependencies: { jest: '29', vitest: '3' } }, 'jest.config.js': '', 'vitest.config.ts': '', 'requirements.txt': 'pytest\n', 'tests/test_a.py': '' });
+      expect(projectFrameworks(three, FRAMEWORK_IDS.jest).frameworks).toEqual(['jest', 'vitest', 'pytest']);
+      const vite = make({ 'package.json': { devDependencies: { vitest: '3' } }, 'conftest.py': '' });
+      expect(projectFrameworks(vite, FRAMEWORK_IDS.vitest).frameworks).toEqual(['vitest', 'pytest']);
+      const js = make({ 'package.json': { devDependencies: { jest: '29' } }, 'requirements.txt': 'pytest\n' }); // no Python tests
+      expect(projectFrameworks(js, FRAMEWORK_IDS.jest).mixed).toBe(false);
+    });
+
     it('the frameworks setting accepts only JS frameworks by default', () => {
       const { rules, errors } = parseFrameworkRules({ '**/*.py': 'pytest', '**/*.ts': 'vitest' }, '/ws');
       expect(rules.map((r) => r.framework)).toEqual(['vitest']);

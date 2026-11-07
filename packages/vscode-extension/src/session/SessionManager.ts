@@ -122,6 +122,8 @@ export class SessionManager {
 
   /** Module extensions the project's framework(s) load beyond the list (Jest's moduleFileExtensions), per session. */
   private _sourceExtensions = new Set<string>();
+  /** Each framework's own module extensions (see {@link _loadsSource}). */
+  private readonly _sourceExtensionsBy = new Map<FrameworkServices, Set<string>>();
 
   constructor(
     /** The project this manager runs (one SessionManager per project, phase 7). */
@@ -184,6 +186,7 @@ export class SessionManager {
     // Which framework(s) the project runs, re-read every Start (phase 8: a mixed project has two).
     this._services.prepare(projectRoot);
     this._sourceExtensions = new Set();
+    this._sourceExtensionsBy.clear();
     // Bootstrap a session with the main framework's runner to hold the coverage map
     const services = this._services.servicesFor(projectRoot);
     this._session = new TestSession(services.createSessionRunner());
@@ -202,10 +205,15 @@ export class SessionManager {
         await this._discovery.awaitDiscovery();
       }
 
-      // A framework that cannot run the project now (pytest: no usable Python) — nothing runs.
+      // A framework that cannot run the project now (pytest: no usable Python) — nothing runs;
+      // in a mixed project only the main framework's absence stops the session, another one is left out.
       for (const s of this._services.all()) {
         const why = await s.whyNotReady?.(projectRoot);
         if (token !== this._token) { return; }
+        if (why && s !== services && this._services.disable) {
+          this._services.disable(s.framework, why);
+          continue;
+        }
         if (why) {
           log.warn(`Not started — ${why}`);
           this._session.stop();
@@ -668,7 +676,7 @@ export class SessionManager {
     // Mixed project: each framework reruns its own test files that depend on
     // the source file (by its trace, else its related run — `jest
     // --findRelatedTests`, `vitest related`).
-    const bundles = this._services.all();
+    const bundles = this._services.all().filter((s) => this._loadsSource(s, sourceFilePath));
     const ran = await Promise.all(bundles.map((s) =>
       this._runAffectedWith(s, sourceFilePath, projectRoot, token, (fp) => this._services.servicesFor(fp) === s)));
     return [...new Set(ran.flat())];
@@ -1390,6 +1398,21 @@ export class SessionManager {
     return this._traceStore.getAffectedTestFiles(filePath).length > 0;
   }
 
+  /**
+   * Whether a framework can load a saved source file (mixed projects): a
+   * Python framework its own extensions (`.py`, `.pyi`); a JS framework
+   * anything another language's framework does not claim — as before
+   * JS + Python projects.
+   */
+  private _loadsSource(services: FrameworkServices, filePath: string): boolean {
+    const ext = extensionOf(filePath);
+    if ((services.language ?? 'js') !== 'js') { return this._sourceExtensionsBy.get(services)?.has(ext) ?? false; }
+    for (const [other, exts] of this._sourceExtensionsBy) {
+      if ((other.language ?? 'js') !== 'js' && exts.has(ext)) { return false; }
+    }
+    return true;
+  }
+
   /** A root-level file a framework names as a possible config (pytest's pyproject.toml, …) — checked by isConfigFile after the debounce. */
   private _mayBeConfigFile(filePath: string, root: string): boolean {
     if (path.dirname(filePath) !== root) { return false; }
@@ -1402,6 +1425,7 @@ export class SessionManager {
     for (const s of this._services.all()) {
       const exts = await s.projectConfig.sourceExtensions?.(projectRoot).catch(() => undefined);
       if (token !== this._token || !exts) { continue; }
+      this._sourceExtensionsBy.set(s, new Set(exts));
       // Jest's JSON / native addons are data, not code a test reruns for.
       for (const e of exts) { if (e !== 'json' && e !== 'node') { this._sourceExtensions.add(e); } }
     }

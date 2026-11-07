@@ -132,6 +132,7 @@ All settings under `liveTestRunner.*`.
 | Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off | ✅ only the tests that ran it (coverage contexts); importing test files before that |
 | Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ✅ one project per uv workspace member with tests; a root pytest config stays one |
 | Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ | — |
+| JS + Python in one folder | ✅ one project runs Jest / Vitest and pytest | 🟡 not e2e-tested | ✅ | ✅ a `.py` save reruns pytest only, a `.js` save the JS framework only |
 | Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3 (incl. `vitest.workspace` files); not in browser mode | ✅ from coverage.py contexts (needs `coverage`) |
 | UI components (`.vue`, `.svelte`, `.astro`, `.marko`): save reruns, trace, coverage | ✅ through the project's transformer (vue-jest, svelte-jester…) | — (React is plain JS) | ✅ through the project's Vite plugins | — |
 | Timeline debugger | ⏳ | ⏳ | ⏳ later | ⏳ later |
@@ -147,7 +148,7 @@ Vitest 3+ is fully supported (1–2: results only). Jest's ESM mode is picked up
 - Jest captures console output per file; it shows on a single test only when that test is rerun on its own. With Vitest every test shows its own output.
 - Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
 - Vitest: the execution trace needs Vitest ≥ 3 and is off for browser-mode projects — saving a source file then reruns the test files that import it (`vitest related`)
-- pytest: a JS + Python project in one folder is planned; the Timeline debugger is not available for pytest yet
+- pytest: the Timeline debugger is not available for pytest yet
 - pytest with `-s` / `--capture=no` in `addopts`: test output goes to the Test Output channel, not to each test
 - Vue components under Jest: coverage counts the `<script>` block only, as `jest --coverage` does (vue-jest maps only that); template lines still show their covering tests
 

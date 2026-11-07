@@ -1,0 +1,8 @@
+# JS and Python in one folder (pytest plan phase 8): Jest runs src/, pytest py_tests/.
+[project]
+name = "mixed-js-python-fixture"
+version = "0.0.0"
+
+[tool.pytest.ini_options]
+testpaths = ["py_tests"]
+pythonpath = ["py"]

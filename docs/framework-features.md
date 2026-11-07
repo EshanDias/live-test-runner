@@ -19,6 +19,7 @@ Cells: ✅ supported · 🟡 partial · ⏳ planned (target release) · — not 
 | Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off | ✅ only the tests that ran it (coverage contexts); importing test files before that |
 | Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ✅ one project per uv workspace member with tests; a root pytest config stays one |
 | Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ | — |
+| JS + Python in one folder | ✅ one project runs Jest / Vitest and pytest | 🟡 not e2e-tested | ✅ | ✅ a `.py` save reruns pytest only, a `.js` save the JS framework only |
 | Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3 (incl. `vitest.workspace` files); not in browser mode | ✅ from coverage.py contexts (needs `coverage`) |
 | UI components (`.vue`, `.svelte`, `.astro`, `.marko`): save reruns, trace, coverage | ✅ through the project's transformer (vue-jest, svelte-jester…) | — (React is plain JS) | ✅ through the project's Vite plugins | — |
 | Timeline debugger | ⏳ | ⏳ | ⏳ later | ⏳ later |
@@ -36,8 +37,9 @@ extension runs one pytest process at a time, as your terminal does, because
 pytest projects share session fixtures, ports and files between tests. Covering
 tests come from coverage.py's per-test contexts; before a file has any, a save
 reruns the test files that import it. Python monorepos: one project per uv
-workspace member with tests (3.3.0). A JS + Python project in one folder and the
-Timeline debugger are later releases.
+workspace member with tests (3.3.0). JS + Python in one folder: one project runs
+both, or a Python subfolder with its own pytest config is its own project (3.3.0).
+The Timeline debugger for pytest is a later release.
 
 Vitest: version 3 or newer is fully supported; 1.x and 2.x run with results
 only (no test listing, related tests, trace or line numbers). Coverage uses

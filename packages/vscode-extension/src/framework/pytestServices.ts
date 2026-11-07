@@ -29,6 +29,7 @@ export function createPytestServices(options: {
     runnerAdapter.createRunner({ logger, tmpDir: sessionDir, pytestArgs: pytestArgsSetting() }) as CommandRunner;
   return {
     framework: FRAMEWORK_IDS.pytest,
+    language: 'python',
     displayName: 'pytest',
     // One pytest process at a time, every file in it — as the user's own `pytest`:
     // projects share session fixtures, ports and files between tests (httpx's

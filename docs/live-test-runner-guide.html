@@ -133,7 +133,7 @@
     <a href="#vitest">Vitest</a>
     <a href="#pytest">pytest</a>
     <a href="#monorepos">Monorepos</a>
-    <a href="#mixed">Jest + Vitest</a>
+    <a href="#mixed">Mixed projects</a>
     <a href="#timeline">Timeline Debugger</a>
     <div class="group">Reference</div>
     <a href="#commands">Commands</a>
@@ -296,7 +296,8 @@
     <li><b>▶ Run</b> a test, a class or a parametrized function (all its cases) — by pytest node id, never <code>-k</code>.</li>
     <li><b>Coverage and covering tests</b>: measured with your own coverage settings (<code>[tool.coverage.run]</code>, <code>.coveragerc</code>…); each test is measured on its own, so the hover lists the tests that ran a line and <b>saving a source file</b> reruns exactly those tests. Before a file has coverage, saving it reruns the test files that import it; saving a <code>conftest.py</code> reruns the tests under its folder; saving the pytest config restarts the session.</li>
     <li><b>Python monorepos</b>: in a uv workspace each member with tests is its own project, run from its own folder with the workspace's shared <code>.venv</code> (see <a href="#monorepos">Monorepos</a>).</li>
-    <li><b>Not yet</b>: a JS + Python project in one folder, the Timeline Debugger.</li>
+    <li><b>JS and Python in one folder</b>: a JS project that is a pytest project too (a pytest config or a root <code>conftest.py</code>) runs both in one project (see <a href="#mixed">Jest, Vitest and pytest in one project</a>); a Python subfolder with its own pytest config (<code>backend/</code>) is its own project.</li>
+    <li><b>Not yet</b>: the Timeline Debugger.</li>
   </ul>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/gifs/scene-pytest-run.gif" alt="pytest: Start Testing — the tree fills in, tests run live and pass" style="max-width:100%;border-radius:8px"></p>
 </section>
@@ -311,6 +312,7 @@
     <tr><td>A monorepo root (<code>pnpm-workspace.yaml</code>, <code>package.json#workspaces</code>) without a test config</td><td>One project per package that has tests (a Jest / Vitest dependency, config or <code>test</code> script)</td></tr>
     <tr><td>A folder that configures pytest (<code>pytest.ini</code>, <code>[tool.pytest.ini_options]</code>, a root <code>conftest.py</code>…)</td><td>One project — pytest run from there collects the whole tree</td></tr>
     <tr><td>A uv workspace root (<code>[tool.uv.workspace] members</code>) without a pytest config</td><td>One project per member that has tests (its own pytest config, or test files when the root names pytest); each finds the workspace's shared <code>.venv</code></td></tr>
+    <tr><td>A folder with no Python of its own and a subfolder with a pytest config (<code>backend/pytest.ini</code>), up to two levels down</td><td>The subfolder is its own pytest project, next to the folder's JS project(s)</td></tr>
     <tr><td>A multi-root workspace</td><td>Each folder, by the rules above</td></tr>
   </table></div>
   <ul>
@@ -326,7 +328,7 @@
 
 <!-- ───────────────────────── Mixed frameworks ───────────────────────── -->
 <section id="mixed">
-  <h2>Jest and Vitest in one project</h2>
+  <h2>Jest, Vitest and pytest in one project</h2>
   <p>A project with a Jest config <b>and its own</b> <code>vitest.config.*</code> (e.g. while migrating) runs <b>each test file with its own framework</b> — binary, config, flags, coverage. A <code>vitest</code> dependency alone, or a <code>vite.config.*</code>, does not count: such projects stay Jest.</p>
   <div class="table-wrap"><table>
     <tr><th>Which framework runs a file</th><th></th></tr>
@@ -341,6 +343,7 @@
     <li><b>Coverage</b>: a source file tested by both shows the lines either framework ran.</li>
     <li>Stop kills both frameworks' processes. "Covering tests" on hover list tests of both frameworks; the Timeline debugger works for the Jest files only.</li>
     <li>In a monorepo each package is still its own project; only a package with both configs is mixed.</li>
+    <li><b>JS and Python</b>: a JS project that also configures pytest (<code>pytest.ini</code>, <code>[tool.pytest.ini_options]</code>, a root <code>conftest.py</code>) runs <code>.py</code> tests with pytest and the rest with Jest / Vitest — the switcher shows <code>jest + pytest</code>, the status bar <code>Jest 12 · pytest 30</code>. A saved <code>.py</code> file reruns pytest only, a saved <code>.js</code> / <code>.ts</code> file the JS framework only. Without a Python environment that can run pytest, the JS tests still run and the log says why the Python ones don't.</li>
   </ul>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/mixed-explorer.png" alt="A mixed project: Explorer grouped into Jest and Vitest, status bar Jest 5 · Vitest 3" style="max-width:100%;border-radius:8px"></p>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/mixed-coverage.png" alt="math.js covered by Jest (add) and Vitest (mul)" style="max-width:100%;border-radius:8px"></p>
@@ -409,7 +412,7 @@
     <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code> (Jest only).</td></tr>
     <tr><td><code>jestCommand</code></td><td><code>""</code></td><td>Override the Jest binary or command.</td></tr>
     <tr><td><code>vitestCommand</code></td><td><code>""</code></td><td>Override the Vitest command (e.g. <code>npx vitest</code>). Empty = the project's own Vitest.</td></tr>
-    <tr><td><code>frameworks</code></td><td><code>{}</code></td><td>Jest + Vitest projects: glob → <code>"jest"</code> / <code>"vitest"</code>, which framework runs those test files (see <a href="#mixed">Jest and Vitest in one project</a>).</td></tr>
+    <tr><td><code>frameworks</code></td><td><code>{}</code></td><td>Jest + Vitest projects: glob → <code>"jest"</code> / <code>"vitest"</code>, which framework runs those test files (see <a href="#mixed">Jest, Vitest and pytest in one project</a>).</td></tr>
     <tr><td><code>vitestTrace</code></td><td><code>true</code></td><td>Vitest execution trace: covering tests in the hover, and a saved source file reruns only the tests that ran it. Off: Vitest runs exactly as configured and saves use <code>vitest related</code>.</td></tr>
     <tr><td><code>vitestIncludeBrowserProjects</code></td><td><code>false</code></td><td>Also run Vitest browser-mode projects. They need real browsers, so they are left out by default (unless the test script picks projects itself).</td></tr>
     <tr><td><code>pythonPath</code></td><td><code>""</code></td><td>pytest: the Python that runs the tests (absolute, or relative to the workspace folder). Empty: the selected interpreter, else the project's virtual environment, the Python extension's, then <code>python3</code> on PATH.</td></tr>
@@ -493,6 +496,7 @@
     <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ only the tests that ran it (execution trace); <code>vitest related</code> when the trace is off</td><td>✅ only the tests that ran it (coverage contexts); importing test files before that</td></tr>
     <tr><td>Monorepo / multi-project (project switcher)</td><td>✅ one project per package; a root <code>projects</code> config stays one</td><td>🟡 a CRA app is detected as a package (not e2e-tested)</td><td>✅ one project per package; <code>test.projects</code> stays one, grouped by name</td><td>✅ one project per uv workspace member with tests; a root pytest config stays one</td></tr>
     <tr><td>Mixed Jest + Vitest in one project</td><td>✅ each test file runs with its own framework</td><td>—</td><td>✅</td><td>—</td></tr>
+    <tr><td>JS + Python in one folder</td><td>✅ one project runs Jest / Vitest and pytest</td><td>🟡 not e2e-tested</td><td>✅</td><td>✅ a <code>.py</code> save reruns pytest only, a <code>.js</code> save the JS framework only</td></tr>
     <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>✅ Vitest ≥ 3 (incl. <code>vitest.workspace</code> files); not in browser mode</td><td>✅ from coverage.py contexts (needs <code>coverage</code>)</td></tr>
     <tr><td>UI components (<code>.vue</code>, <code>.svelte</code>, <code>.astro</code>, <code>.marko</code>): save reruns, trace, coverage</td><td>✅ through the project's transformer (vue-jest, svelte-jester…)</td><td>— (React is plain JS)</td><td>✅ through the project's Vite plugins</td><td>—</td></tr>
     <tr><td>Timeline debugger</td><td>⏳</td><td>⏳</td><td>⏳ later</td><td>⏳ later</td></tr>

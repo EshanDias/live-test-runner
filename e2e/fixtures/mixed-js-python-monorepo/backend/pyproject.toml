@@ -1,0 +1,8 @@
+# The JS root has no Python of its own: this subfolder is its own pytest project.
+[project]
+name = "backend"
+version = "0.0.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

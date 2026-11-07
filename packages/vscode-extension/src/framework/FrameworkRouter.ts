@@ -69,6 +69,8 @@ export class FrameworkRouter implements IFrameworkServicesProvider {
   private _mixedByConfig: string | undefined;
   /** Frameworks other than the primary that the runners currently allow in the root. */
   private _allowed = new Set<RoutedFramework>();
+  /** Left out of this session (cannot run now), with why — until the next prepare(). */
+  private readonly _disabled = new Map<RoutedFramework, string>();
   private _rules: FrameworkRule[] = [];
   private _mixed = false;
   /** Mixed projects: file key → its framework and the rule that placed it. */
@@ -94,11 +96,22 @@ export class FrameworkRouter implements IFrameworkServicesProvider {
     return this._bundle(this._frameworkOf(fileOrRoot));
   }
 
+  /** Every bundle in play (built now if needed: Start asks each whether it can run) and any built before. */
   all(): FrameworkServices[] {
+    for (const fw of this._inPlay) { this._bundle(fw); }
     return [...this._bundles.values()];
   }
 
+  disable(framework: string, why: string): void {
+    const fw = framework as RoutedFramework;
+    if (fw === this._primaryFramework() || !this._inPlay.includes(fw)) { return; }
+    this._disabled.set(fw, why);
+    log.info(`${path.basename(this._root)}: ${this._bundle(fw).displayName} tests are not run this session — ${why}`);
+    this._setMixed(this._inPlay.filter((f) => f !== fw));
+  }
+
   prepare(): void {
+    this._disabled.clear();
     let detected: FrameworkId = FRAMEWORK_IDS.jest;
     try { detected = this._detector.detectFramework(this._root); } catch { /* logged by the detector */ }
     const pf = projectFrameworks(this._root, detected);
@@ -116,10 +129,10 @@ export class FrameworkRouter implements IFrameworkServicesProvider {
   async listTestFiles(projectRoot: string, discovered: string[], rawLog: (msg: string) => void): Promise<RunnableListing> {
     const primary = this._primaryFramework();
     // In play: what the root configures, and any framework a setting rule sends a discovered file to.
-    const inPlay = [...this._configuredFrameworks()];
+    const inPlay = this._configuredFrameworks().filter((fw) => !this._disabled.has(fw));
     for (const f of discovered) {
       const fw = matchFrameworkRule(this._rules, f)?.framework;
-      if (fw && this._factories[fw] && !inPlay.includes(fw)) { inPlay.push(fw); }
+      if (fw && this._factories[fw] && !this._disabled.has(fw) && !inPlay.includes(fw)) { inPlay.push(fw); }
     }
     this._byFile.clear();
     if (inPlay.length < 2) {
@@ -183,12 +196,12 @@ export class FrameworkRouter implements IFrameworkServicesProvider {
       this._setMixed([this._primaryFramework()]);
       return;
     }
-    const inPlay = new Set<RoutedFramework>([this._primaryFramework(), ...this._configuredFrameworks()]);
+    const inPlay = new Set<RoutedFramework>([this._primaryFramework(), ...this._configuredFrameworks().filter((fw) => !this._disabled.has(fw))]);
     const defaulted: string[] = [];
     const placed: [string, RoutedFramework, string][] = [];
     for (const [file, value] of entries) {
       const [fw, rule = 'ownership'] = value.split(':') as [RoutedFramework, string];
-      if (!this._factories[fw]) { continue; } // a framework this build no longer routes
+      if (!this._factories[fw] || this._disabled.has(fw)) { continue; } // no longer routed, or left out this session
       inPlay.add(fw);
       placed.push([file, fw, rule]);
     }

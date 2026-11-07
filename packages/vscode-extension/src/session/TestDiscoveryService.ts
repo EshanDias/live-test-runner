@@ -203,7 +203,7 @@ export class TestDiscoveryService {
     const found = new Set<string>();
     const discoverer = this._discoverer;
     for (const glob of discoverer.patterns(projectRoot)) {
-      const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(projectRoot, glob), discoverer.exclude);
+      const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(projectRoot, glob), discoverer.excludeFor?.(glob) ?? discoverer.exclude);
       for (const u of uris) { if (discoverer.accepts(u.fsPath)) { found.add(u.fsPath); } }
     }
     const paths = [...found].sort();
