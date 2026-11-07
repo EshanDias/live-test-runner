@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-// Nested optional chains like a real app's invoice page (BUG-31).
+// Nested optional chains like a real app's invoice page.
 export function describeInvoice(invoice, softco = 'SoftCo') {
   return invoice?.SOURCE?.toLowerCase().includes(softco?.toLowerCase()) ? 'SoftCo' : 'Other';
 }

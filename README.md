@@ -38,7 +38,7 @@ A VS Code extension for **Jest** (including Create React App), **Vitest** and **
 | `packages/core` | `@live-test-runner/core` | Session state |
 | `packages/vscode-extension` | `live-test-runner` | The VS Code extension |
 
-Developer documentation lives in [docs/development/](docs/development/README.md): architecture, developer guide, framework feature matrix and bug history.
+Developer documentation lives in [docs/development/](docs/development/README.md): architecture, developer guide and framework feature matrix.
 
 ```bash
 pnpm install

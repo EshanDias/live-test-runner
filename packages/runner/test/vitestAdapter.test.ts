@@ -53,7 +53,7 @@ describe('VitestAdapter (runner)', () => {
       expect(detect({ pkg: { devDependencies: { vite: '7' } }, files: { 'vite.config.ts': '' } })).toBe(false);
     });
 
-    it('leaves projects marked as Jest to Jest (BUG-37, jest-dom shape)', () => {
+    it('leaves projects marked as Jest to Jest (jest-dom shape)', () => {
       expect(detect({ pkg: { devDependencies: { vitest: '3', jest: '30' } } })).toBe(false);
       expect(detect({ pkg: { devDependencies: { vitest: '3', 'kcd-scripts': '16' } }, files: { 'jest.config.js': '', 'vitest.js': '' } })).toBe(false);
       expect(detect({ pkg: { devDependencies: { vitest: '3' }, jest: {} } })).toBe(false);

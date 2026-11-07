@@ -73,7 +73,7 @@ function loadBabelDiscovery(): (source: string, filePath: string, rootDir: strin
   return babelDiscover;
 }
 
-/** The liveTestRunner.testFilePatterns setting (BUG-17: it used to be ignored). */
+/** The liveTestRunner.testFilePatterns setting (it used to be ignored). */
 function testFilePatterns(): string[] {
   const patterns = vscode.workspace
     .getConfiguration('liveTestRunner')

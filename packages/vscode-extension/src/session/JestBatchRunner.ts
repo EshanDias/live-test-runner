@@ -411,7 +411,7 @@ module.exports = _projects
 
     // Jest may report a path differently from how we passed it (drive-letter
     // case, separators, symlinks resolved). Map every reported path back to
-    // the caller's key so results land on the right store entry (BUG-13).
+    // the caller's key so results land on the right store entry.
     const keyByNorm = new Map(filePaths.map((fp) => [pathKey(fp), fp]));
     const toKey = (p: string) => {
       const q = fromRunnerPath(p);
@@ -485,7 +485,7 @@ module.exports = _projects
     const executor = new Executor();
     /** Set when the watchdog stopped the batch because a file hung. */
     let timedOut: { file: string; seconds: number; test?: string } | undefined;
-    /** A file Jest failed on that is gone again (BUG-44). */
+    /** A file Jest failed on that is gone again. */
     let vanished: string | undefined;
 
     // Watchdog: a batch with no finished file for a long time is either slow
@@ -583,7 +583,7 @@ module.exports = _projects
         log.debug(`${batch}: stopped after ${secondsSince(startedAt)} — ${path.basename(timedOut.file)} hung`);
       } else if (received.size === 0 && (vanished = vanishedFile(result.stderr + '\n' + result.stdout))) {
         // A test of another batch created and deleted a file while this
-        // batch's haste map crawled the project (BUG-44): worth one more try.
+        // batch's haste map crawled the project: worth one more try.
         log.debug(`${batch}: Jest failed on ${vanished}, which no longer exists (written by a test during the crawl) — retrying the batch once`);
       } else if (received.size === 0) {
         // Whole batch produced nothing — Jest itself failed (config, transform,
@@ -807,8 +807,8 @@ function pathKey(filePath: string): string {
 
 /**
  * The file a failed Jest run could not open, when it no longer exists — a
- * test created and deleted it while Jest's haste map crawled the project
- * (BUG-44). Undefined for any other failure.
+ * test created and deleted it while Jest's haste map crawled the project.
+ * Undefined for any other failure.
  */
 export function vanishedFile(output: string): string | undefined {
   for (const m of output.matchAll(/ENOENT: no such file or directory, (?:open|stat|lstat|scandir|realpath) '([^']+)'/g)) {

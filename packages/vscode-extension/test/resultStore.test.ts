@@ -53,7 +53,7 @@ describe('ResultStore.cleanupStaleNodes', () => {
 });
 
 describe('ResultStore summary and lifecycle', () => {
-  it('removeFile lowers the total (BUG-11)', () => {
+  it('removeFile lowers the total', () => {
     const store = new ResultStore();
     discovered(store, ['a', 'b']);
     expect(store.getSummary().total).toBe(2);
@@ -61,7 +61,7 @@ describe('ResultStore summary and lifecycle', () => {
     expect(store.getSummary().total).toBe(0);
   });
 
-  it('clear() drops the line maps (BUG-11)', () => {
+  it('clear() drops the line maps', () => {
     const store = new ResultStore();
     discovered(store, ['a']);
     store.setLineEntry(FILE, 3, { nodeId: 'x', fileId: FILE });
@@ -89,7 +89,7 @@ describe('ResultStore summary and lifecycle', () => {
     expect(store.getSummary().running).toBe(0);
   });
 
-  it('resetRunning reverts spinners and keeps finished results (BUG-23)', () => {
+  it('resetRunning reverts spinners and keeps finished results', () => {
     const store = new ResultStore();
     discovered(store, ['a', 'b']);
     store.markFileRunning(FILE);
@@ -99,7 +99,7 @@ describe('ResultStore summary and lifecycle', () => {
     expect(store.getSummary().running).toBe(0);
   });
 
-  it('markFileExcluded shows a file Jest never runs as skipped (BUG-24)', () => {
+  it('markFileExcluded shows a file Jest never runs as skipped', () => {
     const store = new ResultStore();
     discovered(store, ['a']);
     store.markFileExcluded(FILE, 'excluded');
@@ -115,7 +115,7 @@ describe('ResultStore summary and lifecycle', () => {
     expect(store.getSummary().failed).toBe(2);
   });
 
-  it('findFileKey matches another spelling of the same path (BUG-13)', () => {
+  it('findFileKey matches another spelling of the same path', () => {
     const store = new ResultStore();
     discovered(store, ['a']);
     expect(store.findFileKey('C:/p/a.test.js')).toBe(FILE);

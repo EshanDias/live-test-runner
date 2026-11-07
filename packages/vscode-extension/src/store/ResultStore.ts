@@ -123,7 +123,7 @@ function simpleHash(s: string): number {
 /**
  * The flat node pool, plus an index of each file's nodes. Per-file lookups
  * used to scan every node in the store — O(tests × nodes) while applying a
- * file's results on large projects (BUG-16).
+ * file's results on large projects.
  */
 class NodePool extends Map<string, TestNode> {
   private readonly _byFile = new Map<string, Map<string, TestNode>>();
@@ -182,7 +182,7 @@ export class ResultStore {
   clear(): void {
     this.files.clear();
     this.nodes.clear();
-    // Stale line maps kept gutter icons / CodeLens alive after a clear (BUG-11).
+    // Stale line maps kept gutter icons / CodeLens alive after a clear.
     this._lineMap.clear();
     this._summary = { total: 0, passed: 0, failed: 0, running: 0, totalDuration: 0 };
   }
@@ -198,7 +198,7 @@ export class ResultStore {
       for (const node of this.nodes.ofFile(fileId)) {
         if (node.type === 'test') {
           this._adjustSummary(node.status, -1);
-          this._summary.total--; // BUG-11: the total used to drift up
+          this._summary.total--; // the total used to drift up
         }
         this.nodes.delete(node.id);
       }

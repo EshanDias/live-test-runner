@@ -56,7 +56,7 @@ export function vitestCapabilities(major: number | undefined): FrameworkCapabili
  * Handles Vitest projects.
  *
  * Detection: a `vitest` dependency or a Vitest config / workspace file — and
- * nothing that marks the project as Jest (BUG-37: libraries like jest-dom
+ * nothing that marks the project as Jest (libraries like jest-dom
  * list Vitest but run their tests on Jest). Mixed Jest + Vitest projects: frameworkRouting.ts.
  *
  * Binary: `vitest/package.json#bin` → `vitest.mjs`, resolved the way Node

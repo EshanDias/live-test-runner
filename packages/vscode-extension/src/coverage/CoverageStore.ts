@@ -17,7 +17,7 @@ export class CoverageStore {
   /**
    * Static count from the source scan (0 hits). The scan runs alongside the
    * first test run, so a file may already be measured — never downgrade it
-   * back to 0% (BUG-09).
+   * back to 0%.
    */
   setCountedEntry(
     filePath: string,
@@ -83,7 +83,7 @@ export class CoverageStore {
   /**
    * Coalesces change events: every fire re-sends all coverage rows to the
    * webview, and the source scan writes one entry per file — firing per entry
-   * was O(N²) traffic on large repos (BUG-09).
+   * was O(N²) traffic on large repos.
    */
   private _changed(): void {
     if (this._fireTimer) { return; }

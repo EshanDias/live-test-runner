@@ -115,7 +115,7 @@ module.exports = {
     compare(api, t, h.jestJsonCounts(plainJest(workspace, sample), workspace), 'sample');
 
     const mapped = api.traceStore.dump().split('\n').filter((l) => l.startsWith('  [source]'));
-    t.check('BUG-04 trace maps source files to tests (CRA)', mapped.length > 0, `${mapped.length} mapped`);
+    t.check('trace maps source files to tests (CRA)', mapped.length > 0, `${mapped.length} mapped`);
     const measured = [...api.coverageStore.getAllEntries()].filter(([, e]) => e.state === 'measured');
     t.check('coverage measured (CRA)', measured.length > 0, `${measured.length} measured`);
 
@@ -135,14 +135,14 @@ module.exports = {
         const env = { ...process.env, ...config.env, CI: 'true' }; delete env.ELECTRON_RUN_AS_NODE;
         const r = spawnSync(process.platform === 'win32' ? 'node.exe' : 'node', [config.program, ...config.args], { cwd: config.cwd, encoding: 'utf8', env, timeout: 300_000 });
         const s2 = h.jestTestSummaries(`${r.stdout}\n${r.stderr}`.split(/\r?\n/));
-        t.check('BUG-06 CRA debug config runs exactly that test', s2.length === 1 && s2[0].passed === 1, JSON.stringify(s2) + (r.stderr || '').slice(-600));
+        t.check('CRA debug config runs exactly that test', s2.length === 1 && s2[0].passed === 1, JSON.stringify(s2) + (r.stderr || '').slice(-600));
       } else {
-        t.check('BUG-06 CRA debug session started', false);
+        t.check('CRA debug session started', false);
       }
 
       // Timeline on CRA.
       const store = await api.instrumentedRunner.run({ filePath: test.fileId, testFullName: test.fullName, projectRoot: workspace });
-      t.check('BUG-12 CRA timeline recorded steps', store.steps.length > 0, `steps: ${store.steps.length}`);
+      t.check('CRA timeline recorded steps', store.steps.length > 0, `steps: ${store.steps.length}`);
     } else {
       t.check('found a passing test to rerun', false);
     }
@@ -154,8 +154,8 @@ module.exports = {
     await vscode.commands.executeCommand('liveTestRunner.stopTesting');
     await h.sleep(5000);
     const left = h.jestProcesses(workspace);
-    t.check('BUG-08 Stop leaves no Jest process (CRA)', left.length === 0, left.join('\n'));
+    t.check('Stop leaves no Jest process (CRA)', left.length === 0, left.join('\n'));
     await p;
-    t.eq('BUG-23 Stop leaves nothing spinning', h.nodesWithStatus(api, 'running').length, 0);
+    t.eq('Stop leaves nothing spinning', h.nodesWithStatus(api, 'running').length, 0);
   },
 };

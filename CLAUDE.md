@@ -308,7 +308,6 @@ When making changes, update the relevant documentation files:
 | **Any user-visible change (features, fixes, behaviour)** | `CHANGELOG.md` (full detail) + `packages/vscode-extension/CHANGELOG.md` (brief user summary) |
 | **Anything important for users or contributors** (new feature, setting, command, framework support, changed behaviour, known limitation) | `docs/live-test-runner-guide.html` (the guide — published at `/guide/` and shown by **Open Guide**) |
 | **Headline features, supported frameworks, install / review links** | `site/index.html` (landing page) — and bump `lastmod` in `site/sitemap.xml`; the root `README.md` (GitHub landing page) |
-| **A bug fixed whose cause is worth remembering** | `docs/development/bug-history.md` (frozen record: add the entry when code or e2e checks refer to its ID) |
 
 **Public repository — keep it professional.** Everything committed is public. No personal notes, local paths (`/Users/…`), private project names, or "who decided what" in code, comments or docs; cite the reason, not the person or a private plan. Working notes, plans and trackers live in **`dev-personal-docs/`** (gitignored, local only: `plans/master-tracker.md` is the live to-do list). New bugs and feature ideas are GitHub Issues (forms in `.github/ISSUE_TEMPLATE/`).
 
@@ -329,7 +328,6 @@ When making changes, update the relevant documentation files:
 - [docs/development/architecture.md](docs/development/architecture.md) — Full system design, data flow, UI details, key decisions
 - [docs/development/developer-guide.md](docs/development/developer-guide.md) — Dev setup, core patterns, adding frameworks, publishing
 - [docs/development/ai-context.md](docs/development/ai-context.md) — Complete AI context for full codebase understanding
-- [docs/development/bug-history.md](docs/development/bug-history.md) — Fixed bugs (BUG-01 …) with root causes; new bugs go to GitHub Issues
 - [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) — how people report bugs, request features and contribute
 - [docs/live-test-runner-guide.html](docs/live-test-runner-guide.html) — User & contributor guide (open in a browser; published at `/guide/`)
 - [site/index.html](site/index.html) — Marketing landing page + `sitemap.xml` (GitHub Pages, see developer guide → Website)

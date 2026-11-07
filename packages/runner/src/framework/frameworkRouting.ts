@@ -63,7 +63,7 @@ export function projectFrameworks(root: string, detected: FrameworkId): ProjectF
   const frameworks: RoutedFramework[] = [primary];
   const reasons: string[] = [];
   if (primary === 'vitest') {
-    // Vitest is picked only when nothing marks the root as Jest (BUG-37 rule) — never Jest-mixed by detection.
+    // Vitest is picked only when nothing marks the root as Jest (see VitestAdapter.detect) — never Jest-mixed by detection.
     reasons.push('a Vitest project');
   } else {
     const jestMarker = hasJestMarker(root);

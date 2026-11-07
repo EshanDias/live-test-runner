@@ -95,7 +95,7 @@ export class SessionManager {
   private _token = 0;
   /**
    * Runs in progress (full suite, saves, ▶ Run …). They can overlap, so
-   * "finished" is only announced when the last one ends (BUG-15).
+   * "finished" is only announced when the last one ends.
    */
   private _activeRuns = 0;
   /** The queues of the runs in flight: each moves a waiting test file to its front. */
@@ -324,7 +324,7 @@ export class SessionManager {
       this._session.stop();
       this._session = undefined;
     }
-    // Nothing may keep spinning after Stop (BUG-23).
+    // Nothing may keep spinning after Stop.
     const touched = this._store.resetRunning();
     this._activeRuns = 0;
     this._fullSuiteStartedAt = undefined;
@@ -1139,7 +1139,7 @@ export class SessionManager {
               log.error(`Could not run ${names.length} test(s) in ${path.basename(run.filePath)} `, err);
             }
             if (token !== this._token) { break; }
-            // No result: put the spinning tests back to pending (BUG-23).
+            // No result: put the spinning tests back to pending.
             if (!ok) { this._store.cleanupStaleNodes(run.filePath, false, run.kind === 'node' ? run.nodeId : undefined); }
 
             this._fileFinished(this._store.getFile(run.filePath)?.status === 'failed' ? 'failed' : 'passed');
@@ -1169,7 +1169,7 @@ export class SessionManager {
     const BATCH_SIZE = Math.max(5, Math.min(50, Math.ceil(totalFiles / CONCURRENCY)));
 
     // Files are NOT marked running here: in a batch Jest runs its files one
-    // after another, so a queued file only shows ⟳ once Jest starts it (BUG-23).
+    // after another, so a queued file only shows ⟳ once Jest starts it.
     for (const fp of filePaths) {
       if (!this._store.getFile(fp)) {
         this._store.fileDiscovered(fp, fp, vscode.workspace.asRelativePath(fp));
@@ -1210,7 +1210,7 @@ export class SessionManager {
       if (!live()) { return; }
       if (this._store.getFile(fp)?.status === 'running') {
         // No result at all. Either the file hung and was stopped, or Jest
-        // could not run it — never leave it spinning (BUG-23).
+        // could not run it — never leave it spinning.
         if (hangTimeoutMs > 0 && Date.now() - startedAt >= hangTimeoutMs * PLAIN_RUN_HANG_FACTOR) {
           this._store.failFile(fp, hangMessage(Math.round((Date.now() - startedAt) / 1000)));
         } else {
@@ -1262,10 +1262,10 @@ export class SessionManager {
         missing = batch.slice();
       }
 
-      // Stopped (or restarted) meanwhile: no retries, no fallback (BUG-15).
+      // Stopped (or restarted) meanwhile: no retries, no fallback.
       if (missing.length === 0 || !live()) { return; }
 
-      // A failure a second try may not meet (BUG-44): once, before falling back.
+      // A failure a second try may not meet: once, before falling back.
       if (retry && !retried && missing.length === batch.length) {
         log.info(`Batch of ${batch.length} file(s) failed (${retry}) — running it once more`);
         await runBatch(batch, true);
@@ -1434,7 +1434,7 @@ export class SessionManager {
    * `jest --listTests` with the project's own config: the files Jest would
    * run. Discovery globs every *.test.* / *.spec.* file, including ones the
    * config excludes (e2e specs, ignored folders, .mjs) — running those only
-   * produced "No tests found" and spinners (BUG-24).
+   * produced "No tests found" and spinners.
    */
   private async _listRunnableFiles(projectRoot: string, discovered: string[]): Promise<string[] | undefined> {
     const startedAt = Date.now();

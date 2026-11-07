@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { vanishedFile } from '../src/session/JestBatchRunner';
 
-describe('vanishedFile (BUG-44)', () => {
+describe('vanishedFile', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-vanished-'));
   const kept = path.join(dir, 'package.json');
   fs.writeFileSync(kept, '{}');

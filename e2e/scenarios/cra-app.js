@@ -36,7 +36,7 @@ module.exports = {
     const out = api.store.getFileOutput(fmt.fileId).lines.map((l) => l.text);
     t.check('console output captured', out.some((l) => l.includes('formatting money')), JSON.stringify(out));
 
-    // Trace with project hooks in setupTests.js (BUG-28).
+    // Trace with project hooks in setupTests.js.
     const lower = (p) => p.replace(/^[A-Z]:/, (m) => m.toLowerCase());
     const appSrc = lower(path.join(workspace, 'src', 'App.js'));
     const affected = api.traceStore.getAffectedTestFiles(appSrc);

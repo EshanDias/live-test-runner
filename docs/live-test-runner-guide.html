@@ -464,14 +464,14 @@
   <h3>Common warnings</h3>
   <div class="table-wrap"><table>
     <tr><th>Message</th><th>Meaning / what to do</th></tr>
-    <tr><td><code>instrumented Jest run returned no results … Jest said:</code></td><td>Jest failed before running tests (config, transform, environment). The lines after it are Jest's own error. Often a config format we don't read yet (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/development/bug-history.md#bug-07" target="_blank" rel="noopener">BUG-07</a>).</td></tr>
+    <tr><td><code>instrumented Jest run returned no results … Jest said:</code></td><td>Jest failed before running tests (config, transform, environment). The lines after it are Jest's own error. Often a config format we don't read yet — please <a href="https://github.com/EshanDias/live-test-runner/issues/new?template=bug_report.yml" target="_blank" rel="noopener">report it</a>.</td></tr>
     <tr><td><code>falling back to plain Jest, one file at a time</code></td><td>Tests still run, but more slowly and without coverage or smart reruns for those files.</td></tr>
     <tr><td><code>&lt;file&gt; failed to run — …</code></td><td>The test file could not execute (syntax error, missing module, setup crash).</td></tr>
     <tr><td><code>could not instrument &lt;file&gt;</code></td><td>That source file runs without coverage. Set the level to Debug to see the parse error.</td></tr>
     <tr><td><code>falling back to "npx jest"</code></td><td>No local Jest found. Run <code>npm install</code> or set <code>jestCommand</code>.</td></tr>
-    <tr><td><code>no file has finished in 60s — … currently on X</code></td><td>A batch made no progress. If the next warning names a <i>different</i> file, tests are just slow. If it names the <i>same</i> file, a test there is probably hanging (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/development/bug-history.md#bug-23" target="_blank" rel="noopener">BUG-23</a>).</td></tr>
+    <tr><td><code>no file has finished in 60s — … currently on X</code></td><td>A batch made no progress. If the next warning names a <i>different</i> file, tests are just slow. If it names the <i>same</i> file, a test there is probably hanging.</td></tr>
     <tr><td><code>… was still running in b3 — cancelling b3</code></td><td>A save reran a file that a bigger batch was running. That batch's unfinished files are retried, more slowly.</td></tr>
-    <tr><td><code>Trace finished … captured 0 steps</code></td><td>The timeline matched no test, or the transform didn't apply (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/development/bug-history.md#bug-12" target="_blank" rel="noopener">BUG-12</a>).</td></tr>
+    <tr><td><code>Trace finished … captured 0 steps</code></td><td>The timeline matched no test, or the transform didn't apply.</td></tr>
   </table></div>
 
   <h3>Reporting a bug</h3>
@@ -564,7 +564,7 @@
   <ul>
     <li>In the Jest repository itself, a few of jest-runtime's own tests (they build Jest runtimes of their own) fail under Live Test Runner though they pass with plain Jest. Ordinary projects are not affected.</li>
   </ul>
-  <p>Found a bug or have an idea? Open an issue on <a href="https://github.com/EshanDias/live-test-runner/issues" target="_blank" rel="noopener">GitHub</a> — the bug report form asks for what helps most (versions, framework, the extension log). Bugs fixed so far, with their causes, are in the <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/development/bug-history.md" target="_blank" rel="noopener">bug history</a>.</p>
+  <p>Found a bug or have an idea? Open an issue on <a href="https://github.com/EshanDias/live-test-runner/issues" target="_blank" rel="noopener">GitHub</a> — the bug report form asks for what helps most (versions, framework, the extension log).</p>
 </section>
 
 </main>

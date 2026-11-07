@@ -618,7 +618,6 @@ All in `packages/vscode-extension/package.json`:
 | Which lines a statement's coverage bar covers | `packages/vscode-extension/src/coverage/statementLines.ts` |
 | Vitest batches | `packages/vscode-extension/src/session/VitestBatchRunner.ts` |
 | Vitest-specific logic | `packages/vscode-extension/src/framework/VitestAdapter.ts`, `packages/runner/src/VitestRunner.ts` |
-| Fixed bugs + root causes | `docs/development/bug-history.md` (new bugs: GitHub Issues) |
 | Framework detection | `packages/runner/src/framework/FrameworkDetector.ts` |
 | CRA config extraction | `packages/runner/src/framework/adapters/CRAAdapter.ts` |
 | Source save → which tests rerun | `SessionManager._runAffectedBySourceFile`, `store/ExecutionTraceStore.ts` |

@@ -46,8 +46,8 @@ export interface IBatchRunner {
    * arrive and returns the files that produced no result (crashed
    * mid-batch). Result paths are always the caller's own keys (`filePaths`).
    * `retry`: the whole batch failed for a reason a second try may not meet
-   * (a file a test created and deleted while the runner crawled the project,
-   * BUG-44) — why, for the log; the caller runs the batch once more.
+   * (a file a test created and deleted while the runner crawled the project)
+   * — why, for the log; the caller runs the batch once more.
    */
   runFiles(options: BatchRunOptions): Promise<{ missing: string[]; retry?: string }>;
 
