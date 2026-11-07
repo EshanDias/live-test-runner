@@ -13,8 +13,10 @@ All notable changes to Live Test Runner are documented here.
 
 ### Fixes
 
+- **Fewer slow fallbacks in projects whose tests create and delete files** — a batch that failed because a file vanished mid-start is retried once.
 - **Coverage bars on every line of a multi-line statement** — a `return {` object or a call split over several lines no longer shows a bar on its first line only.
 
+- **Test suites that write many files no longer restart testing over and over** (since 3.2.1, a suite writing more than 20 files looked like a branch switch).
 - **Tests that write files into your project no longer trigger extra runs.** A file written during a run that no test uses is ignored instead of starting a search for related tests.
 
 ## [3.2.1] - 2026-11-05

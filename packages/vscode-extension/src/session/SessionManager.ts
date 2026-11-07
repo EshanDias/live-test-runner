@@ -105,6 +105,11 @@ export class SessionManager {
   private readonly _diskQueue = new Set<string>();
   /** The files the last queued disk rerun ran for (loop guard). */
   private _lastDiskRerun = new Set<string>();
+  /** When our last runs started and ended (see _writtenDuringLastRuns). */
+  private _runsStartedAt = 0;
+  private _runsEndedAt = 0;
+  /** The files of the last restart for disk changes — the same set again does not restart again. */
+  private _lastDiskRestart = '';
   /** The running background source scan, if any (cancelled by Stop / restart). */
   private _sourceCounter: SourceCounter | undefined;
   /** Files scheduled / finished across all active runs — drives the progress UI. */
@@ -496,7 +501,7 @@ export class SessionManager {
     if (!this._session?.isTestingActive()) { return; }
     const root = this._getProjectRoot();
     if (!root) { return; }
-    const relevant = filePaths.filter((f) => this._isWatchedFile(f, root));
+    let relevant = filePaths.filter((f) => this._isWatchedFile(f, root));
     if (relevant.length === 0) { return; }
     if (this.isRunning()) {
       // Rerun once the runs in flight finish (see _runQueuedDiskChanges).
@@ -504,8 +509,31 @@ export class SessionManager {
       log.info(`${describeFiles(relevant)} changed on disk during a run — queued, reruns when the run finishes`);
       return;
     }
+    // The watcher reports a run's last writes after it ended: a file last
+    // written while our runs were going is theirs — handled as changed during
+    // them (the tests' output must not restart the session, or it is written
+    // again and restarts forever). A pull after the run is newer than that.
+    const byRun = relevant.filter((f) => this._writtenDuringLastRuns(f));
+    if (byRun.length > 0) {
+      for (const f of byRun) { this._diskQueue.add(f); }
+      log.debug(`${describeFiles(byRun)} changed on disk during the last run (reported late) — handled as changed during it`);
+      this._runQueuedDiskChanges();
+      relevant = relevant.filter((f) => !byRun.includes(f));
+      if (relevant.length === 0) { return; }
+    }
     this._lastDiskRerun.clear();
     if (relevant.length > MAX_DISK_CHANGES_PER_FILE) {
+      // A run's last writes reach us after it ended (the watcher batches
+      // them): many files right then, some of which also changed during the
+      // run, are the tests' output — and a restart for the same files as the
+      // last one would only write them again. Either way: restarting would
+      // write them again and restart forever.
+      const key = [...relevant].sort().join('\n');
+      if (key === this._lastDiskRestart) {
+        log.info(`${relevant.length} files changed on disk as a run ended (${describeFiles(relevant)}) — probably written by the tests, not rerunning them (save a file or Start to rerun)`);
+        return;
+      }
+      this._lastDiskRestart = key;
       log.info(`${relevant.length} files changed on disk (branch switch or pull?) — restarting the session (every test reruns)`);
       void this.start();
       return;
@@ -539,14 +567,31 @@ export class SessionManager {
       log.debug(`${describeFiles(unused)} changed on disk during the run, but no test ran or loaded ${unused.length === 1 ? 'it' : 'them'} — not rerunning (probably written by a test; save to rerun)`);
       files = files.filter((f) => !unused.includes(f));
     }
+    // Test files the project's config does not run (fixtures a test writes —
+    // Jest's own e2e tests write `__tests__/snapshot.test.js` into fixtures).
+    const notRun = files.filter((f) => this._runnable && this._adapterFor(f).isTestFile(f) && !this._isRunnable(f));
+    if (notRun.length > 0) {
+      log.debug(`${describeFiles(notRun)} changed on disk during the run — test files this project's config does not run, ignoring`);
+      files = files.filter((f) => !notRun.includes(f));
+    }
     if (files.length === 0) { return; }
+    // Many files written during our own run are the tests' doing, not a branch
+    // switch: restarting would wipe the results and write them all again, forever.
     if (files.length > MAX_DISK_CHANGES_PER_FILE) {
-      log.info(`${files.length} files changed on disk during the run — restarting the session (every test reruns)`);
-      void this.start();
+      log.info(`${files.length} files changed on disk during the run (${describeFiles(files)}) — probably written by the tests, not rerunning them (save a file or Start to rerun)`);
       return;
     }
     log.info(`Rerunning what depends on ${describeFiles(files)} (changed on disk during the run)`);
     for (const f of files) { this.onFileChanged(f, 'Changed on disk:'); }
+  }
+
+  /** The file was last written while our last runs were going (by their tests), by its modified time. */
+  private _writtenDuringLastRuns(filePath: string): boolean {
+    if (this._runsEndedAt < this._runsStartedAt) { return false; }
+    try {
+      const t = fs.statSync(filePath).mtimeMs;
+      return t >= this._runsStartedAt - 50 && t <= this._runsEndedAt + 50;
+    } catch { return false; }
   }
 
   /**
@@ -1177,11 +1222,12 @@ export class SessionManager {
     };
 
     /** Split-on-crash: retry files that produced no result by halving the batch. */
-    const runBatch = async (batch: string[]): Promise<void> => {
+    const runBatch = async (batch: string[], retried = false): Promise<void> => {
       if (batch.length === 0 || !live()) { return; }
       // A single-file batch starts right away — show it running now.
       if (batch.length === 1) { markRunning(batch[0]); }
       let missing: string[];
+      let retry: string | undefined;
       try {
         // Batches never mix frameworks (see the queue below): the first file's is the batch's.
         const r = await this._services.servicesFor(batch[0]).batchRunner.runFiles({
@@ -1210,6 +1256,7 @@ export class SessionManager {
           log: rawLog,
         });
         missing = r.missing;
+        retry = r.retry;
       } catch (err) {
         log.error(`Batch of ${batch.length} file(s) crashed — retrying without instrumentation`, err);
         missing = batch.slice();
@@ -1217,6 +1264,13 @@ export class SessionManager {
 
       // Stopped (or restarted) meanwhile: no retries, no fallback (BUG-15).
       if (missing.length === 0 || !live()) { return; }
+
+      // A failure a second try may not meet (BUG-44): once, before falling back.
+      if (retry && !retried && missing.length === batch.length) {
+        log.info(`Batch of ${batch.length} file(s) failed (${retry}) — running it once more`);
+        await runBatch(batch, true);
+        return;
+      }
 
       // When the whole batch produced no results the most likely cause is a
       // jest config incompatibility rather than individual test crashes.
@@ -1535,6 +1589,7 @@ export class SessionManager {
     this._outputChannel.appendLine(`──── Run #${id} · ${label} · ${new Date().toLocaleTimeString()} ────`);
     log.debug(`Run #${id} started: ${label}`);
     if (this._activeRuns++ === 0) {
+      this._runsStartedAt = Date.now();
       this._progress = { completed: 0, total: 0, failed: 0 };
     }
     if (opts.fullSuite) { this._fullSuiteStartedAt = Date.now(); }
@@ -1559,7 +1614,11 @@ export class SessionManager {
     }
     if (!quiet) { this._logRunSummary(run, fileIds, nodeId); }
     this._activeRuns = Math.max(0, this._activeRuns - 1);
-    if (this._activeRuns === 0) { this._finishRuns(); this._runQueuedDiskChanges(); }
+    if (this._activeRuns === 0) {
+      this._runsEndedAt = Date.now();
+      this._finishRuns();
+      this._runQueuedDiskChanges();
+    }
   }
 
   private _logRunSummary(run: RunHandle, fileIds: string[], nodeId?: string): void {

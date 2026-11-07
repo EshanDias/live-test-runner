@@ -32,6 +32,19 @@ All notable changes to Live Test Runner are documented here.
 
 - `@live-test-runner/core` no longer has `CoverageMap` or `SelectionPolicy`, and `TestSession` lost its unused warm-up `start()` and `getCoverageMap()`. The map was always empty (it expected a `coveredBy` field Jest / Vitest coverage JSON never has) and nothing reran by it: source saves go by the execution trace, then the framework's related run. `IFrameworkAdapter.getAffectedTests` (read the map) is gone too. Docs (CLAUDE.md, architecture, ai-context, developer guide, core README, guide) no longer describe it. No user-visible change.
 
+### Docs
+
+- The guide's settings table now lists `hangTimeoutSeconds`, `coverageExclude` and `testFilePatterns` (gap audit, master tracker A1).
+
+### Tests that write many files no longer restart the session forever (fix, 3.2.1 bug)
+
+- Found on the Jest monorepo: its e2e tests write ~50 files into the project during a full run. The 3.2.1 disk-change watcher took that for a branch switch ("53 files changed on disk during the run — restarting the session") — the restart wiped the results and its run wrote the same files again, so results never stayed. Reproduced on a small fixture as a restart every 2 s.
+- Now: (1) changes queued during our runs never restart the session — more than 20 left after filtering are logged ("probably written by the tests … save a file or Start to rerun") and not rerun; (2) test files the project's config does not run (fixtures a test writes) are dropped like files no test loads; (3) the watcher reports a run's last writes after it ended — a file whose modified time falls inside our last runs is handled as changed during them (`_writtenDuringLastRuns`), so a pull after the run still reruns as before; (4) a restart for disk changes never repeats for the same set of files. e2e `disk-changes` step 5b (a test writing 25 modules it loads and 3 test files under the ignored `e2e/`).
+
+### A Jest batch retries once when a test deleted a file mid-crawl (BUG-44, master tracker C17)
+
+- In a project whose tests create and delete files (the Jest monorepo's `e2e/timeouts/`), a batch whose haste-map crawl saw such a file come and go failed before any test and fell back to plain Jest one file at a time. Now a batch that returns nothing and names a vanished file (`ENOENT … '<file>'`, gone again) is run once more first (`vanishedFile`, `IBatchRunner.runFiles` → `retry`). Other failures fall back as before. BUG-43 (jest-runtime's own tests under the session run) stays open. Tests: `vanishedFile.test.ts` (3).
+
 ### The Coverage tab says when coverage is off (master tracker A4)
 
 - A framework that cannot measure coverage for the root says so in the Coverage tab, with what to install: `FrameworkServices.coverageOffReason(root)` (pytest: no `coverage` package in the project's environment; Vitest: neither `@vitest/coverage-v8` nor `-istanbul`). `SessionManager.start` collects the reasons into the project's `CoverageStore` (`setOffReasons`, cleared with the data); `CoverageTotals.off` carries them to both coverage views (`cov-off-note` under the project totals). Before, the tab showed a table of 0 % rows with no reason. The other per-framework gaps were already handled: covering tests say why in the hover (`features.trace`, `traceOffReason`), ▶ Run and ▷ Debug work for every framework, and the dormant Timeline refuses with a message. Tests: `coverageOff.test.ts`; e2e `pytest-no-coverage` on the new `fixture:pytest-no-coverage` (pytest without coverage.py).

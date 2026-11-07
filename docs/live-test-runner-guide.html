@@ -204,7 +204,7 @@
   </table></div>
   <ul>
     <li>Debounced per file (<code>onSaveDebounceMs</code>, default 300 ms).</li>
-    <li><b>Changes from outside the editor</b> (<code>git pull</code>, a branch switch, a code generator) rerun tests the same way while testing is on. More than 20 files at once rerun everything. Files changed while tests are running are queued and rerun when the run finishes; a file that keeps changing while its own tests run (a test writes it) is rerun once, then left until you save it, and a file written during a run that no test uses starts nothing.</li>
+    <li><b>Changes from outside the editor</b> (<code>git pull</code>, a branch switch, a code generator) rerun tests the same way while testing is on. More than 20 files at once rerun everything. Files changed while tests are running are queued and rerun when the run finishes; a file that keeps changing while its own tests run (a test writes it) is rerun once, then left until you save it, and a file written during a run that no test uses starts nothing. Many files written by the tests themselves never restart testing — the log says so, and a save or Start reruns them.</li>
     <li>Files run in batches across parallel Jest processes. Results stream in file by file.</li>
     <li>If an instrumented batch returns no results, those files are retried with plain Jest, one at a time. This is logged as a warning.</li>
   </ul>
@@ -408,6 +408,9 @@
   <div class="table-wrap"><table>
     <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
     <tr><td><code>showCoverageInEditor</code></td><td><code>true</code></td><td>Coverage bars and the coverage hover in the editor</td></tr>
+    <tr><td><code>hangTimeoutSeconds</code></td><td><code>300</code></td><td>Stops a single test that runs longer than this (an infinite loop) and marks its file failed, so the rest of the run continues. Loading a file does not count. <code>0</code> turns the limit off.</td></tr>
+    <tr><td><code>coverageExclude</code></td><td><code>[]</code></td><td>Extra glob patterns of source files left out of the coverage totals, e.g. <code>["**/stories/**"]</code> (<code>node_modules</code>, test files, configs and build folders are always left out).</td></tr>
+    <tr><td><code>testFilePatterns</code></td><td><code>["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]</code></td><td>Glob patterns for test files before the framework lists its own; files your framework's config runs are added even when no pattern matches them.</td></tr>
     <tr><td><code>projectRoot</code></td><td><code>""</code></td><td>Pin to one project folder. Empty: every test project in the workspace is detected.</td></tr>
     <tr><td><code>maxRunningProjects</code></td><td><code>"auto"</code></td><td>Projects running at once: <code>auto</code> = 2 (1 on ≤ 4 cores or &lt; 8 GB total memory), or a number</td></tr>
     <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code> (Jest only).</td></tr>
