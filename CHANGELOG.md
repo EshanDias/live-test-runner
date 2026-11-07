@@ -2,6 +2,15 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [3.3.0] - unreleased
+
+### Python monorepos (pytest plan phase 7)
+
+- **uv workspaces**: a folder whose `pyproject.toml` has `[tool.uv.workspace] members` (and `exclude`) and no pytest config or `conftest.py` of its own is split into one pytest project per member with tests — a member that is a pytest project itself (config, `conftest.py`, pytest in its own dependency files), or one with test files when the workspace root names pytest (the usual shared dev group). A root with its own pytest config or `conftest.py` stays one project (pytest run from a member would miss the root's options and fixtures). Members without tests are no project.
+- Detection is split per language family in `projectDiscovery.ts`: `jsProjectsInFolder` (unchanged rules) and the new `pythonProjectsInFolder`; `projectsInFolder` returns both (a root both claim stays the JS project until phase 8). A JS monorepo and a uv workspace in one folder give both kinds of members. New runner exports: `uvWorkspaceGlobs`, `configuresPytest`, `mentionsPytest`, `hasPytestTestFiles`; `testFrameworkOf(dir, registry, family?)`; `expandWorkspaceGlobs(root, globs, marker?)`.
+- **Interpreter per member**: virtual environments are looked for in the project, then every folder above it up to the workspace folder (`venvRoots`) — a uv workspace's shared `.venv` at its root is found for each member (shown as `.venv (<folder>)`). The Python extension is asked for the project's own folder instead of the workspace folder.
+- Tests: `projectDiscovery.test.ts` (6 uv cases), `pythonDiscovery.test.ts` (`venvRoots`); e2e `pytest-monorepo` on the new `fixture:monorepo-pytest` (uv workspace: a member with its own pytest config, one with tests only, one without tests; shared `.venv`) — per-member results vs plain pytest in the member's folder, a save reruns only its member, Stop All. The harness's `workspacePython` finds the nearest `.venv` above a folder.
+
 ## [3.2.1] - 2026-11-05
 
 ### Stop really stops (fix, 3.2.0 bug)

@@ -17,7 +17,7 @@ Owner rules for new work (2026-11-06): a framework ships with **results and cove
 | ID | Item | Status | Size | Pick | Notes |
 |---|---|---|---|---|---|
 | A1 | **Gap audit** (read-only): plan checkboxes vs code vs docs vs feature matrix; produce a list of real gaps | ⬜ | 1 d | | Known suspects: A2, A3, I1, H1. Output goes into this file. |
-| A2 | **Router for N frameworks.** Confirmed in code (2026-11-06): `RoutedFramework = 'jest' \| 'vitest'` (`allowedFrameworks.ts`, 28 uses), the router's factories and the `frameworks` setting enum are the same. pytest plan task 1.5 is ticked but this part was not done; pytest only works because `ProjectContext` gives it a single-framework provider. | ⬜ | 2 d | 3 | Needed by Playwright / Cypress mixes (Vitest + Playwright is the common case), Mocha next to Jest, and pytest P8. Do once, here. |
+| A2 | **Router for N frameworks.** Confirmed in code (2026-11-06): `RoutedFramework = 'jest' \| 'vitest'` (`allowedFrameworks.ts`, 28 uses), the router's factories and the `frameworks` setting enum are the same. pytest plan task 1.5 is ticked but this part was not done; pytest only works because `ProjectContext` gives it a single-framework provider. | 🔄 | 2 d | 3 | Needed by Playwright / Cypress mixes (Vitest + Playwright is the common case), Mocha next to Jest, and pytest P8. Do once, here. |
 | A3 | Generic **results-and-coverage batch runner** shared by Mocha / node:test / Playwright / Cypress (one class, per-framework runner + reporter) | ⬜ | 3 d | | Built with the first consumer (Mocha), not alone. |
 | A4 | Capability-driven UI: a feature a framework lacks is hidden or says why (coverage tab, covering-tests hover, ▷ Debug) | ⬜ | 1–2 d | | Confirmed: only `features.trace` is read in the UI (`extension.ts:314`, the covering-tests hover). Missing coverage for pytest is handled one-off (env chip text, `traceOffReason`). `FrameworkCapabilities.coverage` / `related` are not used by any view. Needs a generic path. |
 
@@ -37,7 +37,7 @@ Owner rules for new work (2026-11-06): a framework ships with **results and cove
 
 | ID | Item | Status | Size | Pick | Source / notes |
 |---|---|---|---|---|---|
-| C1 | **pytest P7 — Python monorepos** (uv workspaces, per-member interpreter) | 🔄 | 5 d | 2 | `pytest-support-plan.md` phase 7 |
+| C1 | **pytest P7 — Python monorepos** (uv workspaces, per-member interpreter) | ✅ | 5 d | 2 | `pytest-support-plan.md` phase 7. Done 2026-11-07 on `feat/pytest-monorepos` |
 | C2 | **pytest P8 — JS + Python in one folder** (`LanguageRouter`, mixed status bar, Explorer groups) | ⬜ | 5 d | 4 | phase 8; needs A2 |
 | C3 | pytest Timeline debugger | ⏸ | — | | D6, "later" |
 | C4 | pytest plan document is stale: roadmap says 3.4 / 3.5 / 3.6, it all shipped as 3.2.0 | ✅ | 0.5 d | 1 | Done 2026-11-07: roadmap shows 3.2.0 shipped, phases 7–8 → 3.3.0 |

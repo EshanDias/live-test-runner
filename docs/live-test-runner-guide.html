@@ -295,7 +295,8 @@
     <li><b>Output per test</b>: each test shows its own <code>print</code> output, stderr and log records; failures show pytest's own explanation, and an error in a fixture says it happened in setup or teardown. With <code>-s</code> in <code>addopts</code>, output goes to the Test Output channel only.</li>
     <li><b>▶ Run</b> a test, a class or a parametrized function (all its cases) — by pytest node id, never <code>-k</code>.</li>
     <li><b>Coverage and covering tests</b>: measured with your own coverage settings (<code>[tool.coverage.run]</code>, <code>.coveragerc</code>…); each test is measured on its own, so the hover lists the tests that ran a line and <b>saving a source file</b> reruns exactly those tests. Before a file has coverage, saving it reruns the test files that import it; saving a <code>conftest.py</code> reruns the tests under its folder; saving the pytest config restarts the session.</li>
-    <li><b>Not yet</b>: Python monorepos, a JS + Python project in one folder, the Timeline Debugger.</li>
+    <li><b>Python monorepos</b>: in a uv workspace each member with tests is its own project, run from its own folder with the workspace's shared <code>.venv</code> (see <a href="#monorepos">Monorepos</a>).</li>
+    <li><b>Not yet</b>: a JS + Python project in one folder, the Timeline Debugger.</li>
   </ul>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/gifs/scene-pytest-run.gif" alt="pytest: Start Testing — the tree fills in, tests run live and pass" style="max-width:100%;border-radius:8px"></p>
 </section>
@@ -308,6 +309,8 @@
     <tr><th>Your layout</th><th>Projects</th></tr>
     <tr><td>A folder with its own test config (<code>jest.config.*</code>, <code>vitest.config.*</code>, <code>package.json#jest</code>, CRA)</td><td>One project — its config already covers its packages (Jest <code>projects</code>, Vitest <code>test.projects</code>)</td></tr>
     <tr><td>A monorepo root (<code>pnpm-workspace.yaml</code>, <code>package.json#workspaces</code>) without a test config</td><td>One project per package that has tests (a Jest / Vitest dependency, config or <code>test</code> script)</td></tr>
+    <tr><td>A folder that configures pytest (<code>pytest.ini</code>, <code>[tool.pytest.ini_options]</code>, a root <code>conftest.py</code>…)</td><td>One project — pytest run from there collects the whole tree</td></tr>
+    <tr><td>A uv workspace root (<code>[tool.uv.workspace] members</code>) without a pytest config</td><td>One project per member that has tests (its own pytest config, or test files when the root names pytest); each finds the workspace's shared <code>.venv</code></td></tr>
     <tr><td>A multi-root workspace</td><td>Each folder, by the rules above</td></tr>
   </table></div>
   <ul>
@@ -488,7 +491,7 @@
     <tr><td>Coverage (gutter, hover)</td><td>✅</td><td>✅</td><td>✅ needs <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>)</td><td>✅ needs <code>coverage</code> (pytest-cov not needed)</td></tr>
     <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
     <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ only the tests that ran it (execution trace); <code>vitest related</code> when the trace is off</td><td>✅ only the tests that ran it (coverage contexts); importing test files before that</td></tr>
-    <tr><td>Monorepo / multi-project (project switcher)</td><td>✅ one project per package; a root <code>projects</code> config stays one</td><td>🟡 a CRA app is detected as a package (not e2e-tested)</td><td>✅ one project per package; <code>test.projects</code> stays one, grouped by name</td><td>⏳ later (one pytest project per folder today)</td></tr>
+    <tr><td>Monorepo / multi-project (project switcher)</td><td>✅ one project per package; a root <code>projects</code> config stays one</td><td>🟡 a CRA app is detected as a package (not e2e-tested)</td><td>✅ one project per package; <code>test.projects</code> stays one, grouped by name</td><td>✅ one project per uv workspace member with tests; a root pytest config stays one</td></tr>
     <tr><td>Mixed Jest + Vitest in one project</td><td>✅ each test file runs with its own framework</td><td>—</td><td>✅</td><td>—</td></tr>
     <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>✅ Vitest ≥ 3 (incl. <code>vitest.workspace</code> files); not in browser mode</td><td>✅ from coverage.py contexts (needs <code>coverage</code>)</td></tr>
     <tr><td>UI components (<code>.vue</code>, <code>.svelte</code>, <code>.astro</code>, <code>.marko</code>): save reruns, trace, coverage</td><td>✅ through the project's transformer (vue-jest, svelte-jester…)</td><td>— (React is plain JS)</td><td>✅ through the project's Vite plugins</td><td>—</td></tr>

@@ -2,6 +2,12 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [3.3.0] - unreleased
+
+### New
+
+- **Python monorepos**: in a uv workspace every member with tests is its own project in the project switcher, run from its own folder with the workspace's shared `.venv`. A workspace whose root configures pytest itself stays one project.
+
 ## [3.2.1] - 2026-11-05
 
 ### Improved

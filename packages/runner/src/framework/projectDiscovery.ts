@@ -4,6 +4,8 @@ import { FRAMEWORK_IDS, FrameworkId } from '../types';
 import { FrameworkRegistry } from './FrameworkRegistry';
 import { JEST_CONFIG_FILES, readPackageJson } from './adapters/JestAdapter';
 import { VITEST_CONFIG_FILES, VITE_CONFIG_FILES } from './adapters/VitestAdapter';
+import { FrameworkAdapter, FrameworkFamily } from './adapters/FrameworkAdapter';
+import { configuresPytest, hasPytestTestFiles, mentionsPytest, uvWorkspaceGlobs } from './pytest/pytestConfig';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('Projects');
@@ -51,17 +53,29 @@ export function hasOwnTestConfig(dir: string): boolean {
  * config), or a `test` script that runs jest / vitest / react-scripts with
  * the framework installed higher up (hoisted in the workspace root).
  */
-export function testFrameworkOf(dir: string, registry: FrameworkRegistry = FrameworkRegistry.default()): FrameworkId | undefined {
+export function testFrameworkOf(dir: string, registry: FrameworkRegistry = FrameworkRegistry.default(), family?: FrameworkFamily): FrameworkId | undefined {
   for (const adapter of registry.adapters()) {
-    try {
-      if (adapter.detect(dir)) { return adapter.framework; }
-    } catch { /* an adapter that cannot read the folder does not claim it */ }
+    if (family && familyOfAdapter(adapter) !== family) { continue; }
+    if (claims(adapter, dir)) { return adapter.framework; }
   }
+  if (family && family !== 'js') { return undefined; }
   const script = String(readPackageJson(dir)?.scripts?.test ?? '');
   if (/\breact-scripts\s+test\b/.test(script)) { return FRAMEWORK_IDS.cra; }
   if (/\bvitest\b/.test(script)) { return FRAMEWORK_IDS.vitest; }
   if (/\bjest\b/.test(script)) { return FRAMEWORK_IDS.jest; }
   return undefined;
+}
+
+function familyOfAdapter(adapter: FrameworkAdapter): FrameworkFamily {
+  return adapter.family ?? 'js';
+}
+
+function claims(adapter: FrameworkAdapter, dir: string): boolean {
+  try {
+    return adapter.detect(dir);
+  } catch {
+    return false; // an adapter that cannot read the folder does not claim it
+  }
 }
 
 /**
@@ -110,11 +124,11 @@ export function pnpmWorkspacePackages(yaml: string): string[] {
 }
 
 /**
- * Folders (with a package.json) matched by workspace globs, relative to
+ * Folders (with a `marker` file, default package.json) matched by workspace globs, relative to
  * `root`: `*` is one path segment (also inside a name: `pkg-*`), `**` any
  * depth. node_modules, dot folders and build output are never entered.
  */
-export function expandWorkspaceGlobs(root: string, globs: string[]): string[] {
+export function expandWorkspaceGlobs(root: string, globs: string[], marker = 'package.json'): string[] {
   const expand = (list: string[]) => {
     const found = new Set<string>();
     for (const glob of list) {
@@ -127,7 +141,7 @@ export function expandWorkspaceGlobs(root: string, globs: string[]): string[] {
   const excluded = [...expand(globs.filter((g) => g.startsWith('!')).map((g) => g.slice(1)))];
   return [...included]
     .filter((dir) => !excluded.some((x) => samePath(x, dir) || isInside(dir, x)))
-    .filter((dir) => fs.existsSync(path.join(dir, 'package.json')))
+    .filter((dir) => fs.existsSync(path.join(dir, marker)))
     .sort();
 }
 
@@ -170,17 +184,29 @@ function segmentRegExp(seg: string): RegExp {
 }
 
 /**
- * The test projects of one workspace folder:
+ * The test projects of one workspace folder — its JavaScript projects
+ * ({@link jsProjectsInFolder}) and its Python projects
+ * ({@link pythonProjectsInFolder}). A folder both claim stays one project, the
+ * JavaScript one (JS + Python at one root: pytest plan phase 8).
+ */
+export function projectsInFolder(folder: string, registry: FrameworkRegistry = FrameworkRegistry.default()): DetectedProject[] {
+  const js = jsProjectsInFolder(folder, registry);
+  const python = pythonProjectsInFolder(folder, registry).filter((p) => !js.some((q) => samePath(q.root, p.root)));
+  return [...js, ...python];
+}
+
+/**
+ * The JavaScript test projects of one workspace folder:
  *  1. The folder configures a framework itself (see {@link hasOwnTestConfig})
  *     → one project, the folder — its config already covers its packages
  *     (the `jest` repo's root `projects`, vueuse's / slidev's `test.projects`).
  *  2. It is a monorepo root (pnpm-workspace.yaml / package.json#workspaces)
  *     without a test config of its own → one project per workspace package
  *     that has tests (a framework dependency, config or test script).
- *  3. Otherwise the folder, if a framework is detected there.
+ *  3. Otherwise the folder, if a JavaScript framework is detected there.
  */
-export function projectsInFolder(folder: string, registry: FrameworkRegistry = FrameworkRegistry.default()): DetectedProject[] {
-  const own = testFrameworkOf(folder, registry);
+export function jsProjectsInFolder(folder: string, registry: FrameworkRegistry = FrameworkRegistry.default()): DetectedProject[] {
+  const own = testFrameworkOf(folder, registry, 'js');
   const single = (reason: string): DetectedProject[] =>
     own ? [{ root: folder, name: projectName(folder), framework: own, reason }] : [];
 
@@ -203,6 +229,48 @@ export function projectsInFolder(folder: string, registry: FrameworkRegistry = F
     return single('a monorepo root whose packages have no tests of their own');
   }
   return packages;
+}
+
+/**
+ * The Python test projects of one workspace folder (pytest plan phase 7):
+ *  1. The folder configures pytest itself (a pytest config or a root
+ *     `conftest.py`) → one project, the folder. pytest run from there
+ *     collects the members too (`testpaths`, or the whole tree), and a
+ *     member run from its own folder would miss the root's conftest.py and
+ *     options — never split.
+ *  2. It is a uv workspace root (`[tool.uv.workspace] members`) → one
+ *     project per member with tests: a member that is a pytest project
+ *     itself, or one with test files when the root names pytest (the usual
+ *     shared dev dependency).
+ *  3. Otherwise the folder, if it is a pytest project.
+ */
+export function pythonProjectsInFolder(folder: string, registry: FrameworkRegistry = FrameworkRegistry.default()): DetectedProject[] {
+  const adapter = registry.adapters().find((a) => familyOfAdapter(a) === 'python');
+  if (!adapter) { return []; }
+  const single = (reason: string): DetectedProject[] =>
+    claims(adapter, folder) ? [{ root: folder, name: projectName(folder), framework: adapter.framework, reason }] : [];
+
+  if (configuresPytest(folder)) {
+    return single('the folder configures pytest itself');
+  }
+  const globs = uvWorkspaceGlobs(folder);
+  if (globs.length === 0) {
+    return single('pytest detected in the folder');
+  }
+  const inherited = mentionsPytest(folder);
+  const members: DetectedProject[] = [];
+  for (const dir of expandWorkspaceGlobs(folder, globs, 'pyproject.toml')) {
+    if (samePath(dir, folder)) { continue; }
+    if (claims(adapter, dir)) {
+      members.push({ root: dir, name: projectName(dir), framework: adapter.framework, reason: 'uv workspace member (pytest)' });
+    } else if (inherited && hasPytestTestFiles(dir)) {
+      members.push({ root: dir, name: projectName(dir), framework: adapter.framework, reason: 'uv workspace member with tests (pytest named by the workspace root)' });
+    }
+  }
+  if (members.length === 0) {
+    return single('a uv workspace root whose members have no tests of their own');
+  }
+  return members;
 }
 
 /**

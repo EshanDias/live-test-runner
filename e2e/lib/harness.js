@@ -414,15 +414,21 @@ function checkMatchesPlainVitest(api, t, workspace, label = 'results match plain
   t.check(`${label} (${want.size} files)`, want.size > 0 && diffs.length === 0, diffs.slice(0, 21).join('\n') || 'no files');
 }
 
-/** The python of a workspace's .venv (fixtures and real-repo clones). */
+/**
+ * The python of a workspace's .venv (fixtures and real-repo clones), else the
+ * nearest one above it (a uv workspace member uses the workspace root's).
+ */
 function workspacePython(workspace) {
   const fs = require('fs');
   const win = process.platform === 'win32';
-  for (const dir of ['.venv', 'venv']) {
-    const p = win ? path.join(workspace, dir, 'Scripts', 'python.exe') : path.join(workspace, dir, 'bin', 'python');
-    if (fs.existsSync(p)) { return p; }
+  for (let dir = path.resolve(workspace); ; dir = path.dirname(dir)) {
+    for (const venv of ['.venv', 'venv']) {
+      const p = win ? path.join(dir, venv, 'Scripts', 'python.exe') : path.join(dir, venv, 'bin', 'python');
+      if (fs.existsSync(p)) { return p; }
+    }
+    if (path.dirname(dir) === dir) { break; }
   }
-  throw new Error(`no .venv in ${workspace}`);
+  throw new Error(`no .venv in ${workspace} or above it`);
 }
 
 /**

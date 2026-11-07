@@ -710,6 +710,6 @@ Where the work stands, for whoever resumes it (an hourly check resumes after usa
 - [x] 9.2 Real-repo validation
 - [x] 9.3 Release prep → **3.2.0** (2026-10-29: `feat/release-prep-3.2.0` → `release/3.2.0`; full e2e on the packed `.vsix`)
 - [x] 6.1–6.3 Covering tests + related on-save → in **3.2.0** (owner, 2026-10-28) (M3)
-- [ ] 7.1–7.3 Python monorepos → **3.3.0** (branch `feat/pytest-monorepos`)
+- [x] 7.1–7.3 Python monorepos → **3.3.0** (2026-11-07, `feat/pytest-monorepos`: uv workspaces split per member, shared `.venv` found above the member; e2e `pytest-monorepo`)
 - [ ] A2 N-framework router (master tracker) → **3.3.0**, before phase 8
 - [ ] 8.1–8.3 JS + Python in one folder → **3.3.0** (M4)
