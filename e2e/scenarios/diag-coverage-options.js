@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Not a test: screenshots of three ways to show coverage, for the maintainers to
- * compare (3.3.0 item 1), each with breakpoints on a covered and an
+ * compare, each with breakpoints on a covered and an
  * uncovered line:
  *   A — VS Code's own coverage display (Testing API, FileCoverage)
  *   B — faint background tint on uncovered / partly covered lines only

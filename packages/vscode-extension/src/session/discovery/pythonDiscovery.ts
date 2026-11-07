@@ -1,5 +1,5 @@
 /**
- * Static discovery for pytest (pytest plan D12): a line scanner, no Python
+ * Static discovery for pytest: a line scanner, no Python
  * needed, so the Explorer and the gutter show a project's tests before
  * anything runs. pytest's own collection replaces the guess at Start (the
  * results reconcile the tree), so it only has to be right for ordinary code:

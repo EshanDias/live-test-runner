@@ -169,7 +169,7 @@ export class ProjectRegistry implements vscode.Disposable {
   }
 
   /**
-   * Why `ctx` may not start now (D11: liveTestRunner.maxRunningProjects),
+   * Why `ctx` may not start now (liveTestRunner.maxRunningProjects),
    * or undefined. A project already running may always restart.
    */
   startRefusal(ctx: ProjectContext): string | undefined {

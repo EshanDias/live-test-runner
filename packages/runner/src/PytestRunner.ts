@@ -67,7 +67,7 @@ export function toPytestPathArg(projectRoot: string, file: string): string {
  * Our runs leave the project as it was: pytest's cache goes to the session
  * folder (`--lf` state untouched), pytest-cov is idle (`--no-cov`; our plugin
  * measures with coverage.py into the session folder), and xdist gets `-n 0`
- * — our batches are the parallelism, within the machine's budget (D14, D19).
+ * — our batches are the parallelism, within the machine's budget.
  */
 export class PytestRunner extends CommandRunner {
   protected readonly runnerName = 'PytestRunner';

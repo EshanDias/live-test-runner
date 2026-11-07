@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Files changed outside the editor while a session is on (3.3.0):
+ * Files changed outside the editor while a session is on:
  *  - a source file changed on disk reruns the tests that use it
  *  - the editor's own save is not counted twice
  *  - many files at once (a branch switch) restart the session

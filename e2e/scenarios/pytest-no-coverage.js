@@ -1,7 +1,7 @@
 'use strict';
 /**
- * A pytest project whose environment has no `coverage` package (master
- * tracker A4): the tests run as usual, nothing is measured, and the Coverage
+ * A pytest project whose environment has no `coverage` package:
+ * the tests run as usual, nothing is measured, and the Coverage
  * tab is told why and what to install (CoverageTotals.off) instead of a
  * silent empty table.
  */

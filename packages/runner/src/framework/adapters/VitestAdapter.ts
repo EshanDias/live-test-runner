@@ -13,7 +13,7 @@ import { createLogger } from '../../utils/logger';
 
 const log = createLogger('VitestAdapter');
 
-/** Oldest Vitest major with full support (D2). Older majors run best-effort. */
+/** Oldest Vitest major with full support. Older majors run best-effort. */
 export const VITEST_BASELINE_MAJOR = 3;
 
 const CONFIG_EXTS = ['ts', 'mts', 'cts', 'js', 'mjs', 'cjs'];

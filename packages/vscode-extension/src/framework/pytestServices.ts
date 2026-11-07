@@ -48,7 +48,7 @@ export function createPytestServices(options: {
       plainRun: 'plain pytest',
       fallbackLoss: 'slower; no coverage for these files',
     },
-    // Covering tests come from coverage.py's per-test contexts; the Timeline is a later release (D6).
+    // Covering tests come from coverage.py's per-test contexts; the Timeline is not built for pytest yet.
     features: { trace: true, timeline: false },
     traceOffReason: (projectRoot) => pythonFor(projectRoot) && !pythonFor(projectRoot)!.coverage
       ? "the coverage package is not installed in the project's Python environment"

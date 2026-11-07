@@ -64,7 +64,7 @@ module.exports = {
     await vscode.commands.executeCommand('liveTestRunner.selectProject', web.id);
     h.checkMatchesPlainVitest(api, t, path.join(workspace, 'packages', 'web'), 'web matches plain Vitest');
 
-    // ── D12: lib's files are grouped by Vitest project name ────────────────
+    // ── lib's files are grouped by Vitest project name ────────────────
     const groups = Object.fromEntries(lib.store.getAllFiles().map((f) => [path.basename(f.filePath), f.group]));
     t.eq('lib files grouped by Vitest project', groups, { 'math.test.js': 'unit', 'slow.test.js': 'unit', 'flow.test.js': 'integration' });
     t.check('web (one project) has no groups', web.store.getAllFiles().every((f) => !f.group));

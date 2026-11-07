@@ -123,7 +123,7 @@ describe('ResultStore summary and lifecycle', () => {
   });
 });
 
-describe('ResultStore file groups (Vitest projects, D12)', () => {
+describe('ResultStore file groups (Vitest projects)', () => {
   it('sets, serialises and clears each file\'s group', () => {
     const store = new ResultStore();
     store.fileDiscovered('/p/a.test.js', '/p/a.test.js', 'a.test.js');

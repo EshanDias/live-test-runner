@@ -29,7 +29,7 @@ export interface IFrameworkAdapter {
 
   /**
    * {@link discoverTests} plus the framework's own grouping of the files
-   * (Vitest: `test.projects` names, D12). Optional — without it there are no groups.
+   * (Vitest: `test.projects` names). Optional — without it there are no groups.
    */
   listTestFiles?(projectRoot: string, log: (msg: string) => void): Promise<{ files: string[]; groups?: Record<string, string> }>;
 

@@ -33,7 +33,7 @@ describe('framework routing', () => {
   afterAll(() => { for (const d of dirs) { fs.rmSync(d, { recursive: true, force: true }); } });
 
   describe('projectFrameworks', () => {
-    it('lists every framework of the root, the primary first (A2)', () => {
+    it('lists every framework of the root, the primary first', () => {
       const mixed = make({ 'package.json': { devDependencies: { jest: '29', vitest: '3' } }, 'jest.config.js': '', 'vitest.config.ts': '' });
       expect(projectFrameworks(mixed, FRAMEWORK_IDS.jest).frameworks).toEqual(['jest', 'vitest']);
       expect(projectFrameworks(mixed, FRAMEWORK_IDS.cra).frameworks).toEqual(['jest', 'vitest']);

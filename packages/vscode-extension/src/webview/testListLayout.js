@@ -58,7 +58,7 @@ class TestListLayout {
     this.failuresOnly = false;
     this.folderView = false;
     this.statusFilter = 'all';
-    /** Group labels seen so far (Vitest project names, D12) — expanded the first time. */
+    /** Group labels seen so far (Vitest project names) — expanded the first time. */
     this._knownGroups = new Set();
     this._render();
   }
@@ -446,7 +446,7 @@ class TestListLayout {
         : files.map((f) => `<div data-file-wrapper="${esc(f.fileId)}">${this._renderFile(f)}</div>`).join('');
 
     if (this._isGrouped() && !this.query) {
-      // D12: one collapsible section per Vitest project; ungrouped files last.
+      // One collapsible section per Vitest project; ungrouped files last.
       const groups = new Map();
       for (const f of filtered) {
         const g = f.group || '';

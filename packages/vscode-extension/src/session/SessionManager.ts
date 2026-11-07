@@ -261,7 +261,7 @@ export class SessionManager {
       }
       const testFiles = discovered.filter((fp) => this._isRunnable(fp));
       this._markExcluded(discovered.filter((fp) => !this._isRunnable(fp)));
-      // D12: a config with several Vitest projects groups the Explorer by project name.
+      // A config with several Vitest projects groups the Explorer by project name.
       this._store.setFileGroups(runnableList ? this._groups : undefined);
       log.info(`Session started — ${testFiles.length} test file(s) · framework: ${framework} · root: ${projectRoot}`);
 

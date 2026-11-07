@@ -1,5 +1,5 @@
 /**
- * PythonInterpreters — which Python runs a pytest project (pytest plan D7).
+ * PythonInterpreters — which Python runs a pytest project.
  *
  * Order, first usable one wins:
  *  1. the user's choice — the "Select Python Interpreter" command, remembered

@@ -77,8 +77,8 @@ export interface FileResult {
   /** Set when the project's Jest config never runs this file (why, for display). */
   excluded?: string;
   /**
-   * The framework's own group of the file — Vitest's `test.projects` name
-   * (D12); the Explorer groups files by it. Undefined: no groups.
+   * The framework's own group of the file — Vitest's `test.projects` name;
+   * the Explorer groups files by it. Undefined: no groups.
    */
   group?: string;
 }

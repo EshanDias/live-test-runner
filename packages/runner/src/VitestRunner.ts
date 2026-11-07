@@ -294,7 +294,7 @@ export class VitestRunner extends CommandRunner {
     return [];
   }
 
-  /** `projectName` of each listed file — only when the config has two or more projects (D12). */
+  /** `projectName` of each listed file — only when the config has two or more projects. */
   protected override parseTestGroups(result: ExecutionResult, projectRoot: string): Record<string, string> | undefined {
     const start = result.stdout.indexOf('[');
     if (start < 0) { return undefined; }

@@ -3,7 +3,7 @@
 The single source for the framework table in `packages/vscode-extension/README.md`
 and `docs/live-test-runner-guide.html`. Edit the table below, then run
 `node scripts/framework-matrix.js` to copy it into both. Every feature PR
-flips its cell (plan decision D7).
+flips its cell.
 
 Cells: ✅ supported · 🟡 partial · ⏳ planned (target release) · — not applicable.
 

@@ -165,7 +165,7 @@ export abstract class CommandRunner implements TestRunner {
 
   /**
    * {@link discoverTests}, plus the framework's own grouping of the files
-   * when it has one (Vitest: the `test.projects` name of each file, D12).
+   * when it has one (Vitest: the `test.projects` name of each file).
    */
   async listTestFiles(projectRoot: string): Promise<TestFileList> {
     this.initAdapter(projectRoot);

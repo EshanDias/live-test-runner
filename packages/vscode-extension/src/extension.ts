@@ -386,7 +386,7 @@ export function activate(context: vscode.ExtensionContext) {
     return undefined;
   }
 
-  /** Start / restart one project's session (D11: the running-projects limit applies to new starts). */
+  /** Start / restart one project's session (the running-projects limit applies to new starts). */
   async function startProject(ctx: ProjectContext): Promise<void> {
     const refusal = projects.startRefusal(ctx);
     if (refusal) {

@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Coverage bars while editing (3.3.0 item 1):
+ * Coverage bars while editing:
  *  - a statement over several lines has a bar on each of them
  *  - unsaved edits move the bars with their lines; an edited or new line has no bar
  *  - the coverage hover follows the same lines

@@ -1,4 +1,4 @@
-// Two Vitest projects in one config (D12): one switcher entry, files grouped by project name.
+// Two Vitest projects in one config: one switcher entry, files grouped by project name.
 export default {
   test: {
     projects: [
