@@ -11,6 +11,12 @@ All notable changes to Live Test Runner are documented here.
 - **Interpreter per member**: virtual environments are looked for in the project, then every folder above it up to the workspace folder (`venvRoots`) — a uv workspace's shared `.venv` at its root is found for each member (shown as `.venv (<folder>)`). The Python extension is asked for the project's own folder instead of the workspace folder.
 - Tests: `projectDiscovery.test.ts` (6 uv cases), `pythonDiscovery.test.ts` (`venvRoots`); e2e `pytest-monorepo` on the new `fixture:monorepo-pytest` (uv workspace: a member with its own pytest config, one with tests only, one without tests; shared `.venv`) — per-member results vs plain pytest in the member's folder, a save reruns only its member, Stop All. The harness's `workspacePython` finds the nearest `.venv` above a folder.
 
+### Framework router for any number of frameworks (master tracker A2, internal)
+
+- `RoutedFramework` is the list `ROUTED_FRAMEWORKS` (`jest`, `vitest`, `pytest`) instead of the fixed `'jest' | 'vitest'` pair; `projectFrameworks` returns every framework a root configures (`frameworks`, primary first; `routedFrameworkOf` maps detection, CRA / unknown → `jest`); `parseFrameworkRules(setting, base, allowed)` validates against a list (`SETTING_FRAMEWORKS` = Jest, Vitest by default — a `.py` file only runs with pytest).
+- `FrameworkRouter` takes a factory per framework (`FrameworkFactories`, missing = never used), lists with every framework in play, allows each non-primary one in the root (and disallows ones no longer in play), and places a file the listing missed with the framework in play whose test-file rules take it (its hint, then the main framework, when several do). New `IFrameworkServicesProvider.frameworks()` (main first) drives the switcher label and the session log line.
+- pytest projects use the router too (primary `pytest`) instead of a `SingleFrameworkProvider`: the step that lets phase 8 put JS and Python in one project. No user-visible change; tests: `frameworkRouter.test.ts` (4), `frameworkRouting.test.ts` (2).
+
 ## [3.2.1] - 2026-11-05
 
 ### Stop really stops (fix, 3.2.0 bug)

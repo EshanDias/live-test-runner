@@ -5,8 +5,14 @@
  */
 import * as path from 'path';
 
-/** The framework families a test file can run with (`jest` covers Create React App). */
-export type RoutedFramework = 'jest' | 'vitest';
+/**
+ * The frameworks a project's router can place a test file with (`jest`
+ * covers Create React App). Adding a framework = one entry here, its
+ * services bundle in the extension's router factories, and (when a root can
+ * hold it next to another framework) its marker in `projectFrameworks`.
+ */
+export const ROUTED_FRAMEWORKS = ['jest', 'vitest', 'pytest'] as const;
+export type RoutedFramework = typeof ROUTED_FRAMEWORKS[number];
 
 const allowed = new Set<string>();
 
@@ -16,8 +22,8 @@ function allowKey(root: string, framework: RoutedFramework): string {
 }
 
 /**
- * Lets the `framework` runner run in `root` although detection picked the
- * other framework (a mixed project, or a `liveTestRunner.frameworks` rule).
+ * Lets the `framework` runner run in `root` although detection picked
+ * another framework (a mixed project, or a `liveTestRunner.frameworks` rule).
  * Without it each runner refuses a root of the other framework (BUG-37).
  */
 export function allowFrameworkAt(root: string, framework: RoutedFramework, allow = true): void {

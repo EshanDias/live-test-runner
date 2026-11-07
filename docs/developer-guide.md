@@ -104,7 +104,7 @@ Two adapter interfaces exist in the codebase:
 
 The separation means the runner can be used independently of VS Code.
 
-On the extension side a framework is a **services bundle** (`FrameworkServices`: `adapter`, `projectConfig: IProjectConfig`, `batchRunner: IBatchRunner`, `instrumentedRunner`, `createSessionRunner()`). `SessionManager` asks an `IFrameworkServicesProvider` for the bundle of a file or root (`servicesFor`) and never constructs framework classes; each project composes a `FrameworkRouter` that builds the Jest (`createJestServices`) or Vitest (`createVitestServices`) bundle for the project's framework — or both in a mixed Jest + Vitest project, where it places every test file with one framework (see architecture.md → framework services). Adapters that run through a packages/runner `CommandRunner` extend `RunnerBackedAdapter` and add only detection, their runner and the debug config.
+On the extension side a framework is a **services bundle** (`FrameworkServices`: `adapter`, `projectConfig: IProjectConfig`, `batchRunner: IBatchRunner`, `instrumentedRunner`, `createSessionRunner()`). `SessionManager` asks an `IFrameworkServicesProvider` for the bundle of a file or root (`servicesFor`) and never constructs framework classes; each project composes a `FrameworkRouter` with a factory per routable framework (Jest `createJestServices`, Vitest `createVitestServices`, pytest `createPytestServices`); it builds the bundle of the project's framework — or several in a mixed project, where it places every test file with one framework (see architecture.md → framework services). Adapters that run through a packages/runner `CommandRunner` extend `RunnerBackedAdapter` and add only detection, their runner and the debug config.
 
 Adding a framework = an adapter in each package plus the extension-side bundle (batch runner, project config). `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
 
@@ -415,7 +415,7 @@ export class VitestAdapter implements IFrameworkAdapter {
 
 ### Step 3 — Services bundle
 
-Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `FrameworkServices` (see `jestServices.ts`): the adapter above, an `IProjectConfig`, an `IBatchRunner`, an `IInstrumentedRunner`, `createSessionRunner()` (the runner adapter's `createRunner()`), `displayName` and `settingsFingerprint()`. Each `ProjectContext` composes it into its own `DetectingFrameworkProvider` (one provider per project, so projects never share a batch runner); `SessionManager` needs no change.
+Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `FrameworkServices` (see `jestServices.ts`): the adapter above, an `IProjectConfig`, an `IBatchRunner`, an `IInstrumentedRunner`, `createSessionRunner()` (the runner adapter's `createRunner()`), `displayName` and `settingsFingerprint()`. Register it with the router: add the id to `ROUTED_FRAMEWORKS` (runner `framework/allowedFrameworks.ts`) and its factory to the `FrameworkRouter` in `ProjectContext` (one router per project, so projects never share a batch runner). When a root can hold it next to another framework, add its marker to `projectFrameworks` (runner `framework/frameworkRouting.ts`) — the router then lists with every framework in play and places each file once. If its runner refuses roots of other frameworks, check `isFrameworkAllowedAt(root, '<id>')` as `JestRunner` / `VitestRunner` do. `SessionManager` needs no change.
 
 ### Checklist
 

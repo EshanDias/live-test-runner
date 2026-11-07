@@ -588,7 +588,7 @@ Static discovery (`instrumentation/shared/testDiscovery.js`) uses the project's 
 
 ### pytest (extension side)
 
-A pytest project (`DetectedProject.framework === 'pytest'`) gets a `SingleFrameworkProvider` with `createPytestServices` (`framework/pytestServices.ts`) and the Python `TestFileDiscoverer` (`session/discovery/pythonDiscovery.ts`, a line scanner — `python_files` under `testpaths`, `Test*` classes without `__init__`, `unittest.TestCase` subclasses, `@pytest.mark.parametrize` → template `name[…]`). The bundle:
+A pytest project (`DetectedProject.framework === 'pytest'`) gets the same `FrameworkRouter` as every project — its primary framework is `pytest`, so it builds only `createPytestServices` (`framework/pytestServices.ts`) — and the Python `TestFileDiscoverer` (`session/discovery/pythonDiscovery.ts`, a line scanner — `python_files` under `testpaths`, `Test*` classes without `__init__`, `unittest.TestCase` subclasses, `@pytest.mark.parametrize` → template `name[…]`). The bundle:
 
 | Member | Implementation |
 |---|---|

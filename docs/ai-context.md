@@ -166,7 +166,7 @@ src/
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
 │   │                               getAffectedTests, getDebugConfig
-│   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all / prepare / listTestFiles / restore / fileChanged / fingerprint / isMixed) + SingleFrameworkProvider
+│   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all / prepare / listTestFiles / restore / fileChanged / fingerprint / isMixed / frameworks) + SingleFrameworkProvider (unit tests)
 │   ├── FrameworkRouter.ts          Per project: one bundle, or Jest + Vitest in a mixed project — places each test file (setting → configs' lists → imports / calls → main framework + WARN)
 │   ├── jestServices.ts             createJestServices(): the Jest bundle (adapter, JestProjectConfig, JestBatchRunner, JestInstrumentedRunner, session runner)
 │   ├── vitestServices.ts           createVitestServices(): adapter, VitestProjectConfig, VitestBatchRunner (+ VitestTrace), features.trace, traceOffReason, no instrumented runner

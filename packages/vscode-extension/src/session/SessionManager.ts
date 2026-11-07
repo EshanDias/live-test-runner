@@ -231,7 +231,7 @@ export class SessionManager {
         if (s !== services) { s.projectConfig.reset(); void s.projectConfig.get(projectRoot); }
       }
       void this._loadSourceExtensions(projectRoot, token);
-      if (this._services.isMixed()) { framework = `${framework} + ${services.framework === 'vitest' ? 'jest' : 'vitest'}`; }
+      if (this._services.isMixed()) { framework = [framework, ...this._services.frameworks().filter((f) => f !== services.framework)].join(' + '); }
       this._runnable = toRunnableSet(runnableList);
       if (runnableList) {
         // Files Jest runs that the glob patterns missed (custom testMatch / testRegex).

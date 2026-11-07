@@ -5,7 +5,7 @@
  * SessionManager asks an {@link IFrameworkServicesProvider} for the bundle
  * of a file or project root. Each project has a FrameworkRouter
  * (`FrameworkRouter.ts`): one bundle for a single-framework project, and in
- * a mixed Jest + Vitest project (phase 8) each test file's own bundle.
+ * a mixed project (Jest + Vitest, phase 8) each test file's own bundle.
  */
 import { FrameworkId, TestRunner } from '@live-test-runner/runner';
 import { IFrameworkAdapter } from './IFrameworkAdapter';
@@ -142,6 +142,8 @@ export interface IFrameworkServicesProvider {
   fingerprint(projectRoot: string): string;
   /** The project runs files with more than one framework. */
   isMixed(): boolean;
+  /** The frameworks the project runs files with, the main one first (labels: "jest + vitest"). */
+  frameworks(): string[];
 }
 
 /** One framework for every file (unit tests, simple hosts). */
@@ -170,6 +172,8 @@ export class SingleFrameworkProvider implements IFrameworkServicesProvider {
   }
 
   isMixed(): boolean { return false; }
+
+  frameworks(): string[] { return [this._services.framework]; }
 }
 
 /** One framework's listing: its own list command, or discovery when it has none. */

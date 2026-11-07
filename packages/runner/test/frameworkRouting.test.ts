@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  routedFrameworkOf,
   projectFrameworks,
   frameworkHint,
   globToRegExp,
@@ -32,6 +33,23 @@ describe('framework routing', () => {
   afterAll(() => { for (const d of dirs) { fs.rmSync(d, { recursive: true, force: true }); } });
 
   describe('projectFrameworks', () => {
+    it('lists every framework of the root, the primary first (A2)', () => {
+      const mixed = make({ 'package.json': { devDependencies: { jest: '29', vitest: '3' } }, 'jest.config.js': '', 'vitest.config.ts': '' });
+      expect(projectFrameworks(mixed, FRAMEWORK_IDS.jest).frameworks).toEqual(['jest', 'vitest']);
+      expect(projectFrameworks(mixed, FRAMEWORK_IDS.cra).frameworks).toEqual(['jest', 'vitest']);
+      const py = make({ 'pytest.ini': '[pytest]\n' });
+      expect(projectFrameworks(py, FRAMEWORK_IDS.pytest)).toMatchObject({ primary: 'pytest', frameworks: ['pytest'], mixed: false });
+      expect(routedFrameworkOf(FRAMEWORK_IDS.unknown)).toBe('jest');
+      expect(routedFrameworkOf(FRAMEWORK_IDS.vitest)).toBe('vitest');
+    });
+
+    it('the frameworks setting accepts only JS frameworks by default', () => {
+      const { rules, errors } = parseFrameworkRules({ '**/*.py': 'pytest', '**/*.ts': 'vitest' }, '/ws');
+      expect(rules.map((r) => r.framework)).toEqual(['vitest']);
+      expect(errors[0]).toMatch(/framework must be "jest" or "vitest" \(got "pytest"\)/);
+      expect(parseFrameworkRules({ '**/*.py': 'pytest' }, '/ws', ['jest', 'vitest', 'pytest']).rules).toHaveLength(1);
+    });
+
     it('a Jest root with its own vitest.config is mixed, Jest primary', () => {
       const root = make({ 'package.json': { devDependencies: { jest: '29', vitest: '3' } }, 'vitest.config.ts': 'export default {}' });
       const pf = projectFrameworks(root, new FrameworkDetector().detectFramework(root));

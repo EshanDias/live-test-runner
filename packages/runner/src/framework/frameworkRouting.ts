@@ -17,13 +17,16 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { FRAMEWORK_IDS, FrameworkId } from '../types';
+import { FrameworkId } from '../types';
 import { JEST_CONFIG_FILES, JestAdapter, readPackageJson } from './adapters/JestAdapter';
 import { CRAAdapter } from './adapters/CRAAdapter';
 import { VITEST_CONFIG_FILES } from './adapters/VitestAdapter';
-import type { RoutedFramework } from './allowedFrameworks';
-export { allowFrameworkAt, isFrameworkAllowedAt } from './allowedFrameworks';
+import { ROUTED_FRAMEWORKS, RoutedFramework } from './allowedFrameworks';
+export { allowFrameworkAt, isFrameworkAllowedAt, ROUTED_FRAMEWORKS } from './allowedFrameworks';
 export type { RoutedFramework };
+
+/** The frameworks `liveTestRunner.frameworks` may send files to (a `.py` file only ever runs with pytest). */
+export const SETTING_FRAMEWORKS: readonly RoutedFramework[] = ['jest', 'vitest'];
 
 
 const CONFIG_EXTS = ['ts', 'mts', 'cts', 'js', 'mjs', 'cjs', 'json'];
@@ -33,7 +36,9 @@ const VITEST_WORKSPACE_FILES = CONFIG_EXTS.map((e) => `vitest.workspace.${e}`);
 export interface ProjectFrameworks {
   /** What detection picks for the root today (`jest` for Jest and CRA projects). */
   primary: RoutedFramework;
-  /** Both frameworks are configured in this root. */
+  /** Every framework configured in the root, the primary first. */
+  frameworks: RoutedFramework[];
+  /** More than one framework is configured in this root. */
   mixed: boolean;
   /** One line for logs. */
   reason: string;
@@ -50,17 +55,26 @@ export interface ProjectFrameworks {
  * @param detected the framework detection picked for the root (FrameworkDetector)
  */
 export function projectFrameworks(root: string, detected: FrameworkId): ProjectFrameworks {
-  const primary: RoutedFramework = detected === FRAMEWORK_IDS.vitest ? 'vitest' : 'jest';
+  const primary = routedFrameworkOf(detected);
+  const single = (reason: string): ProjectFrameworks => ({ primary, frameworks: [primary], mixed: false, reason });
+  if (primary === 'pytest') {
+    return single('a pytest project');
+  }
   if (primary === 'vitest') {
     // Vitest is picked only when nothing marks the root as Jest (BUG-37 rule) — never mixed by detection.
-    return { primary, mixed: false, reason: 'a Vitest project' };
+    return single('a Vitest project');
   }
   const jestMarker = hasJestMarker(root);
   const vitestConfig = [...VITEST_CONFIG_FILES, ...VITEST_WORKSPACE_FILES].find((f) => exists(path.join(root, f)));
   if (jestMarker && vitestConfig) {
-    return { primary, mixed: true, reason: `${jestMarker} and ${vitestConfig}` };
+    return { primary, frameworks: [primary, 'vitest'], mixed: true, reason: `${jestMarker} and ${vitestConfig}` };
   }
-  return { primary, mixed: false, reason: jestMarker ? `${jestMarker}, no Vitest config` : 'no Vitest config' };
+  return single(jestMarker ? `${jestMarker}, no Vitest config` : 'no Vitest config');
+}
+
+/** The router's framework for what detection picked (Create React App and unknown roots run with Jest). */
+export function routedFrameworkOf(detected: FrameworkId): RoutedFramework {
+  return (ROUTED_FRAMEWORKS as readonly string[]).includes(detected) ? detected as RoutedFramework : 'jest';
 }
 
 /** What marks a root as Jest (for the log line), or undefined. */
@@ -171,21 +185,25 @@ export type FrameworkRuleSetting = string | { framework?: unknown; [other: strin
 export function parseFrameworkRules(
   setting: unknown,
   baseDir: string,
+  allowed: readonly RoutedFramework[] = SETTING_FRAMEWORKS,
 ): { rules: FrameworkRule[]; errors: string[] } {
   const rules: FrameworkRule[] = [];
   const errors: string[] = [];
+  const names = allowed.map((f) => `"${f}"`);
+  const choice = names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names.join('');
   if (!setting || typeof setting !== 'object' || Array.isArray(setting)) {
-    if (setting !== undefined && setting !== null) { errors.push('liveTestRunner.frameworks must be an object: { "<glob>": "jest" | "vitest" }'); }
+    if (setting !== undefined && setting !== null) { errors.push(`liveTestRunner.frameworks must be an object: { "<glob>": ${names.join(' | ')} }`); }
     return { rules, errors };
   }
   const base = baseDir.replace(/\\/g, '/').replace(/\/+$/, '');
   for (const [glob, raw] of Object.entries(setting as Record<string, FrameworkRuleSetting>)) {
     const value = typeof raw === 'string' ? { framework: raw } : raw;
-    const framework = typeof value?.framework === 'string' ? value.framework.trim().toLowerCase() : '';
-    if (framework !== 'jest' && framework !== 'vitest') {
-      errors.push(`liveTestRunner.frameworks["${glob}"]: framework must be "jest" or "vitest" (got ${JSON.stringify(value?.framework)}) — entry ignored`);
+    const name = typeof value?.framework === 'string' ? value.framework.trim().toLowerCase() : '';
+    if (!(allowed as readonly string[]).includes(name)) {
+      errors.push(`liveTestRunner.frameworks["${glob}"]: framework must be ${choice} (got ${JSON.stringify(value?.framework)}) — entry ignored`);
       continue;
     }
+    const framework = name as RoutedFramework;
     const extra = typeof raw === 'object' && raw ? Object.keys(raw).filter((k) => k !== 'framework') : [];
     if (extra.length > 0) {
       errors.push(`liveTestRunner.frameworks["${glob}"]: ${extra.map((k) => `"${k}"`).join(', ')} not supported — the files run with the ${framework} config of their project root`);
