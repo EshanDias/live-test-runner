@@ -32,6 +32,10 @@ All notable changes to Live Test Runner are documented here.
 
 - `@live-test-runner/core` no longer has `CoverageMap` or `SelectionPolicy`, and `TestSession` lost its unused warm-up `start()` and `getCoverageMap()`. The map was always empty (it expected a `coveredBy` field Jest / Vitest coverage JSON never has) and nothing reran by it: source saves go by the execution trace, then the framework's related run. `IFrameworkAdapter.getAffectedTests` (read the map) is gone too. Docs (CLAUDE.md, architecture, ai-context, developer guide, core README, guide) no longer describe it. No user-visible change.
 
+### Open test files run first (master tracker C16 #4)
+
+- On Start the test files on screen (`visibleTextEditors`) run first, in batches of their own (a framework orders a batch's files itself, so being first in a shared batch would not help). A test file opened while it still waits in a run's queue moves to a batch of its own at the front (`SessionManager.promote`, from `onDidChangeActiveTextEditor`). Saves are unchanged. The queue logic moved to `session/batchQueue.ts` (`buildBatchQueue`, `promoteInQueue`). Tests: `batchQueue.test.ts` (5); e2e `basic-open-first` (the first Jest run is the open file alone, every file still runs once).
+
 ### Coverage bars on every line of a multi-line statement (master tracker C18)
 
 - A statement spanning several lines got a bar on its first line only (`CoverageDecorationManager` used `start.line`). New `coverage/statementLines.ts`: a statement with no other statement inside it marks every line it spans; one holding others (`const f = () => { … }`) only its first line, so an uncalled function body never looks green. Used by the bars and the hover's counter fallback; coverage totals are unchanged (statements, not lines). Works for every framework without the trace — the old `trace-driven-decorations.md` plan is replaced and removed. Tests: `statementLines.test.ts` (5); e2e `coverage-editing` (the `basic` fixture's `module.exports = { … }` now spans five lines).

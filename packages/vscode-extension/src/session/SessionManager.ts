@@ -16,6 +16,7 @@ import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import type { IBatchRunner } from './IBatchRunner';
 import { RunnableFilesCache, runnableCacheKey, runnableKey } from './RunnableFiles';
+import { buildBatchQueue, promoteInQueue } from './batchQueue';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
 import { coverageScopeOf } from '../coverage/coverageScope';
@@ -97,6 +98,9 @@ export class SessionManager {
    * "finished" is only announced when the last one ends (BUG-15).
    */
   private _activeRuns = 0;
+  /** The queues of the runs in flight: each moves a waiting test file to its front. */
+  private readonly _promoters = new Set<(filePath: string) => boolean>();
+
   /** Files changed on disk during a run: rerun when the runs finish. */
   private readonly _diskQueue = new Set<string>();
   /** The files the last queued disk rerun ran for (loop guard). */
@@ -290,7 +294,7 @@ export class SessionManager {
       // ── Run the tests ──────────────────────────────────────────────────────
       const run = this._beginRun('full suite', { fullSuite: true });
       try {
-        await this._runFiles(testFiles, projectRoot, token);
+        await this._runFiles(testFiles, projectRoot, token, { openFirst: true });
       } finally {
         this._endRun(run, testFiles);
       }
@@ -454,6 +458,19 @@ export class SessionManager {
     } catch (err) {
       log.error(`Debug: could not start a debug session for ${filePath}`, err);
       return undefined;
+    }
+  }
+
+  /**
+   * A file was opened in the editor: if it is a test file still waiting in a
+   * run's queue, it runs next (its result shows sooner).
+   */
+  promote(filePath: string): void {
+    for (const promote of this._promoters) {
+      if (promote(filePath)) {
+        log.debug(`${path.basename(filePath)} was opened — running it next`);
+        return;
+      }
     }
   }
 
@@ -1092,6 +1109,8 @@ export class SessionManager {
     filePaths: string[],
     projectRoot: string,
     token: number,
+    /** openFirst (the full run): the test files on screen run first, in batches of their own. */
+    opts: { openFirst?: boolean } = {},
   ): Promise<void> {
     const CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
     const totalFiles  = filePaths.length;
@@ -1244,13 +1263,16 @@ export class SessionManager {
     }
     // A framework's BatchPolicy caps its batch size and how many of its
     // processes run at once (pytest: one, with every file) within the budget.
-    const batchQueue: { batch: string[]; services: FrameworkServices }[] = [];
-    for (const [services, files] of byFramework) {
-      const size = Math.max(1, services.batchPolicy?.maxFilesPerBatch ?? BATCH_SIZE);
-      for (let i = 0; i < files.length; i += size) {
-        batchQueue.push({ batch: files.slice(i, i + size), services });
-      }
+    // The test files on screen run first (full run), and a test file opened
+    // while it waits moves to the front (promote()).
+    const onScreen = new Set(opts.openFirst ? vscode.window.visibleTextEditors.map((e) => runnableKey(e.document.uri.fsPath)) : []);
+    const batchQueue = buildBatchQueue(byFramework, (s) => s.batchPolicy?.maxFilesPerBatch ?? BATCH_SIZE, onScreen);
+    const first = batchQueue.filter((q) => q.batch.every((f) => onScreen.has(runnableKey(f))));
+    if (first.length > 0) {
+      log.debug(`Running the ${first.reduce((n, q) => n + q.batch.length, 0)} test file(s) open in the editor first`);
     }
+    const promote = (filePath: string) => promoteInQueue(batchQueue, filePath);
+    this._promoters.add(promote);
     const batchCount = batchQueue.length;
     const runningOf = new Map<FrameworkServices, number>();
     const waiters: (() => void)[] = [];
@@ -1283,7 +1305,7 @@ export class SessionManager {
           wakeAll();
         },
       ),
-    );
+    ).finally(() => this._promoters.delete(promote));
 
     if (live()) {
       log.debug(`${totalFiles} file(s) finished in ${secondsSince(totalStart)} (${batchCount} batch(es), concurrency ${CONCURRENCY})`);

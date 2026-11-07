@@ -694,7 +694,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (!editor) { return; }
       // A file of a project not discovered yet: discover it so its gutter / CodeLens appear (nothing runs).
-      projects.forFile(editor.document.uri.fsPath)?.ensureDiscovery();
+      const ctx = projects.forFile(editor.document.uri.fsPath);
+      ctx?.ensureDiscovery();
+      // A test file still waiting in a run's queue runs next.
+      ctx?.session.promote(editor.document.uri.fsPath);
       codeLensProvider.refresh();
     }),
 
