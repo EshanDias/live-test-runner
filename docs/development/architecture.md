@@ -2,6 +2,8 @@
 
 Live Test Runner is a monorepo of three packages that form a layered system: a runner engine, shared session logic, and a VS Code extension that owns the entire UI.
 
+This page is the big picture. How a single feature works end to end is in its own page under [design/](design/), for example [on-save reruns](design/on-save-reruns.md).
+
 ---
 
 ## Why a custom UI?

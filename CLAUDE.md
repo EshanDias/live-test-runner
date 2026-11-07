@@ -300,6 +300,7 @@ When making changes, update the relevant documentation files:
 
 | Change Type | Update These Files |
 |---|---|
+| **A new or changed feature** | its three pages: `docs/features/<feature>.md` (plain language, for everyone), `docs/requirements/<feature>.md` (what it must do, each requirement mapped to its tests), `docs/development/design/<feature>.md` (how it is built); list new pages in `docs/README.md` (the contents, also the Wiki's home). `node scripts/build-wiki.js --check` must pass |
 | **Architecture or system design changes** | `docs/development/architecture.md`, `docs/development/ai-context.md` |
 | **Core package API or lifecycle changes** | `packages/core/README.md`, `docs/development/developer-guide.md`, `docs/development/ai-context.md` |
 | **Runner package API, layer changes, or framework adapter updates** | `packages/runner/README.md`, `docs/development/developer-guide.md`, `docs/development/ai-context.md` |
@@ -324,6 +325,8 @@ When making changes, update the relevant documentation files:
 
 ## References
 
+- [docs/README.md](docs/README.md) — contents of all docs: features, requirements, development (copied to the GitHub Wiki on each merge to `main`; `docs/` is the source)
+- [docs/requirements/project-rules.md](docs/requirements/project-rules.md) — project-wide requirements (the behavioural rules above, with how each is checked)
 - [docs/development/](docs/development/README.md) — developer documentation index
 - [docs/development/architecture.md](docs/development/architecture.md) — Full system design, data flow, UI details, key decisions
 - [docs/development/developer-guide.md](docs/development/developer-guide.md) — Dev setup, core patterns, adding frameworks, publishing

@@ -1,4 +1,4 @@
-# AI Context — Live Test Runner
+# AI context
 
 Paste this document into a conversation to give an AI assistant complete knowledge of the Live Test Runner codebase — what it is, how it works, where everything lives, and the rules that govern it.
 

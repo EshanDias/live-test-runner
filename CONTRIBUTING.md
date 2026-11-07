@@ -20,7 +20,7 @@ pnpm lint
 node e2e/run.js --all   # end-to-end: real VS Code + real Jest / Vitest / pytest (build first)
 ```
 
-The [developer documentation](docs/development/README.md) explains the architecture, how to add a framework, and how the end-to-end tests work.
+The [documentation](docs/README.md) has three kinds of pages: what each feature does, what it must do (requirements), and how it is built. The [developer documentation](docs/development/README.md) explains the architecture, how to add a framework, and how the end-to-end tests work. The [Wiki](https://github.com/EshanDias/live-test-runner/wiki) is a copy of `docs/`: to change a page, edit its file in `docs/` in a pull request.
 
 ## Ground rules for changes
 
@@ -43,7 +43,7 @@ These keep the extension safe to install in anyone's project:
 
 - Work happens on a branch; `main` and `release/*` only change through pull requests.
 - PRs must pass the checks (`pnpm test`; PRs to `main` also need a version bump).
-- Update `CHANGELOG.md` (full detail) and `packages/vscode-extension/CHANGELOG.md` (short, user-facing) for anything users notice, and the docs where behaviour changes.
+- Update `CHANGELOG.md` (full detail) and `packages/vscode-extension/CHANGELOG.md` (short, user-facing) for anything users notice, and the docs where behaviour changes (for a feature: its pages in `docs/features/`, `docs/requirements/` and `docs/development/design/`).
 - Add or update tests: unit tests next to the package, and an e2e scenario (`e2e/scenarios/`) for behaviour in the editor.
 
 Merging a `release/*` branch into `main` builds, tests and publishes the extension; tags and GitHub Releases are created by the pipeline, never by hand.

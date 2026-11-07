@@ -47,6 +47,8 @@ jobs:
           cache: true
       - run: pnpm run build
       - run: pnpm lint
+      - name: Docs links resolve (the Wiki is built from docs/)
+        run: node scripts/build-wiki.js --check
       - run: pnpm test
 
   # The pytest plugin shipped with the extension (packages/runner/src/framework/pytest/ltr_pytest.py),
