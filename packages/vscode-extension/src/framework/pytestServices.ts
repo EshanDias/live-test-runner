@@ -53,6 +53,9 @@ export function createPytestServices(options: {
     traceOffReason: (projectRoot) => pythonFor(projectRoot) && !pythonFor(projectRoot)!.coverage
       ? "the coverage package is not installed in the project's Python environment"
       : undefined,
+    coverageOffReason: (projectRoot) => pythonFor(projectRoot) && !pythonFor(projectRoot)!.coverage
+      ? "pytest: install the coverage package in the project's Python environment (pip install coverage)"
+      : undefined,
     adapter: new PytestAdapter(sessionDir),
     projectConfig,
     batchRunner: new PytestBatchRunner(newRunner, { store: coverageStore, sessionDir, projectConfig }),

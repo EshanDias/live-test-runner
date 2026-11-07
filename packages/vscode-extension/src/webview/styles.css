@@ -279,6 +279,14 @@ body {
 
 .cov-file-row:hover .cov-row-action { display: block; }
 
+.cov-off-note {
+  margin-top: 6px;
+  padding: 4px 6px;
+  border-left: 2px solid var(--vscode-editorWarning-foreground);
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
 .cov-explorer-empty {
   padding: 24px 12px;
   text-align: center;

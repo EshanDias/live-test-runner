@@ -75,6 +75,11 @@ export interface FrameworkServices {
   /** Features beyond running tests. */
   readonly features: FrameworkFeatures;
   /**
+   * Why this framework measures no coverage for the root (its coverage package
+   * is missing), else undefined. Shown in the Coverage tab — the tests still run.
+   */
+  coverageOffReason?(projectRoot: string): string | undefined;
+  /**
    * When the framework has the trace but it is off for this project root
    * (Vitest: setting off, or the wrapper config could not add it): why.
    * Undefined = available. Source-file saves then use the related run.

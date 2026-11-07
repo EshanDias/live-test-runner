@@ -273,6 +273,9 @@ export class SessionManager {
 
       // Background source scan — runs in parallel with test execution.
       this._coverageStore.clear();
+      // A framework that cannot measure here says so in the Coverage tab (the tests still run).
+      const off = this._services.all().map((s) => s.coverageOffReason?.(projectRoot)).filter((r): r is string => !!r);
+      if (off.length > 0) { this._coverageStore.setOffReasons(off); }
       this._sourceCounter?.cancel();
       const sourceCounter = new SourceCounter(projectRoot, this._coverageStore, coverageScopeOf(services.projectConfig, projectRoot));
       this._sourceCounter = sourceCounter;
