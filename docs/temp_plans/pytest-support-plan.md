@@ -679,6 +679,13 @@ Where the work stands, for whoever resumes it (an hourly check resumes after usa
 - 2026-11-07 (owner): finish the open pytest work before anything new, Timeline excluded →
   **3.3.0** = phase 7, the N-framework router (master tracker A2), phase 8. Branches chained
   from `feat/master-tracker`: `feat/pytest-monorepos` → `feat/framework-router-n` → `feat/pytest-mixed-js`.
+- 2026-11-07: phases 7 and 8 done. Decisions on the way: (a) D13's `LanguageRouter` became the
+  N-framework router itself (pytest is one more bundle, `.py` files placed by ownership); (b) a
+  framework other than the main one that cannot run (no Python with pytest) is left out for the
+  session — the JS tests still run (before P8 those roots ran Jest only, a missing Python must not
+  stop them); (c) a root with its own pytest config / `conftest.py` is never split, also in a uv
+  workspace; (d) Python subfolders are searched two levels deep only when the folder has no Python
+  of its own. Streamlit (opt-in real repo) was not run. All pytest work except the Timeline (D6) is done.
 
 ## Progress tracker
 
@@ -711,5 +718,5 @@ Where the work stands, for whoever resumes it (an hourly check resumes after usa
 - [x] 9.3 Release prep → **3.2.0** (2026-10-29: `feat/release-prep-3.2.0` → `release/3.2.0`; full e2e on the packed `.vsix`)
 - [x] 6.1–6.3 Covering tests + related on-save → in **3.2.0** (owner, 2026-10-28) (M3)
 - [x] 7.1–7.3 Python monorepos → **3.3.0** (2026-11-07, `feat/pytest-monorepos`: uv workspaces split per member, shared `.venv` found above the member; e2e `pytest-monorepo`)
-- [ ] A2 N-framework router (master tracker) → **3.3.0**, before phase 8
-- [ ] 8.1–8.3 JS + Python in one folder → **3.3.0** (M4)
+- [x] A2 N-framework router (master tracker) → **3.3.0** (2026-11-07, `feat/framework-router-n`)
+- [x] 8.1–8.3 JS + Python in one folder → **3.3.0** (M4) (2026-11-07, `feat/pytest-mixed-js`; no separate `LanguageRouter` — the N-framework router holds the pytest bundle next to the JS ones)
