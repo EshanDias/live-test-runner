@@ -94,7 +94,7 @@ export interface FrameworkServices {
    * fix it), or undefined when it can. Nothing runs while there is a reason.
    */
   whyNotReady?(projectRoot: string): Promise<string | undefined>;
-  /** A runner for core's TestSession (coverage map, stop). Reads the settings when called. */
+  /** A runner for core's TestSession (Stop kills its processes). Reads the settings when called. */
   createSessionRunner(): TestRunner;
   /**
    * The user settings that change how the framework is called (and so which

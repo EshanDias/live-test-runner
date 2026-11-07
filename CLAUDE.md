@@ -48,7 +48,7 @@ packages/
 ├── runner/            @live-test-runner/runner
 │   └── Framework-agnostic test execution engine (no VS Code dependency)
 ├── core/              @live-test-runner/core
-│   └── Session lifecycle + coverage map (depends on runner)
+│   └── Session state (depends on runner)
 └── vscode-extension/  live-test-runner
     └── VS Code UI (depends on core)
 ```
@@ -119,7 +119,7 @@ Jest always runs in a spawned child process (`Executor.ts`). The extension host 
 
 ### 6. Smart On-Save Reruns
 
-After the first full run, saving a source file triggers targeted test reruns via `jest --findRelatedTests` or the coverage map. Suite/test-level execution uses name patterns to isolate scope. This is implemented in `SessionManager._runAffectedBySourceFile()`.
+After the first full run, saving a source file triggers targeted test reruns via the execution trace, else the framework's related run (`jest --findRelatedTests`, `vitest related`). Suite/test-level execution uses name patterns to isolate scope. This is implemented in `SessionManager._runAffectedBySourceFile()`.
 
 ### 7. Session Guard
 
@@ -200,15 +200,13 @@ Each `FrameworkAdapter` implements:
 
 Current adapters: Jest, Create React App, Vitest, pytest (family `python`: the project's interpreter, the shipped plugin `framework/pytest/ltr_pytest.py`).
 
-### `packages/core` — Session Lifecycle & Coverage
+### `packages/core` — Session Lifecycle
 
 | File | Responsibility |
 |------|---|
-| `TestSession.ts` | Start, stop, reset a session |
-| `CoverageMap.ts` | `Map<SourcePath, Set<TestPath>>` built during warm-up run, updated incrementally |
-| `SelectionPolicy.ts` | Legacy; minimal use |
+| `TestSession.ts` | Whether a project's session is on (`activate` / `stop`) and the runner it uses |
 
-**Coverage map** is built once during full suite run with coverage, then incremented on each on-save run. When a source file is saved, the map is checked before falling back to `jest --findRelatedTests`.
+Which tests a source save reruns is decided in the extension: the execution trace (`ExecutionTraceStore`), then the framework's related run (`jest --findRelatedTests`, `vitest related`, the test files that import it for pytest).
 
 ### `packages/vscode-extension` — VS Code Extension
 

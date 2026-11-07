@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { TestSession } from '@live-test-runner/core';
 import { FileRunResult } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 
@@ -81,12 +80,6 @@ export interface IFrameworkAdapter {
     log: (msg: string) => void,
     opts?: RerunOptions,
   ): Promise<boolean>;
-
-  /**
-   * Given a session (which holds the coverage map), return the set of test
-   * file paths affected by a change to the given source file.
-   */
-  getAffectedTests(session: TestSession, changedFile: string): string[];
 
   /**
    * Use the framework's own static-analysis fallback (e.g. jest --findRelatedTests)

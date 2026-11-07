@@ -20,12 +20,10 @@ Paste this document into a conversation to give an AI assistant complete knowled
 
 ```
 src/
-├── TestSession.ts      Session lifecycle: start / stop / reset
-├── CoverageMap.ts      Map<SourcePath, Set<TestPath>> — built from Jest coverage output
-└── SelectionPolicy.ts  Legacy; minimal use
+└── TestSession.ts      Whether a session is on (activate / stop) + its runner
 ```
 
-`CoverageMap` is the primary mechanism for determining which tests to re-run when a source (non-test) file is saved. Built once during the warm-up run, updated incrementally on each on-save run. Fallback: `jest --findRelatedTests`.
+Which tests a saved source file reruns is decided in the extension (`SessionManager._runAffectedBySourceFile`): the execution trace, then the framework's related run. (The old `CoverageMap` / `SelectionPolicy` were dead code and were removed in 3.3.0.)
 
 ---
 
@@ -165,7 +163,7 @@ src/
 │   └── TestDiscoveryService.ts     Static AST discovery on activate + FileSystemWatcher (BATCH_SIZE_COLD=5, BATCH_SIZE_WARM=25)
 ├── framework/
 │   ├── IFrameworkAdapter.ts        detect, discoverTests, isTestFile, runFile, runTestCase,
-│   │                               getAffectedTests, getDebugConfig
+│   │                               runRelatedTests, getDebugConfig
 │   ├── FrameworkServices.ts        FrameworkServices bundle + IFrameworkServicesProvider (servicesFor / all / prepare / listTestFiles / restore / fileChanged / fingerprint / isMixed / frameworks) + SingleFrameworkProvider (unit tests)
 │   ├── FrameworkRouter.ts          Per project: one bundle, or Jest + Vitest in a mixed project — places each test file (setting → configs' lists → imports / calls → main framework + WARN)
 │   ├── jestServices.ts             createJestServices(): the Jest bundle (adapter, JestProjectConfig, JestBatchRunner, JestInstrumentedRunner, session runner)
@@ -255,8 +253,8 @@ else (source file saved)
              suites with isSharedVars:true  → run whole file
              suites with isSharedVars:false → run individual test cases
                                               (single Jest invocation with combined --testNamePattern)
-         If no trace data yet (first run not complete):
-           → fall back to CoverageMap / jest --findRelatedTests (whole files)
+         If no trace data:
+           → the framework's related run: jest --findRelatedTests / vitest related (whole files)
 ```
 
 **Stop:** kill child processes, `clearAll()` on decorations (types kept alive), `resultStore.clearAllLineMaps()`, disable on-save.
@@ -621,7 +619,7 @@ All in `packages/vscode-extension/package.json`:
 | Known bugs + root causes | `docs/bugs-and-issues.md` |
 | Framework detection | `packages/runner/src/framework/FrameworkDetector.ts` |
 | CRA config extraction | `packages/runner/src/framework/adapters/CRAAdapter.ts` |
-| Coverage mapping | `packages/core/src/CoverageMap.ts` |
+| Source save → which tests rerun | `SessionManager._runAffectedBySourceFile`, `store/ExecutionTraceStore.ts` |
 | All user settings | `packages/vscode-extension/package.json` → `contributes.configuration` |
 
 ---

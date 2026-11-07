@@ -16,7 +16,7 @@ The solution is a fully custom webview UI. This gives cross-platform control ove
 
 ```
 packages/
-├── core/              @live-test-runner/core      Session lifecycle + coverage map
+├── core/              @live-test-runner/core      Session state
 ├── runner/            @live-test-runner/runner     Framework-agnostic execution engine
 └── vscode-extension/  live-test-runner             VS Code extension
 ```
@@ -59,15 +59,13 @@ Dependency direction: `vscode-extension` → `core` → `runner`. The runner has
 
 ## Package: `core`
 
-Owns session lifecycle and the coverage map.
+Owns the session's on / off state.
 
 | File | Responsibility |
 |------|---|
-| `TestSession.ts` | Start, stop, reset a test session |
-| `CoverageMap.ts` | `Map<SourcePath, Set<TestPath>>` built from Jest coverage output |
-| `SelectionPolicy.ts` | Legacy; minimal use |
+| `TestSession.ts` | Whether a project's session is on (`activate` / `stop`) and the runner it uses |
 
-**Coverage map:** core's `CoverageMap` (`IFrameworkAdapter.getAffectedTests`) is not consulted by on-save reruns — the execution trace is (Jest, Vitest), then the framework's related run (`jest --findRelatedTests`, `vitest related`).
+On-save reruns use the execution trace (Jest, Vitest), then the framework's related run (`jest --findRelatedTests`, `vitest related`). The old `CoverageMap` (always empty) and `SelectionPolicy` were removed in 3.3.0.
 
 ---
 
@@ -537,7 +535,7 @@ Everything cached lives outside the project: the user cache folder (`<folder>-<h
 ### Session management (`SessionManager`)
 
 1. **Start Testing** — awaits `TestDiscoveryService.awaitDiscovery()` (no-op if discovery already finished), reads file paths directly from `ResultStore`, clears `CoverageStore`, fires `SourceCounter` (background, parallel), runs all test files, enables on-save listener
-2. **On save** — debounced (default 300ms); classifies file as test or source; for source files calls `CoverageStore.markFileStale()` then `_runAffectedBySourceFile()` (trace-store driven with CoverageMap fallback)
+2. **On save** — debounced (default 300ms); classifies file as test or source; for source files calls `CoverageStore.markFileStale()` then `_runAffectedBySourceFile()` (the execution trace, else the framework's related run)
    - **Changed on disk** — `extension.ts` watches `**/*`; `session/ExternalChanges.ts` drops the editor's own saves (`onWillSave` / `onDidSave`, 2 s), dirty documents, `node_modules` and `.git`, batches events for 500 ms and hands each project its files (`onFilesChangedOnDisk`). Same path as a save (`onFileChanged`); more than 20 files restart the session; changes during a run are queued (`_diskQueue`) and rerun when the last run ends (`_runQueuedDiskChanges`) — a file that changed again during its own queued rerun is not queued again (`_lastDiskRerun`, a test writing it would loop).
 3. **Stop Testing** — kills child processes, clears decorations, calls `CoverageStore.clear()`, disables on-save
 
@@ -556,7 +554,7 @@ Concurrency is controlled by a `CONCURRENCY = 3` constant in `SessionManager`.
 | `isTestFile(filePath)` | Classify a saved file |
 | `runFile(...)` | Run a file and write to `ResultStore` |
 | `runTestCase(...)` | Run a single test by name |
-| `getAffectedTests(session, changedFile)` | Test files affected by a source change |
+| `runRelatedTests(store, sourceFile, root, log)` | The framework's related run for a source file no trace knows |
 | `getDebugConfig(...)` | VS Code debug launch config for `▷ Debug` |
 
 Adding a new framework = one file implementing `IFrameworkAdapter`, plus that framework's batch runner and project config, bundled as `FrameworkServices`. `SessionManager`, `ResultStore`, all views, and all observers require zero changes.
@@ -796,7 +794,6 @@ User clicks "Start Testing"
                   → ResultParser               parses JSON → RunResult
               → JestAdapter._applyFileResult() writes to ResultStore + LineMap (replaces AST line numbers with Jest's authoritative location.line)
               → IResultObserver.notify() → ExplorerView, ResultsView, DecorationManager
-      → CoverageMap built from coverage data
       → On-save listener enabled
 
 **Session Isolation** — every window uses a unique `session-<pid>-<ts>` directory. The extension host creates this on startup and injects it into all internal components (`SessionManager`, `JestAdapter`, `JestBatchRunner`). This ensures that multiple VS Code windows never conflict on shared temporary filenames.

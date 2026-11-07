@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { CommandRunner, ConsoleEntry, FileRunResult } from '@live-test-runner/runner';
-import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
 import {
   ResultStore,
@@ -163,11 +162,7 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
     return runner.runTestCaseJson(filePath, names.map(nameToPattern).join('|'), isSuite);
   }
 
-  // ── Coverage / affected tests ──────────────────────────────────────────────
-
-  getAffectedTests(session: TestSession, changedFile: string): string[] {
-    return Array.from(session.getCoverageMap().getAffectedTests(changedFile));
-  }
+  // ── Affected tests ─────────────────────────────────────────────────────────
 
   async runRelatedTests(
     store: ResultStore,

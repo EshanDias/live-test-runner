@@ -397,8 +397,6 @@ export class VitestAdapter implements IFrameworkAdapter {
 
   async runTestCase(store: ResultStore, filePath: string, fullName: string, projectRoot: string, log: OutputChannel): Promise<void> { ... }
 
-  getAffectedTests(session: TestSession, changedFile: string): string[] { ... }
-
   getDebugConfig(projectRoot: string, filePath: string, testFullName?: string): DebugConfiguration {
     return {
       type: 'node',

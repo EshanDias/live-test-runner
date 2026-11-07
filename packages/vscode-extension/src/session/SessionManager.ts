@@ -187,7 +187,7 @@ export class SessionManager {
     this._services.prepare(projectRoot);
     this._sourceExtensions = new Set();
     this._sourceExtensionsBy.clear();
-    // Bootstrap a session with the main framework's runner to hold the coverage map
+    // The session's on/off state, with the main framework's runner (Stop kills its processes)
     const services = this._services.servicesFor(projectRoot);
     this._session = new TestSession(services.createSessionRunner());
 
@@ -686,8 +686,8 @@ export class SessionManager {
    *  1. Trace store has data → run each affected test file, but only the
    *     individual test cases that actually touched this source file. Suites
    *     with isSharedVars:true are run as a whole-suite pattern instead.
-   *  2. No trace data yet → fall back to the adapter's CoverageMap /
-   *     jest --findRelatedTests (existing behaviour).
+   *  2. No trace data → the framework's related run (`jest
+   *     --findRelatedTests`, `vitest related`, pytest: the test files that import it).
    */
   /** @returns the test files that were rerun (empty when nothing depends on the file). */
   private async _runAffectedBySourceFile(
