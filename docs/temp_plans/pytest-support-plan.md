@@ -1,6 +1,6 @@
 # pytest Support & Language Decoupling — Task Plan (release 3.2.0)
 
-> Working document, same format as `docs/temp_plans/vitest-support-plan.md`.
+> Working document (the Vitest plan it was modelled on was removed 2026-11-06; its record is in CHANGELOG.md).
 > Work tasks top to bottom and tick the box in the [Progress tracker](#progress-tracker)
 > when one is done. Estimates are *focused working days including tests and docs*, ±30 %.
 > Written 2026-10-23 against `feat/mixed-frameworks` @ `ff83b27` (3.1.0 unreleased:
@@ -41,12 +41,14 @@ read 3.2 / 3.3 / 3.4.
 
 ### Release roadmap
 
-| Release | Scope | Phases |
-|---|---|---|
-| **3.4.0** | Decouple from JavaScript + pytest single project: run, pass/fail, per-test output, failures, live progress, hang limit, rerun a saved test file, Debug, coverage; feature matrix | 0, 1, 2, 3, 4, 5, 9 (part) |
-| 3.5.0 | Covering tests + precise source-file on-save reruns (coverage contexts), import-graph fallback | 6 |
-| 3.6.0 | Python monorepos + JS and Python in one folder | 7, 8 |
-| later | Timeline debugger for pytest (D6) | — |
+Updated 2026-11-07: everything planned for "3.4.0" and "3.5.0" shipped together as **3.2.0**
+(2026-10-29). The rest goes into **3.3.0** (owner, 2026-11-07).
+
+| Release | Scope | Phases | Status |
+|---|---|---|---|
+| **3.2.0** | Decouple from JavaScript + pytest single project: run, pass/fail, per-test output, failures, live progress, hang limit, rerun a saved test file, Debug, coverage, covering tests, source-file on-save reruns; feature matrix | 0–6, 9 | ✅ shipped |
+| **3.3.0** | Python monorepos (7) + JS and Python in one folder (8, needs the N-framework router, master tracker A2) | 7, 8 | 🔄 |
+| later | Timeline debugger for pytest (D6) — waits for the Timeline rewrite (owner) | — | ⏸ |
 
 ### Feature matrix — planned pytest column
 
@@ -513,7 +515,7 @@ message with an "Install" button (`workbench.extensions.search ms-python.debugpy
 **5.2 Tests (1 d)** — unit test of the config; e2e `pytest-debug` (session starts and
 stops; breakpoints not asserted, like `vitest-debug`). Gate.
 
-### Phase 9 — Docs, matrix & release 3.4.0 (4.5 d)
+### Phase 9 — Docs, matrix & release (shipped as 3.2.0) (4.5 d)
 
 **9.1 Docs (2 d)** — feature matrix (pytest column + "Mixed JS + Python" row) via
 `node scripts/framework-matrix.js`; README (settings `pythonPath`, `pytestArgs`;
@@ -545,7 +547,7 @@ dependents → DEBUG "no test depends on X".
 node id; before coverage → whole files via imports; conftest save), unit tests for the
 import resolver (src layout, namespace packages, relative imports). Gate → **M3**.
 
-### Phase 7 — Python monorepos (5 d) — *3.6.0, Feature P6*
+### Phase 7 — Python monorepos (5 d) — *3.3.0, Feature P6*
 
 **7.1 ADR + discovery (2 d)** — a pytest root (config file per §2.2) is one project; uv
 workspaces (`[tool.uv.workspace] members`) → one project per member with tests; a root with
@@ -557,7 +559,7 @@ ADR-7 (iv)); nesting drop per family (1.5).
 **7.3 Tests (2 d)** — fixture `monorepo-pytest` (uv workspace, 2 members, different
 interpreters not required); scenarios via `monorepo-select/run/stop` parametrised. Gate.
 
-### Phase 8 — JS + Python in one folder (5 d) — *3.6.0, Feature P7*
+### Phase 8 — JS + Python in one folder (5 d) — *3.3.0, Feature P7*
 
 **8.1 `LanguageRouter` (2 d)** (D13) — wraps the project's `FrameworkRouter`: `.py` and
 pytest config files → pytest bundle, the rest → JS router; `listTestFiles` = union;
@@ -674,6 +676,9 @@ Where the work stands, for whoever resumes it (an hourly check resumes after usa
 - 2026-10-29 (owner: release 3.2.0): `release/3.2.0` created from `main`; `feat/release-prep-3.2.0`
   (= `feat/pytest-2-docs` + `main`'s v3.1.0 commit) bumps the version to 3.2.0 and dates the
   changelogs; PR → `release/3.2.0`, then the owner opens `release/3.2.0 → main`.
+- 2026-11-07 (owner): finish the open pytest work before anything new, Timeline excluded →
+  **3.3.0** = phase 7, the N-framework router (master tracker A2), phase 8. Branches chained
+  from `feat/master-tracker`: `feat/pytest-monorepos` → `feat/framework-router-n` → `feat/pytest-mixed-js`.
 
 ## Progress tracker
 
@@ -705,5 +710,6 @@ Where the work stands, for whoever resumes it (an hourly check resumes after usa
 - [x] 9.2 Real-repo validation
 - [x] 9.3 Release prep → **3.2.0** (2026-10-29: `feat/release-prep-3.2.0` → `release/3.2.0`; full e2e on the packed `.vsix`)
 - [x] 6.1–6.3 Covering tests + related on-save → in **3.2.0** (owner, 2026-10-28) (M3)
-- [ ] 7.1–7.3 Python monorepos → 3.6.0
-- [ ] 8.1–8.3 JS + Python in one folder → **3.6.0** (M4)
+- [ ] 7.1–7.3 Python monorepos → **3.3.0** (branch `feat/pytest-monorepos`)
+- [ ] A2 N-framework router (master tracker) → **3.3.0**, before phase 8
+- [ ] 8.1–8.3 JS + Python in one folder → **3.3.0** (M4)
