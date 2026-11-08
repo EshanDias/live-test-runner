@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Source-file saves with Vitest (phase 6): a saved source file runs
+ * Source-file saves with Vitest: a saved source file runs
  * `vitest related <file> --run` through the live batch runner — its test
  * file shows running before its result, progress counts it, the result
  * streams in, and the saved file's coverage is measured again (a new,

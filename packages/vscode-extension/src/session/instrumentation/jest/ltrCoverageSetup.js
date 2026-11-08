@@ -44,7 +44,7 @@ try {
 // Test files are deliberately not instrumented (jest.mock hoisting), so the
 // enterTest()/exitTest() calls that tell the trace runtime which test a source
 // line ran for are made here instead. Without them no hit was ever recorded
-// and smart reruns / "covering tests" never worked (BUG-04).
+// and smart reruns / "covering tests" never worked.
 //
 //   setup → first test : 'H' context — module-level code of imported files
 //   beforeEach…afterEach: 'T' context — that test (and its beforeEach hooks)

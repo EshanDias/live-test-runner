@@ -5,7 +5,7 @@ import { esmEntry, viteEntryFor, vitestDirFor } from '../src/framework/vitestTra
 import { VitestRunner, _setVitestConfigReader } from '../src/VitestRunner';
 import { _resetProjectRoots } from '../src/resolution/RunnerPaths';
 
-/** Vitest execution trace (phase 9): finding the project's Vite, and the wrapper config in the command. */
+/** Vitest execution trace: finding the project's Vite, and the wrapper config in the command. */
 
 let root: string;
 

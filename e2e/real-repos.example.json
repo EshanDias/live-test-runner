@@ -1,0 +1,21 @@
+{
+  "$comment": "Copy to e2e/real-repos.local.json (gitignored) and point the paths at your own clones. Paths are relative to reposDir, which is relative to this file. kind: jest | cra | vitest | components | pytest. heavy: only with --all or by name. Python repos need their own .venv. The originals are never modified: each run works on a copy.",
+  "reposDir": "../../test-repos",
+  "repos": {
+    "jest-dom":               { "path": "jest/jest-dom", "kind": "jest" },
+    "vscode-jest":            { "path": "jest/vscode-jest", "kind": "jest" },
+    "jest":                   { "path": "jest/jest", "kind": "jest", "heavy": true },
+    "my-cra-app":             { "path": "jest/my-cra-app", "kind": "cra" },
+    "vue-testing-library":    { "path": "jest/vue-testing-library", "kind": "components", "runner": "jest", "env": { "LTR_E2E_COMPONENT_EXTS": "vue", "LTR_E2E_COMPONENT_COVERAGE": "0" } },
+    "vue-multiselect":        { "path": "jest/vue-multiselect", "kind": "components", "runner": "jest", "env": { "LTR_E2E_COMPONENT_EXTS": "vue" } },
+    "jest-preset-angular":    { "path": "jest/jest-preset-angular/examples/example-app-v22", "kind": "components", "runner": "jest", "env": { "LTR_E2E_COMPONENT_EXTS": "html" } },
+    "unplugin":               { "path": "vitest/unplugin", "kind": "vitest" },
+    "slidev":                 { "path": "vitest/slidev", "kind": "vitest" },
+    "vueuse":                 { "path": "vitest/vueuse", "kind": "vitest" },
+    "svelte-testing-library": { "path": "vitest/svelte-testing-library", "kind": "components", "runner": "vitest", "env": { "LTR_E2E_COMPONENT_EXTS": "svelte" } },
+    "click":                  { "path": "python/click", "kind": "pytest" },
+    "httpx":                  { "path": "python/httpx", "kind": "pytest" },
+    "erdantic":               { "path": "python/erdantic", "kind": "pytest" },
+    "pytest":                 { "path": "python/pytest", "kind": "pytest", "heavy": true }
+  }
+}

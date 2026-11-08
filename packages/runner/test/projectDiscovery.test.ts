@@ -12,6 +12,8 @@ import {
 } from '../src/framework/projectDiscovery';
 import { FrameworkRegistry } from '../src/framework/FrameworkRegistry';
 import { JestAdapter } from '../src/framework/adapters/JestAdapter';
+import { PytestAdapter } from '../src/framework/adapters/PytestAdapter';
+import { uvWorkspaceGlobs } from '../src/framework/pytest/pytestConfig';
 import { FrameworkAdapter } from '../src/framework/adapters/FrameworkAdapter';
 
 /** Writes `files` (path → content; objects are JSON) under a new temp folder. */
@@ -71,7 +73,7 @@ describe('project discovery', () => {
     expect(ps[0]).toMatchObject({ name: 'jest-mono', framework: 'jest' });
   });
 
-  it('a root with a Vitest config using test.projects is one project (D12)', () => {
+  it('a root with a Vitest config using test.projects is one project', () => {
     const root = make({
       'package.json': { name: 'vue-mono', devDependencies: { vitest: '4' } },
       'pnpm-workspace.yaml': "packages:\n  - packages/*\n",
@@ -150,5 +152,111 @@ describe('project discovery', () => {
     // Same family inside → still dropped (the outer one runs it).
     const js = make({ 'package.json': { devDependencies: { jest: '30' } }, 'pkg/package.json': { devDependencies: { jest: '30' } } });
     expect(findTestProjects([js, path.join(js, 'pkg')], registry).map((p) => p.root)).toEqual([js]);
+  });
+
+  describe('Python monorepos (uv workspaces)', () => {
+    const registry = () => new FrameworkRegistry().register(new JestAdapter(), 100).register(new PytestAdapter(), 10);
+    const projects = (root: string) => findTestProjects([root], registry()).map((p) => [path.relative(root, p.root).split(path.sep).join('/') || '.', p.framework, p.name]);
+    const UV_ROOT = '[project]\nname = "ws"\n\n[tool.uv.workspace]\nmembers = [\n  "packages/*",  # libraries\n  "apps/api",\n]\nexclude = ["packages/legacy"]\n\n[dependency-groups]\ndev = ["pytest>=8"]\n';
+
+    it('reads [tool.uv.workspace] members and exclude', () => {
+      const root = make({ 'pyproject.toml': UV_ROOT });
+      expect(uvWorkspaceGlobs(root)).toEqual(['packages/*', 'apps/api', '!packages/legacy']);
+      expect(uvWorkspaceGlobs(make({ 'pyproject.toml': '[project]\nname = "x"\n' }))).toEqual([]);
+      expect(uvWorkspaceGlobs(make({ 'setup.py': '' }))).toEqual([]);
+    });
+
+    it('a uv workspace root without pytest config of its own gives one project per member with tests', () => {
+      const root = make({
+        'pyproject.toml': UV_ROOT,
+        // pytest only named by the root (shared dev group): tests are enough.
+        'packages/core/pyproject.toml': '[project]\nname = "ws-core"\n',
+        'packages/core/tests/test_core.py': 'def test_a(): pass\n',
+        // its own pytest config
+        'packages/cli/pyproject.toml': '[project]\nname = "ws-cli"\n[tool.pytest.ini_options]\ntestpaths = ["t"]\n',
+        // a member without tests, and an excluded one
+        'packages/docs/pyproject.toml': '[project]\nname = "ws-docs"\n',
+        'packages/legacy/pyproject.toml': '[project]\nname = "legacy"\n',
+        'packages/legacy/tests/test_old.py': 'def test_old(): pass\n',
+        // not a member: no pyproject.toml
+        'packages/notes/tests/test_x.py': '',
+        'apps/api/pyproject.toml': '[project]\nname = "api"\n',
+        'apps/api/test_api.py': 'def test_api(): pass\n',
+      });
+      expect(projects(root)).toEqual([
+        ['apps/api', 'pytest', 'api'],
+        ['packages/cli', 'pytest', 'ws-cli'],
+        ['packages/core', 'pytest', 'ws-core'],
+      ]);
+    });
+
+    it('members need pytest themselves when the root does not name it', () => {
+      const root = make({
+        'pyproject.toml': '[tool.uv.workspace]\nmembers = ["libs/*"]\n',
+        'libs/a/pyproject.toml': '[project]\nname = "a"\n[dependency-groups]\ntest = ["pytest"]\n',
+        'libs/a/tests/test_a.py': '',
+        'libs/b/pyproject.toml': '[project]\nname = "b"\n',
+        'libs/b/tests/test_b.py': '',
+      });
+      expect(projects(root)).toEqual([['libs/a', 'pytest', 'a']]);
+    });
+
+    it('a root with its own pytest config or conftest.py is one project, never split', () => {
+      const member = { 'packages/core/pyproject.toml': '[project]\nname = "core"\n[tool.pytest.ini_options]\n', 'packages/core/tests/test_core.py': '' };
+      const withConfig = make({ ...member, 'pyproject.toml': UV_ROOT + '\n[tool.pytest.ini_options]\ntestpaths = ["packages"]\n' });
+      expect(projects(withConfig)).toEqual([['.', 'pytest', 'ws']]);
+      const withConftest = make({ ...member, 'pyproject.toml': UV_ROOT, 'conftest.py': '' });
+      expect(projects(withConftest)).toEqual([['.', 'pytest', 'ws']]);
+    });
+
+    it('a uv workspace whose members have no tests is the root, when the root is a pytest project', () => {
+      const root = make({ 'pyproject.toml': UV_ROOT, 'packages/core/pyproject.toml': '[project]\nname = "core"\n', 'tests/test_root.py': '' });
+      expect(projects(root)).toEqual([['.', 'pytest', 'ws']]);
+    });
+
+    it('a JS monorepo next to a uv workspace in one folder: both kinds of members', () => {
+      const root = make({
+        'package.json': { name: 'repo', private: true, workspaces: ['web/*'] },
+        'web/app/package.json': { name: 'app', devDependencies: { jest: '30' } },
+        'pyproject.toml': UV_ROOT,
+        'packages/core/pyproject.toml': '[project]\nname = "core"\n',
+        'packages/core/tests/test_core.py': '',
+      });
+      expect(projects(root)).toEqual([['web/app', 'jest', 'app'], ['packages/core', 'pytest', 'core']]);
+    });
+  });
+
+  describe('JS and Python in one folder', () => {
+    const registry = () => new FrameworkRegistry().register(new JestAdapter(), 100).register(new PytestAdapter(), 10);
+    const projects = (root: string) => findTestProjects([root], registry()).map((p) => [path.relative(root, p.root).split(path.sep).join('/') || '.', p.framework]);
+
+    it('a root that is both a Jest and a pytest project is one project (the JS one runs pytest too)', () => {
+      const root = make({ 'package.json': { devDependencies: { jest: '30' } }, 'pytest.ini': '[pytest]\n', 'tests/test_a.py': '' });
+      expect(projects(root)).toEqual([['.', 'jest']]);
+    });
+
+    it('a Python subfolder with its own pytest config is its own project', () => {
+      const root = make({
+        'package.json': { devDependencies: { jest: '30' } },
+        'backend/pyproject.toml': '[project]\nname = "api"\n[tool.pytest.ini_options]\n',
+        'backend/tests/test_api.py': '',
+        'services/worker/conftest.py': '',
+        'tools/scripts/deep/pytest.ini': '[pytest]\n', // deeper than the scan
+        'node_modules/pkg/pytest.ini': '[pytest]\n',
+        '.venv/lib/pytest.ini': '[pytest]\n',
+        'docs/notes.md': '',
+      });
+      expect(projects(root)).toEqual([['.', 'jest'], ['backend', 'pytest'], ['services/worker', 'pytest']]);
+    });
+
+    it('a uv workspace in a subfolder of a JS repo gives its members', () => {
+      const root = make({
+        'package.json': { devDependencies: { jest: '30' } },
+        'python/pyproject.toml': '[tool.uv.workspace]\nmembers = ["libs/*"]\n[dependency-groups]\ndev = ["pytest"]\n',
+        'python/libs/a/pyproject.toml': '[project]\nname = "a"\n',
+        'python/libs/a/tests/test_a.py': '',
+      });
+      expect(projects(root)).toEqual([['.', 'jest'], ['python/libs/a', 'pytest']]);
+    });
   });
 });

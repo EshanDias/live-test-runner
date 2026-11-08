@@ -117,7 +117,7 @@ if (!global.__strace) {
 // Coverage counters are flushed by ltrCoverageSetup.js in afterAll. There is
 // deliberately no process.on('exit') handler here: this module is loaded once
 // per test file (fresh module registry), so each load added another listener
-// (MaxListenersExceededWarning, N duplicate flushes — BUG-19), and Jest's
+// (MaxListenersExceededWarning, N duplicate flushes), and Jest's
 // --forceExit kills workers before 'exit' handlers run anyway.
 
 // The Vitest setup file takes the runtime from here (it may run in a VM

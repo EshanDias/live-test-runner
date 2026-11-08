@@ -6,7 +6,7 @@ import { CoverageScope, vitestCoverageScope } from '../coverage/coverageScope';
  * The Vitest config file a project uses (the test script's `--config`, else
  * `vitest.config.*`, else `vite.config.*`). Vitest loads and resolves its
  * config itself, so this is the file path, not a resolved copy — the trace
- * work (task 9.1) wraps it with mergeConfig.
+ * work wraps it with mergeConfig.
  */
 export class VitestProjectConfig implements IProjectConfig {
   private readonly _adapter = new VitestRunnerAdapter();

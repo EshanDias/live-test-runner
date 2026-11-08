@@ -3,7 +3,7 @@
  * in it.
  *
  * The extension decides the interpreter (the user's choice, the project's
- * virtual environment, the Python extension's, PATH — pytest plan D7), probes
+ * virtual environment, the Python extension's, PATH, in that order), probes
  * it once and registers it here per project root; the runner only reads it.
  * Nothing is installed or changed in the environment (CLAUDE.md rule 9).
  */
@@ -28,7 +28,7 @@ export interface PythonInfo {
   debugpy?: string;
 }
 
-/** Oldest supported versions (pytest plan D2). */
+/** Oldest supported versions. */
 export const MIN_PYTHON = '3.12.0';
 export const MIN_PYTEST = '7.0.0';
 

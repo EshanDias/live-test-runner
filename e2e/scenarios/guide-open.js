@@ -1,6 +1,6 @@
 'use strict';
 /**
- * "Open Guide" (task 11.4): the guide shipped in out/guide/ opens in an editor
+ * "Open Guide": the guide shipped in out/guide/ opens in an editor
  * tab (a webview), once — running the command again reveals the same tab.
  */
 const h = require('../lib/harness');

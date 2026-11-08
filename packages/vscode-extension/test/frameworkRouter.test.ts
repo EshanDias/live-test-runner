@@ -5,7 +5,7 @@ import { isFrameworkAllowedAt } from '@live-test-runner/runner';
 import { FrameworkRouter } from '../src/framework/FrameworkRouter';
 import { FrameworkServices } from '../src/framework/FrameworkServices';
 
-/** Phase 8: which framework runs each test file of a project. */
+/** Which framework runs each test file of a project. */
 
 function tree(files: Record<string, string | object>): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr router '));
@@ -176,5 +176,74 @@ describe('FrameworkRouter', () => {
     const listing = await r.listTestFiles(root, [f('plain.test.ts'), f('vi.test.ts'), f('only-vitest.test.ts')], () => {});
     // Jest (unknown list) may run any file Vitest does not list; Vitest's own files stay Vitest's.
     expect(listing.frameworks).toMatchObject({ [f('plain.test.ts')]: 'jest:ownership', [f('vi.test.ts')]: 'vitest:hint', [f('only-vitest.test.ts')]: 'vitest:ownership' });
+  });
+
+  describe('any number of frameworks', () => {
+    /** A bundle with its own test-file rule. */
+    const bundle = (name: string, isTestFile: (f: string) => boolean, files: () => string[] = () => []): FrameworkServices => ({
+      ...fakeBundle(name as 'Jest', files),
+      framework: name.toLowerCase(),
+      adapter: { isTestFile, listTestFiles: async () => ({ files: files() }) },
+    } as unknown as FrameworkServices);
+
+    it('a pytest root routes everything to pytest; no JS bundle is built', async () => {
+      const root = make({ 'pytest.ini': '[pytest]\n', 'tests/test_a.py': 'def test_a(): pass\n' });
+      const built: string[] = [];
+      const make3 = (name: string, isTest: (f: string) => boolean, files: () => string[] = () => []) => () => { built.push(name); return bundle(name, isTest, files); };
+      const r = new FrameworkRouter(
+        {
+          jest: make3('Jest', (f) => f.endsWith('.test.js')),
+          vitest: make3('Vitest', (f) => f.endsWith('.test.js')),
+          pytest: make3('pytest', (f) => /test_.*\.py$/.test(f), () => [path.join(root, 'tests', 'test_a.py')]),
+        },
+        root, () => root, () => undefined,
+      );
+      r.prepare();
+      expect(r.isMixed()).toBe(false);
+      expect(r.frameworks()).toEqual(['pytest']);
+      const listing = await r.listTestFiles(root, [path.join(root, 'tests', 'test_a.py')], () => {});
+      expect(listing.files).toEqual([path.join(root, 'tests', 'test_a.py')]);
+      expect(r.servicesFor(path.join(root, 'tests', 'test_a.py')).framework).toBe('pytest');
+      expect(r.servicesFor(root).framework).toBe('pytest');
+      expect(built).toEqual(['pytest']);
+    });
+
+    it('frameworks() names what the project runs with, the main framework first', async () => {
+      const root = mixedRoot();
+      const f = (n: string) => path.join(root, 'src', n);
+      const r = router(root, { jest: [f('only-jest.spec.js')], vitest: [f('only-vitest.test.ts')] });
+      expect(r.frameworks()).toEqual(['jest', 'vitest']);
+      const pure = make({ 'package.json': { devDependencies: { jest: '29' } } });
+      expect(router(pure, {}).frameworks()).toEqual(['jest']);
+    });
+
+    it('an unlisted test file goes to the one framework in play whose rules take it', async () => {
+      const root = mixedRoot();
+      const r = new FrameworkRouter(
+        {
+          jest: () => bundle('Jest', (f) => /\.(test|spec)\.js$/.test(f), () => []),
+          vitest: () => bundle('Vitest', (f) => /\.(test|spec)\.ts$/.test(f), () => []),
+        },
+        root, () => root, () => undefined,
+      );
+      r.prepare();
+      await r.listTestFiles(root, [], () => {});
+      expect(r.servicesFor(path.join(root, 'src', 'new.spec.ts')).displayName).toBe('Vitest');
+      expect(r.servicesFor(path.join(root, 'src', 'new.spec.js')).displayName).toBe('Jest');
+      expect(r.servicesFor(path.join(root, 'src', 'util.ts')).displayName).toBe('Jest'); // a source file: the main framework
+    });
+
+    it('a setting rule naming a framework the project has no bundle for is ignored', async () => {
+      const root = make({ 'package.json': { devDependencies: { jest: '29' } }, 'a.test.js': '' });
+      const r = new FrameworkRouter(
+        { jest: () => fakeBundle('Jest', () => [path.join(root, 'a.test.js')]) },
+        root, () => root, () => ({ '**/*.test.js': 'vitest' }),
+      );
+      r.prepare();
+      const listing = await r.listTestFiles(root, [path.join(root, 'a.test.js')], () => {});
+      expect(r.isMixed()).toBe(false);
+      expect(listing.files).toEqual([path.join(root, 'a.test.js')]);
+      expect(r.servicesFor(path.join(root, 'a.test.js')).displayName).toBe('Jest');
+    });
   });
 });

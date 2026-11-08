@@ -45,7 +45,8 @@ function copyInstrumentationFiles() {
  * Ships @babel/parser (one self-contained file, MIT) in out/vendor/: static
  * test discovery uses the project's own Babel when it has one (every Jest
  * project does), and this copy otherwise — Vitest projects usually have no
- * Babel. The published .vsix has no node_modules (vsce --no-dependencies).
+ * Babel. The published .vsix has no node_modules (vsce --no-dependencies), so
+ * the licenses of the third-party code it ships are copied here too.
  */
 function copyVendorFiles() {
   const dest = path.join(__dirname, 'out', 'vendor');
@@ -53,6 +54,9 @@ function copyVendorFiles() {
   const pkgDir = path.dirname(require.resolve('@babel/parser/package.json'));
   fs.copyFileSync(path.join(pkgDir, 'lib', 'index.js'), path.join(dest, 'babel-parser.js'));
   fs.copyFileSync(path.join(pkgDir, 'LICENSE'), path.join(dest, 'babel-parser.LICENSE'));
+  // picomatch (MIT) is bundled into out/extension.js; its license must ship with it.
+  const picomatchDir = path.dirname(require.resolve('picomatch/package.json'));
+  fs.copyFileSync(path.join(picomatchDir, 'LICENSE'), path.join(dest, 'picomatch.LICENSE'));
 }
 
 /** The user guide (docs/live-test-runner-guide.html) for the Open Guide command. */

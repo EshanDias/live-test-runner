@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Two projects running at once (phase 7, D11/D12): start both, switch the
+ * Two projects running at once: start both, switch the
  * views back and forth while they run, results land in each project's own
  * store; a background project reruns on save; a package whose Vitest config
  * has test.projects is one project whose files are grouped by project name.
@@ -23,7 +23,7 @@ module.exports = {
     fs.writeFileSync(path.join(workspace, 'packages', 'web', 'src', 'slow.test.js'), SLOW);
 
     const reg = api.projects;
-    t.eq('two Vitest projects (lib with test.projects is one entry, D12)', reg.contexts.map((c) => [c.name, c.framework]), [['lib', 'vitest'], ['web', 'vitest']]);
+    t.eq('two Vitest projects (lib with test.projects is one entry)', reg.contexts.map((c) => [c.name, c.framework]), [['lib', 'vitest'], ['web', 'vitest']]);
     const [lib, web] = reg.contexts;
     const rel = (ctx) => ctx.store.getAllFiles().map((f) => norm(path.relative(workspace, f.filePath))).sort();
 
@@ -64,7 +64,7 @@ module.exports = {
     await vscode.commands.executeCommand('liveTestRunner.selectProject', web.id);
     h.checkMatchesPlainVitest(api, t, path.join(workspace, 'packages', 'web'), 'web matches plain Vitest');
 
-    // ── D12: lib's files are grouped by Vitest project name ────────────────
+    // ── lib's files are grouped by Vitest project name ────────────────
     const groups = Object.fromEntries(lib.store.getAllFiles().map((f) => [path.basename(f.filePath), f.group]));
     t.eq('lib files grouped by Vitest project', groups, { 'math.test.js': 'unit', 'slow.test.js': 'unit', 'flow.test.js': 'integration' });
     t.check('web (one project) has no groups', web.store.getAllFiles().every((f) => !f.group));

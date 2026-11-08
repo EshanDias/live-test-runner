@@ -9,7 +9,7 @@ import { PytestAdapter } from './adapters/PytestAdapter';
 export const ADAPTER_PRIORITIES = {
   /** Must precede Jest — CRA projects also have jest in their deps. */
   cra: 300,
-  /** Vitest only when nothing marks the project as Jest (BUG-37). */
+  /** Vitest only when nothing marks the project as Jest. */
   vitest: 200,
   /** Plain Jest (and Next.js + Jest, etc.). */
   jest: 100,

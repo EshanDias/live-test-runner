@@ -6,4 +6,4 @@ Framework-specific pieces (transform, setup file, reporter) live next to this fo
 per framework (`../jest/`).
 
 The contract between them — `__strace` API, trace/coverage/result record formats, environment
-variables — is documented in `docs/architecture.md` → *Session instrumentation protocol*.
+variables — is documented in `docs/development/architecture.md` → *Session instrumentation protocol*.

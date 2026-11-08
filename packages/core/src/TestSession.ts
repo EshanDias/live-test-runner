@@ -1,36 +1,16 @@
-import { CoverageMap } from './CoverageMap';
 import { TestRunner } from '@live-test-runner/runner';
-import { createLogger } from './utils/logger';
 
-const log = createLogger('TestSession');
-
+/**
+ * Whether a project's session is on, and the runner it uses. The extension's
+ * SessionManager drives the runs itself (activate / stop); on-save reruns are
+ * chosen by the execution trace and the framework's related run.
+ */
 export class TestSession {
-  private coverageMap: CoverageMap;
   private runner: TestRunner;
   private isActive: boolean = false;
 
   constructor(runner: TestRunner) {
     this.runner = runner;
-    this.coverageMap = new CoverageMap();
-  }
-
-  async start(projectRoot: string): Promise<void> {
-    log.debug(`Warm-up run for ${projectRoot}`);
-    this.isActive = true;
-    try {
-      // Discover tests then do a warm-up run with coverage to build the map
-      await this.runner.discoverTests(projectRoot);
-      const result = await this.runner.runFullSuiteJson(projectRoot, true);
-      if (result.passed) {
-        this.coverageMap.buildFromCoverage(await this.runner.getCoverage());
-        log.debug('Coverage map built');
-      } else {
-        log.debug(`Warm-up run had ${result.numFailedTests} failing test(s) — coverage map not built`);
-      }
-    } catch (err) {
-      log.error(`Session start failed for ${projectRoot}`, err);
-      throw err;
-    }
   }
 
   stop(): void {
@@ -42,17 +22,12 @@ export class TestSession {
     return this.isActive;
   }
 
-  /** Marks the session active without running a warmup. Used when the caller
-   *  drives the warmup run directly (e.g. to get structured JSON results). */
+  /** Marks the session active; the caller drives the runs. */
   activate(): void {
     this.isActive = true;
   }
 
   getRunner(): TestRunner {
     return this.runner;
-  }
-
-  getCoverageMap(): CoverageMap {
-    return this.coverageMap;
   }
 }

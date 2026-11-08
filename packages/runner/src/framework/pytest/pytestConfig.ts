@@ -123,13 +123,39 @@ const MENTION_FILES = ['pyproject.toml', 'setup.py', 'setup.cfg', 'tox.ini', 'Pi
  * test files where pytest looks by default (the root or `tests/` / `test/`).
  */
 export function isPytestProject(root: string): boolean {
-  if (findPytestConfig(root)) { return true; }
-  if (fs.existsSync(path.join(root, 'conftest.py'))) { return true; }
-  const mentions = MENTION_FILES.some((name) => {
+  if (configuresPytest(root)) { return true; }
+  return mentionsPytest(root) && hasPytestTestFiles(root);
+}
+
+/** The folder configures pytest itself: a pytest config file or a `conftest.py`. */
+export function configuresPytest(root: string): boolean {
+  return !!findPytestConfig(root) || fs.existsSync(path.join(root, 'conftest.py'));
+}
+
+/** pytest is named in the folder's dependency files (`pyproject.toml`, `requirements*.txt`, …). */
+export function mentionsPytest(root: string): boolean {
+  return MENTION_FILES.some((name) => {
     try { return /\bpytest\b/i.test(fs.readFileSync(path.join(root, name), 'utf8')); } catch { return false; }
   });
-  if (!mentions) { return false; }
+}
+
+/** Test files where pytest looks by default: the folder itself, `tests/` / `test/`, one level below. */
+export function hasPytestTestFiles(root: string): boolean {
   return [root, path.join(root, 'tests'), path.join(root, 'test')].some((dir) => hasTestFile(dir));
+}
+
+/**
+ * The member globs of a uv workspace root (`[tool.uv.workspace] members`),
+ * with `exclude` entries returned as `!glob`. Empty when the folder is no
+ * uv workspace root.
+ */
+export function uvWorkspaceGlobs(root: string): string[] {
+  let text: string;
+  try { text = fs.readFileSync(path.join(root, 'pyproject.toml'), 'utf8'); } catch { return []; }
+  const ws = parseTomlTables(text).get('tool.uv.workspace');
+  if (!ws) { return []; }
+  const list = (v: unknown) => (Array.isArray(v) ? v.filter((g): g is string => typeof g === 'string' && !!g.trim()).map((g) => g.trim()) : []);
+  return [...list(ws.members), ...list(ws.exclude).map((g) => `!${g}`)];
 }
 
 function hasTestFile(dir: string): boolean {

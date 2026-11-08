@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Copies the framework feature matrix from docs/framework-features.md (the
+ * Copies the framework feature matrix from docs/development/framework-features.md (the
  * single source) into the README and the HTML guide, between their
  * `<!-- matrix:start -->` / `<!-- matrix:end -->` markers.
  *
@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const SOURCE = path.join(ROOT, 'docs', 'framework-features.md');
+const SOURCE = path.join(ROOT, 'docs', 'development', 'framework-features.md');
 const README = path.join(ROOT, 'packages', 'vscode-extension', 'README.md');
 const GUIDE = path.join(ROOT, 'docs', 'live-test-runner-guide.html');
 const START = '<!-- matrix:start -->';

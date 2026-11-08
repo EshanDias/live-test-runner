@@ -1,6 +1,6 @@
 import * as path from 'path';
 
-/** Vitest execution trace (phase 9): the transform that inserts `__strace.step(line, file)` calls, and its source map. */
+/** Vitest execution trace: the transform that inserts `__strace.step(line, file)` calls, and its source map. */
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const T = require('../src/session/instrumentation/vitest/vitestTraceTransform.js');

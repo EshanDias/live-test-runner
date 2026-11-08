@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { FileStoresResolver } from './FileStores';
 import { Manifest } from '../coverage/types';
+import { statementLines } from '../coverage/statementLines';
 import { MeasuredLines } from './MeasuredLines';
 
 const BRANCH_TYPE_LABEL: Record<string, string> = {
@@ -17,7 +18,7 @@ const BRANCH_TYPE_LABEL: Record<string, string> = {
 const MAX_TESTS_SHOWN = 5;
 
 export class CoverageHoverProvider implements vscode.HoverProvider {
-  /** The hovered file's own project's stores (phase 7). */
+  /** The hovered file's own project's stores. */
   constructor(
     private readonly _resolve: FileStoresResolver,
     /** Why a file has no per-test trace by design (e.g. "covering tests are not available for Vitest yet"), else undefined. */
@@ -62,7 +63,7 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
     // Fallback: trace store may be empty (e.g. Jest exited before flushing trace).
     // Check Istanbul counters so a green bar never shows "not covered" in the hover.
     const isCounterCovered = !isLineCovered && manifest
-      ? Object.entries(manifest.statements).some(([id, loc]) => loc.start.line === line && (entry.counters.s[id] ?? 0) > 0)
+      ? (statementLines(manifest).get(line) ?? []).some((id) => (entry.counters.s[id] ?? 0) > 0)
       : false;
 
     // ── Partial branch analysis ────────────────────────────────────────────────

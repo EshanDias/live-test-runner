@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { CommandRunner, ConsoleEntry, FileRunResult } from '@live-test-runner/runner';
-import { TestSession } from '@live-test-runner/core';
 import { IFrameworkAdapter, RerunOptions } from './IFrameworkAdapter';
 import {
   ResultStore,
@@ -79,7 +78,7 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
   }
 
   isTestFile(filePath: string): boolean {
-    // Same patterns and extensions as discovery (.mjs / .cjs included — BUG-17).
+    // Same patterns and extensions as discovery (.mjs / .cjs included).
     return /\.(test|spec)\.(c|m)?[jt]sx?$/i.test(filePath)
       || (/[\\/]__tests__[\\/]/.test(filePath) && /\.(c|m)?[jt]sx?$/i.test(filePath));
   }
@@ -163,11 +162,7 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
     return runner.runTestCaseJson(filePath, names.map(nameToPattern).join('|'), isSuite);
   }
 
-  // ── Coverage / affected tests ──────────────────────────────────────────────
-
-  getAffectedTests(session: TestSession, changedFile: string): string[] {
-    return Array.from(session.getCoverageMap().getAffectedTests(changedFile));
-  }
+  // ── Affected tests ─────────────────────────────────────────────────────────
 
   async runRelatedTests(
     store: ResultStore,
@@ -358,7 +353,7 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
 
       // Jest reports test.skip / xit / tests skipped by .only as "pending" and
       // test.todo as "todo". Both ran (as skipped) — never show them as ○
-      // "not run yet" (BUG-24).
+      // "not run yet".
       const status: TestStatus =
         tc.status === 'passed'
           ? 'passed'
@@ -435,7 +430,7 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
     } else if (opts?.fullNames) {
       // Pattern rerun of a few tests (smart rerun on save). Jest attributes
       // console output to the file only, so this is the output of just those
-      // tests: it must not replace the file's full output (BUG-10). It belongs
+      // tests: it must not replace the file's full output. It belongs
       // to a test only when exactly one ran; otherwise it cannot be attributed.
       const ranTests = [...touchedNodeIds].filter((id) => store.getNode(id)?.type === 'test');
       if (ranTests.length === 1) { store.setNodeOutput(ranTests[0], output); }

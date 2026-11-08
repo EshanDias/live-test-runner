@@ -1,5 +1,5 @@
 /**
- * How many projects may run at once (D11) — pure, so it is unit-tested
+ * How many projects may run at once — pure, so it is unit-tested
  * without VS Code. The setting `liveTestRunner.maxRunningProjects` is
  * `"auto"` (default) or a number ≥ 1.
  */
@@ -10,7 +10,7 @@ const GB = 1024 ** 3;
 /**
  * `auto`: 2, or 1 on a machine with ≤ 4 CPU cores or < 8 GB total memory —
  * every running project keeps its own test processes and on-save reruns.
- * Total, not free memory (owner decision 2026-10-22): macOS reports most
+ * Total, not free memory: macOS reports most
  * memory as cached, so "free" memory would almost always say 1.
  */
 export function autoMaxRunningProjects(cpuCount: number = os.cpus().length, totalMemBytes: number = os.totalmem()): number {

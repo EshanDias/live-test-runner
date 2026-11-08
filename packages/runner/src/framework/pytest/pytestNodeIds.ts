@@ -1,5 +1,5 @@
 /**
- * Test names ⇄ pytest node ids (pytest plan D10).
+ * Test names ⇄ pytest node ids.
  *
  * The extension names a pytest test like a Jest one: its classes and its own
  * name, space-joined (`TestCart test_total[2-items]`); a test outside any

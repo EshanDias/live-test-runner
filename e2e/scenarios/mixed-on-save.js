@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Saves in a mixed-framework project (phase 8): a saved test file reruns
+ * Saves in a mixed-framework project: a saved test file reruns
  * with its own framework; a saved source file reruns the dependent tests of
  * both frameworks (each by its own execution trace) and no
  * file gets the other framework's result; a file that starts importing

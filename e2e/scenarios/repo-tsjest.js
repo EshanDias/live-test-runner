@@ -35,7 +35,7 @@ module.exports = {
     t.eq('no test left running', h.nodesWithStatus(api, 'running').length, 0);
     t.eq('one run-finished', rec.of('run-finished').length, 1);
     const fallback = logs.filter((l) => /returned no results|falling back to plain Jest|retrying it with plain Jest/.test(l));
-    t.check('BUG-07 no fallback to plain Jest', fallback.length === 0, fallback.slice(0, 10).join('\n'));
+    t.check('no fallback to plain Jest', fallback.length === 0, fallback.slice(0, 10).join('\n'));
 
     // Test-for-test comparison with plain Jest.
     const baseline = process.env.LTR_E2E_TSJEST_BASELINE;
@@ -56,7 +56,7 @@ module.exports = {
     // Trace + coverage.
     const srcRoot = path.join(workspace, 'src').toLowerCase();
     const mapped = api.traceStore.dump().split('\n').filter((l) => l.startsWith('  [source]')).map((l) => l.slice(11).trim());
-    t.check('BUG-04 trace maps source files to tests', mapped.length > 5, `${mapped.length} source file(s) mapped`);
+    t.check('trace maps source files to tests', mapped.length > 5, `${mapped.length} source file(s) mapped`);
     const measured = [...api.coverageStore.getAllEntries()].filter(([, e]) => e.state === 'measured');
     t.check('coverage measured for source files', measured.length > 5, `${measured.length} measured`);
     const dropped = logs.filter((l) => /coverage dropped/.test(l));
@@ -75,7 +75,7 @@ module.exports = {
         scope: 'test', fileId: testNode.fileId, nodeId: testNode.id, fullName: testNode.fullName,
       });
       const sums = h.jestTestSummaries(h.rawSince(api, mark));
-      t.check(`BUG-03 ▶ Run "${testNode.fullName.slice(0, 60)}" ran only that test (${runs} Jest project(s))`, sums.length === 1 && sums[0].passed === runs, JSON.stringify(sums));
+      t.check(`▶ Run "${testNode.fullName.slice(0, 60)}" ran only that test (${runs} Jest project(s))`, sums.length === 1 && sums[0].passed === runs, JSON.stringify(sums));
       t.eq('the test still passes', api.store.getNode(testNode.id).status, 'passed');
     }
 
@@ -97,7 +97,7 @@ module.exports = {
         await h.sleep(800);
         await h.waitFor(() => api.session._activeRuns === 0, { what: 'save rerun', timeout: 300_000 });
         const l2 = h.logsSince(api, s2);
-        t.check(`BUG-04 saving ${path.basename(src)} used the trace`, l2.some((l) => /Trace-based rerun/.test(l)), l2.join('\n'));
+        t.check(`saving ${path.basename(src)} used the trace`, l2.some((l) => /Trace-based rerun/.test(l)), l2.join('\n'));
         const cmds = h.rawSince(api, mark).filter((l) => /^\[jest#\d+\] > /.test(l));
         t.check(`save reran ${candidates[0].n} file(s) or fewer`, cmds.length >= 1 && cmds.length <= candidates[0].n, cmds.join('\n'));
         t.eq('no test left running after the save rerun', h.nodesWithStatus(api, 'running').length, 0);
@@ -121,16 +121,16 @@ module.exports = {
         const env = { ...process.env, ...config.env }; delete env.ELECTRON_RUN_AS_NODE;
         const r = spawnSync(process.platform === 'win32' ? 'node.exe' : 'node', [config.program, ...config.args], { cwd: config.cwd, encoding: 'utf8', env, timeout: 300_000 });
         const sums = h.jestTestSummaries(`${r.stdout}\n${r.stderr}`.split(/\r?\n/));
-        t.check(`BUG-06 debug config runs only that test (${runs} Jest project(s))`, sums.length === 1 && sums[0].passed === runs, JSON.stringify(sums) + (r.stderr || '').slice(-400));
+        t.check(`debug config runs only that test (${runs} Jest project(s))`, sums.length === 1 && sums[0].passed === runs, JSON.stringify(sums) + (r.stderr || '').slice(-400));
       } else {
-        t.check('BUG-06 debug session started', false);
+        t.check('debug session started', false);
       }
     }
 
     // Timeline.
     {
       const store = await api.instrumentedRunner.run({ filePath: testNode.fileId, testFullName: testNode.fullName, projectRoot: workspace });
-      t.check('BUG-12 timeline recorded steps', store.steps.length > 0, `steps: ${store.steps.length}`);
+      t.check('timeline recorded steps', store.steps.length > 0, `steps: ${store.steps.length}`);
     }
 
     // Stop mid-run.
@@ -141,9 +141,9 @@ module.exports = {
       await vscode.commands.executeCommand('liveTestRunner.stopTesting');
       await h.sleep(4000);
       const left = h.jestProcesses(workspace);
-      t.check('BUG-08 Stop leaves no Jest process', left.length === 0, left.join('\n'));
+      t.check('Stop leaves no Jest process', left.length === 0, left.join('\n'));
       await p;
-      t.eq('BUG-23 Stop leaves nothing spinning', h.nodesWithStatus(api, 'running').length, 0);
+      t.eq('Stop leaves nothing spinning', h.nodesWithStatus(api, 'running').length, 0);
     }
     rec.stop();
   },

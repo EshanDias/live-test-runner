@@ -269,6 +269,29 @@ function plainJestJson(workspace) {
 }
 
 /**
+ * Whether `file` is inside `dir`. On Windows, case and slashes are ignored:
+ * VS Code gives the folders of a .code-workspace file a lowercase drive
+ * letter (c:\…), while the e2e runner created them as C:\….
+ */
+function isInside(file, dir) {
+  const win = process.platform === 'win32';
+  const cmp = (p) => (win ? p.replace(/\\/g, '/').toLowerCase() : p);
+  const sep = win ? '/' : path.sep;
+  const d = cmp(dir).replace(/[\\/]+$/, '');
+  return cmp(file).startsWith(d + sep);
+}
+
+/**
+ * Whether a log or command line mentions path `p`. On Windows, case is ignored
+ * and backslashes may be doubled (a quoted path in a printed command line).
+ */
+function mentionsPath(text, p) {
+  if (process.platform !== 'win32') { return text.includes(p); }
+  const cmp = (s) => s.replace(/\\+/g, '/').toLowerCase();
+  return cmp(text).includes(cmp(p));
+}
+
+/**
  * Maps a path Jest reported (its real path: symlinks resolved, Windows 8.3
  * short names such as RUNNER~1 expanded) to the workspace's spelling, which is
  * what the extension's store uses. Case- and slash-insensitive on Windows.
@@ -414,15 +437,21 @@ function checkMatchesPlainVitest(api, t, workspace, label = 'results match plain
   t.check(`${label} (${want.size} files)`, want.size > 0 && diffs.length === 0, diffs.slice(0, 21).join('\n') || 'no files');
 }
 
-/** The python of a workspace's .venv (fixtures and real-repo clones). */
+/**
+ * The python of a workspace's .venv (fixtures and real-repo clones), else the
+ * nearest one above it (a uv workspace member uses the workspace root's).
+ */
 function workspacePython(workspace) {
   const fs = require('fs');
   const win = process.platform === 'win32';
-  for (const dir of ['.venv', 'venv']) {
-    const p = win ? path.join(workspace, dir, 'Scripts', 'python.exe') : path.join(workspace, dir, 'bin', 'python');
-    if (fs.existsSync(p)) { return p; }
+  for (let dir = path.resolve(workspace); ; dir = path.dirname(dir)) {
+    for (const venv of ['.venv', 'venv']) {
+      const p = win ? path.join(dir, venv, 'Scripts', 'python.exe') : path.join(dir, venv, 'bin', 'python');
+      if (fs.existsSync(p)) { return p; }
+    }
+    if (path.dirname(dir) === dir) { break; }
   }
-  throw new Error(`no .venv in ${workspace}`);
+  throw new Error(`no .venv in ${workspace} or above it`);
 }
 
 /**
@@ -499,5 +528,5 @@ module.exports = {
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
   statusCounts, isoNow, plainJestCounts, plainJestJson, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,
-  plainVitestJson, checkMatchesPlainVitest, vitestProcesses,
+  plainVitestJson, checkMatchesPlainVitest, vitestProcesses, isInside, mentionsPath,
 };

@@ -1,6 +1,7 @@
 'use strict';
 /**
- * Coverage bars while editing (3.3.0 item 1):
+ * Coverage bars while editing:
+ *  - a statement over several lines has a bar on each of them
  *  - unsaved edits move the bars with their lines; an edited or new line has no bar
  *  - the coverage hover follows the same lines
  *  - Hide / Show Coverage in Editor clears and restores bars and hover
@@ -40,6 +41,9 @@ module.exports = {
     const before = { covered: sorted(drawn().covered), partial: sorted(drawn().partial), uncovered: sorted(drawn().uncovered) };
     t.check('bars on math.js: "return a + b" (line 2) is covered', before.covered.includes(1), JSON.stringify(before));
     t.check('…and blank lines have none (no grey filler bars any more)', !before.covered.includes(3) && !before.uncovered.includes(3), JSON.stringify(before));
+    t.check('a statement over several lines (module.exports = { … }, lines 17–21) has a bar on each line',
+      [16, 17, 18, 19, 20].every((l) => before.covered.includes(l)), JSON.stringify(before));
+    t.check('…and its hover on a later line says covered', /Covered/.test(await hoverText(vscode, doc, 18)), await hoverText(vscode, doc, 18));
 
     // 1. Insert a line at the top without saving: every bar moves down one line.
     await editor.edit((e) => e.insert(new vscode.Position(0, 0), '// note\n'));

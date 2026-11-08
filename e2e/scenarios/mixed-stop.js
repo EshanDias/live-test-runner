@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Stop in a mixed-framework project (phase 8): with a slow Jest file and a
+ * Stop in a mixed-framework project: with a slow Jest file and a
  * slow Vitest file, Stop kills whatever runs (both frameworks at once on a
  * machine with enough cores; one batch at a time on small CI runners), the
  * other framework's queued batch never starts, nothing keeps spinning, and no

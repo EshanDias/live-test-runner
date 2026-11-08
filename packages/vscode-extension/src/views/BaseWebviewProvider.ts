@@ -38,7 +38,7 @@ export abstract class BaseWebviewProvider
   ) {}
 
   /**
-   * Shows another project (phase 7): its store and live state replace the
+   * Shows another project: its store and live state replace the
    * current ones and the webview gets a fresh 'init'. Pending batched file
    * results of the previous project are dropped.
    */
@@ -82,7 +82,7 @@ export abstract class BaseWebviewProvider
     // No re-send on visibility changes: both views are registered with
     // retainContextWhenHidden, so a hidden view keeps its state and still
     // receives every update. Re-sending the whole tree on each show was
-    // heavy on large projects (BUG-16). A re-created view asks with 'ready'.
+    // heavy on large projects. A re-created view asks with 'ready'.
 
     webviewView.webview.onDidReceiveMessage((msg) => {
       switch (msg.type) {

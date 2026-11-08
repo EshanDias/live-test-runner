@@ -2,7 +2,7 @@
  * Trace records → ExecutionTraceStore, for every framework.
  *
  * The test process writes JSON lines (shared/sessionTraceRuntime.js, see
- * docs/architecture.md → Session instrumentation protocol):
+ * docs/development/architecture.md → Session instrumentation protocol):
  *   T  hits of one test         { type, tf, tn, fh: { srcFile: lines[] } }
  *   H  hits outside a test      { type, tf, hk, fh }  ('file' = module load, else a hook)
  *   F  the setup file ran       { type, tf }          (Vitest: the file is traced)

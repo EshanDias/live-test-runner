@@ -135,7 +135,7 @@ export function activate(context: vscode.ExtensionContext) {
   statusBar.show();
 
   // ── State ──────────────────────────────────────────────────────────────────
-  // Every store lives in a ProjectContext (one per test project, phase 7).
+  // Every store lives in a ProjectContext (one per test project).
   // Views start on an empty placeholder and are bound to the selected project.
   const selection     = new SelectionState();
   const emptyStore    = new ResultStore();
@@ -353,7 +353,7 @@ export function activate(context: vscode.ExtensionContext) {
   // ── Python environment chip (pytest projects): which Python runs the tests ──
   const refreshPythonChip = (): void => {
     const ctx = projects.selected;
-    if (!ctx || ctx.framework !== 'pytest') { explorerView.setPythonEnv(null); return; }
+    if (!ctx || !ctx.usesFramework('pytest')) { explorerView.setPythonEnv(null); return; }
     const status = pythons.status(ctx.root);
     explorerView.setPythonEnv(pythonEnvChip(status));
     // Probe once, quietly: no notification before the user asked for a run (Start still tells).
@@ -386,7 +386,7 @@ export function activate(context: vscode.ExtensionContext) {
     return undefined;
   }
 
-  /** Start / restart one project's session (D11: the running-projects limit applies to new starts). */
+  /** Start / restart one project's session (the running-projects limit applies to new starts). */
   async function startProject(ctx: ProjectContext): Promise<void> {
     const refusal = projects.startRefusal(ctx);
     if (refusal) {
@@ -529,7 +529,7 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('liveTestRunner.selectPythonInterpreter', async (projectRoot?: unknown) => {
       const ctx = (typeof projectRoot === 'string' ? projects.contexts.find((c) => c.root === projectRoot) : undefined)
-        ?? (projects.selected?.framework === 'pytest' ? projects.selected : projects.contexts.find((c) => c.framework === 'pytest'));
+        ?? (projects.selected?.usesFramework('pytest') ? projects.selected : projects.contexts.find((c) => c.usesFramework('pytest')));
       if (!ctx) {
         void vscode.window.showInformationMessage('Live Test Runner: no pytest project is open — the Python interpreter is only used for pytest projects.');
         return;
@@ -694,7 +694,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (!editor) { return; }
       // A file of a project not discovered yet: discover it so its gutter / CodeLens appear (nothing runs).
-      projects.forFile(editor.document.uri.fsPath)?.ensureDiscovery();
+      const ctx = projects.forFile(editor.document.uri.fsPath);
+      ctx?.ensureDiscovery();
+      // A test file still waiting in a run's queue runs next.
+      ctx?.session.promote(editor.document.uri.fsPath);
       codeLensProvider.refresh();
     }),
 

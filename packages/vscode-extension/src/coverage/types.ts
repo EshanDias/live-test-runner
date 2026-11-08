@@ -44,6 +44,8 @@ export interface CoverageTotals {
   functions:  { covered: number; total: number; pct: number };
   lines:      { covered: number; total: number; pct: number };
   scanComplete: boolean;
+  /** Why coverage is not measured this session (a framework without its coverage package), one line per framework. */
+  off?: string[];
 }
 
 export type CoverageEntry =

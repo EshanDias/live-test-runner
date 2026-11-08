@@ -1,9 +1,9 @@
 'use strict';
 /**
- * Mixed-framework project (phase 8): a Jest root with its own Vitest config.
+ * Mixed-framework project: a Jest root with its own Vitest config.
  * Every test file runs with exactly one framework — the one whose own list
  * holds it, else what the file uses (a `vitest` import, a `jest.` call),
- * else Jest (the main framework) with one WARN naming the setting (D13).
+ * else Jest (the main framework) with one WARN naming the setting.
  * The results prove where each file ran: imports-vitest.test.js only passes
  * under Vitest, uses-jest.test.js only under Jest. The Explorer groups by
  * framework, the status bar splits the counts, math.js (loaded by Jest and
@@ -59,7 +59,7 @@ module.exports = {
 
       t.check('INFO names the mixed project and its split', logs.some((l) => /mixed Jest \+ Vitest project \(jest\.config\.js and vitest\.config\.mjs\) — Jest runs 3 test file\(s\), Vitest 2/.test(l)), logs.join('\n'));
       const warns = logs.filter((l) => /match both the Jest and the Vitest config/.test(l));
-      t.eq('one WARN for the file nothing settles (D13)', warns.length, 1);
+      t.eq('one WARN for the file nothing settles', warns.length, 1);
       t.check('…naming the file and the setting', /says-nothing\.test\.js/.test(warns[0] ?? '') && /liveTestRunner\.frameworks/.test(warns[0] ?? ''), warns.join('\n'));
       t.check('Session started line says jest + vitest', logs.some((l) => /Session started — 5 test file\(s\) · framework: jest \+ vitest/.test(l)), logs.join('\n'));
       t.check('status bar splits the tests per framework', / · Jest 5 · Vitest 3$/.test(api.statusBar.text), api.statusBar.text);

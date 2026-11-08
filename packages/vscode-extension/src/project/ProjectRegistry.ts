@@ -1,5 +1,5 @@
 /**
- * ProjectRegistry — the test projects of the window (phase 7, D11/D12).
+ * ProjectRegistry — the test projects of the window.
  *
  * Detects every project (none is run automatically), keeps one
  * {@link ProjectContext} per project, and knows which one is selected: the
@@ -105,7 +105,7 @@ export class ProjectRegistry implements vscode.Disposable {
     for (const c of this._contexts) { c.dispose(); }
     const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
     this._contexts = projects.map((p, i) => new ProjectContext(p, {
-      // One project: the window's session folder itself, exactly as before phase 7.
+      // One project: the window's session folder itself, as for a single-project window.
       sessionDir: projects.length === 1 ? this._deps.sessionDir : path.join(this._deps.sessionDir, `p${i + 1}-${slug(p.name)}`),
       cacheRootDir: this._deps.cacheRootDir,
       outputChannel: this._deps.outputChannel,
@@ -169,7 +169,7 @@ export class ProjectRegistry implements vscode.Disposable {
   }
 
   /**
-   * Why `ctx` may not start now (D11: liveTestRunner.maxRunningProjects),
+   * Why `ctx` may not start now (liveTestRunner.maxRunningProjects),
    * or undefined. A project already running may always restart.
    */
   startRefusal(ctx: ProjectContext): string | undefined {

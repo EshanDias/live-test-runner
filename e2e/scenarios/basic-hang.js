@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Hanging tests (BUG-23 #5): an infinite loop is stopped after
+ * Hanging tests: an infinite loop is stopped after
  * hangTimeoutSeconds and marked failed, a never-resolving promise fails on
  * Jest's own timeout, and every other file still gets its result.
  */
@@ -18,7 +18,7 @@ module.exports = {
       "test('spins forever', () => { while (true) { /* hang */ } });\n");
     fs.writeFileSync(path.join(workspace, 'src', 'never.test.js'),
       "test('never resolves', () => new Promise(() => {}));\n");
-    // Learnt from copy-requisition: a file that is merely slow to LOAD (App.test.js
+    // Learnt from a large Create React App project: a file that is merely slow to LOAD (App.test.js
     // took 229 s on a cold cache) must not be stopped as hung — only a test may.
     fs.writeFileSync(path.join(workspace, 'src', 'slowload.js'),
       'const end = Date.now() + 20000;\nwhile (Date.now() < end) { /* slow import */ }\nmodule.exports = { ready: true };\n');
@@ -35,9 +35,9 @@ module.exports = {
     t.info(`full run took ${((Date.now() - started) / 1000).toFixed(0)}s`);
 
     const loop = h.nodeByName(api, 'src/loop.test.js', 'spins forever');
-    t.eq('BUG-23 infinite loop is marked failed', loop.status, 'failed');
-    t.check('BUG-23 its failure says it hung', (loop.failureMessages[0] || '').includes('hangs'), JSON.stringify(loop.failureMessages));
-    t.check('BUG-23 the log names the hanging file', logs.some((l) => /loop\.test\.js has run for \d+s without finishing/.test(l)),
+    t.eq('infinite loop is marked failed', loop.status, 'failed');
+    t.check('its failure says it hung', (loop.failureMessages[0] || '').includes('hangs'), JSON.stringify(loop.failureMessages));
+    t.check('the log names the hanging file', logs.some((l) => /loop\.test\.js has run for \d+s without finishing/.test(l)),
       logs.filter((l) => /warn/.test(l)).join('\n'));
 
     const never = h.nodeByName(api, 'src/never.test.js', 'never resolves');
