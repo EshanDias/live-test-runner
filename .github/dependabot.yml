@@ -1,4 +1,6 @@
-# Weekly dependency updates, grouped into one PR per ecosystem.
+# Weekly dependency updates: one grouped PR per ecosystem for minor and patch
+# versions, and a PR of its own for each major version, so a major can be
+# tested and fixed on its own without holding up the rest.
 #
 # Dependabot opens its PRs against main. The PR checks (Branch rules) fail them
 # there on purpose: main only takes release/* and hotfix/*. To take an update,
@@ -17,13 +19,20 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      npm-dependencies:
+      npm-minor-and-patch:
         patterns: ['*']
+        update-types: ['minor', 'patch']
     ignore:
       # Must stay at the lowest VS Code the extension supports (engines.vscode).
       - dependency-name: '@types/vscode'
       # The extension's Node types match the Node inside that lowest VS Code.
       - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # Ships inside the extension (out/vendor/babel-parser.js): it lists tests
+      # and runs in the user's own Vitest process, on whatever Node they have.
+      # Babel 8 needs Node 22.18+ and is an ES module, which would break older
+      # projects; a major is a deliberate change, not a routine update.
+      - dependency-name: '@babel/parser'
         update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
@@ -34,5 +43,6 @@ updates:
     cooldown:
       default-days: 7
     groups:
-      github-actions:
+      github-actions-minor-and-patch:
         patterns: ['*']
+        update-types: ['minor', 'patch']

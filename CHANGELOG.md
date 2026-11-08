@@ -2,6 +2,10 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [Unreleased]
+
+- Dependabot: minor and patch updates come in one grouped PR per ecosystem; each major version gets a PR of its own, to test and fix separately. Major versions of `@babel/parser` are not offered: it ships inside the extension (test listing, the Vitest trace) and runs on the user's Node, and Babel 8 needs Node 22.18+.
+
 ## [3.3.0] - 2026-11-07
 
 

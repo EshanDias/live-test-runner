@@ -527,7 +527,7 @@ Flow: `main` → `release/x.y.z` (created from `main`) ← `feat/*`, `bugfix/*`,
 - `release/*` accepts PRs from `feat/*`, `bugfix/*`, `hotfix/*` and `dependabot/*`.
 - `bugfix/*` PRs target a `feat/*` or `release/*` branch, never `main`.
 - `feat/*` branches can branch from other `feat/*` branches and PR back into that feature or into a `release/*`.
-- Dependency updates: Dependabot (`.github/dependabot.yml`) opens one grouped PR a week for npm packages and one for GitHub Actions, plus security fixes as they come. They open against `main`, where `Branch rules` fails them with a note; change the base to the `release/*` branch they should ship in, then merge.
+- Dependency updates: Dependabot (`.github/dependabot.yml`) opens one grouped PR a week per ecosystem (npm, GitHub Actions) for minor and patch versions, a separate PR for each major version (test and fix it on its own), and security fixes as they come. Major versions of `@babel/parser` are never offered: it ships inside the extension and runs on the user's Node. They open against `main`, where `Branch rules` fails them with a note; change the base to the `release/*` branch they should ship in, then merge.
 - PRs fail if tests fail. PRs to `main` fail if the version has not been bumped.
 
 `.github/workflows/pr-checks.yml` enforces this on every PR with three jobs: `Branch rules` (name prefix and allowed targets), `Tests` (`pnpm test`), and `Version bump (PRs to main)` (root and extension `package.json` versions must be higher than on `main`).
