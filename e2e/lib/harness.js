@@ -269,6 +269,19 @@ function plainJestJson(workspace) {
 }
 
 /**
+ * Whether `file` is inside `dir`. On Windows, case and slashes are ignored:
+ * VS Code gives the folders of a .code-workspace file a lowercase drive
+ * letter (c:\…), while the e2e runner created them as C:\….
+ */
+function isInside(file, dir) {
+  const win = process.platform === 'win32';
+  const cmp = (p) => (win ? p.replace(/\\/g, '/').toLowerCase() : p);
+  const sep = win ? '/' : path.sep;
+  const d = cmp(dir).replace(/[\\/]+$/, '');
+  return cmp(file).startsWith(d + sep);
+}
+
+/**
  * Maps a path Jest reported (its real path: symlinks resolved, Windows 8.3
  * short names such as RUNNER~1 expanded) to the workspace's spelling, which is
  * what the extension's store uses. Case- and slash-insensitive on Windows.
@@ -505,5 +518,5 @@ module.exports = {
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
   statusCounts, isoNow, plainJestCounts, plainJestJson, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,
-  plainVitestJson, checkMatchesPlainVitest, vitestProcesses,
+  plainVitestJson, checkMatchesPlainVitest, vitestProcesses, isInside,
 };

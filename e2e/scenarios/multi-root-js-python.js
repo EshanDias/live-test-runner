@@ -49,8 +49,11 @@ module.exports = {
     await idle(py);
     h.checkMatchesPlainPytest(api, t, pyDir, 'pytest project matches plain pytest');
     t.eq('both sessions are on', [web.session.isActive(), py.session.isActive()], [true, true]);
-    t.check("each store has its own folder's files only",
-      web.store.getAllFiles().every((f) => f.filePath.startsWith(webDir)) && py.store.getAllFiles().every((f) => f.filePath.startsWith(pyDir)));
+    const strays = [
+      ...web.store.getAllFiles().filter((f) => !h.isInside(f.filePath, webDir)),
+      ...py.store.getAllFiles().filter((f) => !h.isInside(f.filePath, pyDir)),
+    ].map((f) => f.filePath);
+    t.check("each store has its own folder's files only", strays.length === 0, `outside their folder: ${strays.join(', ')} (folders: ${webDir}, ${pyDir})`);
 
     // ── A save wakes only its own project ──────────────────────────────────
     let mark = h.rawMark(api);

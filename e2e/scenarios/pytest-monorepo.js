@@ -49,8 +49,8 @@ module.exports = {
     await idle(cli);
     t.eq('cli results', counts(cli), { total: 3, passed: 3, failed: 0 });
     h.checkMatchesPlainPytest(api, t, cliDir, 'cli matches plain pytest in its folder');
-    t.check("cli's store has cli's files only", cli.store.getAllFiles().every((f) => f.filePath.startsWith(cliDir)));
-    t.check("core's store has core's files only", core.store.getAllFiles().every((f) => f.filePath.startsWith(coreDir)));
+    t.check("cli's store has cli's files only", cli.store.getAllFiles().every((f) => h.isInside(f.filePath, cliDir)));
+    t.check("core's store has core's files only", core.store.getAllFiles().every((f) => h.isInside(f.filePath, coreDir)));
     t.eq('both sessions are active', [cli.session.isActive(), core.session.isActive()], [true, true]);
 
     // ── A save in one member reruns that member only ───────────────────────
