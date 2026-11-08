@@ -282,6 +282,16 @@ function isInside(file, dir) {
 }
 
 /**
+ * Whether a log or command line mentions path `p`. On Windows, case is ignored
+ * and backslashes may be doubled (a quoted path in a printed command line).
+ */
+function mentionsPath(text, p) {
+  if (process.platform !== 'win32') { return text.includes(p); }
+  const cmp = (s) => s.replace(/\\+/g, '/').toLowerCase();
+  return cmp(text).includes(cmp(p));
+}
+
+/**
  * Maps a path Jest reported (its real path: symlinks resolved, Windows 8.3
  * short names such as RUNNER~1 expanded) to the workspace's spelling, which is
  * what the extension's store uses. Case- and slash-insensitive on Windows.
@@ -518,5 +528,5 @@ module.exports = {
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,
   statusCounts, isoNow, plainJestCounts, plainJestJson, jestJsonCounts, jestJsonRunsPerFile, checkMatchesPlainJest,
-  plainVitestJson, checkMatchesPlainVitest, vitestProcesses, isInside,
+  plainVitestJson, checkMatchesPlainVitest, vitestProcesses, isInside, mentionsPath,
 };

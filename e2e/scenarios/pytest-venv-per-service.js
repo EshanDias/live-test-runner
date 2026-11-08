@@ -38,7 +38,7 @@ module.exports = {
       await idle(ctx);
       const logs = h.logsSince(api, since).filter((l) => /Python 3\.\d+/.test(l));
       const own = path.join(dir, '.venv');
-      t.check(`${ctx.name} uses its own .venv`, logs.some((l) => l.includes(own) && /\(\.venv\)/.test(l)), logs.join('\n'));
+      t.check(`${ctx.name} uses its own .venv`, logs.some((l) => h.mentionsPath(l, own) && /\(\.venv\)/.test(l)), logs.join('\n'));
       t.eq(`${ctx.name} results`, counts(ctx), expected);
       t.eq(`${ctx.name}: sys.prefix is its own .venv`, h.nodeByName(api, testFile, 'test_runs_with_the_services_own_venv')?.status, 'passed');
       h.checkMatchesPlainPytest(api, t, dir, `${ctx.name} matches plain pytest with its .venv`);
@@ -50,7 +50,7 @@ module.exports = {
     await h.editAndSave(vscode, path.join(workerDir, 'jobs.py'), (s) => s.replace('n * 2', 'n * 2 + 1'));
     await idle(worker);
     const cmds = h.rawSince(api, mark).filter((l) => /^\[pytest#\d+\] > .* -m pytest /.test(l));
-    t.check('saving worker/jobs.py reruns worker tests with its .venv', cmds.length >= 1 && cmds.every((l) => l.includes(path.join(workerDir, '.venv'))), cmds.join('\n'));
+    t.check('saving worker/jobs.py reruns worker tests with its .venv', cmds.length >= 1 && cmds.every((l) => h.mentionsPath(l, path.join(workerDir, '.venv'))), cmds.join('\n'));
     t.eq('…the edited code now fails test_double', h.nodeByName(api, 'tests/test_jobs.py', 'test_double')?.status, 'failed');
     t.eq("…api's results are untouched", counts(apiSvc), apiBefore);
 
