@@ -62,6 +62,6 @@ Before opening the pull request, run `node scripts/build-wiki.js --check`. It fa
 ## Contributing
 
 - Report a bug or ask for a feature on [GitHub Issues](https://github.com/EshanDias/live-test-runner/issues)
-- [Contributing guide](../CONTRIBUTING.md) · [Security policy](../SECURITY.md) · [Changelog](../CHANGELOG.md)
+- [Contributing guide](../CONTRIBUTING.md) · [Code of Conduct](../CODE_OF_CONDUCT.md) · [Security policy](../SECURITY.md) · [Changelog](../CHANGELOG.md)
 
 These pages are kept in the repository under `docs/` and copied to the [Wiki](https://github.com/EshanDias/live-test-runner/wiki) on every release. To change a page, open a pull request that edits the file in `docs/`.

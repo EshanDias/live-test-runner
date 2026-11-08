@@ -2,6 +2,8 @@
 
 Thanks for your interest! Bug reports, ideas and pull requests are all welcome.
 
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Reporting bugs and requesting features
 
 - **Bugs:** [open a bug report](https://github.com/EshanDias/live-test-runner/issues/new?template=bug_report.yml). The form asks for the versions, your framework and the extension log — that is usually enough to reproduce the problem.
