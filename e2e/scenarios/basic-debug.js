@@ -39,6 +39,11 @@ module.exports = {
     await h.waitForDiscovery(api);
     const terminated = [];
     vscode.debug.onDidTerminateDebugSession((s) => terminated.push(s.name));
+    // Every session this scenario starts must end before VS Code closes, or its
+    // test process is left behind, waiting for the debugger.
+    const running = new Set();
+    vscode.debug.onDidStartDebugSession((s) => { if (!s.parentSession) { running.add(s.id); } });
+    vscode.debug.onDidTerminateDebugSession((s) => running.delete(s.id));
 
     const test = h.nodeByName(api, FILE, 'Math utils adds numbers');
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(test.fileId));
@@ -51,6 +56,8 @@ module.exports = {
     t.info(`args: ${JSON.stringify(config.args)}`);
     t.check('program is a JS file that exists', /\.js$/.test(config.program) && fs.existsSync(config.program), config.program);
     t.eq('cwd is the project root', config.cwd.toLowerCase(), workspace.toLowerCase());
+    // Started directly, not typed into a terminal (lost while a slow shell starts).
+    t.eq('the test starts directly, output in the Debug Console', [config.console, config.outputCapture], ['internalConsole', 'std']);
     await h.waitFor(() => terminated.length > 0, { what: 'the debug session to end', timeout: 90_000 });
 
     t.eq('debug config runs only "Math utils adds numbers"', runConfig(config).map((s) => s.passed ?? s), [1]);
@@ -65,5 +72,6 @@ module.exports = {
     const eachDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(each.fileId));
     const eachConfig = await lensDebug(vscode, eachDoc, each.line);
     t.eq('test.each debug runs both generated tests', eachConfig ? runConfig(eachConfig).map((s) => s.passed ?? s) : null, [2]);
+    await h.waitFor(() => running.size === 0, { what: 'every debug session to end', timeout: 90_000 });
   },
 };

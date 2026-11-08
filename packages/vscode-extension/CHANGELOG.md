@@ -4,6 +4,10 @@ All notable changes to Live Test Runner are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **▷ Debug of a Jest or Vitest test no longer hangs.** It could wait forever with nothing running when your terminal's shell was slow to start, or on older VS Code with zsh. The test now starts directly, and its output is in the **Debug Console**.
+
 ### Changed
 
 - **No network calls, at all.** The built-in guide no longer loads its pictures from the internet; each one is a link to the online guide. Live Test Runner sends no telemetry and talks to nothing outside your machine, and a test on every change checks it. See Privacy in the README.

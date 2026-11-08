@@ -165,13 +165,11 @@ jobs:
           cache-dependency-path: e2e/fixtures/*/requirements-e2e.txt
       - name: Minimum VS Code version
         run: echo "LTR_E2E_VSCODE=$(node -p "require('./packages/vscode-extension/package.json').engines.vscode.replace(/[^0-9.]/g, '')")" >> "$GITHUB_ENV"
-      # basic-debug / vitest-debug are left out until ▷ Debug of a Jest or
-      # Vitest test works on older VS Code (it hangs in the integrated terminal).
       - name: Run e2e (virtual display)
         run: >-
           xvfb-run -a node e2e/run.js
-          basic-full-run basic-on-save basic-stop coverage-editing
-          vitest-full-run vitest-trace mixed-full-run
+          basic-full-run basic-on-save basic-stop coverage-editing basic-debug
+          vitest-full-run vitest-trace vitest-debug mixed-full-run
           pytest-full-run pytest-debug monorepo-run guide-open
         env:
           LTR_E2E_RUNS_DIR: ${{ runner.temp }}/e2e

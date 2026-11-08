@@ -37,6 +37,7 @@ Set breakpoints in the test or in the code it calls before clicking. The run is 
 - **pytest needs the Python Debugger extension** (`ms-python.debugpy`). Without it, a message offers to install it and nothing starts.
 - Your test script's flags apply (`--config`, `--resetMocks`, Node options such as Jest's ESM mode).
 - Jest and Vitest pick the test by a name pattern, so tests whose names overlap can run together.
+- Jest and Vitest output (results, `console.log`) appears in the **Debug Console**. The test starts straight away, however long your terminal's shell takes to start.
 
 ## Related
 

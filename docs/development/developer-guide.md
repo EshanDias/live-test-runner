@@ -405,7 +405,10 @@ export class VitestAdapter implements IFrameworkAdapter {
       program: path.join(projectRoot, 'node_modules', '.bin', 'vitest'),
       args: [filePath, '--testNamePattern', testFullName ?? ''],
       cwd: projectRoot,
-      console: 'integratedTerminal',
+      // Started by the debugger itself, output in the Debug Console: a command
+      // typed into the integrated terminal can be lost (Debugging: design, D8).
+      console: 'internalConsole',
+      outputCapture: 'std',
     }
   }
 }

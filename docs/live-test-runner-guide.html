@@ -262,7 +262,7 @@
 <!-- ───────────────────────── Debugging ───────────────────────── -->
 <section id="debugging">
   <h2>Debugging</h2>
-  <p><code>▷ Debug</code> starts a VS Code Node debug session for exactly that test or suite: Jest runs in band, Vitest runs with <code>--no-file-parallelism</code> and no timeouts (child processes attach automatically). Breakpoints in tests and source files work as usual.</p>
+  <p><code>▷ Debug</code> starts a VS Code Node debug session for exactly that test or suite: Jest runs in band, Vitest runs with <code>--no-file-parallelism</code> and no timeouts (child processes attach automatically). Breakpoints in tests and source files work as usual. The test's output (results, <code>console.log</code>) appears in the <b>Debug Console</b>.</p>
   <p>For pytest, <code>▷ Debug</code> starts the <b>Python Debugger</b> (<code>ms-python.debugpy</code>) with <code>python -m pytest &lt;node id&gt;</code> and the project's own interpreter — a plain pytest run, one process, pytest-cov idle. Without that extension, a message offers to install it.</p>
 </section>
 
