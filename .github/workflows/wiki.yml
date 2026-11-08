@@ -1,7 +1,9 @@
 name: Publish Wiki
 
-# The Wiki is a copy of docs/, rebuilt whenever main changes there.
-# docs/ is the source: pages edited on the Wiki itself are overwritten.
+# The Wiki is a copy of docs/, rebuilt whenever main changes there (each
+# release). docs/ is the source: pages edited on the Wiki itself are
+# overwritten. Run it by hand on a release branch to publish an urgent docs fix
+# (developer guide → Publishing → Wiki).
 # One-time setup: create any page on the Wiki first (the Wiki repository
 # exists only after that), and in Settings → General → Features tick
 # "Restrict editing to collaborators only".

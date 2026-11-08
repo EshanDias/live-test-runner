@@ -84,7 +84,8 @@ function build() {
     ...['development/developer-guide.md', 'development/architecture.md', 'development/framework-features.md', 'development/ai-context.md']
       .map(pageAt).filter(Boolean).map((p) => `- [${p.title}](${p.name})`),
     '- Feature designs', ...section('development/design').map((l) => `  ${l}`), '',
-    `[User guide](${GUIDE_URL}) · [Report a bug](https://github.com/${REPO}/issues/new/choose)`,
+    `[User guide](${GUIDE_URL}) · [Report a bug](https://github.com/${REPO}/issues/new/choose)`, '',
+    `<sub>Generated from [docs/](https://github.com/${REPO}/tree/${BRANCH}/docs). Edits made here are overwritten: change a page with a pull request.</sub>`,
   ];
   out.set('_Sidebar.md', `${sidebar.join('\n')}\n`);
   return { out, broken };

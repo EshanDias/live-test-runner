@@ -13,7 +13,7 @@ All notable changes to Live Test Runner are documented here.
 - The Timeline Debugger is labelled **planned** (it is not built yet), not "preview": the guide, the website and the extension README describe it as a future feature, the guide no longer lists its command or log message, and `Open Timeline Debugger` shows in the Command Palette only with `liveTestRunner.devMode`.
 - Code comments, e2e labels and the changelog no longer cite internal plan phases, decision IDs or bug IDs; each comment explains its own reason.
 - Documentation in three kinds, listed in `docs/README.md`: `docs/features/` (what a feature does, in plain language), `docs/requirements/` (project-wide requirements, and per feature what it must do, mapped to the e2e scenarios that check it), `docs/development/design/` (how a feature is built). Pages for test runs, the Test Explorer and editor, on-save reruns, the Results panel, coverage, debugging, and monorepos / mixed frameworks; requirements without an automated test are marked ⚠️. `docs/README.md`, `CONTRIBUTING.md`, `CLAUDE.md` and the PR template say which pages a change must update.
-- The GitHub Wiki is generated from `docs/` (`scripts/build-wiki.js`, workflow `wiki.yml`, on merges to `main`), with a contents sidebar; PR checks fail on a broken docs link.
+- The GitHub Wiki is generated from `docs/` (`scripts/build-wiki.js`, workflow `wiki.yml`, on merges to `main`, or run by hand on a release branch for an urgent docs fix), with a contents sidebar and a note on every page that edits belong in `docs/`; PR checks fail on a broken docs link.
 
 ### Python monorepos
 
