@@ -11,7 +11,7 @@ export interface FileStores {
 
 /**
  * The stores for a file — the file's own project, whichever project the
- * Explorer shows (phase 7, owner decision 2026-10-22). Undefined: the file
+ * Explorer shows. Undefined: the file
  * belongs to no test project.
  */
 export type FileStoresResolver = (filePath: string) => FileStores | undefined;

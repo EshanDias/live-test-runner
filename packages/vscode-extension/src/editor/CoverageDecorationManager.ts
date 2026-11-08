@@ -4,6 +4,7 @@ import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResu
 import { CoverageStore } from '../coverage/CoverageStore';
 import { FileStoresResolver } from './FileStores';
 import { Manifest, LiveCov } from '../coverage/types';
+import { statementLines } from '../coverage/statementLines';
 import { LineMapping, MeasuredLines } from './MeasuredLines';
 
 /** Setting that shows or hides coverage in the editor (bars, stale tint, hover). */
@@ -37,13 +38,13 @@ export class CoverageDecorationManager implements IResultObserver {
   private readonly _drawn = new Map<string, DrawnCoverage>();
   private _shown = true;
 
-  /** Every file shows its own project's coverage (phase 7). */
+  /** Every file shows its own project's coverage. */
   constructor(
     private readonly _resolve: FileStoresResolver,
     /** Shared with the hover, so both follow the user's unsaved edits the same way. */
     readonly measuredLines: MeasuredLines = new MeasuredLines(),
   ) {
-    // A thin, faded coloured left edge on each executable line (1px whole-line border, owner's option C):
+    // A thin, faded coloured left edge on each executable line (1px whole-line border):
     // nothing is inserted into the text, so code does not shift and the
     // gutter stays free for breakpoints and test status icons.
     // overviewRulerColor mirrors state in the scrollbar.
@@ -204,11 +205,10 @@ export class CoverageDecorationManager implements IResultObserver {
   /** Each executable measured line's bar, moved to where that line is now (edited lines get none). */
   private _classifyLines(manifest: Manifest, counters: LiveCov, lines: LineMapping, lineCount: number): DrawnCoverage {
     // Line → max statement hit count across all statements on that line
+    // (a statement spanning lines marks each of them: statementLines)
     const lineHits = new Map<number, number>();
-    for (const [id, loc] of Object.entries(manifest.statements)) {
-      const hits = counters.s[id] ?? 0;
-      const line = loc.start.line - 1; // 0-based
-      lineHits.set(line, Math.max(lineHits.get(line) ?? 0, hits));
+    for (const [line1, ids] of statementLines(manifest)) {
+      lineHits.set(line1 - 1, Math.max(...ids.map((id) => counters.s[id] ?? 0)));
     }
 
     // Line → { total branch arms, covered arms } — only for lines that have branches

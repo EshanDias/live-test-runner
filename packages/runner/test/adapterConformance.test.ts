@@ -64,7 +64,7 @@ describeAdapterConformance({
   notMatching: [
     { pkg: { devDependencies: { jest: '30' } } },
     cra,
-    // jest-dom shape: Vitest listed, tests on Jest (BUG-37)
+    // jest-dom shape: Vitest listed, tests on Jest
     { pkg: { devDependencies: { vitest: '3' } }, files: { 'jest.config.js': '' } },
   ],
   runnable: { ...vitestOnly, files: vitestInstall },

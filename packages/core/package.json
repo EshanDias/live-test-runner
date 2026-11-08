@@ -1,6 +1,7 @@
 {
   "name": "@live-test-runner/core",
   "version": "1.0.0",
+  "license": "MIT",
   "description": "Core logic for Live Test Runner",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

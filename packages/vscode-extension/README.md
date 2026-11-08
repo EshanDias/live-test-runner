@@ -40,8 +40,8 @@
 - 🎨 **In the editor** — ✓ / ✗ gutter icons, inline durations, `▶ Run` · `▷ Debug` · `◈ Results` above every test.
 - 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it. The bars never shift your code and follow your edits; hide them with the 👁 button in the editor title.
 - 🔍 **Results panel** — test list · console output (per test) · failures with the diff and location.
-- 🗂 **Monorepos** — every package is a project; switch between them, run several at once.
-- ⏱ **Timeline Debugger** *(coming soon)* — step through a finished test line by line.
+- 🗂 **Monorepos and multi-root workspaces** — every package (or Python service / uv workspace member) is a project, each with its own `.venv` or the shared one; switch between them, run several at once.
+- ⏱ **Timeline Debugger** *(planned, not available yet)* — step through a finished test line by line.
 
 ![Hover a line: the tests that ran it, with status and duration](resources/images/coverage-hover.png)
 
@@ -130,11 +130,12 @@ All settings under `liveTestRunner.*`.
 | Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) | ✅ needs `coverage` (pytest-cov not needed) |
 | Live per-file progress | ✅ | ✅ | ✅ | ✅ |
 | Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off | ✅ only the tests that ran it (coverage contexts); importing test files before that |
-| Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ⏳ later (one pytest project per folder today) |
+| Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ✅ one project per uv workspace member with tests; a root pytest config stays one |
 | Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ | — |
+| JS + Python in one folder | ✅ one project runs Jest / Vitest and pytest | 🟡 not e2e-tested | ✅ | ✅ a `.py` save reruns pytest only, a `.js` save the JS framework only |
 | Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3 (incl. `vitest.workspace` files); not in browser mode | ✅ from coverage.py contexts (needs `coverage`) |
 | UI components (`.vue`, `.svelte`, `.astro`, `.marko`): save reruns, trace, coverage | ✅ through the project's transformer (vue-jest, svelte-jester…) | — (React is plain JS) | ✅ through the project's Vite plugins | — |
-| Timeline debugger | ⏳ | ⏳ | ⏳ later | ⏳ later |
+| Timeline debugger | ⏳ planned | ⏳ planned | ⏳ planned | ⏳ planned |
 <!-- matrix:end -->
 
 Vitest 3+ is fully supported (1–2: results only). Jest's ESM mode is picked up from your test script or `.npmrc`. Full details: [the guide](https://eshandias.github.io/live-test-runner/guide/).
@@ -147,7 +148,6 @@ Vitest 3+ is fully supported (1–2: results only). Jest's ESM mode is picked up
 - Jest captures console output per file; it shows on a single test only when that test is rerun on its own. With Vitest every test shows its own output.
 - Test-level granularity and per-test console logs are only available after the background trace pass completes for a file; whole-file reruns are used as fallback
 - Vitest: the execution trace needs Vitest ≥ 3 and is off for browser-mode projects — saving a source file then reruns the test files that import it (`vitest related`)
-- pytest: one project per folder — Python monorepos and a JS + Python project in one folder are planned; the Timeline debugger is not available for pytest yet
 - pytest with `-s` / `--capture=no` in `addopts`: test output goes to the Test Output channel, not to each test
 - Vue components under Jest: coverage counts the `<script>` block only, as `jest --coverage` does (vue-jest maps only that); template lines still show their covering tests
 

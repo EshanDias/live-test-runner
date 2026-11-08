@@ -22,7 +22,7 @@ describe('runnable-files cache (jest --listTests answers kept between sessions)'
     expect(cache.read(root, runnableCacheKey(root, [...tests()].reverse(), 'jest|'))).toEqual([tests()[0]]);
   });
 
-  it('keeps the framework\'s file groups (Vitest project names, D12) with the list', () => {
+  it('keeps the framework\'s file groups (Vitest project names) with the list', () => {
     const cache = new RunnableFilesCache(cacheDir);
     const key = runnableCacheKey(root, tests(), 'vitest|');
     cache.write(root, key, tests(), { [tests()[0]]: 'unit', [tests()[1]]: 'integration' });

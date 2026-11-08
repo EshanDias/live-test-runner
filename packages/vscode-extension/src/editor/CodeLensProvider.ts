@@ -7,7 +7,7 @@ import { FileStoresResolver } from './FileStores';
  *
  * Uses the same LineMap as DecorationManager. Each line entry maps to a
  * node in the ResultStore's flat node pool — of the file's own project
- * (phase 7), so ▶ Run / ▷ Debug run in that project. It hears every
+ *, so ▶ Run / ▷ Debug run in that project. It hears every
  * project's events to refresh the lenses.
  */
 export class CodeLensProvider implements vscode.CodeLensProvider {

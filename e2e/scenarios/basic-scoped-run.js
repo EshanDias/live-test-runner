@@ -1,6 +1,6 @@
 'use strict';
 /**
- * ▶ Run on single tests and suites (BUG-03): the name pattern must reach Jest
+ * ▶ Run on single tests and suites: the name pattern must reach Jest
  * intact — spaces, ^, |, & — and only the chosen scope may run.
  */
 const h = require('../lib/harness');
@@ -29,17 +29,17 @@ module.exports = {
     {
       const node = h.nodeByName(api, FILE, 'Math utils a^b | c & d');
       const { raw, summaries } = await rerun(api, vscode, node);
-      t.eq('BUG-03 "a^b | c & d": exactly one test ran', summaries.map((s) => s.passed), [1]);
-      t.check('BUG-03 no cmd.exe errors', !raw.some((l) => /is not recognized as an internal or external command/.test(l)),
+      t.eq('"a^b | c & d": exactly one test ran', summaries.map((s) => s.passed), [1]);
+      t.check('no cmd.exe errors', !raw.some((l) => /is not recognized as an internal or external command/.test(l)),
         raw.join('\n'));
-      t.eq('BUG-03 "a^b | c & d" passed', api.store.getNode(node.id).status, 'passed');
+      t.eq('"a^b | c & d" passed', api.store.getNode(node.id).status, 'passed');
     }
 
     // Same leaf name in two suites — only the chosen suite's test may run.
     {
       const node = h.nodeByName(api, FILE, 'Math utils adds numbers');
       const { summaries } = await rerun(api, vscode, node);
-      t.eq('BUG-03 "Math utils adds numbers": exactly one test ran', summaries.map((s) => s.passed), [1]);
+      t.eq('"Math utils adds numbers": exactly one test ran', summaries.map((s) => s.passed), [1]);
       const out = api.store.getNodeOutput(node.id).lines.map((l) => l.text);
       t.check('test-scoped output captured', out.some((l) => l.includes('adding ✓ ünïcödé')), JSON.stringify(out));
     }
@@ -48,13 +48,13 @@ module.exports = {
     {
       const node = h.nodeByName(api, FILE, 'Math utils');
       const { summaries } = await rerun(api, vscode, node);
-      t.eq('BUG-03 suite "Math utils": its 4 runnable tests ran', summaries.map((s) => s.passed), [4]);
+      t.eq('suite "Math utils": its 4 runnable tests ran', summaries.map((s) => s.passed), [4]);
     }
 
     // Nothing else changed and nothing is left spinning.
     const after = Object.fromEntries(h.allNodes(api).map((n) => [n.id, n.status]));
     const changed = Object.keys(before).filter((id) => before[id] !== after[id]);
     t.eq('scoped reruns left other results untouched', changed, []);
-    t.eq('BUG-23 nothing left running', h.nodesWithStatus(api, 'running').map((n) => n.id), []);
+    t.eq('nothing left running', h.nodesWithStatus(api, 'running').map((n) => n.id), []);
   },
 };

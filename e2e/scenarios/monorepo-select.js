@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Monorepo (phase 7, D11): every package with tests is a project, none runs
+ * Monorepo: every package with tests is a project, none runs
  * on its own; the switcher selects which one the views show and Start / Stop
  * act on; liveTestRunner.maxRunningProjects refuses one more with a message
  * naming the running project; the projectRoot setting pins one root.

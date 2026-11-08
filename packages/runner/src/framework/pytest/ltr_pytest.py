@@ -248,7 +248,7 @@ def _write_trace(target):
     ``T`` {tf: test file, tn: full name, fh: {source: [lines]}} for each test,
     ``H`` {tf, hk: "file", fh} for lines run outside any test (imports, collection).
     Read straight from the coverage data — coverage's own JSON report with
-    contexts is far too large (ADR-9: 1.2 GB on httpx).
+    contexts is far too large (1.2 GB on httpx).
     """
     data = _cov.get_data()
     per_test = {}  # nodeid -> {source: [lines]}

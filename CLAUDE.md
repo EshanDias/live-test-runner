@@ -19,7 +19,7 @@ pnpm test -- --watch     # Run tests in watch mode
 node e2e/run.js --all    # End-to-end: real VS Code + real Jest (build first; also runs in CI on Win/Linux/macOS)
 node e2e/run.js basic-stop basic-hang      # selected scenarios
 # Real projects (optional): LTR_E2E_TSJEST_REPO, LTR_E2E_CRA_REPO (+ LTR_E2E_CRA_FULL=1)
-node e2e/real-repos.js   # real-repo matrix on read-only copies (--all incl. the heavy jest monorepo and pytest's own suite)
+node e2e/real-repos.js   # real-repo matrix on read-only copies (repos from the gitignored e2e/real-repos.local.json — start from real-repos.example.json; --all incl. heavy ones)
 # README / website GIFs + screenshots from the real UI: diag-demo-* scenarios → scripts/demo-gifs.js (developer guide → End-to-end tests)
 python -m pytest packages/runner/python-tests   # the shipped pytest plugin's own tests (needs pytest; coverage for 2 of them)
 
@@ -48,7 +48,7 @@ packages/
 ├── runner/            @live-test-runner/runner
 │   └── Framework-agnostic test execution engine (no VS Code dependency)
 ├── core/              @live-test-runner/core
-│   └── Session lifecycle + coverage map (depends on runner)
+│   └── Session state (depends on runner)
 └── vscode-extension/  live-test-runner
     └── VS Code UI (depends on core)
 ```
@@ -84,7 +84,7 @@ Two interfaces manage framework abstraction:
 
 - **`FrameworkAdapter`** (`packages/runner/`) — binary resolution, config extraction. No VS Code dependency.
 - **`IFrameworkAdapter`** (`packages/vscode-extension/`) — adds VS Code-specific logic (test discovery, debug config, file classification).
-- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. Each project (`ProjectContext`) composes a `FrameworkRouter` (`framework/FrameworkRouter.ts`): the Jest bundle `createJestServices` or the Vitest bundle `createVitestServices` for a single-framework project, both in a mixed Jest + Vitest project, where every test file is placed with one framework (setting `liveTestRunner.frameworks` → the configs' own lists → `vitest` / `@jest/globals` imports and `vi.` / `jest.` calls → the main framework). All extension adapters extend `RunnerBackedAdapter`. A pytest project gets a single pytest bundle (`createPytestServices`, one process at a time via `batchPolicy`).
+- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. Each project (`ProjectContext`) composes a `FrameworkRouter` (`framework/FrameworkRouter.ts`) with a factory per routable framework (runner `ROUTED_FRAMEWORKS`: `createJestServices`, `createVitestServices`, `createPytestServices`); it builds only the bundles the project uses — one for a single-framework project, several in a mixed project (runner `projectFrameworks` lists what the root configures), where every test file is placed with one framework (setting `liveTestRunner.frameworks` → the configs' own lists → `vitest` / `@jest/globals` imports and `vi.` / `jest.` calls → the main framework). All extension adapters extend `RunnerBackedAdapter`. pytest runs one process at a time (`batchPolicy`).
 
 Adding a framework = one adapter in each package + its services bundle. `SessionManager`, `ResultStore`, views, and observers require zero changes.
 
@@ -119,7 +119,7 @@ Jest always runs in a spawned child process (`Executor.ts`). The extension host 
 
 ### 6. Smart On-Save Reruns
 
-After the first full run, saving a source file triggers targeted test reruns via `jest --findRelatedTests` or the coverage map. Suite/test-level execution uses name patterns to isolate scope. This is implemented in `SessionManager._runAffectedBySourceFile()`.
+After the first full run, saving a source file triggers targeted test reruns via the execution trace, else the framework's related run (`jest --findRelatedTests`, `vitest related`). Suite/test-level execution uses name patterns to isolate scope. This is implemented in `SessionManager._runAffectedBySourceFile()`.
 
 ### 7. Session Guard
 
@@ -200,15 +200,13 @@ Each `FrameworkAdapter` implements:
 
 Current adapters: Jest, Create React App, Vitest, pytest (family `python`: the project's interpreter, the shipped plugin `framework/pytest/ltr_pytest.py`).
 
-### `packages/core` — Session Lifecycle & Coverage
+### `packages/core` — Session Lifecycle
 
 | File | Responsibility |
 |------|---|
-| `TestSession.ts` | Start, stop, reset a session |
-| `CoverageMap.ts` | `Map<SourcePath, Set<TestPath>>` built during warm-up run, updated incrementally |
-| `SelectionPolicy.ts` | Legacy; minimal use |
+| `TestSession.ts` | Whether a project's session is on (`activate` / `stop`) and the runner it uses |
 
-**Coverage map** is built once during full suite run with coverage, then incremented on each on-save run. When a source file is saved, the map is checked before falling back to `jest --findRelatedTests`.
+Which tests a source save reruns is decided in the extension: the execution trace (`ExecutionTraceStore`), then the framework's related run (`jest --findRelatedTests`, `vitest related`, the test files that import it for pytest).
 
 ### `packages/vscode-extension` — VS Code Extension
 
@@ -236,7 +234,7 @@ Key directories:
 5. **Indexes rebuild on reset** — trace files are ground truth; indexes are derived caches
 6. **Lazy initialization** — results are never pre-fetched; observers are called when results are ready
 7. **Per-scope output** — only rerun the scope explicitly requested (test name pattern isolation)
-8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Test Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/developer-guide.md` → Logging.
+8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Test Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/development/developer-guide.md` → Logging.
 9. **Never touch the user's project** — never install packages into it (or its environment) and never edit its code, config or files. Everything the tool needs ships inside the extension; anything we write is a temporary file in our session folder, and the user's own terminal runs must keep working side by side. Zero configuration: install, click Start.
 10. **Never overuse the machine** — every kind of parallelism (batches, frameworks, projects, workers) stays within one budget from the free resources (cores, memory); when the budget is 1, things run one at a time. Whatever else the user does must stay responsive.
 
@@ -279,7 +277,7 @@ Rules:
 1. Branch names must start with `release/`, `feat/`, `hotfix/` or `bugfix/`.
 2. **No direct pushes or merges to `main` or `release/*`.** Everything lands through a pull request.
 3. `main` only accepts PRs from `release/*` (normal flow) and `hotfix/*` (urgent fixes).
-4. `release/*` accepts PRs from `feat/*`, `bugfix/*` and `hotfix/*`.
+4. `release/*` accepts PRs from `feat/*`, `bugfix/*`, `hotfix/*` and Dependabot's `dependabot/*` (which open against `main` and fail `Branch rules` there until their base is changed to a release branch).
 5. `bugfix/*` PRs only target a `feat/*` or `release/*` branch, never `main`.
 6. Feature branches may branch off other feature branches and PR back into that feature or into a `release/*`.
 7. **PRs must fail if tests fail** (`pnpm test`).
@@ -288,11 +286,18 @@ Rules:
 
 When asked to make a change while on `main` or `release/*`, create the appropriately named branch before editing anything. Never push or merge to either from a local checkout.
 
-Enforcement: `.github/workflows/pr-checks.yml` validates branch names/targets, runs tests, and checks the version bump on PRs to `main`. It must be paired with GitHub branch protection on `main` and `release/*` (require PR, require the checks `Branch rules`, `Tests`, plus `Version bump (PRs to main)` on `main`, block direct pushes) — see `docs/developer-guide.md`.
+Enforcement: `.github/workflows/pr-checks.yml` validates branch names/targets, runs tests, and checks the version bump on PRs to `main`. It must be paired with GitHub branch protection on `main` and `release/*` (require PR, require the checks `Branch rules`, `Tests`, plus `Version bump (PRs to main)` on `main`, block direct pushes) — see `docs/development/developer-guide.md`.
 
 ---
 
 ## Documentation Maintenance
+
+**A change is not done until its docs match it, in the same commit or PR.** Before finishing any change to behaviour, a setting, a command, a test or the design, go through the table below and update every page it names. Each feature has three pages, all listed in `docs/README.md`:
+- `docs/features/<feature>.md` — what it does, in plain language, for everyone
+- `docs/requirements/<feature>.md` — what it must do; each requirement names the tests that check it (⚠️ = none yet: when you add a test for one, name it and drop the ⚠️)
+- `docs/development/design/<feature>.md` — how it is built: key files, flow, design decisions
+
+The features: test runs, Test Explorer and editor, on-save reruns, Results panel, coverage, debugging, monorepos and mixed frameworks. Run `node scripts/build-wiki.js --check` afterwards (broken links fail it and the PR checks). The GitHub Wiki is generated from `docs/`; never suggest editing the Wiki directly.
 
 When making changes, update the relevant documentation files:
 
@@ -302,14 +307,17 @@ When making changes, update the relevant documentation files:
 
 | Change Type | Update These Files |
 |---|---|
-| **Architecture or system design changes** | `docs/architecture.md`, `docs/ai-context.md` |
-| **Core package API or lifecycle changes** | `packages/core/README.md`, `docs/developer-guide.md`, `docs/ai-context.md` |
-| **Runner package API, layer changes, or framework adapter updates** | `packages/runner/README.md`, `docs/developer-guide.md`, `docs/ai-context.md` |
-| **Extension features, UI changes, new commands, or configuration options** | `packages/vscode-extension/README.md` (marketplace-facing), `CHANGELOG.md`, `docs/ai-context.md` |
-| **Dev setup, build process, or development patterns** | `docs/developer-guide.md`, `CLAUDE.md` |
+| **A new or changed feature** | its three pages: `docs/features/<feature>.md` (plain language, for everyone), `docs/requirements/<feature>.md` (what it must do, each requirement mapped to its tests), `docs/development/design/<feature>.md` (how it is built); list new pages in `docs/README.md` (the contents, also the Wiki's home). `node scripts/build-wiki.js --check` must pass |
+| **Architecture or system design changes** | `docs/development/architecture.md`, `docs/development/ai-context.md` |
+| **Core package API or lifecycle changes** | `packages/core/README.md`, `docs/development/developer-guide.md`, `docs/development/ai-context.md` |
+| **Runner package API, layer changes, or framework adapter updates** | `packages/runner/README.md`, `docs/development/developer-guide.md`, `docs/development/ai-context.md` |
+| **Extension features, UI changes, new commands, or configuration options** | `packages/vscode-extension/README.md` (marketplace-facing), `CHANGELOG.md`, `docs/development/ai-context.md` |
+| **Dev setup, build process, or development patterns** | `docs/development/developer-guide.md`, `CLAUDE.md` |
 | **Any user-visible change (features, fixes, behaviour)** | `CHANGELOG.md` (full detail) + `packages/vscode-extension/CHANGELOG.md` (brief user summary) |
 | **Anything important for users or contributors** (new feature, setting, command, framework support, changed behaviour, known limitation) | `docs/live-test-runner-guide.html` (the guide — published at `/guide/` and shown by **Open Guide**) |
-| **Headline features, supported frameworks, install / review links** | `site/index.html` (landing page) — and bump `lastmod` in `site/sitemap.xml` |
+| **Headline features, supported frameworks, install / review links** | `site/index.html` (landing page) — and bump `lastmod` in `site/sitemap.xml`; the root `README.md` (GitHub landing page) |
+
+**Public repository — keep it professional.** Everything committed is public. No personal notes, local paths (`/Users/…`), private project names, or "who decided what" in code, comments or docs; cite the reason, not the person or a private plan. Working notes, plans and trackers live in **`dev-personal-docs/`** (gitignored, local only: `plans/master-tracker.md` is the live to-do list). New bugs and feature ideas are GitHub Issues (forms in `.github/ISSUE_TEMPLATE/`).
 
 **For the HTML pages (`site/index.html`, `docs/live-test-runner-guide.html`):**
 - Keep them in step with the README and the changelogs — if a change is worth a README line, it is worth a guide update.
@@ -324,10 +332,13 @@ When making changes, update the relevant documentation files:
 
 ## References
 
-- [docs/architecture.md](docs/architecture.md) — Full system design, data flow, UI details, key decisions
-- [docs/developer-guide.md](docs/developer-guide.md) — Dev setup, core patterns, adding frameworks, publishing
-- [docs/ai-context.md](docs/ai-context.md) — Complete AI context for full codebase understanding
-- [docs/bugs-and-issues.md](docs/bugs-and-issues.md) — Known bugs with root-cause analysis and suggested fixes
+- [docs/README.md](docs/README.md) — contents of all docs: features, requirements, development (copied to the GitHub Wiki on each merge to `main`; `docs/` is the source)
+- [docs/requirements/project-rules.md](docs/requirements/project-rules.md) — project-wide requirements (the behavioural rules above, with how each is checked)
+- [docs/development/](docs/development/README.md) — developer documentation index
+- [docs/development/architecture.md](docs/development/architecture.md) — Full system design, data flow, UI details, key decisions
+- [docs/development/developer-guide.md](docs/development/developer-guide.md) — Dev setup, core patterns, adding frameworks, publishing
+- [docs/development/ai-context.md](docs/development/ai-context.md) — Complete AI context for full codebase understanding
+- [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) — how people report bugs, request features and contribute
 - [docs/live-test-runner-guide.html](docs/live-test-runner-guide.html) — User & contributor guide (open in a browser; published at `/guide/`)
 - [site/index.html](site/index.html) — Marketing landing page + `sitemap.xml` (GitHub Pages, see developer guide → Website)
 - [packages/core/README.md](packages/core/README.md) — Core API and design

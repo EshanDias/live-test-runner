@@ -6,7 +6,7 @@ import { toJestPathArg } from '../src/JestRunner';
 import { stripAnsi } from '../src/utils/logger';
 
 describe('toInputConfig', () => {
-  it('turns normalized tuples back into objects and keeps transformer options (BUG-20)', () => {
+  it('turns normalized tuples back into objects and keeps transformer options', () => {
     const out = toInputConfig({
       cwd: '/p',
       rootDir: '/p',
@@ -46,7 +46,7 @@ describe('testScriptJestArgs', () => {
     expect(testScriptJestArgs(dir)).toEqual(['--resetMocks', '--env', 'jsdom']);
   });
 
-  it('resolves --config relative to the project (BUG-07)', () => {
+  it('resolves --config relative to the project', () => {
     fs.writeFileSync(path.join(dir, 'jest.unit.js'), 'module.exports = {}');
     withScript('cross-env FOO=1 jest -c jest.unit.js --coverage && echo done');
     expect(testScriptJestArgs(dir)).toEqual(['--config', path.join(dir, 'jest.unit.js')]);
@@ -61,14 +61,14 @@ describe('testScriptJestArgs', () => {
 });
 
 describe('toJestPathArg', () => {
-  it('uses forward slashes and an upper-case drive letter (BUG-13)', () => {
+  it('uses forward slashes and an upper-case drive letter', () => {
     expect(toJestPathArg('c:\\Users\\a b\\x.test.js')).toBe('C:/Users/a b/x.test.js');
     expect(toJestPathArg('/home/a/x.test.js')).toBe('/home/a/x.test.js');
   });
 });
 
 describe('stripAnsi', () => {
-  it('removes colour codes (BUG-02)', () => {
+  it('removes colour codes', () => {
     expect(stripAnsi('\u001b[31m✕ failed\u001b[39m')).toBe('✕ failed');
   });
 });

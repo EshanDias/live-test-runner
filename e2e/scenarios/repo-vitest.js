@@ -5,7 +5,8 @@
  * (LTR_E2E_VITEST_BASELINE) test for test, discovery finds the tests before
  * Start, coverage is measured when the provider package is installed (else
  * one "coverage is off" line), ▶ Run on one test works, a saved test file reruns, and Stop ends
- * every Vitest process. A saved file is restored to its exact content.
+ * every Vitest process. A saved file is restored to its exact content, through
+ * the editor (a write on disk would start an outside-change rerun of its own).
  */
 const fs = require('fs');
 const path = require('path');
@@ -105,16 +106,18 @@ module.exports = {
         const cmds2 = h.rawSince(api, mark2).filter((l) => /^\[vitest#\d+\] > /.test(l));
         t.check(`saving ${path.basename(one.fileId)} reruns it`, cmds2.some((l) => l.includes(path.basename(one.fileId))), cmds2.join('\n'));
       } finally {
-        fs.writeFileSync(one.fileId, original);
+        // Through the editor, and wait: a write on disk is an outside change that reruns too.
+        await h.editAndSave(vscode, one.fileId, () => original);
+        await waitIdle(api);
       }
     }
 
-    // Execution trace (phase 9): on, and it mapped source files to tests.
+    // Execution trace: on, and it mapped source files to tests.
     const covered = api.traceStore.getAllCoveredFiles().length;
     t.check('the execution trace recorded source lines', covered > 0, `covered files: ${covered}`);
     t.check('…and stayed on', !allLogs(api).some((l) => /execution trace is off/.test(l)), allLogs(api).filter((l) => /trace/i.test(l)).join('\n'));
 
-    // Save a source file a passing test file imports: it reruns live (phase 6 / 9). Restored afterwards.
+    // Save a source file a passing test file imports: it reruns live. Restored afterwards.
     const testFile = h.allNodes(api).find((n) => n.type === 'test' && n.status === 'passed')?.fileId;
     const src = testFile && relativeImport(testFile);
     if (src) {
@@ -128,7 +131,7 @@ module.exports = {
         const cmds3 = h.rawSince(api, mark3).filter((l) => /^\[vitest#\d+\] > /.test(l));
         const logs3 = h.logsSince(api, since3);
         const rel = path.relative(workspace, src);
-        // Phase 9: by the execution trace (only the tests that ran it); `vitest related` when no test ran the file.
+        // By the execution trace (only the tests that ran it); `vitest related` when no test ran the file.
         const traced = logs3.some((l) => l.includes(`Trace-based rerun for ${path.basename(src)}`));
         const related = cmds3.some((l) => / related /.test(l) && l.includes(path.basename(src))) && logs3.some((l) => /No trace data for/.test(l));
         t.check(`saving ${rel} reruns by the trace (or \`vitest related\` when no test ran it)`, traced || related, `${cmds3.join('\n')}\n${logs3.join('\n')}`);
@@ -137,7 +140,8 @@ module.exports = {
         t.eq('…nothing left running', h.nodesWithStatus(api, 'running').length, 0);
       } finally {
         rec2.stop();
-        fs.writeFileSync(src, original);
+        await h.editAndSave(vscode, src, () => original);
+        await waitIdle(api);
       }
     } else {
       t.info('no relative source import found in a passing test file — source-save check skipped');

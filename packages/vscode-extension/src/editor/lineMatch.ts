@@ -3,7 +3,7 @@
  * was measured, so coverage bars and hovers stay on the right lines while the
  * user edits. No VS Code dependency.
  *
- * Rules (owner, 2026-11-05) — a wrong bar is worse than no bar:
+ * Rules — a wrong bar is worse than no bar:
  *  - spacing inside or at the end of a line does not count as an edit, but
  *    the indentation does (code pasted into a new `if` has new coverage);
  *  - code that moved has no bar (nor the lines it moved across);

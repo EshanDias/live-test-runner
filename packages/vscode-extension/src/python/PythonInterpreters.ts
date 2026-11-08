@@ -1,5 +1,5 @@
 /**
- * PythonInterpreters — which Python runs a pytest project (pytest plan D7).
+ * PythonInterpreters — which Python runs a pytest project.
  *
  * Order, first usable one wins:
  *  1. the user's choice — the "Select Python Interpreter" command, remembered
@@ -137,11 +137,14 @@ export async function findCandidates(projectRoot: string, opts: {
     add(path.isAbsolute(s) ? s : path.resolve(base, s), 'liveTestRunner.pythonPath');
   }
 
-  const roots = [projectRoot, ...(opts.workspaceFolder && opts.workspaceFolder !== projectRoot ? [opts.workspaceFolder] : [])];
+  const roots = venvRoots(projectRoot, opts.workspaceFolder);
   for (const r of roots) {
     for (const dir of VENV_DIRS) {
       const py = venvPython(path.join(r, dir));
-      if (exists(py)) { add(py, r === projectRoot ? dir : `${dir} (workspace folder)`); }
+      if (!exists(py)) { continue; }
+      if (r === projectRoot) { add(py, dir); }
+      else if (r === opts.workspaceFolder) { add(py, `${dir} (workspace folder)`); }
+      else { add(py, `${dir} (${path.basename(r)})`); }
     }
   }
   if (env.UV_PROJECT_ENVIRONMENT) {
@@ -171,6 +174,25 @@ export async function findCandidates(projectRoot: string, opts: {
     add('python', 'PATH');
   }
   return out;
+}
+
+/**
+ * Folders whose virtual environments a project may use, nearest first: the
+ * project, every folder above it up to the workspace folder (a uv workspace
+ * keeps one `.venv` at its own root for all members),
+ * then the workspace folder. A project outside the workspace folder: the
+ * project, then the workspace folder.
+ */
+export function venvRoots(projectRoot: string, workspaceFolder?: string): string[] {
+  const roots = [projectRoot];
+  if (!workspaceFolder || workspaceFolder === projectRoot) { return roots; }
+  if (inside(projectRoot, workspaceFolder)) {
+    for (let dir = path.dirname(projectRoot); dir !== workspaceFolder && inside(dir, workspaceFolder); dir = path.dirname(dir)) {
+      roots.push(dir);
+    }
+  }
+  roots.push(workspaceFolder);
+  return roots;
 }
 
 export class PythonInterpreters {
@@ -292,7 +314,8 @@ export class PythonInterpreters {
       chosen: this._state?.get<Record<string, string>>(STATE_KEY)?.[projectRoot],
       setting: setting || undefined,
       workspaceFolder: folder?.uri.fsPath,
-      pythonExtension: withExtension && folder ? () => pythonExtensionInterpreter(folder.uri) : undefined,
+      // Asked for the project itself: the Python extension can hold one interpreter per member folder.
+      pythonExtension: withExtension && folder ? () => pythonExtensionInterpreter(vscode.Uri.file(projectRoot)) : undefined,
     };
   }
 

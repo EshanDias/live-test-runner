@@ -2,7 +2,7 @@
 /**
  * Create React App fixture (react-scripts 5 → its own Jest 27, jsdom, a
  * setupTests.js with hooks, --resetMocks in the test script): everything that
- * copy-requisition exercised, small enough for CI.
+ * a large real CRA app exercised, small enough for CI.
  */
 const { spawnSync } = require('child_process');
 const path = require('path');
@@ -36,7 +36,7 @@ module.exports = {
     const out = api.store.getFileOutput(fmt.fileId).lines.map((l) => l.text);
     t.check('console output captured', out.some((l) => l.includes('formatting money')), JSON.stringify(out));
 
-    // Trace with project hooks in setupTests.js (BUG-28).
+    // Trace with project hooks in setupTests.js.
     const lower = (p) => p.replace(/^[A-Z]:/, (m) => m.toLowerCase());
     const appSrc = lower(path.join(workspace, 'src', 'App.js'));
     const affected = api.traceStore.getAffectedTestFiles(appSrc);

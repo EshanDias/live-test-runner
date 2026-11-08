@@ -29,6 +29,7 @@ export function createPytestServices(options: {
     runnerAdapter.createRunner({ logger, tmpDir: sessionDir, pytestArgs: pytestArgsSetting() }) as CommandRunner;
   return {
     framework: FRAMEWORK_IDS.pytest,
+    language: 'python',
     displayName: 'pytest',
     // One pytest process at a time, every file in it — as the user's own `pytest`:
     // projects share session fixtures, ports and files between tests (httpx's
@@ -47,10 +48,13 @@ export function createPytestServices(options: {
       plainRun: 'plain pytest',
       fallbackLoss: 'slower; no coverage for these files',
     },
-    // Covering tests come from coverage.py's per-test contexts (pytest plan phase 6); the Timeline is a later release (D6).
+    // Covering tests come from coverage.py's per-test contexts; the Timeline is not built for pytest yet.
     features: { trace: true, timeline: false },
     traceOffReason: (projectRoot) => pythonFor(projectRoot) && !pythonFor(projectRoot)!.coverage
       ? "the coverage package is not installed in the project's Python environment"
+      : undefined,
+    coverageOffReason: (projectRoot) => pythonFor(projectRoot) && !pythonFor(projectRoot)!.coverage
+      ? "pytest: install the coverage package in the project's Python environment (pip install coverage)"
       : undefined,
     adapter: new PytestAdapter(sessionDir),
     projectConfig,

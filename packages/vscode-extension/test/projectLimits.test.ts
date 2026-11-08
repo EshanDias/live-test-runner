@@ -2,7 +2,7 @@ import { autoMaxRunningProjects, resolveMaxRunningProjects, startRefusal } from 
 
 const GB = 1024 ** 3;
 
-describe('maxRunningProjects (D11)', () => {
+describe('maxRunningProjects', () => {
   it('auto: 2 by default, 1 with ≤ 4 cores or < 8 GB total memory', () => {
     expect(autoMaxRunningProjects(8, 8 * GB)).toBe(2);
     expect(autoMaxRunningProjects(12, 16 * GB)).toBe(2);

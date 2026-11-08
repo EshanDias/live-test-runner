@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Saving files while the full suite runs (BUG-15, BUG-23 #4): "finished" is
+ * Saving files while the full suite runs: "finished" is
  * announced once, after everything; progress never exceeds 100%; a save does
  * not cancel the batch that is running the same file.
  */
@@ -35,20 +35,20 @@ module.exports = {
     const logs = h.logsSince(api, since);
 
     const finished = rec.of('run-finished');
-    t.eq('BUG-15 exactly one run-finished for the overlapping runs', finished.length, 1);
-    t.check('BUG-15 nothing was running when run-finished was sent', finished.every((e) => e.running === 0), JSON.stringify(finished));
+    t.eq('exactly one run-finished for the overlapping runs', finished.length, 1);
+    t.check('nothing was running when run-finished was sent', finished.every((e) => e.running === 0), JSON.stringify(finished));
     const slowEvents = rec.events.filter((e) => e.type === 'file-result' && e.file === 'slow.test.js');
     const slowDone = slowEvents[slowEvents.length - 1];
-    t.check('BUG-15 run-finished came after slow.test.js finished', slowDone && finished[0] && finished[0].at >= slowDone.at,
+    t.check('run-finished came after slow.test.js finished', slowDone && finished[0] && finished[0].at >= slowDone.at,
       JSON.stringify({ slowDone, finished }));
 
     const progress = rec.of('run-progress');
     const over = progress.filter((p) => p.completed > p.total);
-    t.check('BUG-15 progress never exceeds 100%', over.length === 0, JSON.stringify(over.slice(0, 5)));
-    t.check('BUG-15 progress was reported', progress.length > 0);
+    t.check('progress never exceeds 100%', over.length === 0, JSON.stringify(over.slice(0, 5)));
+    t.check('progress was reported', progress.length > 0);
 
     const cancels = logs.filter((l) => /cancelling b\d+/.test(l));
-    t.check('BUG-23 a save does not cancel the running batch', cancels.length === 0, cancels.join('\n'));
+    t.check('a save does not cancel the running batch', cancels.length === 0, cancels.join('\n'));
     t.eq('results are complete: math', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });
     t.eq('results are complete: slow', h.statusCounts(api, 'src/slow.test.js'), { passed: 1 });
     t.eq('nothing left running', h.nodesWithStatus(api, 'running').map((n) => n.id), []);

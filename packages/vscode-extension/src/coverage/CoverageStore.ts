@@ -7,6 +7,7 @@ const log = logger.scope('Coverage');
 export class CoverageStore {
   private readonly _entries = new Map<string, CoverageEntry>();
   private _scanComplete = false;
+  private _off: string[] = [];
 
   readonly onDidChange = new vscode.EventEmitter<void>();
   private _fireTimer: ReturnType<typeof setTimeout> | undefined;
@@ -16,7 +17,7 @@ export class CoverageStore {
   /**
    * Static count from the source scan (0 hits). The scan runs alongside the
    * first test run, so a file may already be measured — never downgrade it
-   * back to 0% (BUG-09).
+   * back to 0%.
    */
   setCountedEntry(
     filePath: string,
@@ -65,9 +66,16 @@ export class CoverageStore {
     this._changed();
   }
 
+  /** Why coverage is off this session (see CoverageTotals.off); [] when it is measured. */
+  setOffReasons(reasons: string[]): void {
+    this._off = [...reasons];
+    this._changed();
+  }
+
   clear(): void {
     this._entries.clear();
     this._scanComplete = false;
+    this._off = [];
     if (this._fireTimer) { clearTimeout(this._fireTimer); this._fireTimer = undefined; }
     this.onDidChange.fire();
   }
@@ -75,7 +83,7 @@ export class CoverageStore {
   /**
    * Coalesces change events: every fire re-sends all coverage rows to the
    * webview, and the source scan writes one entry per file — firing per entry
-   * was O(N²) traffic on large repos (BUG-09).
+   * was O(N²) traffic on large repos.
    */
   private _changed(): void {
     if (this._fireTimer) { return; }
@@ -137,6 +145,7 @@ export class CoverageStore {
       functions:  { covered: fnsCovered, total: fnsTotal, pct: _pct(fnsCovered, fnsTotal) },
       lines:      { covered: linesCovered, total: linesTotal, pct: _pct(linesCovered, linesTotal) },
       scanComplete: this._scanComplete,
+      ...(this._off.length > 0 ? { off: [...this._off] } : {}),
     };
   }
 

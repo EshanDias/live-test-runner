@@ -6,7 +6,7 @@
  * with `--config`) loads the project's own config with the project's Vite
  * and adds the trace plugin (instrumentation/vitest/: vitestTraceConfig.js,
  * vitestTracePlugin.js, vitestTraceTransform.js, vitestTraceSetup.mjs). See
- * ADR-9 in docs/temp_plans/vitest-support-plan.md.
+ * the Vitest execution trace entries in CHANGELOG.md.
  *
  * Off for a root (the run is then exactly today's, and source-file saves use
  * `vitest related`): the setting `liveTestRunner.vitestTrace` is off, Vitest

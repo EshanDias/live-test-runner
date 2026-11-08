@@ -111,7 +111,7 @@ describe('vitest list output', () => {
     expect(await new VitestRunner().discoverTests(root)).toEqual([a, path.join(root, 'b.test.ts')]);
   });
 
-  it('groups files by Vitest project name when the config has several projects (D12)', async () => {
+  it('groups files by Vitest project name when the config has several projects', async () => {
     project({ devDependencies: { vitest: '5' } });
     const a = path.join(root, 'a.test.ts');
     const b = path.join(root, 'b.test.ts');

@@ -1,7 +1,7 @@
 'use strict';
 /**
  * A monorepo with a Jest package, a Vitest package and a package that has
- * both configs (phase 7 + 8): each package is its own project with its own
+ * both configs: each package is its own project with its own
  * framework(s); the mixed one runs each file with its framework.
  */
 const h = require('../lib/harness');

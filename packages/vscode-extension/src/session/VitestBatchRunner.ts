@@ -22,7 +22,7 @@
  * the batch ends. Off when the provider package is not installed (the
  * runner says so once).
  *
- * Execution trace (phase 9, ADR-9): with a {@link VitestTrace}, batches run
+ * Execution trace: with a {@link VitestTrace}, batches run
  * with its wrapper config; every worker writes its own trace file
  * (`<base>.<pid>-<thread>`), read into the ExecutionTraceStore when the batch
  * ends — the same records and indexes as Jest. A batch that produces nothing
@@ -83,7 +83,7 @@ export class VitestBatchRunner implements IBatchRunner {
   constructor(
     private readonly _createRunner: (rawLog: (msg: string) => void) => CommandRunner,
     private readonly _coverage?: { store: CoverageStore; sessionDir: string; projectConfig?: IProjectConfig },
-    /** The execution trace (none: batches run as configured, as before phase 9). */
+    /** The execution trace (none: batches run as configured). */
     private readonly _trace?: { trace: VitestTrace; sessionDir: string },
   ) {}
 

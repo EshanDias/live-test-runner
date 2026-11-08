@@ -25,13 +25,13 @@ describe('Executor', () => {
   let script: string;
 
   beforeAll(() => {
-    // A folder with spaces, like "C:\Users\John Smith\…" (BUG-03).
+    // A folder with spaces, like "C:\Users\John Smith\…".
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr exec test '));
     script = writeScript(dir);
   });
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it('passes arguments to a JS entry point verbatim — no shell (BUG-03)', async () => {
+  it('passes arguments to a JS entry point verbatim — no shell', async () => {
     const args = [
       '--testNamePattern', '^(?:Math utils a\\^b \\| c & d)$',
       'C:/Users/John Smith/project/a.test.js',
@@ -47,7 +47,7 @@ describe('Executor', () => {
     expect(JSON.parse(r.stdout)).toEqual(['ok']);
   });
 
-  it('kill() ends the process and its children (BUG-08)', async () => {
+  it('kill() ends the process and its children', async () => {
     const ex = new Executor();
     const started = Date.now();
     const p = ex.run({ binary: script, args: ['--sleep', '--with-child'], cwd: dir });
@@ -59,7 +59,7 @@ describe('Executor', () => {
     expect(Date.now() - started).toBeLessThan(15_000);
   }, 30_000);
 
-  it('stops a run that exceeds timeoutMs (hanging test, BUG-23)', async () => {
+  it('stops a run that exceeds timeoutMs (hanging test)', async () => {
     const started = Date.now();
     const r = await new Executor().run({ binary: script, args: ['--sleep'], cwd: dir, timeoutMs: 800 });
     expect(r.passed).toBe(false);

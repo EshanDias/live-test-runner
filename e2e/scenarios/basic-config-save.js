@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Saving the Jest config during a session (task 6.2): the session restarts —
+ * Saving the Jest config during a session: the session restarts —
  * config and runnable files are re-read, every test reruns. The config gets
  * its exact content back.
  */

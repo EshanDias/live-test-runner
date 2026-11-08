@@ -4,7 +4,7 @@ import * as path from 'path';
 import { ExecutionTraceStore } from '../src/store/ExecutionTraceStore';
 import { applyDependencyFiles, applyTraceRecords, readTraceLines, workerTraceFiles } from '../src/session/traceRecords';
 
-/** Trace records (T / H / F, docs/architecture.md → Session instrumentation protocol) → ExecutionTraceStore, shared by Jest and Vitest. */
+/** Trace records (T / H / F, docs/development/architecture.md → Session instrumentation protocol) → ExecutionTraceStore, shared by Jest and Vitest. */
 
 const TF = path.resolve('/p/src/cart.test.ts');
 const PRICE = path.resolve('/p/src/price.ts');

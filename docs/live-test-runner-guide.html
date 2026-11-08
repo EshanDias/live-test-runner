@@ -133,7 +133,7 @@
     <a href="#vitest">Vitest</a>
     <a href="#pytest">pytest</a>
     <a href="#monorepos">Monorepos</a>
-    <a href="#mixed">Jest + Vitest</a>
+    <a href="#mixed">Mixed projects</a>
     <a href="#timeline">Timeline Debugger</a>
     <div class="group">Reference</div>
     <a href="#commands">Commands</a>
@@ -161,7 +161,7 @@
     <div class="card"><span class="ico">🎯</span><b>Editor feedback</b><span>Gutter icons, inline durations, Run / Debug buttons.</span></div>
     <div class="card"><span class="ico">📊</span><b>Live coverage</b><span>Per-line bars, plus a hover that shows covering tests.</span></div>
     <div class="card"><span class="ico">🔍</span><b>Results panel</b><span>Test list · console output · errors.</span></div>
-    <div class="card"><span class="ico">⏱</span><b>Timeline <span class="muted">(preview)</span></b><span>Step through a test after it has run.</span></div>
+    <div class="card"><span class="ico">⏱</span><b>Timeline <span class="muted">(planned)</span></b><span>Step through a test after it has run. Not available yet.</span></div>
   </div>
 </section>
 
@@ -171,7 +171,7 @@
   <ol class="steps">
     <li>Open a Jest, Vitest or pytest project — a single folder, a monorepo or a multi-root workspace (see <a href="#monorepos">Monorepos</a>).</li>
     <li>Click the <b>beaker</b> icon in the Activity Bar. Tests are discovered right away.</li>
-    <li>Click <b>▶ Start Testing</b>. The full suite runs once.</li>
+    <li>Click <b>▶ Start Testing</b>. The full suite runs once — the test files open in your editor first, so their results show while the rest runs. Open another test file mid-run and it runs next.</li>
     <li>Edit and save. The affected tests rerun automatically.</li>
   </ol>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/gifs/demo.gif" alt="Click Start: tests stream in live; save a file: only its tests rerun; pytest; the coverage hover; one test's own output" style="max-width:100%;border-radius:8px"></p>
@@ -204,7 +204,7 @@
   </table></div>
   <ul>
     <li>Debounced per file (<code>onSaveDebounceMs</code>, default 300 ms).</li>
-    <li><b>Changes from outside the editor</b> (<code>git pull</code>, a branch switch, a code generator) rerun tests the same way while testing is on. More than 20 files at once rerun everything. Files changed while tests are running are queued and rerun when the run finishes; a file that keeps changing while its own tests run (a test writes it) is rerun once, then left until you save it.</li>
+    <li><b>Changes from outside the editor</b> (<code>git pull</code>, a branch switch, a code generator) rerun tests the same way while testing is on. More than 20 files at once rerun everything. Files changed while tests are running are queued and rerun when the run finishes; a file that keeps changing while its own tests run (a test writes it) is rerun once, then left until you save it, and a file written during a run that no test uses starts nothing. Many files written by the tests themselves never restart testing — the log says so, and a save or Start reruns them.</li>
     <li>Files run in batches across parallel Jest processes. Results stream in file by file.</li>
     <li>If an instrumented batch returns no results, those files are retried with plain Jest, one at a time. This is logged as a warning.</li>
   </ul>
@@ -245,7 +245,8 @@
     <tr><td><span style="color:var(--err)">▌</span> red</td><td>Never executed</td></tr>
   </table></div>
   <ul>
-    <li><b>Bars</b> sit on the left edge of each executable line: they never push your code sideways, and the gutter stays free for breakpoints.</li>
+    <li>No coverage package (<code>coverage</code> for pytest, <code>@vitest/coverage-v8</code> for Vitest)? The tests still run, and the Coverage tab says what to install.</li>
+    <li><b>Bars</b> sit on the left edge of each executable line: they never push your code sideways, and the gutter stays free for breakpoints. A statement written over several lines (a <code>return {</code> object, a long call) has a bar on each of its lines.</li>
     <li><b>While you edit</b>, the bars move with their lines. A line you change or add, or code you move, has no bar until you save and its tests rerun. Spacing changes (formatting) keep their bars; if you rewrite most of a file, all its bars wait for the save.</li>
     <li><b>Settings</b>: the gear in the Test Explorer title bar opens Live Test Runner's settings.</li>
     <li><b>Hide / show</b> coverage with the eye button in the editor title (or the <b>Hide / Show Coverage in Editor</b> commands, setting <code>liveTestRunner.showCoverageInEditor</code>). Hidden also turns off the coverage hover.</li>
@@ -277,7 +278,7 @@
     <li><b>Projects</b>: a config with <code>test.projects</code> runs once from the root; Vitest runs every project. Browser-mode projects need real browsers, so they are left out unless you turn on <code>vitestIncludeBrowserProjects</code> or your test script picks projects itself.</li>
     <li><b>Execution trace</b> (on by default, <code>vitestTrace</code>): the extension records which lines each test runs — the coverage hover lists the covering tests, and <b>saving a source file</b> reruns only the tests that ran it (by name; a test file where every test did runs whole, with fresh coverage). It adds a small Vite plugin through a wrapper config in its own temp folder; your config, plugins and setup files apply as usual, and <code>fn.toString()</code> still returns the code you wrote. TypeScript and JSX lines are mapped back to your source, and so are <code>.vue</code>, <code>.svelte</code>, <code>.astro</code> and <code>.marko</code> components (script and template lines, through their Vite plugin's source map). Vitest 3 <code>vitest.workspace.*</code> files and type-check (<code>*.test-d.ts</code>) files are fine.</li>
     <li><b>When the trace is off</b> — the setting is off, Vitest is older than 3, or a run with the wrapper failed (the batch is then rerun as configured and the log says why, once) — saving a source file reruns the test files that import it (<code>vitest related</code>), live and with fresh coverage. Browser-mode projects (opt-in) always run without it. Saving <code>vitest.config.*</code> restarts the session.</li>
-    <li><b>Not yet</b>: the Timeline Debugger.</li>
+    <li><b>Planned</b>: the Timeline Debugger.</li>
   </ul>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/gifs/scene-vitest-save.gif" alt="Vitest: saving pricing.ts reruns only the tests that use it — red after a bad change, green after the fix" style="max-width:100%;border-radius:8px"></p>
 </section>
@@ -295,7 +296,9 @@
     <li><b>Output per test</b>: each test shows its own <code>print</code> output, stderr and log records; failures show pytest's own explanation, and an error in a fixture says it happened in setup or teardown. With <code>-s</code> in <code>addopts</code>, output goes to the Test Output channel only.</li>
     <li><b>▶ Run</b> a test, a class or a parametrized function (all its cases) — by pytest node id, never <code>-k</code>.</li>
     <li><b>Coverage and covering tests</b>: measured with your own coverage settings (<code>[tool.coverage.run]</code>, <code>.coveragerc</code>…); each test is measured on its own, so the hover lists the tests that ran a line and <b>saving a source file</b> reruns exactly those tests. Before a file has coverage, saving it reruns the test files that import it; saving a <code>conftest.py</code> reruns the tests under its folder; saving the pytest config restarts the session.</li>
-    <li><b>Not yet</b>: Python monorepos, a JS + Python project in one folder, the Timeline Debugger.</li>
+    <li><b>Python monorepos</b>: in a uv workspace each member with tests is its own project, run from its own folder with the workspace's shared <code>.venv</code> (see <a href="#monorepos">Monorepos</a>). Services side by side that each have their own <code>.venv</code> (no uv workspace) are a project each, run with their own environment — a project's own <code>.venv</code> always comes before one in a folder above it.</li>
+    <li><b>JS and Python in one folder</b>: a JS project that is a pytest project too (a pytest config or a root <code>conftest.py</code>) runs both in one project (see <a href="#mixed">Jest, Vitest and pytest in one project</a>); a Python subfolder with its own pytest config (<code>backend/</code>) is its own project.</li>
+    <li><b>Planned</b>: the Timeline Debugger.</li>
   </ul>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/gifs/scene-pytest-run.gif" alt="pytest: Start Testing — the tree fills in, tests run live and pass" style="max-width:100%;border-radius:8px"></p>
 </section>
@@ -308,6 +311,9 @@
     <tr><th>Your layout</th><th>Projects</th></tr>
     <tr><td>A folder with its own test config (<code>jest.config.*</code>, <code>vitest.config.*</code>, <code>package.json#jest</code>, CRA)</td><td>One project — its config already covers its packages (Jest <code>projects</code>, Vitest <code>test.projects</code>)</td></tr>
     <tr><td>A monorepo root (<code>pnpm-workspace.yaml</code>, <code>package.json#workspaces</code>) without a test config</td><td>One project per package that has tests (a Jest / Vitest dependency, config or <code>test</code> script)</td></tr>
+    <tr><td>A folder that configures pytest (<code>pytest.ini</code>, <code>[tool.pytest.ini_options]</code>, a root <code>conftest.py</code>…)</td><td>One project — pytest run from there collects the whole tree</td></tr>
+    <tr><td>A uv workspace root (<code>[tool.uv.workspace] members</code>) without a pytest config</td><td>One project per member that has tests (its own pytest config, or test files when the root names pytest); each finds the workspace's shared <code>.venv</code></td></tr>
+    <tr><td>A folder with no Python of its own and a subfolder with a pytest config (<code>backend/pytest.ini</code>), up to two levels down</td><td>The subfolder is its own pytest project, next to the folder's JS project(s)</td></tr>
     <tr><td>A multi-root workspace</td><td>Each folder, by the rules above</td></tr>
   </table></div>
   <ul>
@@ -323,7 +329,7 @@
 
 <!-- ───────────────────────── Mixed frameworks ───────────────────────── -->
 <section id="mixed">
-  <h2>Jest and Vitest in one project</h2>
+  <h2>Jest, Vitest and pytest in one project</h2>
   <p>A project with a Jest config <b>and its own</b> <code>vitest.config.*</code> (e.g. while migrating) runs <b>each test file with its own framework</b> — binary, config, flags, coverage. A <code>vitest</code> dependency alone, or a <code>vite.config.*</code>, does not count: such projects stay Jest.</p>
   <div class="table-wrap"><table>
     <tr><th>Which framework runs a file</th><th></th></tr>
@@ -336,8 +342,9 @@
     <li>The Explorer groups the files by framework; the switcher shows <code>jest + vitest</code>; the status bar splits the counts: <code>✅ 8 passed · Jest 5 · Vitest 3</code>.</li>
     <li><b>Saving a source file</b> reruns the dependent tests of both frameworks, each by its own execution trace (Vitest falls back to <code>vitest related</code> when its trace is off). Saving either config restarts the session.</li>
     <li><b>Coverage</b>: a source file tested by both shows the lines either framework ran.</li>
-    <li>Stop kills both frameworks' processes. "Covering tests" on hover list tests of both frameworks; the Timeline debugger works for the Jest files only.</li>
+    <li>Stop kills both frameworks' processes. "Covering tests" on hover list tests of both frameworks.</li>
     <li>In a monorepo each package is still its own project; only a package with both configs is mixed.</li>
+    <li><b>JS and Python</b>: a JS project that also configures pytest (<code>pytest.ini</code>, <code>[tool.pytest.ini_options]</code>, a root <code>conftest.py</code>) runs <code>.py</code> tests with pytest and the rest with Jest / Vitest — the switcher shows <code>jest + pytest</code>, the status bar <code>Jest 12 · pytest 30</code>. A saved <code>.py</code> file reruns pytest only, a saved <code>.js</code> / <code>.ts</code> file the JS framework only. Without a Python environment that can run pytest, the JS tests still run and the log says why the Python ones don't.</li>
   </ul>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/mixed-explorer.png" alt="A mixed project: Explorer grouped into Jest and Vitest, status bar Jest 5 · Vitest 3" style="max-width:100%;border-radius:8px"></p>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/mixed-coverage.png" alt="math.js covered by Jest (add) and Vitest (mul)" style="max-width:100%;border-radius:8px"></p>
@@ -345,15 +352,13 @@
 
 <!-- ───────────────────────── Timeline ───────────────────────── -->
 <section id="timeline">
-  <h2>Timeline Debugger <span class="muted">(preview)</span></h2>
-  <p>Re-runs one test with full instrumentation, then lets you replay it step by step. Jest only — not available for Vitest yet.</p>
+  <h2>Timeline Debugger <span class="muted">(planned)</span></h2>
+  <p><b>Not available yet.</b> The plan: replay a test that has already run, step by step, without breakpoints.</p>
   <ul>
-    <li>Play / step / scrub through each executed line.</li>
-    <li>Variable values shown as ghost text in the editor.</li>
-    <li>Sidebar with State, Watch and Call Stack. Use <b>Add to Watch</b> from the hover.</li>
-    <li>Console output tied to the step that produced it.</li>
+    <li>Play, step or scrub through each line the test ran.</li>
+    <li>Variable values shown next to the code at each step.</li>
+    <li>Console output tied to the step that printed it.</li>
   </ul>
-  <p class="muted">Open it from a test in the Results panel. Leave it with the exit button.</p>
 </section>
 
 <!-- ───────────────────────── Commands ───────────────────────── -->
@@ -376,7 +381,6 @@
     <tr><td>Show Test Output</td><td>Opens the raw Jest / Vitest output</td></tr>
     <tr><td>Open Guide</td><td>Opens this guide in an editor tab</td></tr>
     <tr><td>Copy Diagnostic Report</td><td>Copies versions, project setup, settings and recent logs for a bug report</td></tr>
-    <tr><td>Open Timeline Debugger</td><td>Traces a single test</td></tr>
     <tr><td>Show All Covering Tests</td><td>Quick Pick of every test that ran the line under the cursor</td></tr>
     <tr><td>Rerun / Debug Test at Line</td><td>Runs or debugs the test under the cursor (the CodeLens ▶ Run / ▷ Debug)</td></tr>
     <tr><td>Focus Test in Results Panel</td><td>Shows the test under the cursor in the Results panel</td></tr>
@@ -401,12 +405,15 @@
   <div class="table-wrap"><table>
     <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
     <tr><td><code>showCoverageInEditor</code></td><td><code>true</code></td><td>Coverage bars and the coverage hover in the editor</td></tr>
+    <tr><td><code>hangTimeoutSeconds</code></td><td><code>300</code></td><td>Stops a single test that runs longer than this (an infinite loop) and marks its file failed, so the rest of the run continues. Loading a file does not count. <code>0</code> turns the limit off.</td></tr>
+    <tr><td><code>coverageExclude</code></td><td><code>[]</code></td><td>Extra glob patterns of source files left out of the coverage totals, e.g. <code>["**/stories/**"]</code> (<code>node_modules</code>, test files, configs and build folders are always left out).</td></tr>
+    <tr><td><code>testFilePatterns</code></td><td><code>["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]</code></td><td>Glob patterns for test files before the framework lists its own; files your framework's config runs are added even when no pattern matches them.</td></tr>
     <tr><td><code>projectRoot</code></td><td><code>""</code></td><td>Pin to one project folder. Empty: every test project in the workspace is detected.</td></tr>
     <tr><td><code>maxRunningProjects</code></td><td><code>"auto"</code></td><td>Projects running at once: <code>auto</code> = 2 (1 on ≤ 4 cores or &lt; 8 GB total memory), or a number</td></tr>
     <tr><td><code>runMode</code></td><td><code>auto</code></td><td><code>auto</code> calls Jest directly. <code>npm</code> uses <code>npm test --</code> (Jest only).</td></tr>
     <tr><td><code>jestCommand</code></td><td><code>""</code></td><td>Override the Jest binary or command.</td></tr>
     <tr><td><code>vitestCommand</code></td><td><code>""</code></td><td>Override the Vitest command (e.g. <code>npx vitest</code>). Empty = the project's own Vitest.</td></tr>
-    <tr><td><code>frameworks</code></td><td><code>{}</code></td><td>Jest + Vitest projects: glob → <code>"jest"</code> / <code>"vitest"</code>, which framework runs those test files (see <a href="#mixed">Jest and Vitest in one project</a>).</td></tr>
+    <tr><td><code>frameworks</code></td><td><code>{}</code></td><td>Jest + Vitest projects: glob → <code>"jest"</code> / <code>"vitest"</code>, which framework runs those test files (see <a href="#mixed">Jest, Vitest and pytest in one project</a>).</td></tr>
     <tr><td><code>vitestTrace</code></td><td><code>true</code></td><td>Vitest execution trace: covering tests in the hover, and a saved source file reruns only the tests that ran it. Off: Vitest runs exactly as configured and saves use <code>vitest related</code>.</td></tr>
     <tr><td><code>vitestIncludeBrowserProjects</code></td><td><code>false</code></td><td>Also run Vitest browser-mode projects. They need real browsers, so they are left out by default (unless the test script picks projects itself).</td></tr>
     <tr><td><code>pythonPath</code></td><td><code>""</code></td><td>pytest: the Python that runs the tests (absolute, or relative to the workspace folder). Empty: the selected interpreter, else the project's virtual environment, the Python extension's, then <code>python3</code> on PATH.</td></tr>
@@ -454,14 +461,13 @@
   <h3>Common warnings</h3>
   <div class="table-wrap"><table>
     <tr><th>Message</th><th>Meaning / what to do</th></tr>
-    <tr><td><code>instrumented Jest run returned no results … Jest said:</code></td><td>Jest failed before running tests (config, transform, environment). The lines after it are Jest's own error. Often a config format we don't read yet (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-07" target="_blank" rel="noopener">BUG-07</a>).</td></tr>
+    <tr><td><code>instrumented Jest run returned no results … Jest said:</code></td><td>Jest failed before running tests (config, transform, environment). The lines after it are Jest's own error. Often a config format we don't read yet — please <a href="https://github.com/EshanDias/live-test-runner/issues/new?template=bug_report.yml" target="_blank" rel="noopener">report it</a>.</td></tr>
     <tr><td><code>falling back to plain Jest, one file at a time</code></td><td>Tests still run, but more slowly and without coverage or smart reruns for those files.</td></tr>
     <tr><td><code>&lt;file&gt; failed to run — …</code></td><td>The test file could not execute (syntax error, missing module, setup crash).</td></tr>
     <tr><td><code>could not instrument &lt;file&gt;</code></td><td>That source file runs without coverage. Set the level to Debug to see the parse error.</td></tr>
     <tr><td><code>falling back to "npx jest"</code></td><td>No local Jest found. Run <code>npm install</code> or set <code>jestCommand</code>.</td></tr>
-    <tr><td><code>no file has finished in 60s — … currently on X</code></td><td>A batch made no progress. If the next warning names a <i>different</i> file, tests are just slow. If it names the <i>same</i> file, a test there is probably hanging (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-23" target="_blank" rel="noopener">BUG-23</a>).</td></tr>
+    <tr><td><code>no file has finished in 60s — … currently on X</code></td><td>A batch made no progress. If the next warning names a <i>different</i> file, tests are just slow. If it names the <i>same</i> file, a test there is probably hanging.</td></tr>
     <tr><td><code>… was still running in b3 — cancelling b3</code></td><td>A save reran a file that a bigger batch was running. That batch's unfinished files are retried, more slowly.</td></tr>
-    <tr><td><code>Trace finished … captured 0 steps</code></td><td>The timeline matched no test, or the transform didn't apply (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-12" target="_blank" rel="noopener">BUG-12</a>).</td></tr>
   </table></div>
 
   <h3>Reporting a bug</h3>
@@ -488,11 +494,12 @@
     <tr><td>Coverage (gutter, hover)</td><td>✅</td><td>✅</td><td>✅ needs <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>)</td><td>✅ needs <code>coverage</code> (pytest-cov not needed)</td></tr>
     <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
     <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ only the tests that ran it (execution trace); <code>vitest related</code> when the trace is off</td><td>✅ only the tests that ran it (coverage contexts); importing test files before that</td></tr>
-    <tr><td>Monorepo / multi-project (project switcher)</td><td>✅ one project per package; a root <code>projects</code> config stays one</td><td>🟡 a CRA app is detected as a package (not e2e-tested)</td><td>✅ one project per package; <code>test.projects</code> stays one, grouped by name</td><td>⏳ later (one pytest project per folder today)</td></tr>
+    <tr><td>Monorepo / multi-project (project switcher)</td><td>✅ one project per package; a root <code>projects</code> config stays one</td><td>🟡 a CRA app is detected as a package (not e2e-tested)</td><td>✅ one project per package; <code>test.projects</code> stays one, grouped by name</td><td>✅ one project per uv workspace member with tests; a root pytest config stays one</td></tr>
     <tr><td>Mixed Jest + Vitest in one project</td><td>✅ each test file runs with its own framework</td><td>—</td><td>✅</td><td>—</td></tr>
+    <tr><td>JS + Python in one folder</td><td>✅ one project runs Jest / Vitest and pytest</td><td>🟡 not e2e-tested</td><td>✅</td><td>✅ a <code>.py</code> save reruns pytest only, a <code>.js</code> save the JS framework only</td></tr>
     <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>✅ Vitest ≥ 3 (incl. <code>vitest.workspace</code> files); not in browser mode</td><td>✅ from coverage.py contexts (needs <code>coverage</code>)</td></tr>
     <tr><td>UI components (<code>.vue</code>, <code>.svelte</code>, <code>.astro</code>, <code>.marko</code>): save reruns, trace, coverage</td><td>✅ through the project's transformer (vue-jest, svelte-jester…)</td><td>— (React is plain JS)</td><td>✅ through the project's Vite plugins</td><td>—</td></tr>
-    <tr><td>Timeline debugger</td><td>⏳</td><td>⏳</td><td>⏳ later</td><td>⏳ later</td></tr>
+    <tr><td>Timeline debugger</td><td>⏳ planned</td><td>⏳ planned</td><td>⏳ planned</td><td>⏳ planned</td></tr>
   </table></div>
   <!-- matrix:end -->
   <ul>
@@ -523,7 +530,7 @@
   <div class="layout">
     <div class="bar">Activity Bar → Explorer</div>
     <div><b>Editor</b>: gutter icons · durations · CodeLens · coverage bars · hover</div>
-    <div><b>Panel</b>: Results / Timeline · Output (Logs, Test Output)</div>
+    <div><b>Panel</b>: Results · Output (Logs, Test Output)</div>
     <div><b>Status bar</b>: <code>Live Tests: ✅ 12 passed</code></div>
   </div>
 </section>
@@ -534,7 +541,7 @@
   <div class="table-wrap"><table>
     <tr><th>Package</th><th>Role</th><th>Depends on</th></tr>
     <tr><td><code>runner</code></td><td>Spawns Jest, detects the framework (Jest / CRA), resolves the binary, parses results, shared logger</td><td>—</td></tr>
-    <tr><td><code>core</code></td><td>Session lifecycle, coverage map</td><td>runner</td></tr>
+    <tr><td><code>core</code></td><td>Session state</td><td>runner</td></tr>
     <tr><td><code>vscode-extension</code></td><td>UI, stores, instrumentation, VS Code wiring</td><td>core</td></tr>
   </table></div>
   <ul>
@@ -544,17 +551,16 @@
     <li><b>Isolation</b>: each VS Code window gets its own <code>session-&lt;pid&gt;-&lt;ts&gt;</code> temp folder.</li>
     <li><b>Projects</b>: one <code>ProjectContext</code> per test project (its stores, discovery, framework services and session); the views show the selected one.</li>
   </ul>
-  <p class="muted">More detail: <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/architecture.md" target="_blank" rel="noopener">architecture.md</a> · <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/developer-guide.md" target="_blank" rel="noopener">developer-guide.md</a></p>
+  <p class="muted">More detail: <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/development/architecture.md" target="_blank" rel="noopener">architecture.md</a> · <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/development/developer-guide.md" target="_blank" rel="noopener">developer-guide.md</a></p>
 </section>
 
 <!-- ───────────────────────── Known issues ───────────────────────── -->
 <section id="known-issues">
-  <h2>Known issues</h2>
-  <p>All known bugs, with root-cause analysis and suggested fixes, are tracked in <a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md" target="_blank" rel="noopener"><b>bugs-and-issues.md</b></a>. The open ones:</p>
+  <h2>Known issues &amp; feedback</h2>
   <ul>
-    <li>In the Jest monorepo, jest-runtime's own tests fail under the session run though they pass with plain Jest (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-43" target="_blank" rel="noopener">BUG-43</a>).</li>
-    <li>Tests that write files into the project can race with batches running at the same time; the batch is retried file by file, so results are right but slower (<a href="https://github.com/EshanDias/live-test-runner/blob/main/docs/bugs-and-issues.md#bug-44" target="_blank" rel="noopener">BUG-44</a>).</li>
+    <li>In the Jest repository itself, a few of jest-runtime's own tests (they build Jest runtimes of their own) fail under Live Test Runner though they pass with plain Jest. Ordinary projects are not affected.</li>
   </ul>
+  <p>Found a bug or have an idea? Open an issue on <a href="https://github.com/EshanDias/live-test-runner/issues" target="_blank" rel="noopener">GitHub</a> — the bug report form asks for what helps most (versions, framework, the extension log).</p>
 </section>
 
 </main>

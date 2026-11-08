@@ -7,7 +7,7 @@
  * the project's. Reading the project config ourselves only ever covered
  * jest.config.js / .cjs / package.json#jest, so TypeScript and ESM configs,
  * function exports, presets and `--config` in the test script were silently
- * lost (BUG-07). Instead we ask Jest: `jest --showConfig` (for Create React
+ * lost. Instead we ask Jest: `jest --showConfig` (for Create React
  * App: `react-scripts test --showConfig`), once per session, and cache the
  * result as JSON that the generated configs `require`.
  */
