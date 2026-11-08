@@ -23,15 +23,18 @@ updates:
         patterns: ['*']
         update-types: ['minor', 'patch']
     ignore:
+      # These follow the supported-versions policy (scripts/support-floor.js,
+      # checked on every PR; a monthly workflow opens an issue when the
+      # minimum may move), not the latest release.
       # Must stay at the lowest VS Code the extension supports (engines.vscode).
       - dependency-name: '@types/vscode'
-      # The extension's Node types match the Node inside that lowest VS Code.
+      # The extension's and runner's Node types match the Node inside that VS Code.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
       # Ships inside the extension (out/vendor/babel-parser.js): it lists tests
       # and runs in the user's own Vitest process, on whatever Node they have.
-      # Babel 8 needs Node 22.18+ and is an ES module, which would break older
-      # projects; a major is a deliberate change, not a routine update.
+      # Babel 8 needs Node 22.18+ and is an ES module; the policy check fails it
+      # while an older Node is supported.
       - dependency-name: '@babel/parser'
         update-types: ['version-update:semver-major']
 

@@ -52,6 +52,8 @@ jobs:
       - run: pnpm lint
       - name: Docs links resolve (the Wiki is built from docs/)
         run: node scripts/build-wiki.js --check
+      - name: Supported VS Code / Node versions follow the policy
+        run: node scripts/support-floor.js --check
       - run: pnpm test
 
   # The pytest plugin shipped with the extension (packages/runner/src/framework/pytest/ltr_pytest.py),
@@ -139,6 +141,49 @@ jobs:
             ${{ runner.temp }}/e2e/*/report.json
             ${{ runner.temp }}/e2e/*/extension.log
             ${{ runner.temp }}/e2e/*/jest-output.log
+          if-no-files-found: ignore
+
+  # The main scenarios on the oldest VS Code the extension supports
+  # (engines.vscode, set by scripts/support-floor.js), so an API or Node
+  # feature newer than that version is caught before release.
+  e2e-minimum:
+    name: E2E (minimum VS Code)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v3
+        with:
+          runtime: node@24
+          cache: true
+      - run: pnpm run build
+      - uses: actions/setup-python@v6
+        id: python
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: e2e/fixtures/*/requirements-e2e.txt
+      - name: Minimum VS Code version
+        run: echo "LTR_E2E_VSCODE=$(node -p "require('./packages/vscode-extension/package.json').engines.vscode.replace(/[^0-9.]/g, '')")" >> "$GITHUB_ENV"
+      # basic-debug / vitest-debug are left out until ▷ Debug of a Jest or
+      # Vitest test works on older VS Code (it hangs in the integrated terminal).
+      - name: Run e2e (virtual display)
+        run: >-
+          xvfb-run -a node e2e/run.js
+          basic-full-run basic-on-save basic-stop coverage-editing
+          vitest-full-run vitest-trace mixed-full-run
+          pytest-full-run pytest-debug monorepo-run guide-open
+        env:
+          LTR_E2E_RUNS_DIR: ${{ runner.temp }}/e2e
+          LTR_E2E_PYTHON: ${{ steps.python.outputs.python-path }}
+      - name: Upload e2e logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-logs-minimum
+          path: |
+            ${{ runner.temp }}/e2e/*/report.json
+            ${{ runner.temp }}/e2e/*/extension.log
           if-no-files-found: ignore
 
   version-bump:

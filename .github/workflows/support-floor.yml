@@ -1,0 +1,53 @@
+name: Supported versions
+
+# Once a month, checks the oldest VS Code and Node the extension supports
+# against official release data (scripts/support-floor.js: a Node major is
+# supported until 2 years after its end of life). When the minimum VS Code may
+# be raised, it opens an issue; raising it is a release decision (engines,
+# @types/vscode, @types/node, build targets, changelogs), so nothing is changed
+# here.
+on:
+  schedule:
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: Minimum VS Code and Node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare with the latest release data
+        id: floor
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        # Exit 1 means the repository breaks the policy; the JSON still says why.
+        run: |
+          node scripts/support-floor.js --update --json > "$RUNNER_TEMP/floor.json" || true
+          cat "$RUNNER_TEMP/floor.json"
+          echo "can_raise=$(jq -r .canRaise "$RUNNER_TEMP/floor.json")" >> "$GITHUB_OUTPUT"
+          echo "minimum=$(jq -r .minimum "$RUNNER_TEMP/floor.json")" >> "$GITHUB_OUTPUT"
+      - name: Open an issue when the minimum can be raised
+        if: steps.floor.outputs.can_raise == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MINIMUM: ${{ steps.floor.outputs.minimum }}
+        run: |
+          title="Raise the minimum VS Code to $MINIMUM"
+          if [ -n "$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[].number')" ]; then
+            echo "An open issue already tracks this."; exit 0
+          fi
+          f="$RUNNER_TEMP/floor.json"
+          {
+            echo "The supported-versions policy (Node end of life + $(jq -r .bufferYears "$f") years) now allows VS Code $MINIMUM as the minimum; the extension requires ^$(jq -r .current "$f")."
+            echo
+            echo "- Oldest supported Node: $(jq -r .nodeMajor "$f") (until $(jq -r .nodeSupportedUntil "$f")); VS Code $MINIMUM runs Node $(jq -r .minimumNode "$f")."
+            echo "- Next change: $(jq -r .next.date "$f") → VS Code $(jq -r .next.minimum "$f")."
+            echo
+            echo "To raise it in a release branch: \`node scripts/support-floor.js --update\`, then set \`engines.vscode\` (root and extension), \`@types/vscode\`, \`@types/node\` (extension, runner) and the esbuild targets until \`node scripts/support-floor.js\` reports no errors; update both changelogs. Developer guide → Supported versions."
+          } > "$RUNNER_TEMP/body.md"
+          gh issue create --title "$title" --body-file "$RUNNER_TEMP/body.md"

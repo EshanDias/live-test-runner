@@ -23,6 +23,10 @@ node e2e/real-repos.js   # real-repo matrix on read-only copies (repos from the 
 # README / website GIFs + screenshots from the real UI: diag-demo-* scenarios → scripts/demo-gifs.js (developer guide → End-to-end tests)
 python -m pytest packages/runner/python-tests   # the shipped pytest plugin's own tests (needs pytest; coverage for 2 of them)
 
+# Supported versions (minimum VS Code / Node from official data; also a PR check)
+node scripts/support-floor.js            # report + check; --update refreshes scripts/support-floor.json
+node scripts/security-audit.js           # known vulnerabilities: none in shipped code, no high/critical anywhere (also a PR check)
+
 # Linting
 pnpm lint                # Lint all packages
 

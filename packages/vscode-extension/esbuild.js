@@ -73,7 +73,7 @@ const config = {
   external: ['vscode'],
   format: 'cjs',
   platform: 'node',
-  target: 'node16',
+  target: 'node18',
   sourcemap: minify ? false : true,
   minify,
 };

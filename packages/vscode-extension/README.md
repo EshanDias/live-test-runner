@@ -30,6 +30,8 @@
 4. Save any file — only the tests it affects rerun
 
 > No config, no extra installs. The framework (and, for pytest, the virtual environment) is detected from your project.
+>
+> Needs VS Code 1.82 or newer.
 
 ---
 

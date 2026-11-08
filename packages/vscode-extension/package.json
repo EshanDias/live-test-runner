@@ -7,7 +7,7 @@
   "icon": "resources/images/live-test-runner.png",
   "publisher": "EshLabs",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.82.0"
   },
   "repository": {
     "type": "git",
@@ -437,9 +437,9 @@
   },
   "devDependencies": {
     "@babel/parser": "7.29.12",
-    "@types/node": "16.x",
+    "@types/node": "18.x",
     "@types/picomatch": "^4.0.3",
-    "@types/vscode": "^1.74.0",
+    "@types/vscode": "1.82.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "picomatch": "^4.0.7",

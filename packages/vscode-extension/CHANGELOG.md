@@ -2,6 +2,12 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- **Needs VS Code 1.82 or newer** (was 1.74). Older VS Code versions run Node 16, which stopped getting security fixes in 2023. On an older VS Code you keep version 3.3.0. From now on the minimum follows a published rule: a Node version is supported until 2 years after its end of life.
+
 ## [3.3.0] - 2026-11-07
 
 ### New
