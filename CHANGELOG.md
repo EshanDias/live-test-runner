@@ -5,6 +5,7 @@ All notable changes to Live Test Runner are documented here.
 ## [Unreleased]
 
 - Dependabot: minor and patch updates come in one grouped PR per ecosystem; each major version gets a PR of its own, to test and fix separately. Major versions of `@babel/parser` are not offered: it ships inside the extension (test listing, the Vitest trace) and runs on the user's Node, and Babel 8 needs Node 22.18+.
+- Dependencies: ESLint 10.14, typescript-eslint 8.72, and the Babel parser that ships inside the extension 7.29.12 (patch fixes). `pnpm audit` goes from 18 advisories to 3: `pnpm-workspace.yaml` `overrides` move brace-expansion, js-yaml, browserslist, baseline-browser-mapping and @babel/core (pulled in only by Jest and ESLint, which we use to test and lint; none ships in the extension) to their first fixed version in the same major. The 3 left (minimatch, glob, deepmerge) have no fix inside their major and only see our own config. `minimumReleaseAge` (7 days, like Dependabot's cooldown) makes pnpm refuse versions published less than a week ago.
 
 ## [3.3.0] - 2026-11-07
 
