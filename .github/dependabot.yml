@@ -12,6 +12,10 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    # Wait a week before offering a new version: a hijacked release is usually
+    # found and pulled within days. Security fixes are not delayed.
+    cooldown:
+      default-days: 7
     groups:
       npm-dependencies:
         patterns: ['*']
@@ -27,6 +31,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns: ['*']

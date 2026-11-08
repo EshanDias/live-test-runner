@@ -59,15 +59,12 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement privately, through
-GitHub:
-
-* **On an issue, pull request or comment:** open its `···` menu, choose
-  **Report content**, then **Report to repository admins**. Only the maintainers
-  see the report.
-* **About a user, or anything else:** use GitHub's
-  [Report abuse](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam)
-  form, which goes to GitHub.
+reported privately through GitHub: open the comment's, issue's or user's `···`
+menu and choose **Report content** (or use GitHub's
+[Report abuse](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam)
+form). The report goes to GitHub's Trust & Safety team, and the maintainers act
+on what they see in the repository: hiding or deleting comments, locking
+conversations and blocking users.
 
 All complaints will be reviewed and investigated promptly and fairly.
 
