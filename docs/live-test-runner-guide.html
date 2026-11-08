@@ -140,6 +140,7 @@
     <a href="#settings">Settings</a>
     <a href="#logs">Logs &amp; troubleshooting</a>
     <a href="#support">Support &amp; limits</a>
+    <a href="#privacy">Privacy</a>
     <div class="group">Contributors</div>
     <a href="#how-it-works">How a run works</a>
     <a href="#architecture">Architecture</a>
@@ -476,6 +477,14 @@
     <li>Run <b>Copy Diagnostic Report</b>. It opens and copies a Markdown report with versions, project setup and the last 300 log lines.</li>
     <li>Check it for anything private, then attach it to the issue.</li>
   </ol>
+</section>
+
+<!-- ───────────────────────── Privacy ───────────────────────── -->
+<section id="privacy">
+  <h2>Privacy</h2>
+  <p><b>No telemetry. No accounts.</b> Live Test Runner makes no network calls: it runs your own Jest, Vitest or pytest locally and keeps its cache on your machine (clear it any time with <b>Clear All Cached Data</b>). It is MIT-licensed and open source, so your security team can review it. This guide, inside VS Code, loads nothing from the internet either: its pictures are links to the online guide, and links open in your browser only when you click them.</p>
+  <p>Your own tests, and VS Code itself, may use the network; that is not the extension.</p>
+  <p><b>How to verify:</b> every pull request runs <code>packages/vscode-extension/test/noNetwork.test.ts</code> (part of <code>pnpm test</code>). It scans the source and the built extension for network modules (<code>http</code>, <code>https</code>, <code>net</code>, <code>tls</code>, <code>dns</code>…), network APIs (<code>fetch</code>, <code>XMLHttpRequest</code>, <code>WebSocket</code>…) and telemetry packages, and checks that no view's content security policy allows another origin.</p>
 </section>
 
 <!-- ───────────────────────── Support ───────────────────────── -->

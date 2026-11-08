@@ -554,6 +554,8 @@ The PR checks run it (`--check`). The monthly workflow `support-floor.yml` opens
 - **Dependency review** (PRs) — GitHub's action blocks a PR that adds a package with a high advisory or a license outside the allow list.
 - **CodeQL** — static security analysis (`security-extended` queries) of our JS / TS, the Python pytest plugin and the workflows; findings in Security → Code scanning.
 
+**No network calls** (project rule G12) is a unit test, `packages/vscode-extension/test/noNetwork.test.ts`, so it runs in `Tests`: the bundle may require only the Node modules in its `BUNDLE_MODULES` allowlist (each with its reason), sources and shipped code may use no network module or API (`http`, `https`, `http2`, `net`, `tls`, `dgram`, `dns`, `fetch`, `XMLHttpRequest`, `WebSocket`, `sendBeacon`, `EventSource`; Python `socket`, `urllib`, `requests`…) and no telemetry package, runtime dependencies are only workspace packages, and every webview CSP lists only local sources. The guide that ships in the extension is built by `src/guide/offlineGuide.js` (from `copyGuide()` in `esbuild.js`): remote pictures become links to the online guide, and any other remote resource fails the build. To check by hand: `grep -oE 'require\("[^"]+"\)' packages/vscode-extension/out/extension.js | sort -u`.
+
 Alongside: Dependabot (weekly updates, security fixes as they come), `minimumReleaseAge` (no version younger than 7 days), secret scanning with push protection (repository settings), and private vulnerability reports (`SECURITY.md`).
 
 ## Publishing

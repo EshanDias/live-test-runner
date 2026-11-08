@@ -6,6 +6,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### Changed
 
+- **No network calls, at all.** The built-in guide no longer loads its pictures from the internet; each one is a link to the online guide. Live Test Runner sends no telemetry and talks to nothing outside your machine, and a test on every change checks it. See Privacy in the README.
 - **Needs VS Code 1.82 or newer** (was 1.74). Older VS Code versions run Node 16, which stopped getting security fixes in 2023. On an older VS Code you keep version 3.3.0. From now on the minimum follows a published rule: a Node version is supported until 2 years after its end of life.
 
 ## [3.3.0] - 2026-11-07
