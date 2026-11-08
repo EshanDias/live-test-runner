@@ -13,6 +13,10 @@ All notable changes to Live Test Runner are documented here.
 
 - **Report a bug or request a feature** with the new forms on [GitHub](https://github.com/EshanDias/live-test-runner/issues/new/choose).
 
+### Changed
+
+- The **Timeline Debugger** is marked as planned: it isn't available yet, and its command no longer appears in the Command Palette.
+
 ### Fixes
 
 - **Test suites that write many files no longer restart testing over and over** (since 3.2.1, a suite writing more than 20 files looked like a branch switch).

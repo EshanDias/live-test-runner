@@ -413,6 +413,10 @@
       ],
       "commandPalette": [
         {
+          "command": "liveTestRunner.openTimelineDebugger",
+          "when": "config.liveTestRunner.devMode"
+        },
+        {
           "command": "liveTestRunner.dumpTraceStore",
           "when": "config.liveTestRunner.devMode"
         }

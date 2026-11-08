@@ -22,7 +22,7 @@ Cells: ✅ supported · 🟡 partial · ⏳ planned (target release) · — not 
 | JS + Python in one folder | ✅ one project runs Jest / Vitest and pytest | 🟡 not e2e-tested | ✅ | ✅ a `.py` save reruns pytest only, a `.js` save the JS framework only |
 | Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3 (incl. `vitest.workspace` files); not in browser mode | ✅ from coverage.py contexts (needs `coverage`) |
 | UI components (`.vue`, `.svelte`, `.astro`, `.marko`): save reruns, trace, coverage | ✅ through the project's transformer (vue-jest, svelte-jester…) | — (React is plain JS) | ✅ through the project's Vite plugins | — |
-| Timeline debugger | ⏳ | ⏳ | ⏳ later | ⏳ later |
+| Timeline debugger | ⏳ planned | ⏳ planned | ⏳ planned | ⏳ planned |
 <!-- matrix:end -->
 
 pytest: pytest 7.0 or newer on Python 3.12 or newer, run with the project's own
@@ -39,7 +39,6 @@ tests come from coverage.py's per-test contexts; before a file has any, a save
 reruns the test files that import it. Python monorepos: one project per uv
 workspace member with tests (3.3.0). JS + Python in one folder: one project runs
 both, or a Python subfolder with its own pytest config is its own project (3.3.0).
-The Timeline debugger for pytest is a later release.
 
 Vitest: version 3 or newer is fully supported; 1.x and 2.x run with results
 only (no test listing, related tests, trace or line numbers). Coverage uses
@@ -48,8 +47,7 @@ hover, precise reruns on save) is on by default (`liveTestRunner.vitestTrace`);
 it adds a Vite plugin through a wrapper config (Vitest 3 workspace files
 included; type-check `*.test-d.ts` files are fine) and turns itself off for a
 project it cannot reach (a broken run) — saves then use `vitest related`.
-Browser-mode projects (opt-in) run without it. The Timeline debugger for
-Vitest is planned for a later release.
+Browser-mode projects (opt-in) run without it.
 
 UI frameworks: any. React, Preact, Solid, Lit, Angular and Qwik code is plain
 JS / TS; single-file components (Vue, Svelte, Astro, Marko) are compiled by the
