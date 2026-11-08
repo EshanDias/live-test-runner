@@ -277,7 +277,7 @@ Rules:
 1. Branch names must start with `release/`, `feat/`, `hotfix/` or `bugfix/`.
 2. **No direct pushes or merges to `main` or `release/*`.** Everything lands through a pull request.
 3. `main` only accepts PRs from `release/*` (normal flow) and `hotfix/*` (urgent fixes).
-4. `release/*` accepts PRs from `feat/*`, `bugfix/*` and `hotfix/*`.
+4. `release/*` accepts PRs from `feat/*`, `bugfix/*`, `hotfix/*` and Dependabot's `dependabot/*` (which open against `main` and fail `Branch rules` there until their base is changed to a release branch).
 5. `bugfix/*` PRs only target a `feat/*` or `release/*` branch, never `main`.
 6. Feature branches may branch off other feature branches and PR back into that feature or into a `release/*`.
 7. **PRs must fail if tests fail** (`pnpm test`).

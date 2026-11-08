@@ -1,0 +1,32 @@
+# Weekly dependency updates, grouped into one PR per ecosystem.
+#
+# Dependabot opens its PRs against main. The PR checks (Branch rules) fail them
+# there on purpose: main only takes release/* and hotfix/*. To take an update,
+# change the PR's base to the release/* branch it should ship in (Edit, next to
+# the title) and merge it there.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      npm-dependencies:
+        patterns: ['*']
+    ignore:
+      # Must stay at the lowest VS Code the extension supports (engines.vscode).
+      - dependency-name: '@types/vscode'
+      # The extension's Node types match the Node inside that lowest VS Code.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns: ['*']

@@ -15,14 +15,17 @@ jobs:
           BASE: ${{ github.base_ref }}
         run: |
           case "$HEAD" in
-            release/*|feat/*|hotfix/*|bugfix/*) ;;
+            release/*|feat/*|hotfix/*|bugfix/*|dependabot/*) ;;
             *) echo "::error::Branch '$HEAD' must start with release/, feat/, hotfix/ or bugfix/"; exit 1 ;;
           esac
+          if [[ "$HEAD" == dependabot/* && "$BASE" != release/* ]]; then
+            echo "::error::Dependency update waiting for a release: change this PR's base to the release/* branch it should ship in (Edit, next to the title), then merge it there"; exit 1
+          fi
           if [[ "$BASE" == "main" && "$HEAD" != release/* && "$HEAD" != hotfix/* ]]; then
             echo "::error::main only accepts PRs from release/* or hotfix/* (got '$HEAD')"; exit 1
           fi
-          if [[ "$BASE" == release/* && "$HEAD" != feat/* && "$HEAD" != bugfix/* && "$HEAD" != hotfix/* ]]; then
-            echo "::error::release/* only accepts PRs from feat/*, bugfix/* or hotfix/* (got '$HEAD')"; exit 1
+          if [[ "$BASE" == release/* && "$HEAD" != feat/* && "$HEAD" != bugfix/* && "$HEAD" != hotfix/* && "$HEAD" != dependabot/* ]]; then
+            echo "::error::release/* only accepts PRs from feat/*, bugfix/*, hotfix/* or dependabot/* (got '$HEAD')"; exit 1
           fi
           if [[ "$HEAD" == bugfix/* && "$BASE" != feat/* && "$BASE" != release/* ]]; then
             echo "::error::bugfix/* may only target a feat/* or release/* branch (got '$BASE')"; exit 1
