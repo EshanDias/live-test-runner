@@ -6,6 +6,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### Fixed
 
+- **Jest tests no longer fail only in Live Test Runner.** Measuring coverage could change how your code ran: files lost strict mode (`"use strict"`), and methods called with `?.` (for example `this.env.read?.()`) lost `this`. Your code now behaves exactly as in plain Jest.
 - **▷ Debug of a Jest or Vitest test no longer hangs.** It could wait forever with nothing running when your terminal's shell was slow to start, or on older VS Code with zsh. The test now starts directly, and its output is in the **Debug Console**.
 
 ### Changed

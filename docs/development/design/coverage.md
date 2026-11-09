@@ -56,8 +56,10 @@ flowchart TD
 | Manifests on disk, read when drawn (Q1) | Memory stays flat on large projects | Keep every map in memory |
 | A thin left border, not a gutter icon | Code never shifts, and the gutter stays free for breakpoints and test icons | Gutter icons: clash with breakpoints |
 | No bar on edited lines | A wrong bar is worse than none | Keep old bars on changed lines |
+| Jest: `obj.fn?.()` is rewritten as `(_f = (_o = obj).fn) == null ? undefined : _f.call(_o)`; a chain whose value is called (`a?.b?.()`) keeps its native form (Q3) | Counting both outcomes of `?.` needs a conditional, and a conditional in place of a method would call it without `this` (Jest's own runtime broke on `this._environment.exportConditions?.()`). The second form has no safe rewrite, so it goes uncounted | Skip branch counts for every optional call |
+| Jest: the runtime `require(…)` goes after the directive prologue, on the same line (Q3) | A `"use strict"` that is not the first statement does nothing; the file would run in sloppy mode. Same line: the code keeps its line numbers | A new first line (lost strict mode) |
 
 ## Testing
 
 - e2e: `coverage-editing`, `vitest-coverage`, `pytest-coverage`, `pytest-no-coverage`, `pytest-related`, `vitest-trace`, `ts-config`, `jest-vue`, `jest-svelte-esm`, `vitest-components`.
-- Unit: `statementLines`, `lineMatch`, `coverageScope`, `coverageMerge`, `coverageOff`, `istanbulCoverage`, `sourceMapLookup`.
+- Unit: `jestTraceTransform` (instrumented code behaves like the original), `statementLines`, `lineMatch`, `coverageScope`, `coverageMerge`, `coverageOff`, `istanbulCoverage`, `sourceMapLookup`.
