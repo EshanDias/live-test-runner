@@ -26,7 +26,7 @@ A VS Code extension for **Jest** (including Create React App), **Vitest** and **
 
 No telemetry. No accounts. Live Test Runner makes no network calls: it runs your own Jest, Vitest or pytest locally and keeps its cache on your machine (clear it any time with **Clear All Cached Data**). It is MIT-licensed and open source, so your security team can review it. Links, such as those in the built-in guide, open in your browser only when you click them.
 
-Your own tests, and VS Code itself, may use the network; that is not the extension.
+Your own tests, and VS Code itself, may use the network; that is not the extension. What it keeps, and what it shares only when you click: [PRIVACY.md](PRIVACY.md).
 
 **How to verify:** every pull request runs a test that scans the source and the built extension for network modules, network APIs and telemetry packages, and checks that no view can load anything from another origin ([`noNetwork.test.ts`](packages/vscode-extension/test/noNetwork.test.ts); run it with `pnpm test`).
 

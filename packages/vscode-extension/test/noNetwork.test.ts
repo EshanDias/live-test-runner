@@ -7,7 +7,8 @@
  * - first-party sources (runner, core, extension, instrumentation, webviews,
  *   the pytest plugin) and the shipped third-party code use no network module
  *   or API and no telemetry package;
- * - the packages' dependencies stay free of network and telemetry libraries;
+ * - the packages' dependencies stay free of network, telemetry and AI-service
+ *   libraries (AI features hand data to the user's own tools, see PRIVACY.md);
  * - no webview (the guide included) can load anything from another origin.
  */
 import * as fs from 'fs';
@@ -35,15 +36,23 @@ const NET_MODULE = /(?:require\(\s*|from\s+|import\(\s*|import\s+)['"](?:node:)?
 const NET_API = /\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bsendBeacon\b|\bEventSource\b|\b(?:curl|wget|Invoke-WebRequest)\b/;
 const PY_NET = /^\s*(?:import|from)\s+(socket|ssl|urllib|urllib3|http|requests|httpx|aiohttp|ftplib|smtplib|xmlrpc|websocket|websockets)\b/m;
 
-/** Network clients and telemetry / analytics / error-reporting SDKs. */
+/** Network clients, telemetry / analytics / error-reporting SDKs and AI-service SDKs. */
 const BANNED_PACKAGES = [
   'axios', 'node-fetch', 'cross-fetch', 'isomorphic-fetch', 'got', 'ky', 'request', 'superagent', 'needle', 'phin',
   'undici', 'ws', 'socket.io-client', 'faye-websocket',
   '@vscode/extension-telemetry', 'vscode-extension-telemetry', 'applicationinsights', 'posthog-node', 'posthog-js',
   'mixpanel', 'analytics-node', '@segment/analytics-node', 'amplitude', 'newrelic', 'dd-trace', 'rollbar',
   'bugsnag', 'logrocket', 'launchdarkly-node-server-sdk',
+  // AI services: AI features hand data to the user's own assistant (clipboard,
+  // VS Code's language-model tools, a local MCP server), never to a model directly.
+  'openai', 'ai', 'cohere-ai', 'groq-sdk', 'replicate', 'ollama', 'langchain', 'llamaindex',
+  '@google/genai', '@google/generative-ai', '@google-cloud/vertexai', '@azure/openai',
 ];
-const BANNED_SCOPES = ['@sentry/', '@amplitude/', '@opentelemetry/', '@bugsnag/', '@datadog/', '@segment/', '@posthog/'];
+const BANNED_SCOPES = [
+  '@sentry/', '@amplitude/', '@opentelemetry/', '@bugsnag/', '@datadog/', '@segment/', '@posthog/',
+  '@anthropic-ai/', '@mistralai/', '@aws-sdk/',
+  '@huggingface/', '@langchain/', '@ai-sdk/', '@xenova/',
+];
 const isBanned = (name: string) => BANNED_PACKAGES.includes(name) || BANNED_SCOPES.some((s) => name.startsWith(s));
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 const TELEMETRY_IMPORT = new RegExp(`(?:require\\(\\s*|from\\s+|import\\(\\s*)['"](?:${[
@@ -111,7 +120,7 @@ describe('no network calls, no telemetry', () => {
     expect(hits(shipped, NET_API)).toEqual([]);
   });
 
-  it('dependencies stay free of network and telemetry libraries', () => {
+  it('dependencies stay free of network, telemetry and AI-service libraries', () => {
     for (const dir of ['packages/runner', 'packages/core', 'packages/vscode-extension']) {
       const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, dir, 'package.json'), 'utf8'));
       // Runtime dependencies are only our own packages; third-party code ships through esbuild (SHIPPED).

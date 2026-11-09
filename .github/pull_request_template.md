@@ -14,3 +14,4 @@
 - [ ] `CHANGELOG.md` (full detail) and `packages/vscode-extension/CHANGELOG.md` (short, user-facing) updated for user-visible changes
 - [ ] Docs updated in this PR where behaviour changed: the feature's pages in `docs/features/`, `docs/requirements/` (new tests named, ⚠️ dropped) and `docs/development/design/`, the user guide, the README (see [Documentation](../CONTRIBUTING.md#documentation))
 - [ ] `node scripts/build-wiki.js --check` passes
+- [ ] No network calls or telemetry added; anything new the extension stores or shares is in [PRIVACY.md](../PRIVACY.md)

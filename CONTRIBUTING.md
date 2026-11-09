@@ -30,6 +30,7 @@ These keep the extension safe to install in anyone's project:
 
 - **Never touch the user's project.** No installs into it, no edits to its code, config or files. Anything the extension needs ships inside it; anything it writes goes to its own temp or cache folder.
 - **Zero configuration.** Install, click Start — detection must work without settings.
+- **No network calls, no telemetry.** The extension talks to nothing outside the machine and its views load nothing remote. AI features only hand data to tools the user runs (clipboard, VS Code's language-model tools, a local stdio MCP server), never to an AI service directly. `noNetwork.test.ts` checks it; [PRIVACY.md](PRIVACY.md) is the published policy and changes in the same PR as anything the extension stores or shares.
 - **Never overuse the machine.** All parallelism (batches, frameworks, projects) stays within one budget based on free cores and memory.
 - **Dependency direction:** `vscode-extension` → `core` → `runner`. `runner` and `core` never depend on VS Code.
 - **Spawn, never exec** child processes; log through the logger, never `console.*`.

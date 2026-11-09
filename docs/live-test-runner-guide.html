@@ -483,7 +483,7 @@
 <section id="privacy">
   <h2>Privacy</h2>
   <p><b>No telemetry. No accounts.</b> Live Test Runner makes no network calls: it runs your own Jest, Vitest or pytest locally and keeps its cache on your machine (clear it any time with <b>Clear All Cached Data</b>). It is MIT-licensed and open source, so your security team can review it. This guide, inside VS Code, loads nothing from the internet either: its pictures are links to the online guide, and links open in your browser only when you click them.</p>
-  <p>Your own tests, and VS Code itself, may use the network; that is not the extension.</p>
+  <p>Your own tests, and VS Code itself, may use the network; that is not the extension. What it keeps on your machine, and what it shares only when you click (copy buttons, and later tools for your AI assistant): the <a href="https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>.</p>
   <p><b>How to verify:</b> every pull request runs <code>packages/vscode-extension/test/noNetwork.test.ts</code> (part of <code>pnpm test</code>). It scans the source and the built extension for network modules (<code>http</code>, <code>https</code>, <code>net</code>, <code>tls</code>, <code>dns</code>…), network APIs (<code>fetch</code>, <code>XMLHttpRequest</code>, <code>WebSocket</code>…) and telemetry packages, and checks that no view's content security policy allows another origin.</p>
 </section>
 

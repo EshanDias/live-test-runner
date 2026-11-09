@@ -12,4 +12,4 @@ Include what you found, how to reproduce it, and what an attacker could do with 
 
 ## Scope
 
-Live Test Runner runs your project's own test framework (Jest, Vitest, pytest) in child processes and reads their results. Reports about the extension running code it should not, writing outside its own temp and cache folders, or exposing data from your project are especially welcome.
+Live Test Runner runs your project's own test framework (Jest, Vitest, pytest) in child processes and reads their results. What the extension keeps and never sends is in [PRIVACY.md](PRIVACY.md). Reports about the extension making a network call, running code it should not, writing outside its own temp and cache folders, or exposing data from your project are especially welcome.

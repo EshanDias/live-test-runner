@@ -241,7 +241,7 @@ Key directories:
 8. **Log through the logger** — `logger.scope('Area')` (extension), `createLogger('Area')` (runner/core), `[LTR:<level>] msg` on stderr (instrumentation inside Jest). Never `console.*`, never extension messages in the Test Output channel. ERROR = broken, WARN = degraded/fallback, INFO = one line per user action/run, DEBUG/TRACE = details. See `docs/development/developer-guide.md` → Logging.
 9. **Never touch the user's project** — never install packages into it (or its environment) and never edit its code, config or files. Everything the tool needs ships inside the extension; anything we write is a temporary file in our session folder, and the user's own terminal runs must keep working side by side. Zero configuration: install, click Start.
 10. **Never overuse the machine** — every kind of parallelism (batches, frameworks, projects, workers) stays within one budget from the free resources (cores, memory); when the budget is 1, things run one at a time. Whatever else the user does must stay responsive.
-11. **No network calls, no telemetry** — the extension never talks to anything outside the machine, and its webviews load nothing remote (the shipped guide's pictures are links: `src/guide/offlineGuide.js`). `test/noNetwork.test.ts` (in `pnpm test`) enforces it; a module it allows needs a reason in its allowlist.
+11. **No network calls, no telemetry** — the extension never talks to anything outside the machine, and its webviews load nothing remote (the shipped guide's pictures are links: `src/guide/offlineGuide.js`). AI features (Copy for AI, tools for the user's AI assistant) hand data only to tools the user runs, on their action — clipboard, VS Code language-model tools, a local stdio MCP server; never call an AI service, never open a network port. `test/noNetwork.test.ts` (in `pnpm test`) enforces it; a module it allows needs a reason in its allowlist. `PRIVACY.md` is the published policy: anything new the extension stores, or shares on a click, goes in it in the same PR.
 
 ---
 
@@ -318,6 +318,7 @@ When making changes, update the relevant documentation files:
 | **Runner package API, layer changes, or framework adapter updates** | `packages/runner/README.md`, `docs/development/developer-guide.md`, `docs/development/ai-context.md` |
 | **Extension features, UI changes, new commands, or configuration options** | `packages/vscode-extension/README.md` (marketplace-facing), `CHANGELOG.md`, `docs/development/ai-context.md` |
 | **Dev setup, build process, or development patterns** | `docs/development/developer-guide.md`, `CLAUDE.md` |
+| **Anything the extension stores, shares or sends** (new cache, clipboard, AI tools) | `PRIVACY.md` (the privacy policy; bump its date), and keep `test/noNetwork.test.ts` passing |
 | **Any user-visible change (features, fixes, behaviour)** | `CHANGELOG.md` (full detail) + `packages/vscode-extension/CHANGELOG.md` (brief user summary) |
 | **Anything important for users or contributors** (new feature, setting, command, framework support, changed behaviour, known limitation) | `docs/live-test-runner-guide.html` (the guide — published at `/guide/` and shown by **Open Guide**) |
 | **Headline features, supported frameworks, install / review links** | `site/index.html` (landing page) — and bump `lastmod` in `site/sitemap.xml`; the root `README.md` (GitHub landing page) |
