@@ -30,7 +30,7 @@ In most setups you only learn which tests exist by running them. Results then ap
 |---|---|
 | Gutter | ✓ passed · ✗ failed · ⟳ running · ○ not run yet · ⊖ skipped · ☐ todo (`test.todo`, `it.todo`) |
 | After the line | How long the test took, coloured green, amber or red |
-| After a failing line | Why the test failed (`✗ Expected 3, received 2`), on the line of the test where it failed and on the line of your code an error was thrown from. Hover it for the whole message, **Show diff** (expected and received side by side), **Open in Results** and **Dismiss** |
+| After a failing line | Why the test failed (`✗ Expected 3, received 2`), on the line of the test where it failed and on the line of your code an error was thrown from. Hover it for the whole message, **Show diff** (expected and received side by side), **Open in Results** and **Dismiss**. A changed snapshot (Jest, Vitest) also offers **Update snapshot** |
 | Above the line | `▶ Run` this test or group · `▷ Debug` it · `◈ Results` to jump to it in the Results panel |
 | Status bar | `Live Tests: ✅ 12 passed`. Click it to open the panels |
 
@@ -53,6 +53,7 @@ You open a project with 58 test files. Before you click anything, the sidebar li
 - The tree comes from reading the code, so a test whose name is built at runtime shows a placeholder name (`accepts …`) until it runs.
 - Once a file has run, the framework's own line numbers replace the ones found by reading the code.
 - A failure message disappears from a line you edit: it may no longer be about that line. It comes back with the next run. **Dismiss** hides one until its test runs again.
+- **Update snapshot** always asks first, in a dialog that names the file that will change (the `.snap` file, or the test file itself for an inline snapshot). Then your framework rewrites only that test's snapshot, as `jest -u` / `vitest -u` would for that one test; your other tests' snapshots stay. Like `-u`, it also removes snapshots in that file that no test uses any more; the dialog says so. With unsaved changes in that file it asks you to save first. Review the change before you commit it. pytest snapshot plugins are not supported.
 - **Show diff** needs the framework to print both values (Jest and Vitest do for comparisons such as `toBe` and `toEqual`); pytest messages show without a diff.
 - Skipped and `todo` tests show as skipped, not as "not run"; a `todo` test has its own icon, so tests still to write stand out. Both count as skipped in the totals.
 

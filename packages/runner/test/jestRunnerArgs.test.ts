@@ -69,6 +69,14 @@ describe('JestRunner command lines (plain Jest)', () => {
     expect(outputFileArgs.map((f) => f('/tmp/out.json'))).toEqual(Array(7).fill(['--outputFile=/tmp/out.json']));
   });
 
+  it('Update snapshot: the named test only, with --updateSnapshot (and --ci=false)', async () => {
+    const runner = new JestRunner();
+    runner.setProjectRoot(root);
+    await runner.runTestCaseJson(path.join(root, 'src', 'a.test.js'), 'Suite renders', false, true);
+    const args = calls[0].args;
+    expect(args.slice(args.indexOf('--testNamePattern'))).toEqual(['--testNamePattern', '^(?:Suite renders)$', '--ci=false', '--updateSnapshot']);
+  });
+
   it('puts the user command first and its extra words before the Jest args', async () => {
     const runner = new JestRunner('npm test --');
     runner.setProjectRoot(root);

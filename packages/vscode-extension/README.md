@@ -40,7 +40,7 @@
 - ⚡ **Reruns on save** — only the tests that ran the code you changed. Changes from `git pull` or a branch switch rerun too.
 - 🌳 **Test tree** — every file, suite and test on open. Score cards (Total · Passed · Failed, plus **Running** while tests run) filter it with one click.
 - 🎨 **In the editor** — ✓ / ✗ gutter icons, inline durations, `▶ Run` · `▷ Debug` · `◈ Results` above every test.
-- ❌ **Failures where they happen** — the reason on the failing line (`✗ Expected 3, received 2`); hover for the full message and **Show diff**.
+- ❌ **Failures where they happen** — the reason on the failing line (`✗ Expected 3, received 2`); hover for the full message, **Show diff**, and **Update snapshot** for a changed Jest / Vitest snapshot (asks first).
   <!-- [TODO: USER_INPUT_NEEDED] screenshot or short GIF: a failing toEqual with the message after the line and the hover open, then Show diff -->
 - 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it. The bars never shift your code and follow your edits; hide them with the 👁 button in the editor title.
 - 🔍 **Results panel** — test list · console output (per test) · failures with the diff and location.
@@ -56,7 +56,7 @@
 - **Jest** (incl. Create React App) and **Vitest** — any UI framework: React, Vue, Svelte, Astro, Angular… if Jest or Vitest runs it, it works.
 - **Both in one project** (migrating?) — each test file runs with its own framework; the tree groups them. Override with `liveTestRunner.frameworks`.
 - **pytest** (≥ 7, Python ≥ 3.12) — runs in your project's own `.venv` / poetry / pipenv env — the Explorer shows which one (`🐍 Python 3.12 · .venv · pytest 9.1`); click it to pick another. Same results as `pytest` in your terminal, per-test output, ▶ Run / ▷ Debug, coverage via `coverage` (no pytest-cov needed).
-- **Nothing is written into your project** — no installs, no config changes, no cache or coverage files.
+- **Nothing is written into your project** — no installs, no config changes, no cache or coverage files. (Update snapshot rewrites a snapshot only when you confirm it.)
 
 ![Monorepo: the project switcher, two packages running](resources/images/monorepo-switcher.png)
 

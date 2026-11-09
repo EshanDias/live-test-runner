@@ -5,6 +5,8 @@ import { ResultStore } from '../store/ResultStore';
 export interface RerunOptions {
   /** Narrow result application to a specific node (partial rerun) */
   nodeId?: string;
+  /** Rewrite the failing snapshots of the tests run (after the user confirmed it). */
+  updateSnapshots?: boolean;
   /**
    * When set, only update tests whose fullName is in this set.
    * Used for pattern-based runs where Jest marks non-matching tests as "skipped"

@@ -110,3 +110,15 @@ describe('parseFailure', () => {
     expect(parseFailure(`Error: ${'x'.repeat(400)}`).summary).toHaveLength(160);
   });
 });
+
+describe('snapshot failures', () => {
+  it.each([
+    ['Error: expect(received).toMatchSnapshot()\n\nSnapshot name: `a 1`', 'file'],
+    ['Error: expect(received).toThrowErrorMatchingSnapshot()', 'file'],
+    ['Error: Snapshot `renders 1` mismatched\n\n- Expected\n+ Received', 'file'],
+    ['Error: expect(received).toMatchInlineSnapshot(snapshot)\n\nSnapshot: "a"', 'inline'],
+    ['Error: expect(received).toBe(expected)', undefined],
+  ])('%s', (message, kind) => {
+    expect(parseFailure(message).snapshot).toBe(kind);
+  });
+});

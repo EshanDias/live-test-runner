@@ -422,7 +422,7 @@ Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `F
 
 Runner package (`packages/runner`):
 - [ ] `FrameworkAdapter` implemented — `detect`, `resolveBinary`, `resolveConfig`, `getExtraArgs`, `outputFileArg`, `parseResult`, `capabilities` (per installed version, never throws), `createRunner`
-- [ ] A `CommandRunner` subclass — `detectAdapter` (another framework's project → `refusingAdapter(adapter)`), `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`), `parseTestList`, `coverageFile`; `leadingArgs` if the CLI needs a subcommand first; `processLabel` for the `[label#N]` output tag
+- [ ] A `CommandRunner` subclass — `detectAdapter` (another framework's project → `refusingAdapter(adapter)`), `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`; `testCase.updateSnapshots` → the framework's snapshot-update flag, or ignore it if the framework has no snapshots), `parseTestList`, `coverageFile`; `leadingArgs` if the CLI needs a subcommand first; `processLabel` for the `[label#N]` output tag
 - [ ] Registered in `FrameworkRegistry.default()` at the right priority (a project several adapters claim goes to the higher one)
 - [ ] Exported from `src/index.ts`
 - [ ] **Conformance suite** — one `describeAdapterConformance({ … })` call in `test/adapterConformance.test.ts` (matching / non-matching projects, a canned result with one passing and one failing test); it must pass unchanged

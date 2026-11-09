@@ -104,7 +104,7 @@ export class FailureDecorations implements Partial<IResultObserver>, vscode.Hove
     const marks = this.marks(document).filter((m) => m.line - 1 === position.line);
     if (marks.length === 0) { return undefined; }
     const md = new vscode.MarkdownString(undefined, true);
-    md.isTrusted = { enabledCommands: ['liveTestRunner.showFailureDiff', 'liveTestRunner.dismissFailure', 'liveTestRunner.focusResult'] };
+    md.isTrusted = { enabledCommands: ['liveTestRunner.showFailureDiff', 'liveTestRunner.dismissFailure', 'liveTestRunner.focusResult', 'liveTestRunner.updateSnapshot'] };
     marks.forEach((m, i) => {
       if (i > 0) { md.appendMarkdown('\n\n---\n\n'); }
       md.appendMarkdown(`$(error) **${escapeMd(m.testName)}** failed\n\n`);
@@ -116,6 +116,10 @@ export class FailureDecorations implements Partial<IResultObserver>, vscode.Hove
       if (m.failure.expected !== undefined && m.failure.actual !== undefined) {
         this._sides.set(m.nodeId, { expected: m.failure.expected, actual: m.failure.actual });
         links.push(`[Show diff](${cmd('liveTestRunner.showFailureDiff', [m.nodeId, m.testName])} "Expected and received side by side")`);
+      }
+      // Snapshots of Jest / Vitest tests (pytest snapshot plugins are not supported).
+      if (m.failure.snapshot && !/\.py$/i.test(m.testFile)) {
+        links.push(`[Update snapshot](${cmd('liveTestRunner.updateSnapshot', [m.testFile, m.nodeId])} "Asks first, then the test framework rewrites this test's snapshot")`);
       }
       links.push(`[Open in Results](${cmd('liveTestRunner.focusResult', [m.testFile, m.nodeId])})`);
       links.push(`[Dismiss](${cmd('liveTestRunner.dismissFailure', [m.nodeId])} "Hide until this test runs again")`);
@@ -222,7 +226,7 @@ function real(p: string): string {
   return r;
 }
 
-function samePath(a: string, b: string): boolean {
+export function samePath(a: string, b: string): boolean {
   const norm = (p: string) => path.normalize(real(p)).replace(/\\/g, '/');
   return process.platform === 'win32' || process.platform === 'darwin'
     ? norm(a).toLowerCase() === norm(b).toLowerCase()

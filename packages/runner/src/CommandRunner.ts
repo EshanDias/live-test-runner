@@ -26,7 +26,7 @@ export type RunRequest =
    * Named tests of one file. `testFullName` is the name pattern (Jest / Vitest
    * `-t`); `names` the store's full names, for frameworks that select by id (pytest).
    */
-  | { kind: 'testCase'; file: string; testFullName: string; isTestSuite: boolean; names?: string[] }
+  | { kind: 'testCase'; file: string; testFullName: string; isTestSuite: boolean; names?: string[]; updateSnapshots?: boolean }
   | { kind: 'related'; file: string };
 
 /**
@@ -215,8 +215,9 @@ export abstract class CommandRunner implements TestRunner {
     return results.length === 1 ? results[0] : mergeRunResults(results);
   }
 
-  async runTestCaseJson(filePath: string, testFullName: string, isTestSuite = false): Promise<RunResult> {
-    return this.runJson({ kind: 'testCase', file: filePath, testFullName, isTestSuite }, this.fileTimeoutMs);
+  /** `updateSnapshots`: the framework rewrites the failing snapshots of these tests (Jest `-u`, Vitest `--update`). */
+  async runTestCaseJson(filePath: string, testFullName: string, isTestSuite = false, updateSnapshots = false): Promise<RunResult> {
+    return this.runJson({ kind: 'testCase', file: filePath, testFullName, isTestSuite, ...(updateSnapshots ? { updateSnapshots } : {}) }, this.fileTimeoutMs);
   }
 
   async runRelatedTestsJson(filePath: string): Promise<RunResult> {

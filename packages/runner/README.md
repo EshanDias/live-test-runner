@@ -42,7 +42,7 @@ CommandRunner (generic orchestrator)    detection hook, binary/config, chunking,
                                         Vitest: parsing/VitestResultParser.ts (parseVitestResult)
 ```
 
-Each command is `[user-command words] [--config …] [adapter extra args] [framework args] [adapter.outputFileArg(tmp)]`; only the framework args come from the runner subclass (`buildArgs({ kind: 'list' | 'full' | 'files' | 'testCase' | 'related' })`). Snapshot tests (`test/jestRunnerArgs.test.ts`) pin the Jest command lines.
+Each command is `[user-command words] [--config …] [adapter extra args] [framework args] [adapter.outputFileArg(tmp)]`; only the framework args come from the runner subclass (`buildArgs({ kind: 'list' | 'full' | 'files' | 'testCase' | 'related' })`). A `testCase` request may set `updateSnapshots` (`runTestCaseJson(file, pattern, isSuite, true)`): the framework rewrites the failing snapshots of the named tests (Jest `--ci=false --updateSnapshot`, Vitest `--update`); the extension sends it only after the user confirmed **Update snapshot**. Snapshot tests (`test/jestRunnerArgs.test.ts`) pin the Jest command lines.
 
 ### Framework Adapters
 

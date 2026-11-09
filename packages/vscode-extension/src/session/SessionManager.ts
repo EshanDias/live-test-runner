@@ -362,6 +362,8 @@ export class SessionManager {
     fileId: string;
     nodeId?: string;
     fullName?: string;
+    /** Rewrite the failing snapshots of this test (Jest / Vitest; the user confirmed it). */
+    updateSnapshots?: boolean;
   }): Promise<void> {
     const projectRoot = this._getProjectRoot();
     if (!projectRoot) {
@@ -401,7 +403,7 @@ export class SessionManager {
         [args.fileId],
         args.nodeId,
       );
-      const run = this._beginRun(`${args.scope} "${args.fullName}"`);
+      const run = this._beginRun(`${args.updateSnapshots ? 'update snapshot of ' : ''}${args.scope} "${args.fullName}"`);
       this._addPlanned(1);
       let ok = false;
       try {
@@ -411,7 +413,7 @@ export class SessionManager {
           [args.fullName],
           projectRoot,
           (msg) => this._outputChannel.appendLine(msg),
-          { nodeId: args.nodeId },
+          { nodeId: args.nodeId, ...(args.updateSnapshots ? { updateSnapshots: true } : {}) },
         );
       } catch (error) {
         log.error(`Run #${run.id} failed to run ${args.scope} "${args.fullName}" in ${path.basename(args.fileId)}`, error);

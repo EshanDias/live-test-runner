@@ -24,6 +24,8 @@ export interface ParsedFailure {
   /** Both sides of the comparison, when the message has them (single values or a diff). */
   expected?: string;
   actual?: string;
+  /** A snapshot that no longer matches: kept in a snapshot file, or inline in the test file. */
+  snapshot?: 'file' | 'inline';
 }
 
 /** `at fn (file:line:col)`, `at file:line:col`, `❯ file:line:col`. */
@@ -59,7 +61,18 @@ export function parseFailure(text: string): ParsedFailure {
 
   const message = messageLines.join('\n').trim();
   const sides = diffSides(messageLines) ?? labelledValues(messageLines);
-  return { summary: summaryOf(messageLines, sides), message, frames, ...(sides ?? {}) };
+  const snapshot = snapshotKind(message);
+  return { summary: summaryOf(messageLines, sides), message, frames, ...(sides ?? {}), ...(snapshot ? { snapshot } : {}) };
+}
+
+/**
+ * Jest: `expect(received).toMatchSnapshot()` / `Snapshot name: …`; Vitest:
+ * `Snapshot \`name 1\` mismatched`. Inline ones live in the test file itself.
+ */
+export function snapshotKind(message: string): 'file' | 'inline' | undefined {
+  if (/\bto(?:Match|ThrowErrorMatching)InlineSnapshot\b/.test(message)) { return 'inline'; }
+  if (/\bto(?:Match|ThrowErrorMatching)Snapshot\b|^Snapshot name: |\bSnapshot [`'"].*[`'"] mismatched\b/m.test(message)) { return 'file'; }
+  return undefined;
 }
 
 /** The `- Expected` / `+ Received` diff turned back into both texts. */

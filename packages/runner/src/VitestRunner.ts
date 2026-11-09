@@ -267,7 +267,7 @@ export class VitestRunner extends CommandRunner {
       case 'files':
         return this.resultArgs();
       case 'testCase':
-        return [...this.resultArgs(), '-t', toVitestNamePattern(request.testFullName, request.isTestSuite)];
+        return [...this.resultArgs(), '-t', toVitestNamePattern(request.testFullName, request.isTestSuite), ...(request.updateSnapshots ? ['--update'] : [])];
       case 'related':
         if (!this.can('related')) {
           log.debug(`This Vitest has no reliable "related" — running every test for ${request.file}`);

@@ -15,11 +15,11 @@ A VS Code extension for **Jest** (including Create React App), **Vitest** and **
 
 - **Reruns on save** — only the tests that ran the code you changed (from an execution trace), not whole files.
 - **Test tree before you run anything** — every file, suite and test, with `▶ Run` / `▷ Debug` above each one.
-- **Failures on the failing line** — the reason after the line, the full message and a side-by-side diff in the hover.
+- **Failures on the failing line** — the reason after the line, the full message and a side-by-side diff in the hover; **Update snapshot** for a changed snapshot (Jest, Vitest; asks first).
 - **Results panel** — test list, per-test console output, failures with the diff and location.
 - **Coverage in the editor** — green / amber / red bars per line; hover a line to see the tests that ran it.
 - **Monorepos, multi-root workspaces, mixed projects** — one project per package or Python service; Jest and Vitest, or JS and pytest, side by side in one folder.
-- **Nothing written into your project** — no installs, no config changes, no cache or coverage files.
+- **Nothing written into your project** — no installs, no config changes, no cache or coverage files. (Update snapshot rewrites a snapshot only when you confirm it.)
 
 ---
 

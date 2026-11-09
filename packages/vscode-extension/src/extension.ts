@@ -36,6 +36,7 @@ import { ExternalChanges } from './session/ExternalChanges';
 import { clearAll, clearProjectCaches, pruneUnused, runnableFilesPath, transformCacheDir } from './cache/Storage';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { FailureDecorations } from './editor/FailureDecorations';
+import { updateSnapshot, setSnapshotDialogAnswerForE2E } from './editor/updateSnapshot';
 import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
 import { initPythonInterpreters } from './python/PythonInterpreters';
@@ -575,6 +576,12 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.executeCommand('liveTestRunner.results.focus');
     }),
     vscode.commands.registerCommand('liveTestRunner.rerunScope',         (args) => owner(args?.fileId)?.session.rerunScope(args)),
+    // From a snapshot failure's hover: asks in a modal dialog, then the framework rewrites the snapshot.
+    vscode.commands.registerCommand('liveTestRunner.updateSnapshot',     (fileId: string, nodeId: string) => {
+      const ctx = owner(fileId);
+      if (!ctx) { return false; }
+      return updateSnapshot(ctx.store, fileId, nodeId, (args) => ctx.session.rerunScope(args), ctx.services.servicesFor(fileId).displayName, ctx.root);
+    }),
     // CodeLens passes (file, 1-based line); from the Command Palette: the active editor's cursor.
     vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath?: string, line?: number) => {
       const at = filePath ? { filePath, line: line ?? 1 } : cursorOrHint('rerun the test under the cursor');
@@ -753,7 +760,7 @@ export function activate(context: vscode.ExtensionContext) {
       get discovery() { return sel()?.discovery; },
       get sessionDir() { return sel()?.sessionDir ?? LTR_SESSION_TMP_DIR; },
       projects,
-      observers, editorObservers, decorationManager, failureDecorations, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
+      observers, editorObservers, decorationManager, failureDecorations, setSnapshotDialogAnswerForE2E, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
       explorerView, coverageDecorations: coverageDecoMgr,
       storagePaths: (root: string) => ({ runnableFiles: runnableFilesPath(root), transformCache: transformCacheDir(root) }),
     };
