@@ -107,6 +107,18 @@ describe('ResultStore summary and lifecycle', () => {
     expect(tests(store)[0].status).toBe('skipped');
   });
 
+  it('a test.todo is skipped with the todo mark, sent to the views, cleared when written', () => {
+    const store = new ResultStore();
+    discovered(store, ['a']);
+    const id = makeNodeId(FILE, ['S'], 'a');
+    store.nodeResult(id, 'skipped', undefined, [], true);
+    expect([tests(store)[0].status, tests(store)[0].todo]).toEqual(['skipped', true]);
+    const sent = (store.toJSON() as { files: { nodes: { id: string; todo?: boolean }[] }[] }).files[0].nodes.find((n) => n.id === id);
+    expect(sent?.todo).toBe(true);
+    store.nodeResult(id, 'passed');
+    expect(tests(store)[0].todo).toBeUndefined();
+  });
+
   it('failFile marks every test failed with the reason (hang)', () => {
     const store = new ResultStore();
     discovered(store, ['a', 'b']);

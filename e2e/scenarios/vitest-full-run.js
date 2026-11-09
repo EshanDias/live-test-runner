@@ -45,7 +45,8 @@ module.exports = {
     // Nested describe and test.each rows land under the right suites.
     t.eq('nested suite test', h.nodeByName(api, 'src/math.test.js', 'Math utils divide throws on zero')?.status, 'passed');
     t.eq('test.each row', h.nodeByName(api, 'src/math.test.js', 'Math utils add(2, 3) = 5')?.status, 'passed');
-    t.eq('it.todo is skipped, not pending', h.nodeByName(api, 'src/math.test.js', 'Math utils todo test')?.status, 'skipped');
+    const todo = h.nodeByName(api, 'src/math.test.js', 'Math utils todo test');
+    t.eq('it.todo is skipped (not pending), with the todo icon', [todo?.status, todo?.todo], ['skipped', true]);
     const fails = h.nodeByName(api, 'src/strings.test.ts', 'strings fails on purpose');
     t.check('failure message kept, without the stack', fails && fails.failureMessages.some((m) => /expected 'HI!' to be 'hi'/.test(m)) &&
       !fails.failureMessages.some((m) => /\n\s+at /.test(m)), JSON.stringify(fails?.failureMessages));

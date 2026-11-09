@@ -122,7 +122,7 @@ export class DecorationManager implements IResultObserver {
       const lineLength = editor.document.lineAt(line - 1).text.length;
       const range = new vscode.Range(line - 1, lineLength, line - 1, lineLength);
       const status = node.status;
-      const statusKey = `status-${status}`;
+      const statusKey = status === 'skipped' && node.todo ? 'status-todo' : `status-${status}`;
 
       // Handle duration
       let durationText = '';
@@ -187,7 +187,11 @@ export class DecorationManager implements IResultObserver {
       gutterIconSize: 'contain',
     });
     add('status-skipped', {
-      gutterIconPath: this._icon('pending'),
+      gutterIconPath: this._icon('skipped'),
+      gutterIconSize: 'contain',
+    });
+    add('status-todo', {
+      gutterIconPath: this._icon('todo'),
       gutterIconSize: 'contain',
     });
   }

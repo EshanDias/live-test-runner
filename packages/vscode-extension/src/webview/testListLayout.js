@@ -22,6 +22,7 @@ const STATUS_ICON = {
   passed: '<span class="status-passed">✓</span>',
   failed: '<span class="status-failed">✗</span>',
   skipped: '<span class="status-skipped">—</span>',
+  todo: '<span class="status-todo" title="Todo: not written yet">☐</span>',
   pending: '<span class="status-pending">○</span>',
   template: '<span class="status-template">⬚</span>',
 };
@@ -679,7 +680,7 @@ class TestListLayout {
   }
 
   _renderTestNode(file, node, depth) {
-    const icon = STATUS_ICON[node.status] ?? STATUS_ICON.pending;
+    const icon = (node.status === 'skipped' && node.todo ? STATUS_ICON.todo : STATUS_ICON[node.status]) ?? STATUS_ICON.pending;
     const dur = durationLabel(node.duration);
     const durCls = durationClass(node.duration, 'test');
     const durTip = durationTooltip(node.duration, 'test');

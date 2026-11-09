@@ -12,7 +12,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | E4 | Update the tree when a test file is created, changed or deleted | `basic-on-save` (deleting a test file lowers the total) |
 | E5 | Cache the parsed tree per project, keyed by file modification time, and re-read only changed files | ⚠️ no test yet |
 | E6 | Add the files the framework's config runs even when no `testFilePatterns` pattern matches, and show files the framework never runs as excluded, not as failed or running | `basic-full-run` |
-| E7 | Show skipped and `todo` tests as skipped | `basic-full-run` |
+| E7 | Show skipped and `todo` tests as skipped, each with its own icon (a todo is not drawn like a skipped test, a skipped test not like one never run) | `basic-full-run`, `vitest-full-run`; unit: `resultStore` |
 | E8 | Show a status icon in the gutter and the duration after each test line, coloured by `durationThresholds` | unit: `duration` |
 | E9 | Offer `▶ Run`, `▷ Debug` and `◈ Results` above each test and group; `▶ Run` runs exactly that scope, with or without a session | `basic-scoped-run`, `vitest-scoped-run`, `pytest-scoped-run` |
 | E10 | Show Total, Passed, Failed and, only while tests run, Running; filter the tree by a card or the status dropdown | `basic-running-count`; unit: `statusFilter` |

@@ -366,6 +366,7 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
         status,
         tc.duration,
         (tc.failureMessages ?? []).map(stripAnsi),
+        tc.status === 'todo',
       );
 
       // Bubble up status through parents

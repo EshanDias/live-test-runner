@@ -28,7 +28,7 @@ In most setups you only learn which tests exist by running them. Results then ap
 
 | Where | What you see |
 |---|---|
-| Gutter | ✓ passed · ✗ failed · ⟳ running · ○ not run yet or skipped |
+| Gutter | ✓ passed · ✗ failed · ⟳ running · ○ not run yet · ⊖ skipped · ☐ todo (`test.todo`, `it.todo`) |
 | After the line | How long the test took, coloured green, amber or red |
 | Above the line | `▶ Run` this test or group · `▷ Debug` it · `◈ Results` to jump to it in the Results panel |
 | Status bar | `Live Tests: ✅ 12 passed`. Click it to open the panels |
@@ -50,7 +50,7 @@ You open a project with 58 test files. Before you click anything, the sidebar li
 
 - The tree comes from reading the code, so a test whose name is built at runtime shows a placeholder name (`accepts …`) until it runs.
 - Once a file has run, the framework's own line numbers replace the ones found by reading the code.
-- Skipped and `todo` tests show as skipped, not as "not run".
+- Skipped and `todo` tests show as skipped, not as "not run"; a `todo` test has its own icon, so tests still to write stand out. Both count as skipped in the totals.
 
 ## Related
 
