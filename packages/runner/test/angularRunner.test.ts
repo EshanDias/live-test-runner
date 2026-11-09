@@ -61,6 +61,13 @@ describe('angular.json', () => {
     expect(angularProjectOf(ws, path.join(root, 'src', 'app', 'app.spec.ts'))?.name).toBe('shop');
   });
 
+  it('stays Jest when the builder is in angular.json but Jest runs the tests (jest-preset-angular)', () => {
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'shop', scripts: { test: 'jest --no-cache' }, devDependencies: { jest: '^30', 'jest-preset-angular': '^17', '@angular/build': '^22' } }));
+    expect(new FrameworkDetector().detect(root).framework).toBe('jest');
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'shop', scripts: { test: 'jest' }, devDependencies: { jest: '^30', vitest: '^5' } }));
+    expect(new FrameworkDetector().detect(root).framework).not.toBe('angular');
+  });
+
   it('is detected as Angular (not plain Vitest), one project for the workspace', () => {
     expect(new FrameworkDetector().detect(root).framework).toBe('angular');
     expect(projectFrameworks(root, 'angular')).toMatchObject({ primary: 'angular', frameworks: ['angular'] });
