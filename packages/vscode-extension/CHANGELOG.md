@@ -2,7 +2,7 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [Unreleased]
+## [3.4.0] - 2026-11-09
 
 ### Added
 - **Angular support** — Angular 21+ apps and libraries (`ng test`) now run: results, coverage, Debug, Update snapshot. Before, every test showed as failed.

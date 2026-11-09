@@ -2,7 +2,7 @@
 
 All notable changes to Live Test Runner are documented here.
 
-## [Unreleased]
+## [3.4.0] - 2026-11-09
 
 ### Added
 - **Angular 21+** (Vitest through `ng test`; fixes BUG-46, where every test failed with `describe is not defined`).
