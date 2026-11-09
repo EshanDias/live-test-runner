@@ -38,6 +38,13 @@ module.exports = {
 
     t.eq('math.test.js results', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });
     t.eq('strings.test.ts results', h.statusCounts(api, 'src/strings.test.ts'), { passed: 1, failed: 1 });
+    {
+      // The failure on its failing line, with both values for Show diff.
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(h.fileBySuffix(api, 'src/strings.test.ts').fileId));
+      const marks = api.failureDecorations.marks(doc);
+      t.eq('the Vitest failure shows on its failing line', marks.map((m) => m.line), [11]);
+      t.check('with expected and received', marks[0]?.failure.expected === '"hi"' && /HI/.test(marks[0]?.failure.actual ?? ''), JSON.stringify(marks[0]?.failure));
+    }
     t.eq('top-level.spec.js results', h.statusCounts(api, 'src/top-level.spec.js'), { passed: 1 });
     t.eq('syntax.test.ts results (extend / for / skipIf / runIf)', h.statusCounts(api, 'src/syntax.test.ts'), { passed: 4, skipped: 1 });
     h.checkMatchesPlainVitest(api, t, workspace);

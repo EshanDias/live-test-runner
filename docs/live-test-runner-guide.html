@@ -218,6 +218,7 @@
     <tr><th>Where</th><th>What you see</th></tr>
     <tr><td>Gutter</td><td>✓ passed · ✗ failed · ⟳ running · ○ not run yet · ⊖ skipped · ☐ todo (<code>test.todo</code>)</td></tr>
     <tr><td>After the line</td><td>Test / suite duration, colour-coded by <code>durationThresholds</code></td></tr>
+    <tr><td>After a failing line</td><td>Why the test failed (<code>✗ Expected 3, received 2</code>): on the test's failing line and on the line of your code that threw. Hover for the whole message, <b>Show diff</b> (expected and received side by side), <b>Open in Results</b> and <b>Dismiss</b>. Gone from a line you edit until the next run; setting <code>showFailuresInEditor</code></td></tr>
     <tr><td>CodeLens</td><td><code>▶ Run</code> this test or suite · <code>▷ Debug</code> · <code>◈ Results</code> jumps to it in the panel</td></tr>
     <tr><td>Status bar</td><td><code>Live Tests: ✅ 12 passed</code>. Click it to open the panels.</td></tr>
   </table></div>
@@ -405,6 +406,7 @@
   <p class="muted">All under <code>liveTestRunner.*</code>.</p>
   <div class="table-wrap"><table>
     <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+    <tr><td><code>showFailuresInEditor</code></td><td><code>true</code></td><td>A failed test's message on the failing line, and its hover</td></tr>
     <tr><td><code>showCoverageInEditor</code></td><td><code>true</code></td><td>Coverage bars and the coverage hover in the editor</td></tr>
     <tr><td><code>hangTimeoutSeconds</code></td><td><code>300</code></td><td>Stops a single test that runs longer than this (an infinite loop) and marks its file failed, so the rest of the run continues. Loading a file does not count. <code>0</code> turns the limit off.</td></tr>
     <tr><td><code>coverageExclude</code></td><td><code>[]</code></td><td>Extra glob patterns of source files left out of the coverage totals, e.g. <code>["**/stories/**"]</code> (<code>node_modules</code>, test files, configs and build folders are always left out).</td></tr>

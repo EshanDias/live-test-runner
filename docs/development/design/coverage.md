@@ -58,6 +58,7 @@ flowchart TD
 | No bar on edited lines | A wrong bar is worse than none | Keep old bars on changed lines |
 | Jest: `obj.fn?.()` is rewritten as `(_f = (_o = obj).fn) == null ? undefined : _f.call(_o)`; a chain whose value is called (`a?.b?.()`) keeps its native form (Q3) | Counting both outcomes of `?.` needs a conditional, and a conditional in place of a method would call it without `this` (Jest's own runtime broke on `this._environment.exportConditions?.()`). The second form has no safe rewrite, so it goes uncounted | Skip branch counts for every optional call |
 | Jest: the runtime `require(…)` goes after the directive prologue, on the same line (Q3) | A `"use strict"` that is not the first statement does nothing; the file would run in sloppy mode. Same line: the code keeps its line numbers | A new first line (lost strict mode) |
+| Jest: instrumented code keeps each statement on its line (`retainLines`), and the project transformer's source map is passed on (Q3) | Stack traces and the transformer's map then point at the original lines; columns on a line can move, lines do not | Compose our own source map with the transformer's: needs a source-map library in the user's process |
 
 ## Testing
 

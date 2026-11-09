@@ -18,6 +18,8 @@ What the feature must do, and how we check it does. For the plain-language descr
 | E10 | Show Total, Passed, Failed and, only while tests run, Running; filter the tree by a card or the status dropdown | `basic-running-count`; unit: `statusFilter` |
 | E11 | Keep the summary total equal to the number of tests in the tree | `basic-full-run`; unit: `resultStore` |
 | E12 | Use the framework's own line numbers for a test once it has run | ⚠️ no test yet |
+| E13 | Show a failed test's message after the line where it failed (in the test, and the source line it was thrown from), for Jest, Vitest and pytest; the hover has the whole message, Show diff (when both values are known), Open in Results and Dismiss | `failure-on-line`, `vitest-full-run`, `pytest-full-run`; unit: `failureInfo` |
+| E14 | Hide a failure message on a line edited since the run, and a dismissed one until its test runs again; `showFailuresInEditor` turns them off | `failure-on-line` |
 
 ⚠️ marks a requirement no automated test checks yet.
 

@@ -29,6 +29,8 @@ flowchart LR
 | `src/views/ExplorerView.ts`, `src/webview/views/testListView.js`, `src/webview/testListLayout.js` | The sidebar tree, score cards, filters, search |
 | `src/editor/DecorationManager.ts` | Gutter icons and inline durations |
 | `src/editor/CodeLensProvider.ts` | `▶ Run` / `▷ Debug` / `◈ Results` lenses |
+| `src/editor/failureInfo.ts` | Reads a failure message: summary, stack frames / `file:line` locations, expected and received (from `Expected:` / `Received:` or the `- Expected` / `+ Received` diff) (E13) |
+| `src/editor/FailureDecorations.ts` | The message after the failing line, its hover (Show diff through a `ltr-failure:` document pair and `vscode.diff`, Open in Results, Dismiss), hidden on edited lines (E13, E14) |
 
 ## How it works
 
@@ -50,6 +52,9 @@ flowchart LR
 | Discovery on activate, not on Start | Start only has to run tests | Discover on Start: the tree is empty until then |
 | Regex for CodeLens | Cheap, runs on every edit; line-level accuracy is enough | Full parse per keystroke |
 | Placeholders for discovered tests that got no result are cleaned when the file's result arrives | The tree matches what really ran (`.each` cases, renamed tests) | Keep both: stale entries |
+| Failure lines from the failure text, not from structured errors | One parser for Jest's messages, our Vitest error text and pytest's report; the Results panel shows the same text | Per-framework structured errors (Jest `failureDetails`, Vitest `errors`): three code paths |
+| Mark the innermost project frame and the test's own frame | The line that threw and the line of the test that led there are the two a reader looks for | Only the test line: an error thrown in the code under test would point at the call |
+| An edited line shows no message (the line's text is remembered when first shown) | A message on the wrong line is worse than none, as with coverage bars | Move messages with edits |
 
 ## Testing
 

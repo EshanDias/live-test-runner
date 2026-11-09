@@ -318,6 +318,11 @@
           "default": [],
           "description": "Extra glob patterns of source files to leave out of the coverage totals (node_modules, test files, configs and build folders are always excluded), e.g. [\"**/stories/**\"]."
         },
+        "liveTestRunner.showFailuresInEditor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a failed test's message at the end of the line where it failed (in the test, and in the source file the error came from), with the whole message, an expected / received diff and Dismiss in the hover."
+        },
         "liveTestRunner.showCoverageInEditor": {
           "type": "boolean",
           "default": true,

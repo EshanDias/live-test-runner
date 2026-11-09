@@ -30,6 +30,7 @@ In most setups you only learn which tests exist by running them. Results then ap
 |---|---|
 | Gutter | ✓ passed · ✗ failed · ⟳ running · ○ not run yet · ⊖ skipped · ☐ todo (`test.todo`, `it.todo`) |
 | After the line | How long the test took, coloured green, amber or red |
+| After a failing line | Why the test failed (`✗ Expected 3, received 2`), on the line of the test where it failed and on the line of your code an error was thrown from. Hover it for the whole message, **Show diff** (expected and received side by side), **Open in Results** and **Dismiss** |
 | Above the line | `▶ Run` this test or group · `▷ Debug` it · `◈ Results` to jump to it in the Results panel |
 | Status bar | `Live Tests: ✅ 12 passed`. Click it to open the panels |
 
@@ -44,12 +45,15 @@ You open a project with 58 test files. Before you click anything, the sidebar li
 | Setting | Default | What it does |
 |---|---|---|
 | `liveTestRunner.testFilePatterns` | `**/*.test.*`, `**/*.spec.*`, `**/__tests__/**/*.*` | Which files to list before the framework is asked. Files your framework's config runs are added anyway |
+| `liveTestRunner.showFailuresInEditor` | `true` | The failure message on the failing line, and its hover |
 | `liveTestRunner.durationThresholds.*` | test 100 / 500 ms, suite 500 / 2000 ms, file 1000 / 5000 ms | When a duration turns amber, then red |
 
 ## Good to know
 
 - The tree comes from reading the code, so a test whose name is built at runtime shows a placeholder name (`accepts …`) until it runs.
 - Once a file has run, the framework's own line numbers replace the ones found by reading the code.
+- A failure message disappears from a line you edit: it may no longer be about that line. It comes back with the next run. **Dismiss** hides one until its test runs again.
+- **Show diff** needs the framework to print both values (Jest and Vitest do for comparisons such as `toBe` and `toEqual`); pytest messages show without a diff.
 - Skipped and `todo` tests show as skipped, not as "not run"; a `todo` test has its own icon, so tests still to write stand out. Both count as skipped in the totals.
 
 ## Related

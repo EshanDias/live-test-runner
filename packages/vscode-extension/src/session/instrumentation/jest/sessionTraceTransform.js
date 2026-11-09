@@ -1120,7 +1120,10 @@ function instrumentAST(code, sourcePath, lookup, extra) {
 
   let output;
   try {
-    output = _generate(ast, { retainLines: false, compact: false }, code);
+    // retainLines: every statement stays on its line, so the line numbers in
+    // stack traces, and the transformer's source map built on this code, stay
+    // the original file's.
+    output = _generate(ast, { retainLines: true, compact: false }, code);
   } catch (e) {
     _ltrLog('debug', `code generation failed for ${sourcePath}: ${e.message}`);
     return null;
@@ -1217,7 +1220,7 @@ function compileThenInstrument(sourceCode, sourcePath, options) {
   const map = compiled.map || inlineSourceMap(compiled.code);
   const lookup = map ? sourceMapLookup(map, sourcePath) : null;
   const instrumented = safeInstrument(compiled.code, sourcePath, lookup || undefined);
-  if (instrumented) { return { code: withRuntime(instrumented, options) }; }
+  if (instrumented) { return { code: withRuntime(instrumented, options), map: compiled.map }; }
   // Instrumentation failed — return at least transpiled code so tests can run
   _ltrLog('warn', `could not instrument ${sourcePath} — it runs without coverage/trace (set log level to Debug for the parse error)`);
   return { code: compiled.code, map: compiled.map };
@@ -1229,14 +1232,16 @@ function compileThenInstrument(sourceCode, sourcePath, options) {
  * is no `require`) gets an import instead.
  */
 function withRuntime(code, options) {
+  // On the first line, not a line of its own: the code keeps its line numbers
+  // (stack traces, source maps).
   if (options && options.supportsStaticESM) {
-    return `import ${JSON.stringify(RUNTIME_PATH.replace(/\\/g, '/'))};\n${code}`;
+    return `import ${JSON.stringify(RUNTIME_PATH.replace(/\\/g, '/'))};${code}`;
   }
   // After the directive prologue: a "use strict" that is not the first
   // statement does nothing, and the file would run in sloppy mode (`this` in
   // a plain call becomes the global object, failed writes stop throwing).
   const at = directivePrologueEnd(code);
-  return `${code.slice(0, at)}require(${JSON.stringify(RUNTIME_PATH)});\n${code.slice(at)}`;
+  return `${code.slice(0, at)}require(${JSON.stringify(RUNTIME_PATH)});${code.slice(at)}`;
 }
 
 /** Where the leading comments and directives (`"use strict";`) of a script end. */
@@ -1244,7 +1249,7 @@ const PROLOGUE_RE = /^(?:#![^\n]*)?(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/|(['"])(?:\
 function directivePrologueEnd(code) {
   const m = PROLOGUE_RE.exec(code);
   if (!m || !m[0]) { return 0; }
-  // Keep the code that follows on its own line numbering: stop before trailing whitespace.
+  // Stop before the whitespace that follows, so the require stays on the directive's line.
   return m[0].replace(/\s+$/, '').length;
 }
 
@@ -1267,7 +1272,7 @@ function instrumentCompiled(compiled, sourceCode, sourcePath, options) {
     const extra = /\.vue$/i.test(sourcePath) ? { templateLines: templateLinesOf(sourceCode) } : undefined;
     const instrumented = safeInstrument(compiled.code, sourcePath, lookup, extra);
     if (instrumented) {
-      return { code: withRuntime(instrumented, options) };
+      return { code: withRuntime(instrumented, options), map: compiled.map };
     }
   }
   return { code: compiled.code, map: compiled.map };
@@ -1327,7 +1332,7 @@ module.exports = {
       if (instrumented) {
         if (matchingEntry) {
           const viaProject = projectTransform(instrumented, sourcePath, options, false, true);
-          if (viaProject) { return { code: withRuntime(viaProject.code, options) }; }
+          if (viaProject) { return { code: withRuntime(viaProject.code, options), map: viaProject.map }; }
           // A transformer that type-checks (jest-preset-angular, built on ts-jest)
           // rejects the inserted calls: compile first, instrument its output —
           // from now on for every file it handles (in this worker).

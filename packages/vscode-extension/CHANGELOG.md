@@ -4,8 +4,13 @@ All notable changes to Live Test Runner are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **See why a test failed right where it failed.** The reason appears after the failing line (`✗ Expected 3, received 2`), in your test and in the code that threw. Hover it for the full message, **Show diff** to compare expected and received side by side, or **Dismiss**. Turn it off with `showFailuresInEditor`.
+
 ### Fixed
 
+- **Correct line numbers when an error is thrown in your code** (Jest). Stack traces pointed at the wrong line of your source files.
 - **Jest tests no longer fail only in Live Test Runner.** Measuring coverage could change how your code ran: files lost strict mode (`"use strict"`), and methods called with `?.` (for example `this.env.read?.()`) lost `this`. Your code now behaves exactly as in plain Jest.
 - **▷ Debug of a Jest or Vitest test no longer hangs.** It could wait forever with nothing running when your terminal's shell was slow to start, or on older VS Code with zsh. The test now starts directly, and its output is in the **Debug Console**.
 

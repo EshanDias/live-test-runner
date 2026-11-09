@@ -80,11 +80,24 @@ describe('the runtime line keeps the file strict', () => {
     expect(run(code, true)).toEqual(run(code, false));
   });
 
-  it('puts the runtime line after "use strict", on its own line numbering', () => {
+  it('puts the runtime after "use strict", on the same line (line numbers unchanged)', () => {
     const file = path.join(dir, 'src', 'strict.js');
     const out = transform.process('"use strict";\nconst a = 1;\nmodule.exports = a;\n', file,
       { config: { rootDir: dir, transform: [] }, cacheFS: new Map(), transformerConfig: {} });
     const code: string = typeof out === 'string' ? out : out.code;
     expect(code.startsWith('"use strict";require(')).toBe(true);
+  });
+
+  it('errors from instrumented code report the source line (stack traces)', () => {
+    // A transformer that returns the code as it is: the line numbers seen are the instrumented code's own.
+    fs.writeFileSync(path.join(dir, 'passthrough.js'), 'module.exports = { process: (src) => ({ code: src }) };\n');
+    const file = path.join(dir, 'src', 'throws.js');
+    const src = '"use strict";\nconst a = [1, 2].map((x) => x * 2);\nfunction f(v) {\n  if (v) { throw new Error(`bad ${a}`); }\n  return v;\n}\ntry { f(1); } catch (e) { module.exports = e.stack; }\n';
+    const out = transform.process(src, file, {
+      config: { rootDir: dir, transform: [['\\.js$', path.join(dir, 'passthrough.js'), {}]] }, cacheFS: new Map(), transformerConfig: {},
+    });
+    const m = new Module(file) as Module & { _compile(code: string, file: string): void };
+    m._compile(out.code, file);
+    expect(String(m.exports)).toMatch(/throws\.js:4:/);
   });
 });

@@ -35,6 +35,7 @@ import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
 import { ExternalChanges } from './session/ExternalChanges';
 import { clearAll, clearProjectCaches, pruneUnused, runnableFilesPath, transformCacheDir } from './cache/Storage';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
+import { FailureDecorations } from './editor/FailureDecorations';
 import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
 import { initPythonInterpreters } from './python/PythonInterpreters';
@@ -176,6 +177,14 @@ export function activate(context: vscode.ExtensionContext) {
   const coverageDecoMgr = new CoverageDecorationManager(storesOf);
   editorObservers.push(coverageDecoMgr);
   context.subscriptions.push(emptyCoverage, coverageDecoMgr);
+
+  // ── Failures on the failing line (message, hover with Show diff / Dismiss) ──
+  const failureDecorations = new FailureDecorations(storesOf);
+  editorObservers.push(failureDecorations);
+  context.subscriptions.push(
+    failureDecorations,
+    vscode.languages.registerHoverProvider({ scheme: 'file' }, failureDecorations),
+  );
 
   // ── Projects ───────────────────────────────────────────────────────────────
   // Every test project of the workspace is detected; none runs until started.
@@ -705,6 +714,7 @@ export function activate(context: vscode.ExtensionContext) {
       for (const editor of editors) {
         projects.forFile(editor.document.uri.fsPath)?.ensureDiscovery();
         decorationManager.applyToEditor(editor);
+        failureDecorations.applyToEditor(editor);
       }
     }),
 
@@ -743,7 +753,7 @@ export function activate(context: vscode.ExtensionContext) {
       get discovery() { return sel()?.discovery; },
       get sessionDir() { return sel()?.sessionDir ?? LTR_SESSION_TMP_DIR; },
       projects,
-      observers, editorObservers, decorationManager, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
+      observers, editorObservers, decorationManager, failureDecorations, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
       explorerView, coverageDecorations: coverageDecoMgr,
       storagePaths: (root: string) => ({ runnableFiles: runnableFilesPath(root), transformCache: transformCacheDir(root) }),
     };
