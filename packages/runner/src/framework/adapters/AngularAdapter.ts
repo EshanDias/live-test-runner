@@ -4,6 +4,7 @@ import { FrameworkAdapter } from './FrameworkAdapter';
 import type { VitestAdapter, VitestInstall } from './VitestAdapter';
 import { parseVitestResult } from '../../parsing/VitestResultParser';
 import { readAngularWorkspace } from '../angularWorkspace';
+import { readPackageJson } from './JestAdapter';
 import { resolvePackageBin } from '../../resolution/BinaryResolver';
 import type { AngularRunner as AngularRunnerType } from '../../AngularRunner';
 import { createLogger } from '../../utils/logger';
@@ -39,8 +40,18 @@ export class AngularAdapter implements FrameworkAdapter {
     return this.vitest.findInstall(projectRoot);
   }
 
+  /**
+   * An angular.json project tested by the unit-test builder — and the
+   * builder really runs the tests: Vitest is a dependency (the builder needs
+   * it) and the `test` script does not run Jest itself. Workspaces that keep
+   * the builder in angular.json but test with jest-preset-angular stay Jest.
+   */
   detect(projectRoot: string): boolean {
-    return (readAngularWorkspace(projectRoot)?.projects.length ?? 0) > 0;
+    if ((readAngularWorkspace(projectRoot)?.projects.length ?? 0) === 0) { return false; }
+    const pkg = readPackageJson(projectRoot);
+    const deps = { ...pkg?.dependencies, ...pkg?.devDependencies } as Record<string, string>;
+    if (!('vitest' in deps)) { return false; }
+    return !/(^|[\s;&|(/])jest(\.js)?(\s|$)/.test(String(pkg?.scripts?.test ?? ''));
   }
 
   capabilities(projectRoot: string): FrameworkCapabilities {

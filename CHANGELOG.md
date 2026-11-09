@@ -10,6 +10,7 @@ All notable changes to Live Test Runner are documented here.
   - One workspace = one project; `AngularBatchRunner` splits batches by Angular project.
   - Saves rerun the importing test files (`jsImporters.ts`); templates rerun their component's tests.
   - Coverage needs `@vitest/coverage-v8` in the project. Karma: a clear warning.
+  - Detected only when the builder runs the tests: Vitest is a dependency and the `test` script doesn't run Jest (jest-preset-angular apps stay Jest).
   - e2e `angular-full-run`, `angular-debug`, `angular-snapshot-update`; unit `angularRunner`, `jsImporters`.
 - **Failures on the failing line** (D2): message after the line, hover with Show diff / Open in Results / Dismiss; hidden on edited lines; setting `showFailuresInEditor`. e2e `failure-on-line`, unit `failureInfo`.
 - **Update snapshot** (D3, Jest / Vitest / Angular): modal confirmation naming the file, then the framework's own update flag for that one test. e2e `snapshot-update`, `vitest-snapshot-update`.
