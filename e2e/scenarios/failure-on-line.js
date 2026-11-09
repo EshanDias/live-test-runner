@@ -89,6 +89,22 @@ module.exports = {
     await vscode.commands.executeCommand('liveTestRunner.rerunScope', { scope: 'file', fileId: testFile, nodeId: testFile });
     t.eq('after a rerun the dismissed failure shows again', lines(fd.marks(testDoc)), [3, 6, 9]);
 
+    // Copy buttons (D4): to the clipboard only.
+    const names = await vscode.commands.executeCommand('liveTestRunner.copyFailingTests');
+    t.eq('Copy Failing Test Names: file › name, one per line',
+      names.split('\n').filter((l) => l.startsWith('src/failing.test.js')), ['src/failing.test.js › compares numbers', 'src/failing.test.js › compares objects', 'src/failing.test.js › throws in source']);
+    t.eq('…and it is on the clipboard', await vscode.env.clipboard.readText(), names);
+    const results = api.observers.find((o) => typeof o.copyFailures === 'function');
+    const ids = marks.filter((m) => m.line === 9 || m.line === 3).map((m) => m.nodeId);
+    const forAI = await results.copyFailures(ids, 'ai');
+    t.check('Copy for AI: framework, location, error and the test source',
+      /2 Jest tests fail/.test(forAI) && /File: src\/failing\.test\.js:8/.test(forAI) && /TypeError/.test(forAI) && /parse\(\{\}\);/.test(forAI), forAI);
+    t.check('…and the lines of the code it was thrown from', /Thrown from src\/parse\.js:2:[\s\S]*return s\.value\.trim\(\);/.test(forAI), forAI);
+    t.check('…without machine paths or test-runner internals', !forAI.includes('/var/folders') && !forAI.includes('node_modules'), forAI);
+    t.eq('…on the clipboard', await vscode.env.clipboard.readText(), forAI);
+    const all = await results.copyFailures(ids, 'all');
+    t.check('Copy all: each failure as shown', /✗ compares numbers/.test(all) && /✗ throws in source/.test(all) && /Expected: 3/.test(all), all);
+
     await vscode.workspace.getConfiguration('liveTestRunner').update('showFailuresInEditor', false, vscode.ConfigurationTarget.Global);
     t.eq('showFailuresInEditor off: nothing shown', fd.marks(testDoc).length + fd.marks(sourceDoc).length, 0);
     await vscode.workspace.getConfiguration('liveTestRunner').update('showFailuresInEditor', undefined, vscode.ConfigurationTarget.Global);

@@ -231,7 +231,8 @@
   <ul>
     <li>Select a file, suite or test to scope the output and errors to it.</li>
     <li>Output is stored <b>per scope</b>. Jest reports console output per file, so a single test only has its own output after you rerun that test on its own. Until then it shows a placeholder; output from other scopes is never copied in. Vitest and pytest say which test printed each line, so there every test shows its own output right away.</li>
-    <li>Each log line has a copy button.</li>
+    <li>Each log line and each failure has a copy button. <b>Copy all</b> copies the output tab or every failure shown.</li>
+    <li><b>Copy for AI</b> (Errors column) copies the failures with the framework, file and line, the test's source and the lines the error was thrown from, ready to paste into an AI chat. It goes to your clipboard only. <b>Copy Failing Test Names</b> (title bar icon, or the Command Palette) copies <code>file › test</code> for every failing test.</li>
   </ul>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/results-panel.png" alt="A pytest test selected: its printed output in the middle column, no failures on the right" style="max-width:100%;border-radius:8px"></p>
 </section>

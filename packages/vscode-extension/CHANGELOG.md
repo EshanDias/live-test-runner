@@ -6,6 +6,7 @@ All notable changes to Live Test Runner are documented here.
 
 ### Added
 
+- **Copy for AI.** In the Results panel, copy a failure together with the test's code and the line it failed in, ready to paste into your AI assistant. Also **Copy all** for output and errors, **Copy Failing Test Names**, and copy buttons you can actually see.
 - **Update snapshot** (Jest, Vitest). When a snapshot test fails because the output changed on purpose, hover the failure and click **Update snapshot**. It always asks first and names the file that will change; then only that test's snapshot is rewritten.
 - **See why a test failed right where it failed.** The reason appears after the failing line (`✗ Expected 3, received 2`), in your test and in the code that threw. Hover it for the full message, **Show diff** to compare expected and received side by side, or **Dismiss**. Turn it off with `showFailuresInEditor`.
 

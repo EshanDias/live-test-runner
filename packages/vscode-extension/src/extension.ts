@@ -36,6 +36,7 @@ import { ExternalChanges } from './session/ExternalChanges';
 import { clearAll, clearProjectCaches, pruneUnused, runnableFilesPath, transformCacheDir } from './cache/Storage';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
 import { FailureDecorations } from './editor/FailureDecorations';
+import { failingTestNames } from './views/copyText';
 import { updateSnapshot, setSnapshotDialogAnswerForE2E } from './editor/updateSnapshot';
 import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
@@ -147,6 +148,11 @@ export function activate(context: vscode.ExtensionContext) {
   // ── Views and editor providers ─────────────────────────────────────────────
   const explorerView      = new ExplorerView(context.extensionUri, emptyStore, selection, emptyCoverage);
   const resultsView       = new ResultsView(context.extensionUri, emptyStore, selection);
+  // Copy for AI names the framework and shows paths from the project root.
+  resultsView.frameworkOf = (testFile) => {
+    const ctx = projects.forFile(testFile);
+    return ctx ? { framework: ctx.services.servicesFor(testFile).displayName, root: ctx.root } : undefined;
+  };
   // Explorer + Results follow the selected project; editor features decorate
   // every file from its own project and hear every project's events.
   const observers: IResultObserver[] = [explorerView, resultsView];
@@ -576,6 +582,14 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.executeCommand('liveTestRunner.results.focus');
     }),
     vscode.commands.registerCommand('liveTestRunner.rerunScope',         (args) => owner(args?.fileId)?.session.rerunScope(args)),
+    vscode.commands.registerCommand('liveTestRunner.copyFailingTests',   async () => {
+      const ctx = sel();
+      const text = ctx ? failingTestNames(ctx.store, ctx.root) : '';
+      if (!text) { void vscode.window.showInformationMessage('Live Test Runner: no failing tests to copy.'); return ''; }
+      await vscode.env.clipboard.writeText(text);
+      void vscode.window.showInformationMessage(`Live Test Runner: ${text.split('\n').length} failing test name(s) copied.`);
+      return text;
+    }),
     // From a snapshot failure's hover: asks in a modal dialog, then the framework rewrites the snapshot.
     vscode.commands.registerCommand('liveTestRunner.updateSnapshot',     (fileId: string, nodeId: string) => {
       const ctx = owner(fileId);

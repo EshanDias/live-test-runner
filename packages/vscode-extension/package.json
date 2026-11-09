@@ -179,6 +179,12 @@
         "icon": "$(eye-closed)"
       },
       {
+        "command": "liveTestRunner.copyFailingTests",
+        "title": "Copy Failing Test Names",
+        "category": "Live Test Runner",
+        "icon": "$(copy)"
+      },
+      {
         "command": "liveTestRunner.showCoverageInEditor",
         "title": "Show Coverage in Editor",
         "category": "Live Test Runner",
@@ -414,6 +420,11 @@
           "command": "liveTestRunner.openSettings",
           "when": "view == liveTestRunner.explorer",
           "group": "navigation@99"
+        },
+        {
+          "command": "liveTestRunner.copyFailingTests",
+          "when": "view == liveTestRunner.results",
+          "group": "navigation@50"
         }
       ],
       "commandPalette": [

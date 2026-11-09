@@ -31,7 +31,7 @@ Nothing is kept anywhere else.
 
 Some actions hand data over only because you asked:
 
-- **Copy buttons** (an error, output, a diagnostic report, and later **Copy for AI**) put text on your clipboard. Where it goes next is your choice. Check it for anything private before you paste it somewhere.
+- **Copy buttons** (an error, output, a diagnostic report, failing test names, and **Copy for AI**, which includes your test's code and the lines it failed in) put text on your clipboard. Where it goes next is your choice. Check it for anything private before you paste it somewhere.
 - **Links** (the online guide, GitHub, the marketplace) open in your browser only when you click them.
 - **Planned: tools for your AI assistant.** Live Test Runner may offer its results (failing tests, output, coverage) to an AI assistant you already use in VS Code, such as Copilot through VS Code's language-model tools, or a local MCP server for agents on your machine. Those tools answer only when your assistant asks for them. The extension still makes no network call itself, and opens no network port. Your assistant then sends what it read to its own AI service, under that service's privacy policy.
 

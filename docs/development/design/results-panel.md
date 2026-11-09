@@ -20,6 +20,8 @@ flowchart LR
 | File | Role |
 |---|---|
 | `src/views/ResultsView.ts`, `src/webview/views/resultsView.js` | The panel: test list, output (level tabs), errors |
+| `src/views/copyText.ts` | The texts of Copy all, Copy for AI and Copy Failing Test Names (R11); `ResultsView.copyFailures` writes them to the clipboard (`vscode.env.clipboard`) |
+| `src/webview/utils.js` | The shared copy icon and button (`copyButton`, `copyText`, `showCopied`) (R10) |
 | `src/views/BaseWebviewProvider.ts` | Webview lifecycle, message routing, the observer base |
 | `src/store/ResultStore.ts` | `ScopedOutput` on files and nodes; failure messages |
 | `src/framework/RunnerBackedAdapter.ts` | Maps a framework's file result into the store: suites, templates, scoped reruns, output attribution |

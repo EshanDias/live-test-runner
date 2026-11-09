@@ -36,18 +36,8 @@
           msgEl.className = 'error-message';
           msgEl.textContent = msg;
 
-          const copyBtn = document.createElement('button');
-          copyBtn.className = 'error-copy-btn';
-          copyBtn.title = 'Copy error';
-          copyBtn.textContent = '⎘';
-          copyBtn.addEventListener('click', () => {
-            navigator.clipboard.writeText(msg).then(() => {
-              const orig = copyBtn.textContent;
-              copyBtn.textContent = '✓';
-              copyBtn.style.color = 'var(--vscode-charts-green, #4caf50)';
-              setTimeout(() => { copyBtn.textContent = orig; copyBtn.style.color = ''; }, 1000);
-            }).catch(() => {});
-          });
+          const copyBtn = LiveTestUtils.copyButton('error-copy-btn', 'Copy error');
+          copyBtn.addEventListener('click', () => LiveTestUtils.copyText(copyBtn, msg));
 
           wrapper.appendChild(copyBtn);
           wrapper.appendChild(msgEl);

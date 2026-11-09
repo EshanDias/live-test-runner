@@ -216,7 +216,7 @@ function resolveFrameFile(file: string, testFile: string): string {
 
 /** Real paths, cached: a framework may print `/private/var/…` for a file VS Code opened as `/var/…`. */
 const realCache = new Map<string, string>();
-function real(p: string): string {
+export function realPath(p: string): string {
   let r = realCache.get(p);
   if (r === undefined) {
     try { r = fs.realpathSync.native(p); } catch { r = p; }
@@ -227,7 +227,7 @@ function real(p: string): string {
 }
 
 export function samePath(a: string, b: string): boolean {
-  const norm = (p: string) => path.normalize(real(p)).replace(/\\/g, '/');
+  const norm = (p: string) => path.normalize(realPath(p)).replace(/\\/g, '/');
   return process.platform === 'win32' || process.platform === 'darwin'
     ? norm(a).toLowerCase() === norm(b).toLowerCase()
     : norm(a) === norm(b);

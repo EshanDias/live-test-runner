@@ -21,11 +21,12 @@ The panel opens at the bottom of VS Code and has three columns:
 
 | Tests | Output | Errors |
 |---|---|---|
-| The same tree as the sidebar. Click a row to choose what the other columns show | Console output of the selection, with tabs for log, info, warn and error. Each line has a copy button | The failures of the selection: the message, expected and received values, and where in the code it failed |
+| The same tree as the sidebar. Click a row to choose what the other columns show | Console output of the selection, with tabs for log, info, warn and error. Each line has a copy button, and **Copy all** copies what the tab shows | The failures of the selection: the message, expected and received values, and where in the code it failed. Each has a copy button; **Copy all** copies every failure shown, **Copy for AI** adds the test's source and the lines it was thrown from |
 
 - **Selecting a file** shows the file's output and every failure in it. **Selecting a group or a test** narrows both columns to it.
 - Selection is shared: picking a test in the sidebar picks it in the panel, and `◈ Results` above a test in the editor jumps to it.
 - Results update live while tests run.
+- **Copy for AI** puts on your clipboard what an AI assistant needs to explain a failure: the framework, the test's name and file, the error, the test's code and the lines of your code the error came from. It only goes to the clipboard; you decide where to paste it. **Copy Failing Test Names** (the copy icon in the panel's title bar, or the Command Palette) copies `file › test` for every failing test.
 
 ### Which output a test shows
 

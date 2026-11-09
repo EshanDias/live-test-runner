@@ -1,4 +1,8 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { OutputLine, TestNode } from '../store/ResultStore';
+import type { ResultStore } from '../store/ResultStore';
+import { CopyFailure, failuresAsText, failuresForAI } from './copyText';
 import { BaseWebviewProvider } from './BaseWebviewProvider';
 import { RunFinishedPayload } from '../IResultObserver';
 import * as vscode from 'vscode';
@@ -13,6 +17,8 @@ export type LogSection = {
 };
 
 export type ErrorEntry = {
+  /** The test, for the copy buttons. */
+  nodeId: string;
   testName: string;
   failureMessages: string[];
   capturedAt: number | null;
@@ -69,7 +75,7 @@ export class ResultsView extends BaseWebviewProvider {
   /** Called when timeline UI asks host to exit timeline mode. */
   onTimelineExitRequest: (() => void) | null = null;
 
-  protected handleExtraMessage(msg: { type: string; fileId?: string; nodeId?: string; stepId?: number; filePath?: string; line?: number; view?: string; testFullName?: string }): void {
+  protected handleExtraMessage(msg: { type: string; fileId?: string; nodeId?: string; nodeIds?: string[]; mode?: string; stepId?: number; filePath?: string; line?: number; view?: string; testFullName?: string }): void {
     if (msg.type === 'open-timeline' && msg.filePath && msg.testFullName) {
       vscode.commands.executeCommand(
         'liveTestRunner.openTimelineDebugger',
@@ -88,7 +94,30 @@ export class ResultsView extends BaseWebviewProvider {
     }
     if (msg.type === 'timeline-exit-request') {
       this.onTimelineExitRequest?.();
+      return;
     }
+    if (msg.type === 'copy-failures' && Array.isArray(msg.nodeIds)) {
+      void this.copyFailures(msg.nodeIds, msg.mode === 'ai' ? 'ai' : 'all');
+    }
+  }
+
+  /** Framework name and project root of a test file (set by extension.ts). */
+  frameworkOf: ((testFile: string) => { framework: string; root: string } | undefined) | null = null;
+
+  /** Copy all / Copy for AI from the Errors pane: to the clipboard only. */
+  async copyFailures(nodeIds: string[], mode: 'all' | 'ai'): Promise<string | undefined> {
+    const failures = failuresOf(this.store, nodeIds);
+    if (failures.length === 0) { return undefined; }
+    let text: string;
+    if (mode === 'all') {
+      text = failuresAsText(failures);
+    } else {
+      const owner = this.frameworkOf?.(failures[0].testFile);
+      text = failuresForAI(failures, owner?.framework ?? 'test framework', owner?.root ?? path.dirname(failures[0].testFile), readText);
+    }
+    await vscode.env.clipboard.writeText(text);
+    this.postMessage({ type: 'copied', mode });
+    return text;
   }
 
   protected _sendInit(): void {
@@ -148,6 +177,7 @@ export class ResultsView extends BaseWebviewProvider {
     for (const node of allNodes) {
       if (node.type === 'test' && node.failureMessages.length > 0) {
         fileErrors.push({
+          nodeId: node.id,
           testName: node.name,
           failureMessages: node.failureMessages,
           capturedAt: node.output.capturedAt ?? fileOutput.capturedAt,
@@ -192,6 +222,7 @@ export class ResultsView extends BaseWebviewProvider {
       for (const desc of descendants) {
         if (desc.type === 'test' && desc.failureMessages.length > 0) {
           errors.push({
+            nodeId: desc.id,
             testName: desc.name,
             failureMessages: desc.failureMessages,
             capturedAt: desc.output.capturedAt,
@@ -208,7 +239,7 @@ export class ResultsView extends BaseWebviewProvider {
 
     // For tests: just this node's errors
     const errorSections: ErrorSection[] = node.failureMessages.length > 0
-      ? [{ label: node.name, scope: 'test', errors: [{ testName: node.name, failureMessages: node.failureMessages, capturedAt: nodeOutput.capturedAt }] }]
+      ? [{ label: node.name, scope: 'test', errors: [{ nodeId: node.id, testName: node.name, failureMessages: node.failureMessages, capturedAt: nodeOutput.capturedAt }] }]
       : [];
 
     return { logSections, errorSections };
@@ -229,4 +260,27 @@ export class ResultsView extends BaseWebviewProvider {
     }
     return result;
   }
+}
+
+/** The failed tests among `nodeIds`, with where each test's source starts and ends. */
+export function failuresOf(store: ResultStore, nodeIds: string[]): CopyFailure[] {
+  const out: CopyFailure[] = [];
+  for (const id of nodeIds) {
+    const node = store.getNode(id);
+    if (!node || node.type !== 'test' || node.failureMessages.length === 0) { continue; }
+    const starts = store.getFileNodes(node.fileId).map((n) => n.line).filter((l): l is number => l != null && node.line != null && l > node.line);
+    out.push({
+      fullName: node.fullName,
+      testFile: node.fileId,
+      line: node.line,
+      nextLine: starts.length ? Math.min(...starts) : undefined,
+      failureMessages: node.failureMessages,
+    });
+  }
+  return out;
+}
+
+/** The saved file: the failures' line numbers are those of the run. */
+function readText(file: string): string | undefined {
+  try { return fs.readFileSync(file, 'utf8'); } catch { return undefined; }
 }

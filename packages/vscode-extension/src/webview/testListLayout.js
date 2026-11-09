@@ -596,7 +596,7 @@ class TestListLayout {
         ${dur ? `<span class="row-duration ${durClass}" title="${durTip}">${dur}</span>` : ''}
         <button class="row-collapse" title="Collapse" data-collapse-id="${esc(file.fileId)}">⊟</button>
         <button class="row-expand"   title="Expand"   data-expand-id="${esc(file.fileId)}">⊞</button>
-        <button class="row-copy"  title="Copy file name"  data-copy-name="${esc(displayName)}">⎘</button>
+        <button class="row-copy"  title="Copy file name" aria-label="Copy file name" data-copy-name="${esc(displayName)}">${LiveTestUtils.COPY_ICON}</button>
         <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}">↗</button>
         <button class="row-rerun" title="Rerun file"      data-rerun="file" data-file="${esc(file.fileId)}">▶</button>
       </div>
@@ -668,7 +668,7 @@ class TestListLayout {
         ${dur ? `<span class="row-duration ${durCls}" title="${durTip}">${dur}</span>` : ''}
         <button class="row-collapse" title="Collapse" data-collapse-id="${esc(node.id)}">⊟</button>
         <button class="row-expand"   title="Expand"   data-expand-id="${esc(node.id)}">⊞</button>
-        <button class="row-copy"  title="Copy suite name" data-copy-name="${esc(node.name)}">⎘</button>
+        <button class="row-copy"  title="Copy suite name" aria-label="Copy suite name" data-copy-name="${esc(node.name)}">${LiveTestUtils.COPY_ICON}</button>
         <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}"${node.line != null ? ` data-open-line="${node.line}"` : ''}>↗</button>
         <button class="row-rerun" title="Rerun suite"     data-rerun="suite"
                 data-file="${esc(file.fileId)}" data-node="${esc(node.id)}"
@@ -696,7 +696,7 @@ class TestListLayout {
         <span class="row-status">${icon}</span>
         <span class="row-name" title="${esc(node.name)}">${esc(node.name)}</span>
         ${dur ? `<span class="row-duration ${durCls}" title="${durTip}">${dur}</span>` : ''}
-        <button class="row-copy"  title="Copy test name"  data-copy-name="${esc(node.name)}">⎘</button>
+        <button class="row-copy"  title="Copy test name" aria-label="Copy test name" data-copy-name="${esc(node.name)}">${LiveTestUtils.COPY_ICON}</button>
         <button class="row-open"  title="Open file"       data-open-path="${esc(file.filePath)}"${node.line != null ? ` data-open-line="${node.line}"` : ''}>↗</button>
         <button class="row-rerun" title="Rerun test"      data-rerun="test"
                 data-file="${esc(file.fileId)}" data-node="${esc(node.id)}"
@@ -806,19 +806,7 @@ class TestListLayout {
     el.querySelectorAll('.row-copy').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const name = btn.dataset.copyName;
-        navigator.clipboard
-          .writeText(name)
-          .then(() => {
-            const orig = btn.textContent;
-            btn.textContent = '✓';
-            btn.style.color = 'var(--vscode-charts-green, #4caf50)';
-            setTimeout(() => {
-              btn.textContent = orig;
-              btn.style.color = '';
-            }, 1000);
-          })
-          .catch(() => {});
+        LiveTestUtils.copyText(btn, btn.dataset.copyName);
       });
     });
 

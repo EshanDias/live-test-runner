@@ -97,18 +97,8 @@
         textSpan.className = 'log-line-text';
         textSpan.textContent = line.text;
 
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'log-line-copy';
-        copyBtn.title = 'Copy';
-        copyBtn.textContent = '⎘';
-        copyBtn.addEventListener('click', () => {
-          navigator.clipboard.writeText(line.text).then(() => {
-            const orig = copyBtn.textContent;
-            copyBtn.textContent = '✓';
-            copyBtn.style.color = 'var(--vscode-charts-green, #4caf50)';
-            setTimeout(() => { copyBtn.textContent = orig; copyBtn.style.color = ''; }, 1000);
-          }).catch(() => {});
-        });
+        const copyBtn = LiveTestUtils.copyButton('log-line-copy', 'Copy line');
+        copyBtn.addEventListener('click', () => LiveTestUtils.copyText(copyBtn, line.text));
 
         lineEl.appendChild(textSpan);
         lineEl.appendChild(copyBtn);

@@ -175,6 +175,7 @@ src/
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
 │   ├── DecorationManager.ts        Gutter icons + inline duration text
+│   (views/copyText.ts: Copy all / Copy for AI / Copy Failing Test Names texts; ResultsView.copyFailures → vscode.env.clipboard)
 │   ├── updateSnapshot.ts           Update snapshot (hover link): modal dialog naming the file (never skipped outside e2e), then rerunScope({ updateSnapshots }) → RunRequest.updateSnapshots (Jest --ci=false --updateSnapshot, Vitest --update)
 │   ├── failureInfo.ts / FailureDecorations.ts  A failed test's message after its failing line (test + thrown-from source line); hover: message, Show diff (ltr-failure: docs → vscode.diff), Open in Results, Dismiss; hidden on edited lines; liveTestRunner.showFailuresInEditor
 │   ├── CoverageDecorationManager.ts  Coloured left-edge bar (whole-line border, no text shift) per executable line: green=covered, amber=partial, red=uncovered; stale overlay (grey tint) when rerun is pending; follows unsaved edits via MeasuredLines; hidden by liveTestRunner.showCoverageInEditor
