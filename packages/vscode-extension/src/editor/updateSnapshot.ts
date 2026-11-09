@@ -47,7 +47,7 @@ export async function updateSnapshot(store: ResultStore, testFile: string, nodeI
   const message = `Update the snapshot of "${node.fullName}"?`;
   const detail = kind === 'inline'
     ? `This changes a file in your project: ${framework} rewrites ${what} with what the test produces now. Only this test's snapshot changes. Review the change before you commit it.`
-    : `This changes a file in your project: ${framework} rewrites ${what} with what the test produces now. Only this test's snapshot changes; snapshots in that file that no test uses any more are removed, as \`${framework === 'Vitest' ? 'vitest' : 'jest'} -u\` does. Review the change before you commit it.`;
+    : `This changes a file in your project: ${framework} rewrites ${what} with what the test produces now. Only this test's snapshot changes; snapshots in that file that no test uses any more are removed, as \`${framework === 'Jest' ? 'jest' : 'vitest'} -u\` does. Review the change before you commit it.`;
   const yes = e2eAnswer
     ? e2eAnswer(message, detail)
     : await vscode.window.showWarningMessage(message, { modal: true, detail }, 'Update Snapshot') === 'Update Snapshot';

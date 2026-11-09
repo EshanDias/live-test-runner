@@ -126,21 +126,21 @@ All settings under `liveTestRunner.*`.
 ## Supported frameworks
 
 <!-- matrix:start -->
-| Feature | Jest | CRA | Vitest | pytest |
-|---|---|---|---|---|
-| Run & pass/fail | ✅ | ✅ | ✅ | ✅ pytest ≥ 7, Python ≥ 3.12 |
-| ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ | ✅ by node id; Debug needs the Python Debugger extension |
-| Rerun a saved test file | ✅ | ✅ | ✅ | ✅ |
-| Logs / console output | ✅ per file | ✅ per file | ✅ per test | ✅ per test (stdout, stderr, logging) |
-| Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) | ✅ needs `coverage` (pytest-cov not needed) |
-| Live per-file progress | ✅ | ✅ | ✅ | ✅ |
-| Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off | ✅ only the tests that ran it (coverage contexts); importing test files before that |
-| Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ✅ one project per uv workspace member with tests; a root pytest config stays one |
-| Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ | — |
-| JS + Python in one folder | ✅ one project runs Jest / Vitest and pytest | 🟡 not e2e-tested | ✅ | ✅ a `.py` save reruns pytest only, a `.js` save the JS framework only |
-| Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3 (incl. `vitest.workspace` files); not in browser mode | ✅ from coverage.py contexts (needs `coverage`) |
-| UI components (`.vue`, `.svelte`, `.astro`, `.marko`): save reruns, trace, coverage | ✅ through the project's transformer (vue-jest, svelte-jester…) | — (React is plain JS) | ✅ through the project's Vite plugins | — |
-| Timeline debugger | ⏳ planned | ⏳ planned | ⏳ planned | ⏳ planned |
+| Feature | Jest | CRA | Vitest | Angular | pytest |
+|---|---|---|---|---|---|
+| Run & pass/fail | ✅ | ✅ | ✅ | ✅ Angular 21+ (`ng test`, Vitest runner) | ✅ pytest ≥ 7, Python ≥ 3.12 |
+| ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ | ✅ | ✅ by node id; Debug needs the Python Debugger extension |
+| Rerun a saved test file | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Logs / console output | ✅ per file | ✅ per file | ✅ per test | ✅ per test | ✅ per test (stdout, stderr, logging) |
+| Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) | ✅ needs `@vitest/coverage-v8` | ✅ needs `coverage` (pytest-cov not needed) |
+| Live per-file progress | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off | ✅ the test files that import it (relative imports); all of its project otherwise | ✅ only the tests that ran it (coverage contexts); importing test files before that |
+| Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ✅ one project per workspace; its apps and libraries run with `ng test <name>`, grouped by name | ✅ one project per uv workspace member with tests; a root pytest config stays one |
+| Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ | — | — |
+| JS + Python in one folder | ✅ one project runs Jest / Vitest and pytest | 🟡 not e2e-tested | ✅ | 🟡 not e2e-tested | ✅ a `.py` save reruns pytest only, a `.js` save the JS framework only |
+| Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3 (incl. `vitest.workspace` files); not in browser mode | ⏳ planned | ✅ from coverage.py contexts (needs `coverage`) |
+| UI components (`.vue`, `.svelte`, `.astro`, `.marko`): save reruns, trace, coverage | ✅ through the project's transformer (vue-jest, svelte-jester…) | — (React is plain JS) | ✅ through the project's Vite plugins | ✅ templates (`templateUrl`) rerun their component's tests; coverage includes templates | — |
+| Timeline debugger | ⏳ planned | ⏳ planned | ⏳ planned | ⏳ planned | ⏳ planned |
 <!-- matrix:end -->
 
 Vitest 3+ is fully supported (1–2: results only). Jest's ESM mode is picked up from your test script or `.npmrc`. Full details: [the guide](https://eshandias.github.io/live-test-runner/guide/).
