@@ -5,23 +5,20 @@ All notable changes to Live Test Runner are documented here.
 ## [Unreleased]
 
 ### Added
-
-- **Copy for AI.** In the Results panel, copy a failure together with the test's code and the line it failed in, ready to paste into your AI assistant. Also **Copy all** for output and errors, **Copy Failing Test Names**, and copy buttons you can actually see.
-- **Update snapshot** (Jest, Vitest). When a snapshot test fails because the output changed on purpose, hover the failure and click **Update snapshot**. It always asks first and names the file that will change; then only that test's snapshot is rewritten.
-- **See why a test failed right where it failed.** The reason appears after the failing line (`✗ Expected 3, received 2`), in your test and in the code that threw. Hover it for the full message, **Show diff** to compare expected and received side by side, or **Dismiss**. Turn it off with `showFailuresInEditor`.
+- **Angular support** — Angular 21+ apps and libraries (`ng test`) now run: results, coverage, Debug, Update snapshot. Before, every test showed as failed.
+- **Failures on the failing line** — the reason after the line; hover for the full message and **Show diff**.
+- **Update snapshot** — hover a snapshot failure; it always asks first.
+- **Copy for AI** — copy a failure with the test's code, ready to paste into your assistant. Plus Copy all and visible copy buttons.
 
 ### Fixed
-
-- **Correct line numbers when an error is thrown in your code** (Jest). Stack traces pointed at the wrong line of your source files.
-- **Jest tests no longer fail only in Live Test Runner.** Measuring coverage could change how your code ran: files lost strict mode (`"use strict"`), and methods called with `?.` (for example `this.env.read?.()`) lost `this`. Your code now behaves exactly as in plain Jest.
-- **▷ Debug of a Jest or Vitest test no longer hangs.** It could wait forever with nothing running when your terminal's shell was slow to start, or on older VS Code with zsh. The test now starts directly, and its output is in the **Debug Console**.
+- Jest tests that failed only in Live Test Runner (`"use strict"`, `?.` calls).
+- Wrong line numbers in stack traces from your code (Jest).
+- ▷ Debug of a Jest / Vitest test could hang. Output is now in the Debug Console.
 
 ### Changed
-
-- **Todo tests stand out.** `test.todo` / `it.todo` get their own icon, and skipped tests no longer look like tests that haven't run yet.
-- **Privacy policy.** What Live Test Runner keeps on your machine, how to remove it, and what it never does: [PRIVACY.md](https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md).
-- **No network calls, at all.** The built-in guide no longer loads its pictures from the internet; each one is a link to the online guide. Live Test Runner sends no telemetry and talks to nothing outside your machine, and a test on every change checks it. See Privacy in the README.
-- **Needs VS Code 1.82 or newer** (was 1.74). Older VS Code versions run Node 16, which stopped getting security fixes in 2023. On an older VS Code you keep version 3.3.0. From now on the minimum follows a published rule: a Node version is supported until 2 years after its end of life.
+- `test.todo` and skipped tests have their own icons.
+- No network calls, no telemetry — see the [privacy policy](https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md).
+- Needs VS Code 1.82 or newer (was 1.74).
 
 ## [3.3.0] - 2026-11-07
 

@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Who it is for** | Anyone who wants to see and run tests without a terminal |
-| **Frameworks** | Jest (including Create React App), Vitest, pytest |
+| **Frameworks** | Jest (including Create React App), Vitest, Angular (Vitest through `ng test`), pytest |
 | **Requirements** | [Test Explorer and editor: requirements](../requirements/test-explorer.md) |
 | **How it is built** | [Test Explorer and editor: design](../development/design/test-explorer.md) |
 

@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Who it is for** | Anyone reading why a test failed or what it printed |
-| **Frameworks** | Jest (including Create React App), Vitest, pytest |
+| **Frameworks** | Jest (including Create React App), Vitest, Angular (Vitest through `ng test`), pytest |
 | **Requirements** | [Results panel: requirements](../requirements/results-panel.md) |
 | **How it is built** | [Results panel: design](../development/design/results-panel.md) |
 
@@ -34,7 +34,7 @@ Frameworks report console output differently, and the panel only shows what the 
 
 | Framework | Output of a single test |
 |---|---|
-| Vitest, pytest | Shown right away: the framework says which test printed each line |
+| Vitest, Angular, pytest | Shown right away: the framework says which test printed each line |
 | Jest | Jest only reports output per file. A single test shows its own output after you rerun that test on its own (`▶ Run`). Until then it shows a placeholder |
 
 Output from the file is never copied into a test, because it would show lines the test didn't print.

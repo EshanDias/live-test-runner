@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Who it is for** | Anyone stepping through a failing test |
-| **Frameworks** | Jest (including Create React App), Vitest, pytest (needs the Python Debugger extension) |
+| **Frameworks** | Jest (including Create React App), Vitest, Angular, pytest (needs the Python Debugger extension) |
 | **Requirements** | [Debugging: requirements](../requirements/debugging.md) |
 | **How it is built** | [Debugging: design](../development/design/debugging.md) |
 
@@ -23,6 +23,7 @@ Click `▷ Debug` above a test or a `describe` / class. The extension builds the
 |---|---|
 | Jest | Node debugger running Jest in band (one process), only that test, no coverage. Create React App projects use their own Jest config |
 | Vitest | Node debugger running Vitest's CLI, one file at a time, with no test timeouts while you're paused. Worker processes attach automatically |
+| Angular | Node debugger running the project's Angular CLI (`ng test <project>`) for that file and test, worker processes attached |
 | pytest | The Python Debugger (`debugpy`) running `python -m pytest <test id>` with the project's own Python |
 
 Set breakpoints in the test or in the code it calls before clicking. The run is a plain framework run, so what you see is what the framework does without Live Test Runner.

@@ -18,6 +18,8 @@ What the feature must do, and how we check it does. For the plain-language descr
 | T10 | Run the project's own framework with its config, setup files and test-script flags (`--config`, `--resetMocks`, Node options) | `basic-full-run`, `esm-fn-config`, `ts-config`, `jest-svelte-esm` |
 | T11 | Pass names to the framework intact: spaces, `^`, `\|`, `&` | `basic-scoped-run` |
 | T12 | Keep caches outside the project; Clear Cache deletes a project's data; delete data unused for 30 days | `basic-clear-restart`, `commands`; unit: `storage` |
+| T14 | Angular 21+ (Vitest through Angular's unit-test builder): detected from `angular.json` (not run as plain Vitest), each Angular project run with `ng test <name>`; results with line numbers, per-test output, coverage with the project's provider, a single test by name, Update snapshot; nothing written into the project (Angular's build cache off, coverage in the session folder); Karma projects get a clear message | `angular-full-run`, `angular-debug`, `angular-snapshot-update`; unit: `angularRunner`, `frameworkRegistry` |
+| T15 | Angular saves: rerun the test files that import the saved file (relative imports), a template's component tests, else every test of its project | `angular-full-run`; unit: `jsImporters` |
 | T13 | Without the framework installed, or with an environment that can't run it, run nothing, mark nothing failed, and say how to fix it | `pytest-no-pytest` |
 
 ⚠️ marks a requirement no automated test checks yet.

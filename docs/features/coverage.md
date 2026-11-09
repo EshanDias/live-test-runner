@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Who it is for** | Anyone who wants to know what their tests reach, and which test to look at when a line breaks |
-| **Frameworks** | Jest (including Create React App), Vitest (needs `@vitest/coverage-v8` or `-istanbul`), pytest (needs `coverage`) |
+| **Frameworks** | Jest (including Create React App), Vitest (needs `@vitest/coverage-v8` or `-istanbul`), Angular (needs `@vitest/coverage-v8`; no covering tests yet), pytest (needs `coverage`) |
 | **Requirements** | [Coverage: requirements](../requirements/coverage.md) |
 | **How it is built** | [Coverage: design](../development/design/coverage.md) |
 

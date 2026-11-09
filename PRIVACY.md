@@ -6,7 +6,7 @@ _Last updated: 2026-11-09 (Update snapshot added). Applies to Live Test Runner 3
 
 ## What the extension does with your code
 
-- **Reads** your project's files to find tests, and the results your test framework (Jest, Vitest, pytest) reports.
+- **Reads** your project's files to find tests, and the results your test framework (Jest, Vitest, Angular, pytest) reports.
 - **Runs** your own test framework, from your project, in child processes on your machine.
 - **Never changes** your project: it installs nothing into it and edits none of its code, config or files. The one exception is **Update snapshot**, which you click on a failed snapshot test. A dialog first names the file that will change and asks you to confirm. Then your test framework (Jest or Vitest) rewrites that test's snapshot, as `jest -u` would for that one test. Like `jest -u`, it also removes snapshots in that file that no test uses any more.
 

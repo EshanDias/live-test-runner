@@ -45,6 +45,7 @@ src/
 │       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs, outputFileArg, parseResult, capabilities, createRunner
 │       ├── JestAdapter.ts            Plain Jest + Next.js + Jest
 │       ├── CRAAdapter.ts             Create React App
+│       ├── AngularAdapter.ts         Angular: angular.json unit-test builder (Vitest runner) → ng.js test <project>; runner = AngularRunner (extends VitestRunner; per-project commands, runner config in the session folder, CI=true)
 │       └── VitestAdapter.ts          Vitest: detect (no Jest marker), vitest.mjs, config, version → capabilities, Node check; runner = VitestRunner
 │   ├── UnsupportedFrameworkError.ts
 │   ├── refusingAdapter.ts            stand-in adapter a runner keeps for another framework's project
@@ -171,6 +172,7 @@ src/
 │   ├── vitestServices.ts           createVitestServices(): adapter, VitestProjectConfig, VitestBatchRunner (+ VitestTrace), features.trace, traceOffReason, no instrumented runner
 │   ├── RunnerBackedAdapter.ts      Shared IFrameworkAdapter half: file / test-case / related runs, FileRunResult → ResultStore
 │   ├── JestAdapter.ts              Jest detection, JestRunner (jestCommand / runMode), debug config
+│   ├── AngularAdapter.ts / angularServices.ts  Angular: debug via ng test, AngularBatchRunner (split by Angular project over VitestBatchRunner; saves → importing test files via session/jsImporters.ts), html as source (templateUrl)
 │   └── VitestAdapter.ts            Vitest detection, VitestRunner (vitestCommand), debug config (autoAttachChildProcesses)
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan

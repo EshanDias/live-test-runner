@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Who it is for** | Everyone. This is what happens under every other feature |
-| **Frameworks** | Jest (including Create React App), Vitest, pytest |
+| **Frameworks** | Jest (including Create React App), Vitest, Angular (Vitest through `ng test`), pytest |
 | **Requirements** | [Test runs: requirements](../requirements/test-runs.md) |
 | **How it is built** | [Test runs: design](../development/design/test-runs.md) |
 
@@ -23,7 +23,7 @@ A full test run can take minutes, use every core, and give you nothing until it 
 - **Hanging tests are stopped.** A test that runs longer than `hangTimeoutSeconds` (5 minutes by default), such as an infinite loop, is stopped and its file marked failed. The rest of the run carries on.
 - **Crashes are contained.** If a batch dies, the files that got no result are retried in smaller batches, then on their own with a plain framework run. The log says so.
 - **Stop means stop.** Every framework process and its children end. Nothing retries, and nothing spins.
-- **Same results as your terminal.** Your config, setup files, test-script flags and plugins apply. The extension runs your project's own Jest, Vitest or pytest.
+- **Same results as your terminal.** Your config, setup files, test-script flags and plugins apply. The extension runs your project's own Jest, Vitest, Angular or pytest.
 
 ### What is written, and where
 

@@ -88,7 +88,7 @@ Two interfaces manage framework abstraction:
 
 - **`FrameworkAdapter`** (`packages/runner/`) — binary resolution, config extraction. No VS Code dependency.
 - **`IFrameworkAdapter`** (`packages/vscode-extension/`) — adds VS Code-specific logic (test discovery, debug config, file classification).
-- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. Each project (`ProjectContext`) composes a `FrameworkRouter` (`framework/FrameworkRouter.ts`) with a factory per routable framework (runner `ROUTED_FRAMEWORKS`: `createJestServices`, `createVitestServices`, `createPytestServices`); it builds only the bundles the project uses — one for a single-framework project, several in a mixed project (runner `projectFrameworks` lists what the root configures), where every test file is placed with one framework (setting `liveTestRunner.frameworks` → the configs' own lists → `vitest` / `@jest/globals` imports and `vi.` / `jest.` calls → the main framework). All extension adapters extend `RunnerBackedAdapter`. pytest runs one process at a time (`batchPolicy`).
+- **`FrameworkServices`** (`packages/vscode-extension/src/framework/FrameworkServices.ts`) — the extension-side bundle per framework: `adapter`, `projectConfig` (`IProjectConfig`), `batchRunner` (`IBatchRunner`), `instrumentedRunner`, `createSessionRunner()`. `SessionManager` gets an `IFrameworkServicesProvider` and asks `servicesFor(fileOrRoot)`; it never constructs framework classes. Each project (`ProjectContext`) composes a `FrameworkRouter` (`framework/FrameworkRouter.ts`) with a factory per routable framework (runner `ROUTED_FRAMEWORKS`: `createJestServices`, `createVitestServices`, `createAngularServices`, `createPytestServices`); it builds only the bundles the project uses — one for a single-framework project, several in a mixed project (runner `projectFrameworks` lists what the root configures), where every test file is placed with one framework (setting `liveTestRunner.frameworks` → the configs' own lists → `vitest` / `@jest/globals` imports and `vi.` / `jest.` calls → the main framework). All extension adapters extend `RunnerBackedAdapter`. pytest runs one process at a time (`batchPolicy`).
 
 Adding a framework = one adapter in each package + its services bundle. `SessionManager`, `ResultStore`, views, and observers require zero changes.
 
@@ -202,7 +202,7 @@ Each `FrameworkAdapter` implements:
 - `outputFileArg(file)` / `parseResult(passed, raw, stderr)` — where the JSON result goes and how it is read
 - `createRunner(options)` — the framework's `TestRunner`
 
-Current adapters: Jest, Create React App, Vitest, pytest (family `python`: the project's interpreter, the shipped plugin `framework/pytest/ltr_pytest.py`).
+Current adapters: Jest, Create React App, Vitest, Angular (Vitest through `ng test`: `AngularRunner` extends `VitestRunner`, `angularWorkspace.ts` reads angular.json), pytest (family `python`: the project's interpreter, the shipped plugin `framework/pytest/ltr_pytest.py`).
 
 ### `packages/core` — Session Lifecycle
 
@@ -307,7 +307,7 @@ The features: test runs, Test Explorer and editor, on-save reruns, Results panel
 When making changes, update the relevant documentation files:
 
 **Changelogs:**
-- `CHANGELOG.md` (root) — complete record of all changes across the repo; include every meaningful change here
+- `CHANGELOG.md` (root) — record of every meaningful change across the repo, as **short bullets** grouped under Added / Fixed / Changed / Security & tooling: what changed, the key file or test names, one line each (sub-bullets when needed). No paragraphs: the how and why belong in `docs/development/design/`
 - `packages/vscode-extension/CHANGELOG.md` — user-facing only; short, plain-language summary of what's new or different in the extension (what users care about)
 
 | Change Type | Update These Files |
@@ -319,7 +319,7 @@ When making changes, update the relevant documentation files:
 | **Extension features, UI changes, new commands, or configuration options** | `packages/vscode-extension/README.md` (marketplace-facing), `CHANGELOG.md`, `docs/development/ai-context.md` |
 | **Dev setup, build process, or development patterns** | `docs/development/developer-guide.md`, `CLAUDE.md` |
 | **Anything the extension stores, shares or sends** (new cache, clipboard, AI tools) | `PRIVACY.md` (the privacy policy; bump its date), and keep `test/noNetwork.test.ts` passing |
-| **Any user-visible change (features, fixes, behaviour)** | `CHANGELOG.md` (full detail) + `packages/vscode-extension/CHANGELOG.md` (brief user summary) |
+| **Any user-visible change (features, fixes, behaviour)** | `CHANGELOG.md` (short technical bullets) + `packages/vscode-extension/CHANGELOG.md` (brief user summary) |
 | **Anything important for users or contributors** (new feature, setting, command, framework support, changed behaviour, known limitation) | `docs/live-test-runner-guide.html` (the guide — published at `/guide/` and shown by **Open Guide**) |
 | **Headline features, supported frameworks, install / review links** | `site/index.html` (landing page) — and bump `lastmod` in `site/sitemap.xml`; the root `README.md` (GitHub landing page) |
 

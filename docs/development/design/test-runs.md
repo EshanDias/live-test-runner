@@ -24,6 +24,8 @@ flowchart TD
 |---|---|
 | `src/session/SessionManager.ts` → `_runFiles`, `_runTestCases` | Batches, workers, retries, fallbacks, progress, Stop token |
 | `src/session/batchQueue.ts` | `buildBatchQueue` (per framework, open files first), `promoteInQueue` (T2) |
+| `packages/runner/src/AngularRunner.ts`, `framework/adapters/AngularAdapter.ts`, `framework/angularWorkspace.ts` | Angular: `ng test <project>` with `--include` / `--filter` / `--list-tests`, our reporters, a runner config in the session folder (`includeTaskLocation`, `update`, coverage folder from `LTR_NG_COVERAGE_DIR`), `CI=true` (Angular's build cache off). Reads `angular.json` for the projects tested with the unit-test builder (T14) |
+| `src/session/AngularBatchRunner.ts`, `jsImporters.ts` | Splits a batch by Angular project over `VitestBatchRunner`; saves rerun the importing test files (T15) |
 | `src/session/JestBatchRunner.ts`, `VitestBatchRunner.ts`, `PytestBatchRunner.ts` | One framework process per batch with our reporter / plugin, a temp config, streamed results, hang detection |
 | `src/session/IBatchRunner.ts` | The contract: `runFiles` returns `{ missing, retry? }` |
 | `src/framework/FrameworkServices.ts` → `batchPolicy` | Per framework: `maxParallel` (pytest: 1), `maxFilesPerBatch` |
@@ -50,6 +52,9 @@ flowchart TD
 | Fall back to plain runs | A config we can't instrument still gives results (G9) | Fail the batch |
 | `spawn`, never `exec` | `exec` buffers output and truncates large runs | — |
 | pytest one process at a time | Session fixtures, test servers on fixed ports and shared files assume it, as in the terminal | Parallel pytest: breaks those projects |
+| Angular through the builder, not plain Vitest (T14) | Angular's tests need its compilation and TestBed setup; `vitest run` fails with `describe is not defined`. The builder takes our reporters and a runner config of our own | Generate a Vite config from angular.json: re-implements the builder |
+| One `ng test` per Angular project | `ng test` with no name runs each project in turn, all writing the same result file | One command for the workspace |
+| Coverage only with the project's provider | The builder prepares its build for the provider it finds in the project; a provider outside it measured nothing | Ship a provider (later research) |
 
 ## Testing
 

@@ -14,7 +14,7 @@
 
 > Save a file. Tests run. Results appear inline. No terminal. No config.
 
-> **Works with Jest (incl. Create React App), Vitest and pytest** — zero config.
+> **Works with Jest (incl. Create React App), Vitest, Angular and pytest** — zero config.
 
 🌐 **[Website](https://eshandias.github.io/live-test-runner/)** · 📖 **[Read the full guide](https://eshandias.github.io/live-test-runner/guide/)** — or run **Live Test Runner: Open Guide** in VS Code.
 
@@ -24,7 +24,7 @@
 
 ## Quick Start
 
-1. Open a Jest, Vitest or pytest project in VS Code
+1. Open a Jest, Vitest, Angular or pytest project in VS Code
 2. Click the **beaker icon** in the Activity Bar
 3. Click **▶ Start Testing**
 4. Save any file — only the tests it affects rerun
@@ -51,9 +51,10 @@
 
 ---
 
-## Jest, Vitest and pytest
+## Jest, Vitest, Angular and pytest
 
 - **Jest** (incl. Create React App) and **Vitest** — any UI framework: React, Vue, Svelte, Astro, Angular… if Jest or Vitest runs it, it works.
+- **Angular** 21+ (Vitest through `ng test`) — apps and libraries of a workspace; results, per-test output, coverage (with `@vitest/coverage-v8`), ▶ Run / ▷ Debug. Nothing written into the project (no `.angular/` cache).
 - **Both in one project** (migrating?) — each test file runs with its own framework; the tree groups them. Override with `liveTestRunner.frameworks`.
 - **pytest** (≥ 7, Python ≥ 3.12) — runs in your project's own `.venv` / poetry / pipenv env — the Explorer shows which one (`🐍 Python 3.12 · .venv · pytest 9.1`); click it to pick another. Same results as `pytest` in your terminal, per-test output, ▶ Run / ▷ Debug, coverage via `coverage` (no pytest-cov needed).
 - **Nothing is written into your project** — no installs, no config changes, no cache or coverage files. (Update snapshot rewrites a snapshot only when you confirm it.)
@@ -160,7 +161,7 @@ Vitest 3+ is fully supported (1–2: results only). Jest's ESM mode is picked up
 
 ## Privacy
 
-No telemetry. No accounts. Live Test Runner makes no network calls: it runs your own Jest, Vitest or pytest locally and keeps its cache on your machine (clear it any time with **Clear All Cached Data**). It is MIT-licensed and open source, so your security team can review it. Links, such as those in the built-in guide, open in your browser only when you click them.
+No telemetry. No accounts. Live Test Runner makes no network calls: it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with **Clear All Cached Data**). It is MIT-licensed and open source, so your security team can review it. Links, such as those in the built-in guide, open in your browser only when you click them.
 
 Your own tests, and VS Code itself, may use the network; that is not the extension. What it keeps, and what it shares only when you click: the [privacy policy](https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md).
 
