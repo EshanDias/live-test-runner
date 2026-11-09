@@ -436,13 +436,13 @@
     "@live-test-runner/runner": "workspace:*"
   },
   "devDependencies": {
-    "@babel/parser": "7.29.2",
+    "@babel/parser": "7.29.12",
     "@types/node": "16.x",
     "@types/picomatch": "^4.0.3",
     "@types/vscode": "^1.74.0",
     "esbuild": "^0.28.2",
-    "eslint": "^10.13.0",
+    "eslint": "^10.14.0",
     "picomatch": "^4.0.7",
-    "typescript": "~6.0.3"
+    "typescript": "~7.0.2"
   }
 }
