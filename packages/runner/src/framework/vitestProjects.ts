@@ -127,23 +127,30 @@ async function probe(
     log.debug(`No vitest/node entry under ${projectRoot} — not reading its projects`);
     return undefined;
   }
-  const script = path.join(tmpDir, 'ltr-vitest-projects.mjs');
+  // A private folder of its own (mkdtemp: unpredictable name, owner-only), removed after the probe.
+  let probeDir: string;
   try {
     fs.mkdirSync(tmpDir, { recursive: true });
-    fs.writeFileSync(script, PROBE, 'utf8');
+    probeDir = fs.mkdtempSync(path.join(tmpDir, 'ltr-vitest-probe-'));
+    fs.writeFileSync(path.join(probeDir, 'probe.mjs'), PROBE, { encoding: 'utf8', mode: 0o600 });
   } catch (err) {
     log.warn(`Could not write the Vitest project probe to ${tmpDir}`, err);
     return undefined;
   }
   const startedAt = Date.now();
-  const result = await new Executor(logger).run({
-    binary: script,
-    // One spelling, like the runs (see toSpawnPath).
-    args: [toSpawnPath(nodeEntry), configPath ? toSpawnPath(configPath) : ''],
-    cwd: toSpawnPath(projectRoot),
-    timeoutMs: 60_000,
-    label: 'vitest',
-  });
+  let result: Awaited<ReturnType<Executor['run']>>;
+  try {
+    result = await new Executor(logger).run({
+      binary: path.join(probeDir, 'probe.mjs'),
+      // One spelling, like the runs (see toSpawnPath).
+      args: [toSpawnPath(nodeEntry), configPath ? toSpawnPath(configPath) : ''],
+      cwd: toSpawnPath(projectRoot),
+      timeoutMs: 60_000,
+      label: 'vitest',
+    });
+  } finally {
+    try { fs.rmSync(probeDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
   const line = result.stdout.split('\n').find((l) => l.startsWith('LTR_PROJECTS '));
   if (!line) {
     log.warn(`Could not read the Vitest projects of ${projectRoot} — running without a project filter`);

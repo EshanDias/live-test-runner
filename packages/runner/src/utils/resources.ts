@@ -30,7 +30,8 @@ export function workersPerBatch(cores: number = coreCount(), projectLimit?: numb
 export function workerCount(value: unknown, cores: number = coreCount()): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value) && value >= 1) { return Math.floor(value); }
   if (typeof value === 'string') {
-    const m = /^\s*(\d+(?:\.\d+)?)\s*(%?)\s*$/.exec(value);
+    // Trimmed first: no two `\s*` next to each other to backtrack over (polynomial ReDoS).
+    const m = /^(\d+(?:\.\d+)?)(%?)$/.exec(value.trim());
     if (!m) { return undefined; }
     const n = Number(m[1]);
     const count = m[2] ? Math.round((n / 100) * cores) : Math.floor(n);

@@ -29,6 +29,9 @@ describe('workerCount', () => {
     expect(workerCount('1%', 10)).toBe(1);
     expect(workerCount('200%', 10)).toBe(10);
     expect(workerCount('4', 10)).toBe(4);
+    expect(workerCount(' 50% ', 10)).toBe(5);
+    expect(workerCount('50 %', 10)).toBeUndefined();
+    expect(workerCount('9' + ' '.repeat(100_000) + 'x', 10)).toBeUndefined();
     expect(workerCount(null, 10)).toBeUndefined();
     expect(workerCount('lots', 10)).toBeUndefined();
     expect(workerCount(0, 10)).toBeUndefined();
