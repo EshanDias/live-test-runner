@@ -5,6 +5,7 @@ import { FrameworkRegistry } from './FrameworkRegistry';
 import { JEST_CONFIG_FILES, readPackageJson } from './adapters/JestAdapter';
 import { VITEST_CONFIG_FILES, VITE_CONFIG_FILES } from './adapters/VitestAdapter';
 import { FrameworkAdapter, FrameworkFamily } from './adapters/FrameworkAdapter';
+import { readAngularWorkspace } from './angularWorkspace';
 import { configuresPytest, hasPytestTestFiles, mentionsPytest, uvWorkspaceGlobs } from './pytest/pytestConfig';
 import { createLogger } from '../utils/logger';
 
@@ -47,6 +48,8 @@ export function hasOwnTestConfig(dir: string): boolean {
   const pkg = readPackageJson(dir);
   if (pkg?.jest !== undefined) { return true; }
   if (/react-scripts\s+test/.test(String(pkg?.scripts?.test ?? ''))) { return true; }
+  // An Angular workspace: its angular.json names every project's tests.
+  if ((readAngularWorkspace(dir)?.projects.length ?? 0) > 0) { return true; }
   return [...JEST_CONFIG_FILES, ...VITEST_CONFIG_FILES, ...VITE_CONFIG_FILES, ...VITEST_WORKSPACE_FILES]
     .some((f) => fs.existsSync(path.join(dir, f)));
 }

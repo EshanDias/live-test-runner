@@ -77,7 +77,7 @@ const toldNoCoverage = new Set<string>();
 const toldBrowserGuard = new Set<string>();
 
 export class VitestRunner extends CommandRunner {
-  protected readonly runnerName = 'VitestRunner';
+  protected readonly runnerName: string = 'VitestRunner';
   private readonly detector = new FrameworkDetector();
   /** `--project=<name>` for each non-browser project, when browser projects are left out. */
   private projectArgs: string[] = [];
@@ -162,7 +162,7 @@ export class VitestRunner extends CommandRunner {
    * install). Written even when tests fail; below Vitest 4, only files the
    * tests loaded (`all` would instrument the whole project).
    */
-  private async coverageArgs(root: string, dir: string): Promise<string[] | undefined> {
+  protected async coverageArgs(root: string, dir: string): Promise<string[] | undefined> {
     const info = await readConfig(root, await this.requireAdapter().resolveConfig(root), this.tmpDir ?? os.tmpdir(), this.logger);
     const provider = info?.coverageProvider ?? 'v8';
     if (!vitestCoverageInstalled(root, provider)) {

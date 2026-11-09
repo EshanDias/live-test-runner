@@ -31,6 +31,9 @@ export {
 export { CommandRunner, RunRequest, TestFileList } from './CommandRunner';
 export { JestRunner, toJestPathArg } from './JestRunner';
 export { VitestRunner, toVitestNamePattern, toVitestPathArg } from './VitestRunner';
+export { AngularRunner, ANGULAR_COVERAGE_DIR_ENV } from './AngularRunner';
+export { AngularAdapter } from './framework/adapters/AngularAdapter';
+export { readAngularWorkspace, angularProjectOf, AngularWorkspace, AngularProject } from './framework/angularWorkspace';
 export { PytestRunner, toPytestPathArg, PytestListing, PYTEST_EVENTS_ENV, PYTEST_LIST_ENV, PYTEST_COVERAGE_ENV, pytestExitReason } from './PytestRunner';
 export { PytestAdapter } from './framework/adapters/PytestAdapter';
 export {
