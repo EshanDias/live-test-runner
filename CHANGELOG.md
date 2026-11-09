@@ -19,6 +19,7 @@ All notable changes to Live Test Runner are documented here.
 - **Privacy policy** (`PRIVACY.md`) and the AI-features rule (G12, `CLAUDE.md`, `CONTRIBUTING.md`, PR template).
 
 ### Fixed
+- **Vitest used most of the CPU (fan always on):** each parallel batch started Vitest's default of cores − 1 workers (the project's own `maxWorkers` per process), so 2–4 batches oversubscribed the machine and slow tests ran even slower. Batches now get `--maxWorkers` from one budget: all together use at most half the cores (`workersPerBatch`, runner `utils/resources.ts`); a lower limit in the config (`maxWorkers`, pool `maxThreads` / `maxForks`, `fileParallelism: false`) is kept, read by the config probe; `--minWorkers=1` below Vitest 4 (a higher config `minWorkers` would crash the pool; Vitest 4+ rejects the flag). `SessionManager` takes its batch count from the same `parallelBatches()`. Unit `resources`, `vitestRunnerArgs`; checked against real Vitest 3.2 and 5.0.
 - **BUG-43:** instrumented Jest code lost strict mode and `this` in `obj.fn?.()`. Jest monorepo now matches plain Jest. Unit `jestTraceTransform`.
 - Wrong stack-trace line numbers from instrumented Jest source files (`retainLines`, runtime on line 1, transformer map passed on).
 - **BUG-45:** ▷ Debug of a Jest / Vitest test could hang (command typed into a slow-starting terminal, or `?` unescaped for zsh on VS Code < 1.90). Now `internalConsole`.

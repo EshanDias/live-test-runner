@@ -71,7 +71,8 @@ it('runs everything when the setting includes browser projects', async () => {
   runner.setProjectRoot(root);
   await runner.runFullSuiteJson(root);
   expect(projectFlags()).toEqual([]);
-  expect(spy).not.toHaveBeenCalled();
+  // Read once anyway: the config's worker limit.
+  expect(spy).toHaveBeenCalledTimes(1);
 });
 
 it("leaves the test script's own --project choice alone (vueuse)", async () => {
@@ -81,7 +82,8 @@ it("leaves the test script's own --project choice alone (vueuse)", async () => {
   runner.setProjectRoot(root);
   await runner.runFullSuiteJson(root);
   expect(projectFlags()).toEqual(['--project=unit', '--project=server']);
-  expect(spy).not.toHaveBeenCalled();
+  // Read once anyway: the config's worker limit.
+  expect(spy).toHaveBeenCalledTimes(1);
 });
 
 it('adds nothing without browser projects, or when the projects cannot be read', async () => {

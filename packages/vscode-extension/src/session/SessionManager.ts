@@ -1,9 +1,8 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath } from '@live-test-runner/runner';
+import { FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath, parallelBatches } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
@@ -1026,7 +1025,7 @@ export class SessionManager {
   ): Promise<void> {
     // The budget, and no more than any involved framework runs at once (pytest: one process).
     const CONCURRENCY = Math.max(1, Math.min(
-      Math.floor(os.cpus().length / 4),
+      parallelBatches(),
       ...cases.map((c) => this._services.servicesFor(c.filePath).batchPolicy?.maxParallel ?? Number.MAX_SAFE_INTEGER),
     ));
 
@@ -1162,7 +1161,7 @@ export class SessionManager {
     /** openFirst (the full run): the test files on screen run first, in batches of their own. */
     opts: { openFirst?: boolean } = {},
   ): Promise<void> {
-    const CONCURRENCY = Math.max(1, Math.floor(os.cpus().length / 4));
+    const CONCURRENCY = parallelBatches();
     const totalFiles  = filePaths.length;
     if (totalFiles === 0 || token !== this._token) { return; }
 

@@ -135,7 +135,7 @@ src/
 ├── cache/
 │   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
 ├── session/
-│   ├── SessionManager.ts           Session lifecycle, batched run pool (CONCURRENCY=cpus/4), on-save, rerun
+│   ├── SessionManager.ts           Session lifecycle, batched run pool (parallelBatches(): cpus/4), on-save, rerun
 │   ├── batchQueue.ts               A run's batch queue: per framework, open test files first (full run), promote a file opened while it waits
 │   ├── ExternalChanges.ts          Files changed on disk outside the editor (git pull, branch switch): drops the editor's own saves, batches 500 ms → SessionManager.onFilesChangedOnDisk (>20 files restart, never for changes from our own runs; changes during our runs — by queue, or by modified time when reported late — rerun once when they end; files no test loaded and unrun test fixtures are dropped)
 │   (cache/Storage.ts)              Every cached path in one place: per-project clear (Stop and Clear Cache), Clear All Cached Data, 30-day pruning on activation
