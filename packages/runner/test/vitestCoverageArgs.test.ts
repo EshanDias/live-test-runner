@@ -64,7 +64,7 @@ it('uses the configured provider — and says once what to install when it is mi
   await live('/tmp/cov');
   expect(a.command.args.some((x) => x.startsWith('--coverage'))).toBe(false);
   expect(a.coverageFile).toBeUndefined();
-  expect(logs.filter((l) => /coverage is off .* @vitest\/coverage-istanbul/.test(l))).toHaveLength(1);
+  expect(logs.filter((l) => l.includes('coverage is off') && l.includes('@vitest/coverage-istanbul'))).toHaveLength(1);
 });
 
 it('adds nothing without a coverage folder', async () => {

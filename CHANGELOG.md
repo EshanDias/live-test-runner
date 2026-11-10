@@ -34,6 +34,11 @@ All notable changes to Live Test Runner are documented here.
 - Dependencies: ESLint 10.14, typescript-eslint 8.72, globals 17.14, shipped Babel parser 7.29.12; TypeScript stays on 6.0 (typescript-eslint does not support TS 7 yet); `overrides` for dev-only advisories (18 → 3); pnpm installs only versions ≥ 7 days old.
 - Dependabot: grouped minor/patch PRs, one PR per major; no Babel parser majors.
 - CI: `actions/setup-python` v7 (from Dependabot #65; only `python-version` and `cache: pip` are used, both unchanged in v7).
+- CodeQL findings fixed:
+  - Runners with no session folder write temp files into a private `mkdtemp` folder (`utils/tempDir.ts`, `CommandRunner.workDir`), not loose names in the shared temp root.
+  - Read-then-write instead of check-then-read: `AngularRunner` runner config, `scripts/support-floor.js`.
+  - Linear-time regexes: `stripAnsi` (an unterminated OSC no longer rescans), `RunnerPaths` trailing-slash trim; two test regexes replaced with `includes`.
+  - Workflows: `pnpm/setup` pinned to a commit hash; `pr-checks.yml` token read-only.
 
 ## [3.3.0] - 2026-11-07
 

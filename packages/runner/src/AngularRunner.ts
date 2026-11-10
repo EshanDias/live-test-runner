@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { RunRequest } from './CommandRunner';
 import { ExecutionResult, tail } from './execution/Executor';
@@ -169,7 +168,7 @@ export class AngularRunner extends VitestRunner {
    * runner config.
    */
   private ngResultArgs(request: RunRequest): string[] {
-    const tmp = this.tmpDir ?? os.tmpdir();
+    const tmp = this.workDir;
     return [
       '--watch=false',
       '--reporters', 'default',
@@ -185,7 +184,7 @@ export class AngularRunner extends VitestRunner {
    * from the environment (json only, never the project's coverage folder).
    */
   private runnerConfig(update: boolean): string {
-    const file = path.join(this.tmpDir ?? os.tmpdir(), `ltr-ng-runner${update ? '-update' : ''}.config.mjs`);
+    const file = path.join(this.workDir, `ltr-ng-runner${update ? '-update' : ''}.config.mjs`);
     const source = [
       '// Live Test Runner: options for Angular\'s unit-test builder (ng test --runner-config).',
       'const coverageDir = process.env.' + ANGULAR_COVERAGE_DIR_ENV + ';',
@@ -200,7 +199,9 @@ export class AngularRunner extends VitestRunner {
       '',
     ].join('\n');
     try {
-      if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== source) {
+      let current: string | undefined;
+      try { current = fs.readFileSync(file, 'utf8'); } catch { /* not written yet */ }
+      if (current !== source) {
         fs.mkdirSync(path.dirname(file), { recursive: true });
         fs.writeFileSync(file, source, 'utf8');
       }

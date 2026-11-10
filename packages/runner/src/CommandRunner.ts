@@ -6,6 +6,7 @@ import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { ExecutionResult, Executor } from './execution/Executor';
 import { emptyRunResult, mergeRunResults } from './parsing/runResults';
 import { createLogger } from './utils/logger';
+import { privateTempDir } from './utils/tempDir';
 import { registerProjectRoot } from './resolution/RunnerPaths';
 
 const log = createLogger('CommandRunner');
@@ -77,6 +78,9 @@ export abstract class CommandRunner implements TestRunner {
   /** Raw-output sink and temp dir, for subclasses that start helper processes. */
   protected readonly logger: (msg: string) => void;
   protected readonly tmpDir: string | undefined;
+
+  /** The session folder, or (without one) a private temp folder of this process. */
+  protected get workDir(): string { return this.tmpDir ?? privateTempDir(); }
 
   // ── Framework-specific ──────────────────────────────────────────────────────
 

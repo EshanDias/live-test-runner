@@ -5,6 +5,7 @@ import { VitestRunner, _setVitestConfigReader, toVitestNamePattern } from '../sr
 import { Executor, ExecutorCommand } from '../src/execution/Executor';
 import { _resetProjectRoots } from '../src/resolution/RunnerPaths';
 import { setLogSink } from '../src/utils/logger';
+import { privateTempDir } from '../src/utils/tempDir';
 
 // The worker cap depends on the machine: pin it to an 8-core one (→ 2 workers per batch).
 jest.mock('../src/utils/resources', () => ({ ...jest.requireActual('../src/utils/resources'), coreCount: () => 8 }));
@@ -17,7 +18,7 @@ let outputFileArgs: ((file: string) => string[])[];
 let listStdout: string;
 
 function stable(cmd: ExecutorCommand) {
-  const fix = (s: string) => s.split(root).join('<root>').split(fs.realpathSync(os.tmpdir())).join('<tmp>').split(os.tmpdir()).join('<tmp>');
+  const fix = (s: string) => s.split(root).join('<root>').split(privateTempDir()).join('<tmp>').split(fs.realpathSync(os.tmpdir())).join('<tmp>').split(os.tmpdir()).join('<tmp>');
   return { binary: fix(cmd.binary), args: cmd.args.map(fix), cwd: fix(cmd.cwd), timeoutMs: cmd.timeoutMs, label: cmd.label };
 }
 

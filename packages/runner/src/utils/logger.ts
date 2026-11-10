@@ -61,8 +61,10 @@ export function describeError(err: unknown): string {
   return String(err);
 }
 
+// The OSC body stops at the next ESC, so an unterminated `ESC ]` costs one
+// scan, not one per later escape (BEL or ESC \ ends it).
 // eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07|[@-Z\\-_])/g;
+const ANSI_RE = /\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[@-Z\\-_])/g;
 
 /** Removes ANSI colour / cursor escape sequences (OutputChannels cannot render them). */
 export function stripAnsi(s: string): string {
