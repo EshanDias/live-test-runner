@@ -73,7 +73,7 @@ jobs:
           - { pytest: '9.1.*', python: '3.14' }
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install --disable-pip-version-check "pytest==${{ matrix.pytest }}" coverage
@@ -104,7 +104,7 @@ jobs:
           cache: true
       - run: pnpm run build
       # Python for the pytest fixtures (each gets its own .venv from requirements-e2e.txt).
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         id: python
         with:
           python-version: '3.12'
@@ -157,7 +157,7 @@ jobs:
           runtime: node@24
           cache: true
       - run: pnpm run build
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         id: python
         with:
           python-version: '3.12'
