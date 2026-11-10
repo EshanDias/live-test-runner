@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Who it is for** | Anyone writing code with tests: you see whether a change broke something while you are still looking at it |
-| **Frameworks** | Jest (including Create React App), Vitest, pytest |
+| **Frameworks** | Jest (including Create React App), Vitest, Angular (Vitest through `ng test`), pytest |
 | **Requirements** | [On-save reruns: requirements](../requirements/on-save-reruns.md) |
 | **How it is built** | [On-save reruns: design](../development/design/on-save-reruns.md) |
 
@@ -53,6 +53,7 @@ Running the whole test suite after every change is slow, so people run it rarely
 
 - **Nothing runs before you click Start**, and **Stop is final**. A save never starts tests in the background without your say. Clicking `▶ Run` above a test always works.
 - **A test that only reads a file** (for example a JSON fixture loaded with `fs`) is not linked to it, because no line of code in it runs. Saving that file reruns nothing. Save the test file instead.
+- **Angular** has no execution trace yet: a save reruns the test files that import the saved file (relative imports, followed through other files), and a template (`templateUrl`) reruns its component's tests. A file imported only through a path alias reruns every test of its project.
 - Jest and Vitest rerun a single test by a name pattern, so tests whose names overlap can run together. pytest reruns by exact test id.
 
 ## Related

@@ -405,7 +405,10 @@ export class VitestAdapter implements IFrameworkAdapter {
       program: path.join(projectRoot, 'node_modules', '.bin', 'vitest'),
       args: [filePath, '--testNamePattern', testFullName ?? ''],
       cwd: projectRoot,
-      console: 'integratedTerminal',
+      // Started by the debugger itself, output in the Debug Console: a command
+      // typed into the integrated terminal can be lost (Debugging: design, D8).
+      console: 'internalConsole',
+      outputCapture: 'std',
     }
   }
 }
@@ -419,7 +422,7 @@ Write `packages/vscode-extension/src/framework/vitestServices.ts` returning a `F
 
 Runner package (`packages/runner`):
 - [ ] `FrameworkAdapter` implemented — `detect`, `resolveBinary`, `resolveConfig`, `getExtraArgs`, `outputFileArg`, `parseResult`, `capabilities` (per installed version, never throws), `createRunner`
-- [ ] A `CommandRunner` subclass — `detectAdapter` (another framework's project → `refusingAdapter(adapter)`), `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`), `parseTestList`, `coverageFile`; `leadingArgs` if the CLI needs a subcommand first; `processLabel` for the `[label#N]` output tag
+- [ ] A `CommandRunner` subclass — `detectAdapter` (another framework's project → `refusingAdapter(adapter)`), `buildArgs` for every `RunRequest` kind (`list`, `full`, `files`, `testCase`, `related`; `testCase.updateSnapshots` → the framework's snapshot-update flag, or ignore it if the framework has no snapshots), `parseTestList`, `coverageFile`; `leadingArgs` if the CLI needs a subcommand first; `processLabel` for the `[label#N]` output tag
 - [ ] Registered in `FrameworkRegistry.default()` at the right priority (a project several adapters claim goes to the higher one)
 - [ ] Exported from `src/index.ts`
 - [ ] **Conformance suite** — one `describeAdapterConformance({ … })` call in `test/adapterConformance.test.ts` (matching / non-matching projects, a canned result with one passing and one failing test); it must pass unchanged
@@ -527,12 +530,37 @@ Flow: `main` → `release/x.y.z` (created from `main`) ← `feat/*`, `bugfix/*`,
 - `release/*` accepts PRs from `feat/*`, `bugfix/*`, `hotfix/*` and `dependabot/*`.
 - `bugfix/*` PRs target a `feat/*` or `release/*` branch, never `main`.
 - `feat/*` branches can branch from other `feat/*` branches and PR back into that feature or into a `release/*`.
-- Dependency updates: Dependabot (`.github/dependabot.yml`) opens one grouped PR a week for npm packages and one for GitHub Actions, plus security fixes as they come. They open against `main`, where `Branch rules` fails them with a note; change the base to the `release/*` branch they should ship in, then merge.
+- Dependency updates: Dependabot (`.github/dependabot.yml`) opens one grouped PR a week per ecosystem (npm, GitHub Actions) for minor and patch versions, a separate PR for each major version (test and fix it on its own), and security fixes as they come. Major versions of `@babel/parser` are never offered: it ships inside the extension and runs on the user's Node. `@types/vscode` and `@types/node` majors follow [Supported versions](#supported-versions), not the latest release. They open against `main`, where `Branch rules` fails them with a note; change the base to the `release/*` branch they should ship in, then merge.
+- Supply chain: `pnpm-workspace.yaml` sets `minimumReleaseAge` (7 days), so pnpm will not install a version published less than a week ago; wait, or list the package in `minimumReleaseAgeExclude` for an urgent security fix. Its `overrides` pin vulnerable packages that only our dev tooling pulls in to their first fixed version in the same major; drop an entry once its parent depends on a fixed one (check with `pnpm audit`). Before taking an update, check whether it ships in the extension (`@babel/parser`, `picomatch` — bundled into `out/`) or only runs here: shipped code runs on the user's Node and VS Code, so it needs the full e2e suite.
 - PRs fail if tests fail. PRs to `main` fail if the version has not been bumped.
 
-`.github/workflows/pr-checks.yml` enforces this on every PR with three jobs: `Branch rules` (name prefix and allowed targets), `Tests` (`pnpm test`), and `Version bump (PRs to main)` (root and extension `package.json` versions must be higher than on `main`).
+`.github/workflows/pr-checks.yml` enforces this on every PR with three jobs: `Branch rules` (name prefix and allowed targets), `Tests` (`pnpm test`, plus the docs-link and supported-versions checks), and `Version bump (PRs to main)` (root and extension `package.json` versions must be higher than on `main`).
 
 One-time GitHub setup (Settings → Branches): add a rule for `main` and another for `release/*`. For both: require a pull request before merging, require status checks `Branch rules` and `Tests`, and disallow direct pushes and force pushes (include administrators). On `main` also require `Version bump (PRs to main)`. `.github/CODEOWNERS` names the maintainer as owner of every file, and both rules require a code owner's approval, so every contributor's PR into `main` or `release/*` needs the maintainer's approval. Only the maintainer can create `release/*` branches. GitHub doesn't let authors approve their own PRs, so the maintainer merges their own PRs through the admin bypass.
+## Supported versions
+
+The oldest VS Code and Node the extension supports follow one rule, from official release data: **a Node major is supported until 2 years after its end of life** (the [Node.js release schedule](https://github.com/nodejs/release#release-schedule)). The minimum VS Code is the first release whose bundled Node (its Electron's) is still supported. Code that runs in the user's own test process — the shipped Babel parser, the instrumentation — must run on the oldest supported Node major.
+
+`node scripts/support-floor.js` prints the window and checks the repository against it (data in `scripts/support-floor.json`; `--update` refreshes it from the Node schedule, Electron's release list and VS Code's release tags):
+
+- `engines.vscode` (root and extension) is not above the minimum — raising it early drops users the policy still covers;
+- `@types/vscode` equals `engines.vscode`, `@types/node` (extension, runner) and the esbuild targets (`esbuild.js`, `jest.esbuild.js`) match the Node inside that VS Code — newer types allow APIs the oldest supported VS Code lacks;
+- every third-party package the build ships (`SHIPPED` in the script, cross-checked against `esbuild.js`) declares an `engines.node` that the oldest supported Node satisfies, and is not an ES module.
+
+The PR checks run it (`--check`). The monthly workflow `support-floor.yml` opens an issue when the minimum may be raised; raising it is done in a release branch (the issue lists the steps) and goes in both changelogs. Users on an older VS Code keep the last extension version that supports it.
+
+## Security checks
+
+`.github/workflows/security.yml` runs on every PR, on `main` and weekly:
+
+- **Dependency audit** — `node scripts/security-audit.js` (`pnpm audit`, GitHub's advisory database). Fails on *any* advisory in code that ships in the extension (`scripts/shipped-packages.js`) and on high or critical ones anywhere else; lower ones in dev tooling are listed. Fix by updating, by an `overrides` entry in `pnpm-workspace.yaml`, or — only when no fix exists — by `auditConfig.ignoreGhsas` there, with a comment saying why.
+- **Dependency review** (PRs) — GitHub's action blocks a PR that adds a package with a high advisory or a license outside the allow list.
+- **CodeQL** — static security analysis (`security-extended` queries) of our JS / TS, the Python pytest plugin and the workflows; findings in Security → Code scanning.
+
+**No network calls** (project rule G12) is a unit test, `packages/vscode-extension/test/noNetwork.test.ts`, so it runs in `Tests`: the bundle may require only the Node modules in its `BUNDLE_MODULES` allowlist (each with its reason), sources and shipped code may use no network module or API (`http`, `https`, `http2`, `net`, `tls`, `dgram`, `dns`, `fetch`, `XMLHttpRequest`, `WebSocket`, `sendBeacon`, `EventSource`; Python `socket`, `urllib`, `requests`…) and no telemetry package, runtime dependencies are only workspace packages, and every webview CSP lists only local sources. The guide that ships in the extension is built by `src/guide/offlineGuide.js` (from `copyGuide()` in `esbuild.js`): remote pictures become links to the online guide, and any other remote resource fails the build. To check by hand: `grep -oE 'require\("[^"]+"\)' packages/vscode-extension/out/extension.js | sort -u`.
+
+Alongside: Dependabot (weekly updates, security fixes as they come), `minimumReleaseAge` (no version younger than 7 days), secret scanning with push protection (repository settings), and private vulnerability reports (`SECURITY.md`).
+
 ## Publishing
 
 Releases are automatic. Merging a `release/*` (or `hotfix/*`) PR into `main` runs `.github/workflows/release.yml`: build → test → publish to VS Code Marketplace and Open VSX → on success, create the `vX.Y.Z` tag and a GitHub Release. If publishing fails no tag is created; fix and re-run the workflow. Do not push release tags manually.

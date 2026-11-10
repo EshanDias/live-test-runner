@@ -14,7 +14,7 @@
 
 > Save a file. Tests run. Results appear inline. No terminal. No config.
 
-> **Works with Jest (incl. Create React App), Vitest and pytest** — zero config.
+> **Works with Jest (incl. Create React App), Vitest, Angular and pytest** — zero config.
 
 🌐 **[Website](https://eshandias.github.io/live-test-runner/)** · 📖 **[Read the full guide](https://eshandias.github.io/live-test-runner/guide/)** — or run **Live Test Runner: Open Guide** in VS Code.
 
@@ -24,12 +24,14 @@
 
 ## Quick Start
 
-1. Open a Jest, Vitest or pytest project in VS Code
+1. Open a Jest, Vitest, Angular or pytest project in VS Code
 2. Click the **beaker icon** in the Activity Bar
 3. Click **▶ Start Testing**
 4. Save any file — only the tests it affects rerun
 
 > No config, no extra installs. The framework (and, for pytest, the virtual environment) is detected from your project.
+>
+> Needs VS Code 1.82 or newer.
 
 ---
 
@@ -38,8 +40,10 @@
 - ⚡ **Reruns on save** — only the tests that ran the code you changed. Changes from `git pull` or a branch switch rerun too.
 - 🌳 **Test tree** — every file, suite and test on open. Score cards (Total · Passed · Failed, plus **Running** while tests run) filter it with one click.
 - 🎨 **In the editor** — ✓ / ✗ gutter icons, inline durations, `▶ Run` · `▷ Debug` · `◈ Results` above every test.
+- ❌ **Failures where they happen** — the reason on the failing line (`✗ Expected 3, received 2`); hover for the full message, **Show diff**, and **Update snapshot** for a changed Jest / Vitest snapshot (asks first).
+  <!-- [TODO: USER_INPUT_NEEDED] screenshot or short GIF: a failing toEqual with the message after the line and the hover open, then Show diff -->
 - 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it. The bars never shift your code and follow your edits; hide them with the 👁 button in the editor title.
-- 🔍 **Results panel** — test list · console output (per test) · failures with the diff and location.
+- 🔍 **Results panel** — test list · console output (per test) · failures with the diff and location · **Copy for AI** (the failure with the test's code, for pasting into a chat).
 - 🗂 **Monorepos and multi-root workspaces** — every package (or Python service / uv workspace member) is a project, each with its own `.venv` or the shared one; switch between them, run several at once.
 - ⏱ **Timeline Debugger** *(planned, not available yet)* — step through a finished test line by line.
 
@@ -47,12 +51,13 @@
 
 ---
 
-## Jest, Vitest and pytest
+## Jest, Vitest, Angular and pytest
 
 - **Jest** (incl. Create React App) and **Vitest** — any UI framework: React, Vue, Svelte, Astro, Angular… if Jest or Vitest runs it, it works.
+- **Angular** 21+ (Vitest through `ng test`) — apps and libraries of a workspace; results, per-test output, coverage (with `@vitest/coverage-v8`), ▶ Run / ▷ Debug. Nothing written into the project (no `.angular/` cache).
 - **Both in one project** (migrating?) — each test file runs with its own framework; the tree groups them. Override with `liveTestRunner.frameworks`.
 - **pytest** (≥ 7, Python ≥ 3.12) — runs in your project's own `.venv` / poetry / pipenv env — the Explorer shows which one (`🐍 Python 3.12 · .venv · pytest 9.1`); click it to pick another. Same results as `pytest` in your terminal, per-test output, ▶ Run / ▷ Debug, coverage via `coverage` (no pytest-cov needed).
-- **Nothing is written into your project** — no installs, no config changes, no cache or coverage files.
+- **Nothing is written into your project** — no installs, no config changes, no cache or coverage files. (Update snapshot rewrites a snapshot only when you confirm it.)
 
 ![Monorepo: the project switcher, two packages running](resources/images/monorepo-switcher.png)
 
@@ -107,6 +112,7 @@ All settings under `liveTestRunner.*`.
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
 | `testFilePatterns` | `["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]` | Which files appear in the test tree. Jest's own config still decides what runs, and files it runs are added even when no pattern matches |
+| `showFailuresInEditor` | `true` | A failed test's message after the line where it failed, with Show diff in the hover |
 | `showCoverageInEditor` | `true` | Coverage bars and hover in the editor (also the 👁 button in the editor title) |
 | `coverageExclude` | `[]` | Extra globs left out of the coverage totals (which otherwise follow your Vitest `coverage.include` / `exclude` or Jest `collectCoverageFrom`) |
 | `durationThresholds.testAmberMs` | `100` | Test turns amber |
@@ -121,21 +127,21 @@ All settings under `liveTestRunner.*`.
 ## Supported frameworks
 
 <!-- matrix:start -->
-| Feature | Jest | CRA | Vitest | pytest |
-|---|---|---|---|---|
-| Run & pass/fail | ✅ | ✅ | ✅ | ✅ pytest ≥ 7, Python ≥ 3.12 |
-| ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ | ✅ by node id; Debug needs the Python Debugger extension |
-| Rerun a saved test file | ✅ | ✅ | ✅ | ✅ |
-| Logs / console output | ✅ per file | ✅ per file | ✅ per test | ✅ per test (stdout, stderr, logging) |
-| Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) | ✅ needs `coverage` (pytest-cov not needed) |
-| Live per-file progress | ✅ | ✅ | ✅ | ✅ |
-| Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off | ✅ only the tests that ran it (coverage contexts); importing test files before that |
-| Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ✅ one project per uv workspace member with tests; a root pytest config stays one |
-| Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ | — |
-| JS + Python in one folder | ✅ one project runs Jest / Vitest and pytest | 🟡 not e2e-tested | ✅ | ✅ a `.py` save reruns pytest only, a `.js` save the JS framework only |
-| Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3 (incl. `vitest.workspace` files); not in browser mode | ✅ from coverage.py contexts (needs `coverage`) |
-| UI components (`.vue`, `.svelte`, `.astro`, `.marko`): save reruns, trace, coverage | ✅ through the project's transformer (vue-jest, svelte-jester…) | — (React is plain JS) | ✅ through the project's Vite plugins | — |
-| Timeline debugger | ⏳ planned | ⏳ planned | ⏳ planned | ⏳ planned |
+| Feature | Jest | CRA | Vitest | Angular | pytest |
+|---|---|---|---|---|---|
+| Run & pass/fail | ✅ | ✅ | ✅ | ✅ Angular 21+ (`ng test`, Vitest runner) | ✅ pytest ≥ 7, Python ≥ 3.12 |
+| ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ | ✅ | ✅ by node id; Debug needs the Python Debugger extension |
+| Rerun a saved test file | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Logs / console output | ✅ per file | ✅ per file | ✅ per test | ✅ per test | ✅ per test (stdout, stderr, logging) |
+| Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) | ✅ needs `@vitest/coverage-v8` | ✅ needs `coverage` (pytest-cov not needed) |
+| Live per-file progress | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off | ✅ the test files that import it (relative imports); all of its project otherwise | ✅ only the tests that ran it (coverage contexts); importing test files before that |
+| Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ✅ one project per workspace; its apps and libraries run with `ng test <name>`, grouped by name | ✅ one project per uv workspace member with tests; a root pytest config stays one |
+| Mixed Jest + Vitest in one project | ✅ each test file runs with its own framework | — | ✅ | — | — |
+| JS + Python in one folder | ✅ one project runs Jest / Vitest and pytest | 🟡 not e2e-tested | ✅ | 🟡 not e2e-tested | ✅ a `.py` save reruns pytest only, a `.js` save the JS framework only |
+| Execution trace / "covering tests" | ✅ | ✅ | ✅ Vitest ≥ 3 (incl. `vitest.workspace` files); not in browser mode | ⏳ planned | ✅ from coverage.py contexts (needs `coverage`) |
+| UI components (`.vue`, `.svelte`, `.astro`, `.marko`): save reruns, trace, coverage | ✅ through the project's transformer (vue-jest, svelte-jester…) | — (React is plain JS) | ✅ through the project's Vite plugins | ✅ templates (`templateUrl`) rerun their component's tests; coverage includes templates | — |
+| Timeline debugger | ⏳ planned | ⏳ planned | ⏳ planned | ⏳ planned | ⏳ planned |
 <!-- matrix:end -->
 
 Vitest 3+ is fully supported (1–2: results only). Jest's ESM mode is picked up from your test script or `.npmrc`. Full details: [the guide](https://eshandias.github.io/live-test-runner/guide/).
@@ -150,6 +156,16 @@ Vitest 3+ is fully supported (1–2: results only). Jest's ESM mode is picked up
 - Vitest: the execution trace needs Vitest ≥ 3 and is off for browser-mode projects — saving a source file then reruns the test files that import it (`vitest related`)
 - pytest with `-s` / `--capture=no` in `addopts`: test output goes to the Test Output channel, not to each test
 - Vue components under Jest: coverage counts the `<script>` block only, as `jest --coverage` does (vue-jest maps only that); template lines still show their covering tests
+
+---
+
+## Privacy
+
+No telemetry. No accounts. Live Test Runner makes no network calls: it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with **Clear All Cached Data**). It is MIT-licensed and open source, so your security team can review it. Links, such as those in the built-in guide, open in your browser only when you click them.
+
+Your own tests, and VS Code itself, may use the network; that is not the extension. What it keeps, and what it shares only when you click: the [privacy policy](https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md).
+
+**How to verify:** every pull request runs a test that scans the source and the built extension for network modules, network APIs and telemetry packages, and checks that no view can load anything from another origin ([`noNetwork.test.ts`](https://github.com/EshanDias/live-test-runner/blob/main/packages/vscode-extension/test/noNetwork.test.ts); run it with `pnpm test`).
 
 ---
 

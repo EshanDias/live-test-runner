@@ -31,6 +31,9 @@ export {
 export { CommandRunner, RunRequest, TestFileList } from './CommandRunner';
 export { JestRunner, toJestPathArg } from './JestRunner';
 export { VitestRunner, toVitestNamePattern, toVitestPathArg } from './VitestRunner';
+export { AngularRunner, ANGULAR_COVERAGE_DIR_ENV } from './AngularRunner';
+export { AngularAdapter } from './framework/adapters/AngularAdapter';
+export { readAngularWorkspace, angularProjectOf, AngularWorkspace, AngularProject } from './framework/angularWorkspace';
 export { PytestRunner, toPytestPathArg, PytestListing, PYTEST_EVENTS_ENV, PYTEST_LIST_ENV, PYTEST_COVERAGE_ENV, pytestExitReason } from './PytestRunner';
 export { PytestAdapter } from './framework/adapters/PytestAdapter';
 export {
@@ -129,6 +132,7 @@ export {
 export { BinaryResolver, nodeRuntime, nodeRuntimeVersion, NodeRuntime, resolvePackageDir } from './resolution/BinaryResolver';
 export { viteEntryFor, vitestDirFor } from './framework/vitestTrace';
 export { parseVersion, compareVersions, satisfies } from './utils/semver';
+export { coreCount, parallelBatches, workersPerBatch, workerCount } from './utils/resources';
 export { registerProjectRoot, toRunnerPath, fromRunnerPath, toSpawnPath, toJestPath, fromJestPath } from './resolution/RunnerPaths';
 export { Executor, tail } from './execution/Executor';
 

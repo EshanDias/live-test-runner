@@ -1,6 +1,6 @@
 # Live Test Runner documentation
 
-Live Test Runner is a VS Code extension that reruns the tests affected by each save and shows the results in the editor, for Jest, Vitest and pytest.
+Live Test Runner is a VS Code extension that reruns the tests affected by each save and shows the results in the editor, for Jest, Vitest, Angular and pytest.
 
 The docs come in three kinds. Pick the one for your question:
 

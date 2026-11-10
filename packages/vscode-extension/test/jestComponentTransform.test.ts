@@ -145,7 +145,8 @@ T.processAsync(require('fs').readFileSync(process.argv[2], 'utf8'), process.argv
   const r = spawnSync(process.execPath, [script, file, JSON.stringify({ ...options, cacheFS: undefined })], { encoding: 'utf8', env: { ...process.env } });
   if (r.status !== 0) { throw new Error(r.stderr); }
   const out = { code: r.stdout };
-  expect(out.code.split('\n')[0]).toMatch(/^import ".*sessionTraceRuntime\.js";$/);
+  // On the first line, before the code: line numbers stay the source's.
+  expect(out.code.split('\n')[0]).toMatch(/^import ".*sessionTraceRuntime\.js";/);
   expect(out.code).not.toMatch(/require\(".*sessionTraceRuntime/);
   expect(Object.keys(manifest().statements)).toHaveLength(4);
 });

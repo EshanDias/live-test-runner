@@ -2,12 +2,12 @@
   "name": "live-test-runner",
   "displayName": "Live Test Runner",
   "description": "Live testing on save for Jest and other frameworks",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "license": "MIT",
   "icon": "resources/images/live-test-runner.png",
   "publisher": "EshLabs",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.82.0"
   },
   "repository": {
     "type": "git",
@@ -179,6 +179,12 @@
         "icon": "$(eye-closed)"
       },
       {
+        "command": "liveTestRunner.copyFailingTests",
+        "title": "Copy Failing Test Names",
+        "category": "Live Test Runner",
+        "icon": "$(copy)"
+      },
+      {
         "command": "liveTestRunner.showCoverageInEditor",
         "title": "Show Coverage in Editor",
         "category": "Live Test Runner",
@@ -318,6 +324,11 @@
           "default": [],
           "description": "Extra glob patterns of source files to leave out of the coverage totals (node_modules, test files, configs and build folders are always excluded), e.g. [\"**/stories/**\"]."
         },
+        "liveTestRunner.showFailuresInEditor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a failed test's message at the end of the line where it failed (in the test, and in the source file the error came from), with the whole message, an expected / received diff and Dismiss in the hover."
+        },
         "liveTestRunner.showCoverageInEditor": {
           "type": "boolean",
           "default": true,
@@ -409,6 +420,11 @@
           "command": "liveTestRunner.openSettings",
           "when": "view == liveTestRunner.explorer",
           "group": "navigation@99"
+        },
+        {
+          "command": "liveTestRunner.copyFailingTests",
+          "when": "view == liveTestRunner.results",
+          "group": "navigation@50"
         }
       ],
       "commandPalette": [
@@ -436,12 +452,12 @@
     "@live-test-runner/runner": "workspace:*"
   },
   "devDependencies": {
-    "@babel/parser": "7.29.2",
-    "@types/node": "16.x",
+    "@babel/parser": "7.29.12",
+    "@types/node": "18.x",
     "@types/picomatch": "^4.0.3",
-    "@types/vscode": "^1.74.0",
+    "@types/vscode": "1.82.0",
     "esbuild": "^0.28.2",
-    "eslint": "^10.13.0",
+    "eslint": "^10.14.0",
     "picomatch": "^4.0.7",
     "typescript": "~6.0.3"
   }

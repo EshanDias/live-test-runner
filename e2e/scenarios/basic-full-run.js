@@ -45,8 +45,10 @@ module.exports = {
     h.checkMatchesPlainJest(api, t, workspace);
 
     // Skipped / todo are "skipped", not "pending" (= never ran).
-    t.eq('test.skip is shown as skipped', h.nodeByName(api, 'src/math.test.js', 'Math utils skipped test').status, 'skipped');
-    t.eq('test.todo is shown as skipped', h.nodeByName(api, 'src/math.test.js', 'Math utils todo test').status, 'skipped');
+    const skip = h.nodeByName(api, 'src/math.test.js', 'Math utils skipped test');
+    t.eq('test.skip is shown as skipped (no todo icon)', [skip.status, !!skip.todo], ['skipped', false]);
+    const todo = h.nodeByName(api, 'src/math.test.js', 'Math utils todo test');
+    t.eq('test.todo is skipped, with the todo icon', [todo.status, todo.todo], ['skipped', true]);
 
     // Console output arrives even with verbose: true in the project config.
     const mathFile = h.fileBySuffix(api, 'src/math.test.js');

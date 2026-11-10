@@ -26,6 +26,7 @@ import { DiscoveryCache } from '../cache/DiscoveryCache';
 import { FrameworkRouter } from '../framework/FrameworkRouter';
 import { createJestServices } from '../framework/jestServices';
 import { createVitestServices } from '../framework/vitestServices';
+import { createAngularServices } from '../framework/angularServices';
 import { createPytestServices } from '../framework/pytestServices';
 import { IFrameworkServicesProvider } from '../framework/FrameworkServices';
 import { TestFileDiscoverer, jsDiscoverer, mixedDiscoverer } from '../session/discovery/TestFileDiscoverer';
@@ -137,6 +138,7 @@ export class ProjectContext implements vscode.Disposable {
       {
         jest: () => createJestServices(deps),
         vitest: () => createVitestServices(deps),
+        angular: () => createAngularServices(deps),
         pytest: () => createPytestServices(deps),
       },
       this.root,

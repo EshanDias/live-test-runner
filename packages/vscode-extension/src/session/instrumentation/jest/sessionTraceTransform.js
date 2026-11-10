@@ -510,6 +510,13 @@ function findChainSegmentTop(nodePath) {
   return top;
 }
 
+/** The chain segment is a member (`a?.b`) that is called right away: `a?.b?.()`, `(a?.b)()`. */
+function isCalledMember(topPath) {
+  const pn = topPath.parentPath && topPath.parentPath.node;
+  return topPath.node.type === 'OptionalMemberExpression' && !!pn &&
+    (pn.type === 'CallExpression' || pn.type === 'OptionalCallExpression') && pn.callee === topPath.node;
+}
+
 /**
  * Build a non-optional MemberExpression/CallExpression chain for the segment
  * from branchNodePath up to (and including) chainTopPath, using baseExpr as
@@ -870,6 +877,10 @@ function instrumentAST(code, sourcePath, lookup, extra) {
         const node = nodePath.node;
         if (unmapped(node)) { return; }
         const topPath = findChainSegmentTop(nodePath);
+        // `a?.b?.()`, `(a?.b)()`: the chain's value is a method that is then
+        // called with `a` as `this`. A conditional in its place would call it
+        // without `this`, so this chain keeps its native form (no branch count).
+        if (isCalledMember(topPath)) { return; }
         const bId = `b${bIdx++}`;
         manifest.branches[bId] = { type: 'optional-chaining', line: node.loc?.start?.line ?? 0, arms: 2 };
         const obj = node.object;
@@ -906,17 +917,27 @@ function instrumentAST(code, sourcePath, lookup, extra) {
         const bId = `b${bIdx++}`;
         manifest.branches[bId] = { type: 'optional-chaining', line: node.loc?.start?.line ?? 0, arms: 2 };
         const callee = node.callee;
-        let checkExpr, useExpr;
+        if (t.isMemberExpression(callee) && t.isSuper(callee.object)) { return; } // `super` cannot be kept in a variable
+        let checkExpr, truthy;
         if (t.isIdentifier(callee)) {
           checkExpr = callee;
-          useExpr   = t.identifier(callee.name);
+          truthy = buildChainExpr(nodePath, topPath, t.identifier(callee.name));
+        } else if (t.isMemberExpression(callee)) {
+          // `obj.fn?.()`: the method is called with `obj` as `this`, like Babel
+          // does: `(_f = (_o = obj).fn) == null ? undefined : _f.call(_o, …)`.
+          const objName = `_ltrOo${bIdx}`;
+          const fnName = `_ltrOc${bIdx}`;
+          tempVarNames.push(objName, fnName);
+          checkExpr = t.assignmentExpression('=', t.identifier(fnName),
+            t.memberExpression(t.assignmentExpression('=', t.identifier(objName), callee.object), callee.property, callee.computed));
+          const call = t.callExpression(t.memberExpression(t.identifier(fnName), t.identifier('call')), [t.identifier(objName), ...node.arguments]);
+          truthy = nodePath === topPath ? call : buildChainExpr(nodePath.parentPath, topPath, call);
         } else {
           const tmpName = `_ltrOc${bIdx}`;
           tempVarNames.push(tmpName);
           checkExpr = t.assignmentExpression('=', t.identifier(tmpName), callee);
-          useExpr   = t.identifier(tmpName);
+          truthy = buildChainExpr(nodePath, topPath, t.identifier(tmpName));
         }
-        const truthy = buildChainExpr(nodePath, topPath, useExpr);
         const replacement = t.conditionalExpression(
           t.binaryExpression('==', checkExpr, t.nullLiteral()),
           t.sequenceExpression([makeCovBranchExpr(bId, 1), t.identifier('undefined')]),
@@ -1099,7 +1120,10 @@ function instrumentAST(code, sourcePath, lookup, extra) {
 
   let output;
   try {
-    output = _generate(ast, { retainLines: false, compact: false }, code);
+    // retainLines: every statement stays on its line, so the line numbers in
+    // stack traces, and the transformer's source map built on this code, stay
+    // the original file's.
+    output = _generate(ast, { retainLines: true, compact: false }, code);
   } catch (e) {
     _ltrLog('debug', `code generation failed for ${sourcePath}: ${e.message}`);
     return null;
@@ -1196,7 +1220,7 @@ function compileThenInstrument(sourceCode, sourcePath, options) {
   const map = compiled.map || inlineSourceMap(compiled.code);
   const lookup = map ? sourceMapLookup(map, sourcePath) : null;
   const instrumented = safeInstrument(compiled.code, sourcePath, lookup || undefined);
-  if (instrumented) { return { code: withRuntime(instrumented, options) }; }
+  if (instrumented) { return { code: withRuntime(instrumented, options), map: compiled.map }; }
   // Instrumentation failed — return at least transpiled code so tests can run
   _ltrLog('warn', `could not instrument ${sourcePath} — it runs without coverage/trace (set log level to Debug for the parse error)`);
   return { code: compiled.code, map: compiled.map };
@@ -1208,10 +1232,25 @@ function compileThenInstrument(sourceCode, sourcePath, options) {
  * is no `require`) gets an import instead.
  */
 function withRuntime(code, options) {
+  // On the first line, not a line of its own: the code keeps its line numbers
+  // (stack traces, source maps).
   if (options && options.supportsStaticESM) {
-    return `import ${JSON.stringify(RUNTIME_PATH.replace(/\\/g, '/'))};\n${code}`;
+    return `import ${JSON.stringify(RUNTIME_PATH.replace(/\\/g, '/'))};${code}`;
   }
-  return `require(${JSON.stringify(RUNTIME_PATH)});\n${code}`;
+  // After the directive prologue: a "use strict" that is not the first
+  // statement does nothing, and the file would run in sloppy mode (`this` in
+  // a plain call becomes the global object, failed writes stop throwing).
+  const at = directivePrologueEnd(code);
+  return `${code.slice(0, at)}require(${JSON.stringify(RUNTIME_PATH)});${code.slice(at)}`;
+}
+
+/** Where the leading comments and directives (`"use strict";`) of a script end. */
+const PROLOGUE_RE = /^(?:#![^\n]*)?(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/|(['"])(?:\\.|(?!\1)[^\\\n])*\1[ \t]*(?:;|(?=\r?\n)))*/;
+function directivePrologueEnd(code) {
+  const m = PROLOGUE_RE.exec(code);
+  if (!m || !m[0]) { return 0; }
+  // Stop before the whitespace that follows, so the require stays on the directive's line.
+  return m[0].replace(/\s+$/, '').length;
 }
 
 /**
@@ -1233,7 +1272,7 @@ function instrumentCompiled(compiled, sourceCode, sourcePath, options) {
     const extra = /\.vue$/i.test(sourcePath) ? { templateLines: templateLinesOf(sourceCode) } : undefined;
     const instrumented = safeInstrument(compiled.code, sourcePath, lookup, extra);
     if (instrumented) {
-      return { code: withRuntime(instrumented, options) };
+      return { code: withRuntime(instrumented, options), map: compiled.map };
     }
   }
   return { code: compiled.code, map: compiled.map };
@@ -1293,7 +1332,7 @@ module.exports = {
       if (instrumented) {
         if (matchingEntry) {
           const viaProject = projectTransform(instrumented, sourcePath, options, false, true);
-          if (viaProject) { return { code: withRuntime(viaProject.code, options) }; }
+          if (viaProject) { return { code: withRuntime(viaProject.code, options), map: viaProject.map }; }
           // A transformer that type-checks (jest-preset-angular, built on ts-jest)
           // rejects the inserted calls: compile first, instrument its output —
           // from now on for every file it handles (in this worker).

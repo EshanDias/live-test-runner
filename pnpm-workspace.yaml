@@ -6,3 +6,16 @@ allowBuilds:
   # Prebuilt binaries come from optional dependencies; their scripts are not needed.
   '@parcel/watcher': false
   unrs-resolver: false
+# Supply-chain guard: only install versions published at least 7 days ago (in
+# minutes), the same wait as Dependabot's cooldown. A hijacked release is
+# usually found and pulled within days.
+minimumReleaseAge: 10080
+# Security fixes for packages that only our dev tooling pulls in (Jest, ESLint);
+# none of them ships in the extension. Each moves to the first fixed version in
+# the same major. Remove an entry once its parent package depends on a fixed one.
+overrides:
+  'brace-expansion@>=5.0.0 <5.0.12': '^5.0.12'
+  'js-yaml@>=3.0.0 <3.15.2': '^3.15.2'
+  'browserslist@<4.28.7': '^4.28.7'
+  'baseline-browser-mapping@<2.11.0': '^2.11.0'
+  '@babel/core@>=7.0.0 <7.29.6': '^7.29.6'

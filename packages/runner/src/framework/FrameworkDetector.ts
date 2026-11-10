@@ -3,6 +3,7 @@ import { FrameworkAdapter } from './adapters/FrameworkAdapter';
 import { JestAdapter } from './adapters/JestAdapter';
 import { FrameworkRegistry } from './FrameworkRegistry';
 import { createLogger } from '../utils/logger';
+import { readAngularWorkspace } from './angularWorkspace';
 
 const log = createLogger('FrameworkDetector');
 
@@ -66,8 +67,11 @@ export class FrameworkDetector {
     const adapter = this.registry.get(FRAMEWORK_IDS.jest) ?? new JestAdapter();
     if (!warnedFallback.has(projectRoot)) {
       warnedFallback.add(projectRoot);
-      log.warn(
-        `No test framework recognised in ${projectRoot} (no Jest, CRA or Vitest dependency or config) — assuming plain Jest`,
+      const karma = readAngularWorkspace(projectRoot)?.karma ?? [];
+      log.warn(karma.length
+        ? `${projectRoot} is an Angular workspace tested with Karma (${karma.join(', ')}) — Karma is not supported. ` +
+          'Angular\'s unit-test builder with Vitest is (the default since Angular 21; Angular\'s testing guide describes the move). Assuming plain Jest'
+        : `No test framework recognised in ${projectRoot} (no Jest, CRA, Vitest or Angular dependency or config) — assuming plain Jest`,
       );
     }
     return {

@@ -16,6 +16,6 @@
     "lint": "node scripts/embed-pytest-plugin.js --check && eslint \"src/**/*.ts\""
   },
   "devDependencies": {
-    "@types/node": "^25.5.1"
+    "@types/node": "18.x"
   }
 }

@@ -35,6 +35,9 @@ import { CoverageDecorationManager } from './editor/CoverageDecorationManager';
 import { ExternalChanges } from './session/ExternalChanges';
 import { clearAll, clearProjectCaches, pruneUnused, runnableFilesPath, transformCacheDir } from './cache/Storage';
 import { CoverageHoverProvider } from './editor/CoverageHoverProvider';
+import { FailureDecorations } from './editor/FailureDecorations';
+import { failingTestNames } from './views/copyText';
+import { updateSnapshot, setSnapshotDialogAnswerForE2E } from './editor/updateSnapshot';
 import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
 import { initPythonInterpreters } from './python/PythonInterpreters';
@@ -145,6 +148,11 @@ export function activate(context: vscode.ExtensionContext) {
   // ── Views and editor providers ─────────────────────────────────────────────
   const explorerView      = new ExplorerView(context.extensionUri, emptyStore, selection, emptyCoverage);
   const resultsView       = new ResultsView(context.extensionUri, emptyStore, selection);
+  // Copy for AI names the framework and shows paths from the project root.
+  resultsView.frameworkOf = (testFile) => {
+    const ctx = projects.forFile(testFile);
+    return ctx ? { framework: ctx.services.servicesFor(testFile).displayName, root: ctx.root } : undefined;
+  };
   // Explorer + Results follow the selected project; editor features decorate
   // every file from its own project and hear every project's events.
   const observers: IResultObserver[] = [explorerView, resultsView];
@@ -176,6 +184,14 @@ export function activate(context: vscode.ExtensionContext) {
   const coverageDecoMgr = new CoverageDecorationManager(storesOf);
   editorObservers.push(coverageDecoMgr);
   context.subscriptions.push(emptyCoverage, coverageDecoMgr);
+
+  // ── Failures on the failing line (message, hover with Show diff / Dismiss) ──
+  const failureDecorations = new FailureDecorations(storesOf);
+  editorObservers.push(failureDecorations);
+  context.subscriptions.push(
+    failureDecorations,
+    vscode.languages.registerHoverProvider({ scheme: 'file' }, failureDecorations),
+  );
 
   // ── Projects ───────────────────────────────────────────────────────────────
   // Every test project of the workspace is detected; none runs until started.
@@ -566,6 +582,20 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.executeCommand('liveTestRunner.results.focus');
     }),
     vscode.commands.registerCommand('liveTestRunner.rerunScope',         (args) => owner(args?.fileId)?.session.rerunScope(args)),
+    vscode.commands.registerCommand('liveTestRunner.copyFailingTests',   async () => {
+      const ctx = sel();
+      const text = ctx ? failingTestNames(ctx.store, ctx.root) : '';
+      if (!text) { void vscode.window.showInformationMessage('Live Test Runner: no failing tests to copy.'); return ''; }
+      await vscode.env.clipboard.writeText(text);
+      void vscode.window.showInformationMessage(`Live Test Runner: ${text.split('\n').length} failing test name(s) copied.`);
+      return text;
+    }),
+    // From a snapshot failure's hover: asks in a modal dialog, then the framework rewrites the snapshot.
+    vscode.commands.registerCommand('liveTestRunner.updateSnapshot',     (fileId: string, nodeId: string) => {
+      const ctx = owner(fileId);
+      if (!ctx) { return false; }
+      return updateSnapshot(ctx.store, fileId, nodeId, (args) => ctx.session.rerunScope(args), ctx.services.servicesFor(fileId).displayName, ctx.root);
+    }),
     // CodeLens passes (file, 1-based line); from the Command Palette: the active editor's cursor.
     vscode.commands.registerCommand('liveTestRunner.rerunFromEditor',    (filePath?: string, line?: number) => {
       const at = filePath ? { filePath, line: line ?? 1 } : cursorOrHint('rerun the test under the cursor');
@@ -705,6 +735,7 @@ export function activate(context: vscode.ExtensionContext) {
       for (const editor of editors) {
         projects.forFile(editor.document.uri.fsPath)?.ensureDiscovery();
         decorationManager.applyToEditor(editor);
+        failureDecorations.applyToEditor(editor);
       }
     }),
 
@@ -743,7 +774,7 @@ export function activate(context: vscode.ExtensionContext) {
       get discovery() { return sel()?.discovery; },
       get sessionDir() { return sel()?.sessionDir ?? LTR_SESSION_TMP_DIR; },
       projects,
-      observers, editorObservers, decorationManager, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
+      observers, editorObservers, decorationManager, failureDecorations, setSnapshotDialogAnswerForE2E, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
       explorerView, coverageDecorations: coverageDecoMgr,
       storagePaths: (root: string) => ({ runnableFiles: runnableFilesPath(root), transformCache: transformCacheDir(root) }),
     };

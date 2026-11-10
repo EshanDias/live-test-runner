@@ -45,6 +45,7 @@
       <div class="log-tab"        id="tabInfo"  data-tab="info">Info</div>
       <div class="log-tab"        id="tabWarn"  data-tab="warn">Warn</div>
       <div class="log-tab"        id="tabError" data-tab="error">Error</div>
+      <span class="col-actions"><button class="toolbar-icon-btn copy-btn" id="btnCopyLogs" title="Copy the output shown" aria-label="Copy the output shown" disabled></button></span>
     </div>
     <div class="log-content" id="logContent">
       <div class="empty-state">Select a test to view output</div>
@@ -55,7 +56,12 @@
 
   <!-- Column 3: Errors -->
   <div class="col-errors" id="colErrors">
-    <div class="col-header">Errors</div>
+    <div class="col-header">Errors
+      <span class="col-actions">
+        <button class="text-btn copy-btn" id="btnCopyErrors" title="Copy every failure shown here" disabled>Copy all</button>
+        <button class="text-btn copy-btn" id="btnCopyForAI" title="Copy the failures with the test source, for pasting into an AI assistant (to your clipboard only)" disabled>Copy for AI</button>
+      </span>
+    </div>
     <div class="error-content" id="errorContent">
       <div class="empty-state">No errors</div>
     </div>
@@ -71,6 +77,8 @@
   let _autoScroll      = true;
   let _showFailuresOnly = false;
   let _showFolderView  = false;
+  /** The failed tests in the Errors pane, for its copy buttons. */
+  let _errorNodeIds    = [];
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -89,6 +97,8 @@
     const logContent = _q('logContent');
     if (!logContent) { return; }
     LogPanel.update(logContent, { sections });
+    const copyLogs = _q('btnCopyLogs');
+    if (copyLogs) { copyLogs.disabled = !(sections || []).some((s) => s.lines && s.lines.length > 0); }
     LogPanel.applyFilter(logContent, _activeTab);
     if (_autoScroll) { logContent.scrollTop = logContent.scrollHeight; }
   }
@@ -97,6 +107,11 @@
     const errorContent = _q('errorContent');
     if (!errorContent) { return; }
     ErrorPanel.update(errorContent, { sections });
+    _errorNodeIds = (sections || []).flatMap((s) => s.errors.map((e) => e.nodeId)).filter(Boolean);
+    for (const id of ['btnCopyErrors', 'btnCopyForAI']) {
+      const b = _q(id);
+      if (b) { b.disabled = _errorNodeIds.length === 0; }
+    }
   }
 
   function _makeResizable(handle, leftEl) {
@@ -165,6 +180,23 @@
           if (logContent) { LogPanel.applyFilter(logContent, _activeTab); }
         });
       });
+
+      // ── Copy buttons ────────────────────────────────────────────────────────
+      const btnCopyLogs = _q('btnCopyLogs');
+      btnCopyLogs.innerHTML = LiveTestUtils.COPY_ICON;
+      btnCopyLogs.addEventListener('click', () => {
+        // The lines the current tab shows.
+        const lines = [...(_q('logContent')?.querySelectorAll('.log-line') ?? [])]
+          .filter((l) => l.offsetParent !== null)
+          .map((l) => (l.querySelector('.log-line-text') ?? l).textContent);
+        if (lines.length) { LiveTestUtils.copyText(btnCopyLogs, lines.join('\n')); }
+      });
+      // The extension builds these (Copy for AI reads the test source) and writes the clipboard.
+      for (const [id, mode] of [['btnCopyErrors', 'all'], ['btnCopyForAI', 'ai']]) {
+        _q(id).addEventListener('click', () => {
+          if (_errorNodeIds.length) { _vscode.postMessage({ type: 'copy-failures', mode, nodeIds: _errorNodeIds }); }
+        });
+      }
 
       // ── Search ──────────────────────────────────────────────────────────────
       const searchInput = _q('searchInput');
@@ -261,6 +293,12 @@
           renderLogSections(msg.payload.logSections);
           renderErrorSections(msg.payload.errorSections);
           break;
+
+        case 'copied': {
+          const b = _q(msg.mode === 'ai' ? 'btnCopyForAI' : 'btnCopyErrors');
+          if (b) { LiveTestUtils.showCopied(b); }
+          break;
+        }
 
         case 'test-output':
           // Streaming output — not yet fully wired; no-op for now

@@ -82,7 +82,13 @@ export class JestAdapter extends RunnerBackedAdapter {
       cwd: projectRoot,
       // Node options from the test script (e.g. --experimental-vm-modules: Jest's ESM mode).
       ...(nodeOptions.length ? { runtimeArgs: nodeOptions } : {}),
-      console: 'integratedTerminal',
+      // Started directly, output in the Debug Console: no terminal. A command
+      // typed into the integrated terminal is lost while the user's shell is
+      // still starting (a few seconds of profile scripts), and VS Code before
+      // 1.90 does not escape `?` for the shell (zsh: "no matches found") —
+      // either way the test never starts and the session waits forever.
+      console: 'internalConsole',
+      outputCapture: 'std', // the runner's own output (results, errors), not only console.*
       env: { NODE_ENV: 'test', BABEL_ENV: 'test' },
       skipFiles: ['<node_internals>/**'],
     };

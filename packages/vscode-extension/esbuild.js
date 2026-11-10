@@ -59,11 +59,17 @@ function copyVendorFiles() {
   fs.copyFileSync(path.join(picomatchDir, 'LICENSE'), path.join(dest, 'picomatch.LICENSE'));
 }
 
-/** The user guide (docs/live-test-runner-guide.html) for the Open Guide command. */
+/**
+ * The user guide (docs/live-test-runner-guide.html) for the Open Guide command,
+ * without anything that loads from the network: its pictures become links to
+ * the online guide (src/guide/offlineGuide.js).
+ */
 function copyGuide() {
+  const { offlineGuide } = require('./src/guide/offlineGuide');
   const dest = path.join(__dirname, 'out', 'guide');
   fs.mkdirSync(dest, { recursive: true });
-  fs.copyFileSync(path.join(__dirname, '..', '..', 'docs', 'live-test-runner-guide.html'), path.join(dest, 'guide.html'));
+  const html = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'live-test-runner-guide.html'), 'utf8');
+  fs.writeFileSync(path.join(dest, 'guide.html'), offlineGuide(html));
 }
 
 const config = {
@@ -73,7 +79,7 @@ const config = {
   external: ['vscode'],
   format: 'cjs',
   platform: 'node',
-  target: 'node16',
+  target: 'node18',
   sourcemap: minify ? false : true,
   minify,
 };

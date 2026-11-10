@@ -98,6 +98,9 @@ export class JestRunner extends CommandRunner {
           request.isTestSuite
             ? `^(?:${request.testFullName})(?: |$)`
             : `^(?:${request.testFullName})$`,
+          // Only the named tests run, so only their snapshots are rewritten;
+          // Jest keeps the snapshots of the tests the pattern leaves out.
+          ...(request.updateSnapshots ? ['--ci=false', '--updateSnapshot'] : []),
         ];
       case 'related':
         return [...base, '--json', '--findRelatedTests', toJestPathArg(request.file)];
