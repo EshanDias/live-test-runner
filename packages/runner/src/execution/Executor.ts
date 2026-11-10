@@ -1,9 +1,9 @@
 import { spawn, spawnSync, ChildProcess } from 'child_process';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { BinaryResolver, nodeRuntime } from '../resolution/BinaryResolver';
 import { createLogger, LogLevel, stripAnsi } from '../utils/logger';
+import { privateTempDir } from '../utils/tempDir';
 
 const log = createLogger('Executor');
 /** Structured logs from instrumentation inside the child, per process label ('jest' → scope "Jest"). */
@@ -97,12 +97,13 @@ export class Executor {
 
   private child?: ChildProcess;
   private logger: (msg: string) => void;
-  private readonly tmpDir: string;
+  private readonly sessionDir: string | undefined;
+  private get tmpDir(): string { return this.sessionDir ?? privateTempDir(); }
 
   /** @param logger Sink for raw test-runner output lines (the "Test Output" channel). */
   constructor(logger: (msg: string) => void = () => {}, tmpDir?: string) {
     this.logger = logger;
-    this.tmpDir = tmpDir ?? os.tmpdir();
+    this.sessionDir = tmpDir;
   }
 
   setLogger(logger: (msg: string) => void): void {

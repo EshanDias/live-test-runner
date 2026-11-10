@@ -10,7 +10,6 @@ import type { VitestAdapter } from './framework/adapters/VitestAdapter';
 import { VitestConfigInfo, vitestConfigInfo, vitestCoverageInstalled, vitestProjects } from './framework/vitestProjects';
 import { VITEST_EVENTS_ENV, applyVitestEvents, readVitestEvents, vitestReporterFile } from './framework/vitestReporter';
 import { RunResult } from './types';
-import * as os from 'os';
 import { FRAMEWORK_IDS } from './types';
 import { createLogger } from './utils/logger';
 import { coreCount, workersPerBatch } from './utils/resources';
@@ -104,7 +103,7 @@ export class VitestRunner extends CommandRunner {
 
   protected override runEnv(request: RunRequest): Record<string, string> | undefined {
     if (request.kind === 'list') { return undefined; }
-    const file = path.join(this.tmpDir ?? os.tmpdir(), `ltr-vitest-events-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`);
+    const file = path.join(this.workDir, `ltr-vitest-events-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`);
     this.eventFiles.set(request, file);
     return { [VITEST_EVENTS_ENV]: file };
   }
@@ -140,7 +139,7 @@ export class VitestRunner extends CommandRunner {
     // `related`: Vitest finds the test files that import this source file (`vitest related <src> --run`); `files` is ignored.
     const request: RunRequest = options.related ? { kind: 'related', file: options.related } : { kind: 'files', files };
     const root = this.requireProjectRoot();
-    const resultFile = path.join(this.tmpDir ?? os.tmpdir(), `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    const resultFile = path.join(this.workDir, `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
     const env = this.runEnv(request) ?? {};
     const args = [...await this.commandArgs(request, options.config), ...this.requireAdapter().outputFileArg(resultFile)];
     if (options.typecheckOnly) { args.push('--typecheck.only'); }
@@ -166,7 +165,7 @@ export class VitestRunner extends CommandRunner {
    * tests loaded (`all` would instrument the whole project).
    */
   protected async coverageArgs(root: string, dir: string): Promise<string[] | undefined> {
-    const info = await readConfig(root, await this.requireAdapter().resolveConfig(root), this.tmpDir ?? os.tmpdir(), this.logger);
+    const info = await readConfig(root, await this.requireAdapter().resolveConfig(root), this.workDir, this.logger);
     const provider = info?.coverageProvider ?? 'v8';
     if (!vitestCoverageInstalled(root, provider)) {
       if (!toldNoCoverage.has(root)) {
@@ -205,7 +204,7 @@ export class VitestRunner extends CommandRunner {
    */
   protected override async prepare(projectRoot: string, configPath: string | undefined): Promise<void> {
     this.projectArgs = [];
-    const info = await readConfig(projectRoot, configPath, this.tmpDir ?? os.tmpdir(), this.logger);
+    const info = await readConfig(projectRoot, configPath, this.workDir, this.logger);
     this.projectWorkerLimit = info?.maxWorkers;
     if (this.includeBrowserProjects) { return; }
     const scriptArgs = this.requireAdapter().getExtraArgs(projectRoot);
@@ -328,7 +327,7 @@ export class VitestRunner extends CommandRunner {
   }
 
   private fullRunCoverageDir(): string {
-    return path.join(this.tmpDir ?? os.tmpdir(), 'vitest-coverage');
+    return path.join(this.workDir, 'vitest-coverage');
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
@@ -341,7 +340,7 @@ export class VitestRunner extends CommandRunner {
   private resultArgs(): string[] {
     return [
       '--reporter=default',
-      `--reporter=${vitestReporterFile(this.tmpDir ?? os.tmpdir())}`,
+      `--reporter=${vitestReporterFile(this.workDir)}`,
       '--reporter=json',
       // `location` (test line numbers, for the gutter) — a CLI flag since Vitest 3.
       ...(this.vitestMajor() >= 3 ? ['--includeTaskLocation'] : []),

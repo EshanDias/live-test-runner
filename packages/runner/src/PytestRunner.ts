@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { CommandRunner, RunRequest, TestFileList } from './CommandRunner';
 import { ExecutionResult, ExecutorCommand, tail } from './execution/Executor';
@@ -159,7 +158,7 @@ export class PytestRunner extends CommandRunner {
   }
 
   private sessionDir(): string {
-    return this.tmpDir ?? os.tmpdir();
+    return this.workDir;
   }
 
   /** Test files from pytest's own collection (`--collect-only`, written by the plugin). */

@@ -203,7 +203,8 @@ function check(data, floor) {
 }
 
 async function main() {
-  let data = fs.existsSync(DATA) ? JSON.parse(fs.readFileSync(DATA, 'utf8')) : null;
+  let data = null;
+  try { data = JSON.parse(fs.readFileSync(DATA, 'utf8')); } catch (err) { if (err.code !== 'ENOENT') { throw err; } }
   if (flag('--update') || !data) {
     data = await update(data);
     fs.writeFileSync(DATA, JSON.stringify(data, null, 2) + '\n');
