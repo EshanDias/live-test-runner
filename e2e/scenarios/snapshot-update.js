@@ -39,7 +39,11 @@ async function scenario({ api, t, vscode, workspace }, framework) {
   fs.writeFileSync(snapFile, snap);
   await h.waitForDiscovery(api);
   await h.waitFor(() => api.store.getAllFiles().some((f) => f.filePath.endsWith(ext)), { what: 'the new test file', timeout: 30_000 });
-  await vscode.commands.executeCommand('liveTestRunner.rerunScope', { scope: 'file', fileId: testFile, nodeId: testFile });
+  // The store's own key, as the UI passes it: on Windows it can differ from `testFile` in the drive
+  // letter's case (VS Code lowercases it), and a command given the other spelling files its
+  // results under a second entry.
+  const fileId = h.fileBySuffix(api, `src/${ext}`).fileId;
+  await vscode.commands.executeCommand('liveTestRunner.rerunScope', { scope: 'file', fileId, nodeId: fileId });
 
   const a = h.nodeByName(api, `src/${ext}`, 'renders a');
   t.eq('the changed snapshot fails, the matching one passes', [a?.status, h.nodeByName(api, `src/${ext}`, 'renders b')?.status], ['failed', 'passed']);
@@ -55,7 +59,7 @@ async function scenario({ api, t, vscode, workspace }, framework) {
   const before = fs.readFileSync(snapFile, 'utf8');
   const asked = [];
   api.setSnapshotDialogAnswerForE2E((message, detail) => { asked.push({ message, detail }); return false; });
-  const declined = await vscode.commands.executeCommand('liveTestRunner.updateSnapshot', testFile, a.id);
+  const declined = await vscode.commands.executeCommand('liveTestRunner.updateSnapshot', fileId, a.id);
   t.eq('declined: nothing written', [declined, fs.readFileSync(snapFile, 'utf8')], [false, before]);
   t.check('the dialog names the test and the file that will change',
     asked[0]?.message.includes('renders a') && asked[0]?.detail.includes(`${ext}.snap`) && /changes a file in your project/.test(asked[0]?.detail)
@@ -63,7 +67,7 @@ async function scenario({ api, t, vscode, workspace }, framework) {
 
   // "Yes": the framework rewrites this test's snapshot only.
   api.setSnapshotDialogAnswerForE2E(() => true);
-  const updated = await vscode.commands.executeCommand('liveTestRunner.updateSnapshot', testFile, a.id);
+  const updated = await vscode.commands.executeCommand('liveTestRunner.updateSnapshot', fileId, a.id);
   api.setSnapshotDialogAnswerForE2E(undefined);
   const after = fs.readFileSync(snapFile, 'utf8');
   t.check('confirmed: the snapshot now holds the new value', updated === true && /"a": 1/.test(after) && !/"a": 2/.test(after), after);
@@ -77,12 +81,12 @@ async function scenario({ api, t, vscode, workspace }, framework) {
   const editor = await vscode.window.showTextDocument(doc);
   await editor.edit((e) => e.insert(new vscode.Position(0, 0), '// unsaved\n'));
   api.setSnapshotDialogAnswerForE2E(() => true);
-  const refused = await vscode.commands.executeCommand('liveTestRunner.updateSnapshot', testFile, inline.id);
+  const refused = await vscode.commands.executeCommand('liveTestRunner.updateSnapshot', fileId, inline.id);
   t.eq('an inline snapshot is not updated while the test file has unsaved changes', [refused, fs.readFileSync(testFile, 'utf8')], [false, test]);
   await vscode.commands.executeCommand('workbench.action.files.revert');
   const inlineAsked = [];
   api.setSnapshotDialogAnswerForE2E((message, detail) => { inlineAsked.push(detail); return true; });
-  await vscode.commands.executeCommand('liveTestRunner.updateSnapshot', testFile, inline.id);
+  await vscode.commands.executeCommand('liveTestRunner.updateSnapshot', fileId, inline.id);
   api.setSnapshotDialogAnswerForE2E(undefined);
   t.check('for an inline snapshot the dialog says the test file itself changes', /inline snapshot in .*the test file itself/.test(inlineAsked[0] ?? ''), inlineAsked[0]);
   t.check('the inline snapshot is rewritten in the test file', /toMatchInlineSnapshot\(`2`\)/.test(fs.readFileSync(testFile, 'utf8')), fs.readFileSync(testFile, 'utf8'));
