@@ -11,6 +11,7 @@ All notable changes to Live Test Runner are documented here.
 - **Copy for AI** — copy a failure with the test's code, ready to paste into your assistant. Plus Copy all and visible copy buttons.
 
 ### Fixed
+- Vitest runs no longer max out the CPU: together they use at most half your cores (a lower `maxWorkers` in your config is kept).
 - Jest tests that failed only in Live Test Runner (`"use strict"`, `?.` calls).
 - Wrong line numbers in stack traces from your code (Jest).
 - ▷ Debug of a Jest / Vitest test could hang. Output is now in the Debug Console.

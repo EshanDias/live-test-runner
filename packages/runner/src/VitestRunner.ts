@@ -13,6 +13,7 @@ import { RunResult } from './types';
 import * as os from 'os';
 import { FRAMEWORK_IDS } from './types';
 import { createLogger } from './utils/logger';
+import { coreCount, workersPerBatch } from './utils/resources';
 import { fromRunnerPath, toSpawnPath } from './resolution/RunnerPaths';
 
 const log = createLogger('VitestRunner');
@@ -81,6 +82,8 @@ export class VitestRunner extends CommandRunner {
   private readonly detector = new FrameworkDetector();
   /** `--project=<name>` for each non-browser project, when browser projects are left out. */
   private projectArgs: string[] = [];
+  /** The lowest worker limit the project's config sets (read in prepare). */
+  private projectWorkerLimit: number | undefined;
 
   constructor(
     command = '',
@@ -202,10 +205,12 @@ export class VitestRunner extends CommandRunner {
    */
   protected override async prepare(projectRoot: string, configPath: string | undefined): Promise<void> {
     this.projectArgs = [];
+    const info = await readConfig(projectRoot, configPath, this.tmpDir ?? os.tmpdir(), this.logger);
+    this.projectWorkerLimit = info?.maxWorkers;
     if (this.includeBrowserProjects) { return; }
     const scriptArgs = this.requireAdapter().getExtraArgs(projectRoot);
     if (scriptArgs.some((a) => a.startsWith('--project'))) { return; }
-    const projects = (await readConfig(projectRoot, configPath, this.tmpDir ?? os.tmpdir(), this.logger))?.projects;
+    const projects = info?.projects;
     const browser = (projects ?? []).filter((p) => p.browser);
     if (!projects || browser.length === 0) { return; }
     const others = projects.filter((p) => !p.browser);
@@ -342,7 +347,22 @@ export class VitestRunner extends CommandRunner {
       ...(this.vitestMajor() >= 3 ? ['--includeTaskLocation'] : []),
       '--passWithNoTests',
       '--watch=false',
+      ...this.workerArgs(),
     ];
+  }
+
+  /**
+   * Caps Vitest's workers (its default is every core but one, per process):
+   * the extension runs several batches at once, and together they stay
+   * within the machine's budget (see workersPerBatch). A lower limit in the
+   * project's config is kept. Vitest 1–3 also have `minWorkers`, which must
+   * not exceed the cap; Vitest 4 dropped it (and rejects the flag).
+   */
+  private workerArgs(): string[] {
+    const major = this.vitestMajor();
+    if (major < 1) { return []; }
+    const max = workersPerBatch(coreCount(), this.projectWorkerLimit);
+    return [`--maxWorkers=${max}`, ...(major < 4 ? ['--minWorkers=1'] : [])];
   }
 
   /** Major version of the project's Vitest; unknown → assume current. */
