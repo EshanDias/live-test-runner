@@ -15,7 +15,7 @@ A VS Code extension for **Jest** (including Create React App), **Vitest** and **
 
 - **Reruns on save** — only the tests that ran the code you changed (from an execution trace), not whole files.
 - **Test tree before you run anything** — every file, suite and test, with `▶ Run` / `▷ Debug` above each one.
-- **Failures on the failing line** — the reason after the line, the full message and a side-by-side diff in the hover; **Update snapshot** for a changed snapshot (Jest, Vitest; asks first).
+- **Failures on the failing line** — the reason after the line, the full message and a side-by-side diff in the hover; **Update snapshot** for a changed snapshot (Jest, Vitest, Angular; asks first).
 - **Results panel** — test list, per-test console output, failures with the diff and location, and **Copy for AI** (the failure plus the test's code, clipboard only).
 - **Coverage in the editor** — green / amber / red bars per line; hover a line to see the tests that ran it.
 - **Angular 21+** — runs through Angular's own `ng test` builder: apps and libraries, coverage, debugging.

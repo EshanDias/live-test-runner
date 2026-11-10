@@ -66,7 +66,7 @@
       "@type": "FAQPage",
       "mainEntity": [
         { "@type": "Question", "name": "Which test frameworks does Live Test Runner support?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5), Vitest 3+ and pytest 7+ (Python 3.12+). Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more." } },
+          "acceptedAnswer": { "@type": "Answer", "text": "Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5), Vitest 3+, Angular 21+ (through ng test) and pytest 7+ (Python 3.12+). Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more." } },
         { "@type": "Question", "name": "Do I need to change my Jest or Vitest config?",
           "acceptedAnswer": { "@type": "Answer", "text": "No. Live Test Runner uses your existing config and the test binary already in node_modules. Nothing extra is installed into your project." } },
         { "@type": "Question", "name": "Does it run tests in the background all the time?",
@@ -376,9 +376,9 @@
     <div class="grid">
       <article class="card"><div class="ico">⚡</div><h3>Reruns on save</h3><p>Only the tests affected by the file you just saved run, so feedback comes in seconds, not minutes.</p></article>
       <article class="card"><div class="ico">🌳</div><h3>Instant test tree</h3><p>Every file, suite and test in the sidebar as soon as you open the project, before anything runs.</p></article>
-      <article class="card"><div class="ico">🎯</div><h3>Editor feedback</h3><p>Gutter icons, color-coded inline durations, and ▶ Run · ▷ Debug · ◈ Results above every test.</p></article>
+      <article class="card"><div class="ico">🎯</div><h3>Editor feedback</h3><p>Gutter icons, color-coded inline durations, and ▶ Run · ▷ Debug · ◈ Results above every test. Failures show on the failing line, with the diff and Update snapshot in the hover.</p></article>
       <article class="card"><div class="ico">📊</div><h3>Live code coverage</h3><p>Per-line coverage bars in your source files. Hover a line to see exactly which tests hit it.</p></article>
-      <article class="card"><div class="ico">🔍</div><h3>Results panel</h3><p>Searchable test list, console output by level, and failure messages with stack traces side by side.</p></article>
+      <article class="card"><div class="ico">🔍</div><h3>Results panel</h3><p>Searchable test list, console output by level, and failure messages with stack traces side by side. Copy for AI puts a failure and its test code on the clipboard.</p></article>
       <article class="card"><div class="ico">⏱</div><h3>Timeline Debugger <span class="tag">Planned</span></h3><p>Coming in a later release: step through a finished test line by line, with variable values shown inline. No breakpoints.</p></article>
     </div>
   </div>
@@ -510,7 +510,7 @@
       <h2>Questions</h2>
     </div>
     <div class="faq">
-      <details open><summary>Which test frameworks are supported?</summary><p>Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5), Vitest 3+ and pytest 7+ (Python 3.12+, with your project's own virtual environment). Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more.</p></details>
+      <details open><summary>Which test frameworks are supported?</summary><p>Jest (babel-jest, ts-jest, @swc/jest), Create React App (react-scripts 4 and 5), Vitest 3+, Angular 21+ (through ng test) and pytest 7+ (Python 3.12+, with your project's own virtual environment). Vitest 1 and 2 run with results only. The framework is detected from your project. Any UI framework works — React, Vue, Svelte, Solid, Angular, Astro and more.</p></details>
       <details><summary>Do I need to change my Jest or Vitest config?</summary><p>No. Live Test Runner uses your existing config and the test binary already in <code>node_modules</code>. Nothing extra is installed into your project.</p></details>
       <details><summary>Does it run tests in the background all the time?</summary><p>No. Nothing runs until you click <b>Start Testing</b>, and <b>Stop</b> ends the session. Single ▶ Run and ▷ Debug clicks from the editor always work.</p></details>
       <details><summary>Does it send any data?</summary><p>No. No telemetry, no accounts, and the extension makes no network calls: it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with <b>Clear All Cached Data</b>). It is MIT-licensed and <a href="https://github.com/EshanDias/live-test-runner" target="_blank" rel="noopener">open source</a>, so your security team can review it; every pull request runs a test that checks it. Your own tests, and VS Code itself, may use the network; that is not the extension. Details: the <a href="https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>.</p></details>

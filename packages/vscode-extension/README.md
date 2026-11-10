@@ -40,7 +40,7 @@
 - ⚡ **Reruns on save** — only the tests that ran the code you changed. Changes from `git pull` or a branch switch rerun too.
 - 🌳 **Test tree** — every file, suite and test on open. Score cards (Total · Passed · Failed, plus **Running** while tests run) filter it with one click.
 - 🎨 **In the editor** — ✓ / ✗ gutter icons, inline durations, `▶ Run` · `▷ Debug` · `◈ Results` above every test.
-- ❌ **Failures where they happen** — the reason on the failing line (`✗ Expected 3, received 2`); hover for the full message, **Show diff**, and **Update snapshot** for a changed Jest / Vitest snapshot (asks first).
+- ❌ **Failures where they happen** — the reason on the failing line (`✗ Expected 3, received 2`); hover for the full message, **Show diff**, and **Update snapshot** for a changed Jest, Vitest or Angular snapshot (asks first).
   <!-- [TODO: USER_INPUT_NEEDED] screenshot or short GIF: a failing toEqual with the message after the line and the hover open, then Show diff -->
 - 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it. The bars never shift your code and follow your edits; hide them with the 👁 button in the editor title.
 - 🔍 **Results panel** — test list · console output (per test) · failures with the diff and location · **Copy for AI** (the failure with the test's code, for pasting into a chat).
