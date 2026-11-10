@@ -696,6 +696,17 @@ engine.jumpTo(stepId)
 
 Planned work and ideas are tracked as [GitHub Issues](https://github.com/EshanDias/live-test-runner/issues). What has shipped, by release, is in the [CHANGELOG](../../CHANGELOG.md):
 
+Next, in order (details and status in the GitHub Issues):
+
+1. Larger projects: trace only open / recently changed test files on 2k+ file projects (the rest lazily on first save), and a lighter discovery parser
+2. AI-agent bridge: VS Code language-model tools and a local stdio MCP server (never a network port)
+3. More frameworks, each with results and coverage: Mocha, Playwright, node:test, Cypress
+4. Coverage: file detail page, function-level stale marking, sole-coverage warnings
+5. Mirroring results into VS Code's Testing view (optional); the Timeline debugger rewrite comes last
+
+Shipped:
+
+- **3.4.0** — Angular (`ng test`), failures on the failing line with a diff, Update snapshot, Copy for AI, no network / privacy policy, minimum VS Code 1.82
 - **3.3.0** — Python monorepos (uv workspaces, one `.venv` per service), JS + Python in one folder, a framework router for any number of frameworks, open test files first, coverage-off notes
 - **3.2.x** — pytest support; coverage bars that stay out of the way while editing; files changed outside the editor rerun
 - **3.1.0** — monorepos and multi-root workspaces, mixed Jest + Vitest projects, the Vitest execution trace, any UI framework
