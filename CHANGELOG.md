@@ -31,7 +31,7 @@ All notable changes to Live Test Runner are documented here.
 ### Security / tooling
 - `security.yml`: dependency audit (`scripts/security-audit.js`), dependency review, CodeQL.
 - PR job `E2E (minimum VS Code)`.
-- Dependencies: ESLint 10.14, typescript-eslint 8.72, shipped Babel parser 7.29.12; `overrides` for dev-only advisories (18 → 3); pnpm installs only versions ≥ 7 days old.
+- Dependencies: ESLint 10.14, typescript-eslint 8.72, globals 17.14, shipped Babel parser 7.29.12; TypeScript stays on 6.0 (typescript-eslint does not support TS 7 yet); `overrides` for dev-only advisories (18 → 3); pnpm installs only versions ≥ 7 days old.
 - Dependabot: grouped minor/patch PRs, one PR per major; no Babel parser majors.
 
 ## [3.3.0] - 2026-11-07
