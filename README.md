@@ -15,10 +15,22 @@ A VS Code extension for **Jest** (including Create React App), **Vitest** and **
 
 - **Reruns on save** — only the tests that ran the code you changed (from an execution trace), not whole files.
 - **Test tree before you run anything** — every file, suite and test, with `▶ Run` / `▷ Debug` above each one.
-- **Results panel** — test list, per-test console output, failures with the diff and location.
+- **Failures on the failing line** — the reason after the line, the full message and a side-by-side diff in the hover; **Update snapshot** for a changed snapshot (Jest, Vitest, Angular; asks first).
+- **Results panel** — test list, per-test console output, failures with the diff and location, and **Copy for AI** (the failure plus the test's code, clipboard only).
 - **Coverage in the editor** — green / amber / red bars per line; hover a line to see the tests that ran it.
+- **Angular 21+** — runs through Angular's own `ng test` builder: apps and libraries, coverage, debugging.
 - **Monorepos, multi-root workspaces, mixed projects** — one project per package or Python service; Jest and Vitest, or JS and pytest, side by side in one folder.
-- **Nothing written into your project** — no installs, no config changes, no cache or coverage files.
+- **Nothing written into your project** — no installs, no config changes, no cache or coverage files. (Update snapshot rewrites a snapshot only when you confirm it.)
+
+---
+
+## Privacy
+
+No telemetry. No accounts. Live Test Runner makes no network calls: it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with **Clear All Cached Data**). It is MIT-licensed and open source, so your security team can review it. Links, such as those in the built-in guide, open in your browser only when you click them.
+
+Your own tests, and VS Code itself, may use the network; that is not the extension. What it keeps, and what it shares only when you click: [PRIVACY.md](PRIVACY.md).
+
+**How to verify:** every pull request runs a test that scans the source and the built extension for network modules, network APIs and telemetry packages, and checks that no view can load anything from another origin ([`noNetwork.test.ts`](packages/vscode-extension/test/noNetwork.test.ts); run it with `pnpm test`).
 
 ---
 

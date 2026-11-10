@@ -4,6 +4,7 @@ import { Executor } from '../execution/Executor';
 import { resolvePackageDir } from '../resolution/BinaryResolver';
 import { toSpawnPath } from '../resolution/RunnerPaths';
 import { createLogger } from '../utils/logger';
+import { workerCount } from '../utils/resources';
 
 const log = createLogger('VitestProjects');
 
@@ -39,6 +40,13 @@ process.stdout.write('LTR_COVERAGE ' + JSON.stringify({
   all: coverage && typeof coverage.all === 'boolean' ? coverage.all : undefined,
   root: vitest.config && vitest.config.root,
 }) + '\\n');
+const vc = vitest.config || {};
+const pool = vc.poolOptions || {};
+const poolMax = [pool.threads && pool.threads.maxThreads, pool.forks && pool.forks.maxForks, pool.vmThreads && pool.vmThreads.maxThreads, pool.vmForks && pool.vmForks.maxForks];
+process.stdout.write('LTR_WORKERS ' + JSON.stringify({
+  max: vc.fileParallelism === false ? 1 : (vc.maxWorkers ?? null),
+  pool: poolMax.filter((v) => v !== undefined && v !== null),
+}) + '\\n');
 await vitest.close();
 process.exit(0);
 `;
@@ -54,6 +62,12 @@ export interface VitestConfigInfo {
    * Undefined when the probe could not report them.
    */
   coverage?: { root: string; include?: string[]; exclude?: string[]; all?: boolean };
+  /**
+   * The lowest worker limit the config sets (`maxWorkers`, a pool's
+   * `maxThreads` / `maxForks`, 1 for `fileParallelism: false`) as a count.
+   * Undefined when it sets none.
+   */
+  maxWorkers?: number;
 }
 
 const cache = new Map<string, { stamp: string; info: Promise<VitestConfigInfo | undefined> }>();
@@ -113,23 +127,30 @@ async function probe(
     log.debug(`No vitest/node entry under ${projectRoot} — not reading its projects`);
     return undefined;
   }
-  const script = path.join(tmpDir, 'ltr-vitest-projects.mjs');
+  // A private folder of its own (mkdtemp: unpredictable name, owner-only), removed after the probe.
+  let probeDir: string;
   try {
     fs.mkdirSync(tmpDir, { recursive: true });
-    fs.writeFileSync(script, PROBE, 'utf8');
+    probeDir = fs.mkdtempSync(path.join(tmpDir, 'ltr-vitest-probe-'));
+    fs.writeFileSync(path.join(probeDir, 'probe.mjs'), PROBE, { encoding: 'utf8', mode: 0o600 });
   } catch (err) {
     log.warn(`Could not write the Vitest project probe to ${tmpDir}`, err);
     return undefined;
   }
   const startedAt = Date.now();
-  const result = await new Executor(logger).run({
-    binary: script,
-    // One spelling, like the runs (see toSpawnPath).
-    args: [toSpawnPath(nodeEntry), configPath ? toSpawnPath(configPath) : ''],
-    cwd: toSpawnPath(projectRoot),
-    timeoutMs: 60_000,
-    label: 'vitest',
-  });
+  let result: Awaited<ReturnType<Executor['run']>>;
+  try {
+    result = await new Executor(logger).run({
+      binary: path.join(probeDir, 'probe.mjs'),
+      // One spelling, like the runs (see toSpawnPath).
+      args: [toSpawnPath(nodeEntry), configPath ? toSpawnPath(configPath) : ''],
+      cwd: toSpawnPath(projectRoot),
+      timeoutMs: 60_000,
+      label: 'vitest',
+    });
+  } finally {
+    try { fs.rmSync(probeDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
   const line = result.stdout.split('\n').find((l) => l.startsWith('LTR_PROJECTS '));
   if (!line) {
     log.warn(`Could not read the Vitest projects of ${projectRoot} — running without a project filter`);
@@ -147,9 +168,24 @@ async function probe(
       `Vitest projects of ${projectRoot} (${Date.now() - startedAt} ms): ${projects.map((p) => `${p.name || '(default)'}${p.browser ? ' [browser]' : ''}`).join(', ')}; ` +
       `coverage provider ${coverageProvider}, include ${JSON.stringify(coverage?.include ?? [])}`,
     );
-    return { projects, coverageProvider, coverage };
+    const maxWorkers = readWorkerLimit(result.stdout.split('\n').find((l) => l.startsWith('LTR_WORKERS ')));
+    return { projects, coverageProvider, coverage, ...(maxWorkers !== undefined ? { maxWorkers } : {}) };
   } catch (err) {
     log.warn(`Could not parse the Vitest projects of ${projectRoot}`, err);
+    return undefined;
+  }
+}
+
+/** The probe's LTR_WORKERS line → the lowest worker limit it names (see VitestConfigInfo.maxWorkers). */
+export function readWorkerLimit(line: string | undefined, cores?: number): number | undefined {
+  if (!line) { return undefined; }
+  try {
+    const w = JSON.parse(line.slice('LTR_WORKERS '.length)) as { max?: unknown; pool?: unknown[] };
+    const counts = [w.max, ...(Array.isArray(w.pool) ? w.pool : [])]
+      .map((v) => workerCount(v, cores))
+      .filter((n): n is number => n !== undefined);
+    return counts.length > 0 ? Math.min(...counts) : undefined;
+  } catch {
     return undefined;
   }
 }

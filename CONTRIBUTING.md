@@ -28,8 +28,9 @@ The [documentation](docs/README.md) has three kinds of pages: what each feature 
 
 These keep the extension safe to install in anyone's project:
 
-- **Never touch the user's project.** No installs into it, no edits to its code, config or files. Anything the extension needs ships inside it; anything it writes goes to its own temp or cache folder.
+- **Never touch the user's project.** No installs into it, no edits to its code, config or files. Anything the extension needs ships inside it; anything it writes goes to its own temp or cache folder. The one exception is **Update snapshot**: after a yes in a dialog that names the file, the test framework rewrites that test's snapshot.
 - **Zero configuration.** Install, click Start — detection must work without settings.
+- **No network calls, no telemetry.** The extension talks to nothing outside the machine and its views load nothing remote. AI features only hand data to tools the user runs (clipboard, VS Code's language-model tools, a local stdio MCP server), never to an AI service directly. `noNetwork.test.ts` checks it; [PRIVACY.md](PRIVACY.md) is the published policy and changes in the same PR as anything the extension stores or shares.
 - **Never overuse the machine.** All parallelism (batches, frameworks, projects) stays within one budget based on free cores and memory.
 - **Dependency direction:** `vscode-extension` → `core` → `runner`. `runner` and `core` never depend on VS Code.
 - **Spawn, never exec** child processes; log through the logger, never `console.*`.
@@ -45,7 +46,7 @@ These keep the extension safe to install in anyone's project:
 
 - Work happens on a branch; `main` and `release/*` only change through pull requests.
 - PRs must pass the checks (`pnpm test`; PRs to `main` also need a version bump).
-- Update `CHANGELOG.md` (full detail) and `packages/vscode-extension/CHANGELOG.md` (short, user-facing) for anything users notice.
+- Update `CHANGELOG.md` (short bullets, one line each) and `packages/vscode-extension/CHANGELOG.md` (short, user-facing) for anything users notice.
 - Update the docs in the same pull request (see [Documentation](#documentation) below).
 - Add or update tests: unit tests next to the package, and an e2e scenario (`e2e/scenarios/`) for behaviour in the editor.
 

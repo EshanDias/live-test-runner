@@ -28,7 +28,12 @@ let windows = process.platform === 'win32';
 
 /** Same path for comparison purposes (case- and slash-insensitive on Windows). */
 function comparable(p: string): string {
-  return windows ? p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() : p;
+  if (!windows) { return p; }
+  let s = p.replace(/\\/g, '/');
+  let end = s.length;
+  while (end > 0 && s[end - 1] === '/') { end--; }
+  s = s.slice(0, end);
+  return s.toLowerCase();
 }
 
 /** Records a project root's real path if it differs from how it was given. */

@@ -13,6 +13,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | D5 | pytest: use the Python Debugger with `-m pytest <node id>` and the project's own interpreter; without that extension, say what to install and start nothing | `pytest-debug` |
 | D6 | Apply the test script's flags and Node options (`--config`, `--resetMocks`, Jest's ESM mode) | ⚠️ no test yet |
 | D7 | Work with or without an active session | ⚠️ no test yet |
+| D8 | Jest / Vitest: start the test directly, with its output in the Debug Console, not typed into the integrated terminal (a command typed while the user's shell is still starting is lost, and VS Code before 1.90 does not escape `?` for zsh); every session ends | `basic-debug`, `vitest-debug` (also on the minimum VS Code) |
 
 ⚠️ marks a requirement no automated test checks yet.
 

@@ -60,6 +60,13 @@ export function projectFrameworks(root: string, detected: FrameworkId): ProjectF
   if (primary === 'pytest') {
     return { primary, frameworks: [primary], mixed: false, reason: 'a pytest project' };
   }
+  if (primary === 'angular') {
+    // Every test file of the workspace runs through Angular's builder.
+    const pytest = pytestMarker(root);
+    return pytest
+      ? { primary, frameworks: [primary, 'pytest'], mixed: true, reason: `Angular's unit-test builder (angular.json) + ${pytest}` }
+      : { primary, frameworks: [primary], mixed: false, reason: 'Angular\'s unit-test builder (angular.json)' };
+  }
   const frameworks: RoutedFramework[] = [primary];
   const reasons: string[] = [];
   if (primary === 'vitest') {

@@ -34,8 +34,9 @@ flowchart LR
 | Jest in band | Breakpoints in workers need extra attach steps; one process is simple and reliable | Workers with auto-attach |
 | Vitest with auto-attach and no timeouts | Vitest always uses workers; a test paused at a breakpoint must not time out | Run in one thread: differs from the user's config |
 | pytest through the Python Debugger | It is the standard Python debugger in VS Code, and the user's interpreter runs it | Our own debug adapter |
+| Jest / Vitest: `console: 'internalConsole'`, `outputCapture: 'std'` (D8) | The debugger starts the process itself, so nothing goes through a shell. In the integrated terminal VS Code types the command into a new shell: while a slow profile (nvm, pyenv, oh-my-zsh: a few seconds) is still loading, the command is lost on every VS Code version, and VS Code before 1.90 leaves `?` unescaped, which zsh reads as a filename wildcard (`no matches found`). Either way the test never starts and the session waits forever. `std` shows the runner's own output, not only `console.*` | The integrated terminal (colours, but fragile); rewriting patterns without `?` (fixes only the second cause) |
 
 ## Testing
 
-- e2e: `basic-debug` (Jest, a path with spaces, the config replayed with plain Node), `vitest-debug`, `pytest-debug`, `cra-app`.
+- e2e: `basic-debug` (Jest, a path with spaces, the config replayed with plain Node), `vitest-debug`, `pytest-debug`, `cra-app`; the debug scenarios also run on the minimum VS Code and wait for every session to end.
 - Gaps: the test script's flags and Node options in debug configs (D6), debugging without a session (D7).

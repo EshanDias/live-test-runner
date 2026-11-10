@@ -11,7 +11,7 @@ import * as path from 'path';
  * services bundle in the extension's router factories, and (when a root can
  * hold it next to another framework) its marker in `projectFrameworks`.
  */
-export const ROUTED_FRAMEWORKS = ['jest', 'vitest', 'pytest'] as const;
+export const ROUTED_FRAMEWORKS = ['jest', 'vitest', 'angular', 'pytest'] as const;
 export type RoutedFramework = typeof ROUTED_FRAMEWORKS[number];
 
 const allowed = new Set<string>();

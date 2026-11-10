@@ -59,6 +59,11 @@ module.exports = {
     const failing = h.nodeByName(api, CART, 'TestCart test_fails_on_purpose');
     const msg = (failing?.failureMessages || []).join('\n');
     t.check("a failed assert shows pytest's own explanation", /assert 5 == 4/.test(msg) && /test_cart\.py:\d+: AssertionError/.test(msg), msg);
+    {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(failing.fileId));
+      const mark = api.failureDecorations.marks(doc).find((m) => m.nodeId === failing.id);
+      t.eq('the pytest failure shows on its failing line', [mark?.line, mark?.failure.summary], [29, 'assert 5 == 4']);
+    }
     const setupErr = h.nodeByName(api, CART, 'test_setup_error');
     t.check('an error in a fixture fails the test and says so', setupErr?.status === 'failed' && (setupErr.failureMessages || []).some((m) => /Error in setup of test_setup_error/.test(m) && /fixture setup failed on purpose/.test(m)),
       JSON.stringify(setupErr?.failureMessages));

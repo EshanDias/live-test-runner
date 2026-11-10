@@ -10,9 +10,9 @@ import type { VitestAdapter } from './framework/adapters/VitestAdapter';
 import { VitestConfigInfo, vitestConfigInfo, vitestCoverageInstalled, vitestProjects } from './framework/vitestProjects';
 import { VITEST_EVENTS_ENV, applyVitestEvents, readVitestEvents, vitestReporterFile } from './framework/vitestReporter';
 import { RunResult } from './types';
-import * as os from 'os';
 import { FRAMEWORK_IDS } from './types';
 import { createLogger } from './utils/logger';
+import { coreCount, workersPerBatch } from './utils/resources';
 import { fromRunnerPath, toSpawnPath } from './resolution/RunnerPaths';
 
 const log = createLogger('VitestRunner');
@@ -77,10 +77,12 @@ const toldNoCoverage = new Set<string>();
 const toldBrowserGuard = new Set<string>();
 
 export class VitestRunner extends CommandRunner {
-  protected readonly runnerName = 'VitestRunner';
+  protected readonly runnerName: string = 'VitestRunner';
   private readonly detector = new FrameworkDetector();
   /** `--project=<name>` for each non-browser project, when browser projects are left out. */
   private projectArgs: string[] = [];
+  /** The lowest worker limit the project's config sets (read in prepare). */
+  private projectWorkerLimit: number | undefined;
 
   constructor(
     command = '',
@@ -101,7 +103,7 @@ export class VitestRunner extends CommandRunner {
 
   protected override runEnv(request: RunRequest): Record<string, string> | undefined {
     if (request.kind === 'list') { return undefined; }
-    const file = path.join(this.tmpDir ?? os.tmpdir(), `ltr-vitest-events-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`);
+    const file = path.join(this.workDir, `ltr-vitest-events-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`);
     this.eventFiles.set(request, file);
     return { [VITEST_EVENTS_ENV]: file };
   }
@@ -137,7 +139,7 @@ export class VitestRunner extends CommandRunner {
     // `related`: Vitest finds the test files that import this source file (`vitest related <src> --run`); `files` is ignored.
     const request: RunRequest = options.related ? { kind: 'related', file: options.related } : { kind: 'files', files };
     const root = this.requireProjectRoot();
-    const resultFile = path.join(this.tmpDir ?? os.tmpdir(), `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    const resultFile = path.join(this.workDir, `ltr-result-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
     const env = this.runEnv(request) ?? {};
     const args = [...await this.commandArgs(request, options.config), ...this.requireAdapter().outputFileArg(resultFile)];
     if (options.typecheckOnly) { args.push('--typecheck.only'); }
@@ -162,8 +164,8 @@ export class VitestRunner extends CommandRunner {
    * install). Written even when tests fail; below Vitest 4, only files the
    * tests loaded (`all` would instrument the whole project).
    */
-  private async coverageArgs(root: string, dir: string): Promise<string[] | undefined> {
-    const info = await readConfig(root, await this.requireAdapter().resolveConfig(root), this.tmpDir ?? os.tmpdir(), this.logger);
+  protected async coverageArgs(root: string, dir: string): Promise<string[] | undefined> {
+    const info = await readConfig(root, await this.requireAdapter().resolveConfig(root), this.workDir, this.logger);
     const provider = info?.coverageProvider ?? 'v8';
     if (!vitestCoverageInstalled(root, provider)) {
       if (!toldNoCoverage.has(root)) {
@@ -202,10 +204,12 @@ export class VitestRunner extends CommandRunner {
    */
   protected override async prepare(projectRoot: string, configPath: string | undefined): Promise<void> {
     this.projectArgs = [];
+    const info = await readConfig(projectRoot, configPath, this.workDir, this.logger);
+    this.projectWorkerLimit = info?.maxWorkers;
     if (this.includeBrowserProjects) { return; }
     const scriptArgs = this.requireAdapter().getExtraArgs(projectRoot);
     if (scriptArgs.some((a) => a.startsWith('--project'))) { return; }
-    const projects = (await readConfig(projectRoot, configPath, this.tmpDir ?? os.tmpdir(), this.logger))?.projects;
+    const projects = info?.projects;
     const browser = (projects ?? []).filter((p) => p.browser);
     if (!projects || browser.length === 0) { return; }
     const others = projects.filter((p) => !p.browser);
@@ -267,7 +271,7 @@ export class VitestRunner extends CommandRunner {
       case 'files':
         return this.resultArgs();
       case 'testCase':
-        return [...this.resultArgs(), '-t', toVitestNamePattern(request.testFullName, request.isTestSuite)];
+        return [...this.resultArgs(), '-t', toVitestNamePattern(request.testFullName, request.isTestSuite), ...(request.updateSnapshots ? ['--update'] : [])];
       case 'related':
         if (!this.can('related')) {
           log.debug(`This Vitest has no reliable "related" — running every test for ${request.file}`);
@@ -323,7 +327,7 @@ export class VitestRunner extends CommandRunner {
   }
 
   private fullRunCoverageDir(): string {
-    return path.join(this.tmpDir ?? os.tmpdir(), 'vitest-coverage');
+    return path.join(this.workDir, 'vitest-coverage');
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
@@ -336,13 +340,28 @@ export class VitestRunner extends CommandRunner {
   private resultArgs(): string[] {
     return [
       '--reporter=default',
-      `--reporter=${vitestReporterFile(this.tmpDir ?? os.tmpdir())}`,
+      `--reporter=${vitestReporterFile(this.workDir)}`,
       '--reporter=json',
       // `location` (test line numbers, for the gutter) — a CLI flag since Vitest 3.
       ...(this.vitestMajor() >= 3 ? ['--includeTaskLocation'] : []),
       '--passWithNoTests',
       '--watch=false',
+      ...this.workerArgs(),
     ];
+  }
+
+  /**
+   * Caps Vitest's workers (its default is every core but one, per process):
+   * the extension runs several batches at once, and together they stay
+   * within the machine's budget (see workersPerBatch). A lower limit in the
+   * project's config is kept. Vitest 1–3 also have `minWorkers`, which must
+   * not exceed the cap; Vitest 4 dropped it (and rejects the flag).
+   */
+  private workerArgs(): string[] {
+    const major = this.vitestMajor();
+    if (major < 1) { return []; }
+    const max = workersPerBatch(coreCount(), this.projectWorkerLimit);
+    return [`--maxWorkers=${max}`, ...(major < 4 ? ['--minWorkers=1'] : [])];
   }
 
   /** Major version of the project's Vitest; unknown → assume current. */

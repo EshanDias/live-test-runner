@@ -25,6 +25,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 |---|---|
 | Q1 | Coverage maps are read from disk when a file is drawn, not kept in memory for the whole project. |
 | Q2 | Redrawing while typing waits 150 ms after the last keystroke. |
+| Q3 | Measuring never changes what the code does: instrumented code gives the same results as the original, including strict mode (`"use strict"`), `this` in methods called through `?.`, and the line numbers in stack traces (unit: `jestTraceTransform`; e2e `failure-on-line`). |
 
 ## Out of scope
 

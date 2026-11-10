@@ -9,7 +9,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | T1 | Give the same result for every test as the framework's own run of the project | `vitest-full-run`, `pytest-full-run`, `cra-app`, the real-repo matrix |
 | T2 | Run the test files open in the editor first, and move a test file opened during the run to the front | `basic-open-first`; unit: `batchQueue` |
 | T3 | Show a file as running only once the framework starts it, and its result as soon as it ends | `vitest-batch`, `basic-full-run` |
-| T4 | Run batches in parallel within the budget; pytest one process at a time | unit: `batchQueue` |
+| T4 | Run batches in parallel within the budget; pytest one process at a time | unit: `batchQueue`, `resources` |
 | T5 | Stop a test that runs longer than `hangTimeoutSeconds`, fail its file with the reason, and finish the other files | `basic-hang`, `vitest-hang`, `pytest-hang` |
 | T6 | Retry the files of a crashed batch in smaller batches, then on their own with a plain run; log a warning | ⚠️ no test yet (scenarios only check that no fallback runs when none is needed) |
 | T7 | Retry a batch once when a file vanished while the framework scanned the project (tests that create and delete files) | unit: `vanishedFile` |
@@ -18,7 +18,10 @@ What the feature must do, and how we check it does. For the plain-language descr
 | T10 | Run the project's own framework with its config, setup files and test-script flags (`--config`, `--resetMocks`, Node options) | `basic-full-run`, `esm-fn-config`, `ts-config`, `jest-svelte-esm` |
 | T11 | Pass names to the framework intact: spaces, `^`, `\|`, `&` | `basic-scoped-run` |
 | T12 | Keep caches outside the project; Clear Cache deletes a project's data; delete data unused for 30 days | `basic-clear-restart`, `commands`; unit: `storage` |
+| T14 | Angular 21+ (Vitest through Angular's unit-test builder): detected from `angular.json` (not run as plain Vitest), each Angular project run with `ng test <name>`; results with line numbers, per-test output, coverage with the project's provider, a single test by name, Update snapshot; nothing written into the project (Angular's build cache off, coverage in the session folder); Karma projects get a clear message | `angular-full-run`, `angular-debug`, `angular-snapshot-update`; unit: `angularRunner`, `frameworkRegistry` |
+| T15 | Angular saves: rerun the test files that import the saved file (relative imports), a template's component tests, else every test of its project | `angular-full-run`; unit: `jsImporters` |
 | T13 | Without the framework installed, or with an environment that can't run it, run nothing, mark nothing failed, and say how to fix it | `pytest-no-pytest` |
+| T16 | Vitest batches together use at most half the cores: each gets `--maxWorkers` from the shared budget, a lower limit in the project's config is kept, and `--minWorkers=1` is added below Vitest 4 only | unit: `resources`, `vitestRunnerArgs`; e2e: `vitest-full-run`, `vitest-batch` (real Vitest accepts the flags) |
 
 ⚠️ marks a requirement no automated test checks yet.
 

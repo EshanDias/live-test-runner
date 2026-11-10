@@ -12,6 +12,8 @@ export const FRAMEWORK_IDS = {
   jest: 'jest',
   cra: 'cra',
   vitest: 'vitest',
+  /** Angular's unit-test builder running Vitest (`ng test`). */
+  angular: 'angular',
   pytest: 'pytest',
   unknown: 'unknown',
 } as const;

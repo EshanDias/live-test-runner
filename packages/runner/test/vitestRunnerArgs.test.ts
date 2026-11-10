@@ -1,10 +1,14 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { VitestRunner, toVitestNamePattern } from '../src/VitestRunner';
+import { VitestRunner, _setVitestConfigReader, toVitestNamePattern } from '../src/VitestRunner';
 import { Executor, ExecutorCommand } from '../src/execution/Executor';
 import { _resetProjectRoots } from '../src/resolution/RunnerPaths';
 import { setLogSink } from '../src/utils/logger';
+import { privateTempDir } from '../src/utils/tempDir';
+
+// The worker cap depends on the machine: pin it to an 8-core one (→ 2 workers per batch).
+jest.mock('../src/utils/resources', () => ({ ...jest.requireActual('../src/utils/resources'), coreCount: () => 8 }));
 
 /** The exact commands VitestRunner hands to the Executor. */
 
@@ -14,7 +18,7 @@ let outputFileArgs: ((file: string) => string[])[];
 let listStdout: string;
 
 function stable(cmd: ExecutorCommand) {
-  const fix = (s: string) => s.split(root).join('<root>').split(fs.realpathSync(os.tmpdir())).join('<tmp>').split(os.tmpdir()).join('<tmp>');
+  const fix = (s: string) => s.split(root).join('<root>').split(privateTempDir()).join('<tmp>').split(fs.realpathSync(os.tmpdir())).join('<tmp>').split(os.tmpdir()).join('<tmp>');
   return { binary: fix(cmd.binary), args: cmd.args.map(fix), cwd: fix(cmd.cwd), timeoutMs: cmd.timeoutMs, label: cmd.label };
 }
 
@@ -80,6 +84,28 @@ describe('VitestRunner command lines', () => {
     await runner.runTestFileJson(path.join(root, 'src', 'a.test.ts'));
     await runner.runRelatedTestsJson(path.join(root, 'src', 'util.ts'));
     expect(calls.map(stable)).toMatchSnapshot();
+  });
+
+  it('caps the workers per batch, keeps a lower limit from the config, and sets minWorkers only below Vitest 4', async () => {
+    const workerFlags = () => calls.at(-1)!.args.filter((a) => /^--(max|min)Workers/.test(a));
+    try {
+      project({ devDependencies: { vitest: '5' } }, '5.0.5');
+      const runner = new VitestRunner();
+      runner.setProjectRoot(root);
+      await runner.runTestFileJson(path.join(root, 'src', 'a.test.ts'));
+      expect(workerFlags()).toEqual(['--maxWorkers=2']);
+
+      _setVitestConfigReader(async () => ({ projects: [{ name: '', browser: false }], coverageProvider: 'v8', maxWorkers: 1 }));
+      await runner.runTestFileJson(path.join(root, 'src', 'a.test.ts'));
+      expect(workerFlags()).toEqual(['--maxWorkers=1']);
+
+      project({ devDependencies: { vitest: '3' } }, '3.2.4');
+      _setVitestConfigReader(async () => ({ projects: [{ name: '', browser: false }], coverageProvider: 'v8', maxWorkers: 6 }));
+      await runner.runTestFileJson(path.join(root, 'src', 'a.test.ts'));
+      expect(workerFlags()).toEqual(['--maxWorkers=2', '--minWorkers=1']);
+    } finally {
+      _setVitestConfigReader();
+    }
   });
 
   it("passes the test script's config and project flags (vueuse shape)", async () => {

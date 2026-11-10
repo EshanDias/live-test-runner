@@ -131,6 +131,7 @@
     <a href="#coverage">Code coverage</a>
     <a href="#debugging">Debugging</a>
     <a href="#vitest">Vitest</a>
+    <a href="#angular">Angular</a>
     <a href="#pytest">pytest</a>
     <a href="#monorepos">Monorepos</a>
     <a href="#mixed">Mixed projects</a>
@@ -140,6 +141,7 @@
     <a href="#settings">Settings</a>
     <a href="#logs">Logs &amp; troubleshooting</a>
     <a href="#support">Support &amp; limits</a>
+    <a href="#privacy">Privacy</a>
     <div class="group">Contributors</div>
     <a href="#how-it-works">How a run works</a>
     <a href="#architecture">Architecture</a>
@@ -153,7 +155,7 @@
 <!-- ───────────────────────── Overview ───────────────────────── -->
 <section id="overview">
   <h1>Live Test Runner</h1>
-  <p class="lead">Save a file → the affected Jest, Vitest or pytest tests run → results show up in the editor. You don't need a terminal or any config changes.</p>
+  <p class="lead">Save a file → the affected Jest, Vitest, Angular or pytest tests run → results show up in the editor. You don't need a terminal or any config changes.</p>
 
   <div class="cards">
     <div class="card"><span class="ico">⚡</span><b>Reruns on save</b><span>Only the tests affected by the file you saved.</span></div>
@@ -169,7 +171,7 @@
 <section id="quick-start">
   <h2>Quick start</h2>
   <ol class="steps">
-    <li>Open a Jest, Vitest or pytest project — a single folder, a monorepo or a multi-root workspace (see <a href="#monorepos">Monorepos</a>).</li>
+    <li>Open a Jest, Vitest, Angular or pytest project — a single folder, a monorepo or a multi-root workspace (see <a href="#monorepos">Monorepos</a>).</li>
     <li>Click the <b>beaker</b> icon in the Activity Bar. Tests are discovered right away.</li>
     <li>Click <b>▶ Start Testing</b>. The full suite runs once — the test files open in your editor first, so their results show while the rest runs. Open another test file mid-run and it runs next.</li>
     <li>Edit and save. The affected tests rerun automatically.</li>
@@ -186,7 +188,7 @@
     <li><b>Instant tree</b>: test files are parsed statically (Babel AST) when the extension starts, so nothing has to run first.</li>
     <li><b>Discovery cache</b>: parsed results are cached per project and keyed by file modification time, so reopening a project is fast.</li>
     <li><b>Live updates</b>: creating, editing or deleting a test file updates the tree.</li>
-    <li><b>Score cards</b>: <b>Total</b>, <b>Passed</b>, <b>Failed</b> and — only while tests are running — <b>Running</b>, a live count of the tests running right now (Jest, Vitest and pytest alike). Click a card, or pick from the status dropdown, to filter the list; when the run ends the Running card disappears and a Running filter goes back to All.</li>
+    <li><b>Score cards</b>: <b>Total</b>, <b>Passed</b>, <b>Failed</b> and — only while tests are running — <b>Running</b>, a live count of the tests running right now (Jest, Vitest, Angular and pytest alike). Click a card, or pick from the status dropdown, to filter the list; when the run ends the Running card disappears and a Running filter goes back to All.</li>
     <li><b>Dynamic tests</b>: <code>test.each</code> and template-literal names appear as a template that fills in with the real cases after a run.</li>
     <li><b>Coverage tab</b>: project totals plus a per-file list. Click a row to open the file.</li>
   </ul>
@@ -215,8 +217,9 @@
   <h2>Editor integration</h2>
   <div class="table-wrap"><table>
     <tr><th>Where</th><th>What you see</th></tr>
-    <tr><td>Gutter</td><td>✓ passed · ✗ failed · ⟳ running · ○ pending / skipped</td></tr>
+    <tr><td>Gutter</td><td>✓ passed · ✗ failed · ⟳ running · ○ not run yet · ⊖ skipped · ☐ todo (<code>test.todo</code>)</td></tr>
     <tr><td>After the line</td><td>Test / suite duration, colour-coded by <code>durationThresholds</code></td></tr>
+    <tr><td>After a failing line</td><td>Why the test failed (<code>✗ Expected 3, received 2</code>): on the test's failing line and on the line of your code that threw. Hover for the whole message, <b>Show diff</b> (expected and received side by side), <b>Open in Results</b> and <b>Dismiss</b>; a changed Jest / Vitest snapshot also offers <b>Update snapshot</b>, which asks first, names the file that will change, and lets the framework rewrite only that test's snapshot. Gone from a line you edit until the next run; setting <code>showFailuresInEditor</code></td></tr>
     <tr><td>CodeLens</td><td><code>▶ Run</code> this test or suite · <code>▷ Debug</code> · <code>◈ Results</code> jumps to it in the panel</td></tr>
     <tr><td>Status bar</td><td><code>Live Tests: ✅ 12 passed</code>. Click it to open the panels.</td></tr>
   </table></div>
@@ -229,7 +232,8 @@
   <ul>
     <li>Select a file, suite or test to scope the output and errors to it.</li>
     <li>Output is stored <b>per scope</b>. Jest reports console output per file, so a single test only has its own output after you rerun that test on its own. Until then it shows a placeholder; output from other scopes is never copied in. Vitest and pytest say which test printed each line, so there every test shows its own output right away.</li>
-    <li>Each log line has a copy button.</li>
+    <li>Each log line and each failure has a copy button. <b>Copy all</b> copies the output tab or every failure shown.</li>
+    <li><b>Copy for AI</b> (Errors column) copies the failures with the framework, file and line, the test's source and the lines the error was thrown from, ready to paste into an AI chat. It goes to your clipboard only. <b>Copy Failing Test Names</b> (title bar icon, or the Command Palette) copies <code>file › test</code> for every failing test.</li>
   </ul>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/results-panel.png" alt="A pytest test selected: its printed output in the middle column, no failures on the right" style="max-width:100%;border-radius:8px"></p>
 </section>
@@ -251,7 +255,7 @@
     <li><b>Settings</b>: the gear in the Test Explorer title bar opens Live Test Runner's settings.</li>
     <li><b>Hide / show</b> coverage with the eye button in the editor title (or the <b>Hide / Show Coverage in Editor</b> commands, setting <code>liveTestRunner.showCoverageInEditor</code>). Hidden also turns off the coverage hover.</li>
     <li><b>Badge</b>: <code>Stmts · Branch · Fns · Lines</code> in the Explorer.</li>
-    <li><b>Hover</b> a line to see the covering tests and which branch arms were missed (Jest, Vitest and pytest).</li>
+    <li><b>Hover</b> a line to see the covering tests and which branch arms were missed (Jest, Vitest and pytest; Angular shows the coverage, its covering tests come later).</li>
     <li><b>Stale overlay</b>: a grey tint on a saved file until its rerun finishes.</li>
     <li>Files no test imports count as 0%, so totals cover the whole project.</li>
   </ul>
@@ -261,7 +265,7 @@
 <!-- ───────────────────────── Debugging ───────────────────────── -->
 <section id="debugging">
   <h2>Debugging</h2>
-  <p><code>▷ Debug</code> starts a VS Code Node debug session for exactly that test or suite: Jest runs in band, Vitest runs with <code>--no-file-parallelism</code> and no timeouts (child processes attach automatically). Breakpoints in tests and source files work as usual.</p>
+  <p><code>▷ Debug</code> starts a VS Code Node debug session for exactly that test or suite: Jest runs in band, Vitest runs with <code>--no-file-parallelism</code> and no timeouts (child processes attach automatically). Breakpoints in tests and source files work as usual. The test's output (results, <code>console.log</code>) appears in the <b>Debug Console</b>.</p>
   <p>For pytest, <code>▷ Debug</code> starts the <b>Python Debugger</b> (<code>ms-python.debugpy</code>) with <code>python -m pytest &lt;node id&gt;</code> and the project's own interpreter — a plain pytest run, one process, pytest-cov idle. Without that extension, a message offers to install it.</p>
 </section>
 
@@ -284,6 +288,19 @@
 </section>
 
 <!-- ───────────────────────── pytest ───────────────────────── -->
+<section id="angular">
+  <h2>Angular</h2>
+  <p>Angular 21+ projects test with Vitest through Angular's own builder (<code>ng test</code>, the default for new apps). Live Test Runner runs them the same way: open the workspace, click <b>▶ Start Testing</b>. It is detected from <code>angular.json</code>; plain <code>vitest run</code> cannot run these tests.</p>
+  <ul>
+    <li><b>Apps and libraries</b>: one project per workspace; each Angular project runs with <code>ng test &lt;name&gt;</code>, and the tree groups the files by project.</li>
+    <li><b>Same results as <code>ng test</code></b>: your <code>angular.json</code> test options, setup and providers apply. Line numbers, per-test console output, the failure on its line, <code>▶ Run</code> / <code>▷ Debug</code> and <b>Update snapshot</b> all work.</li>
+    <li><b>Saves</b>: a saved file reruns the test files that import it (relative imports); a template (<code>templateUrl</code>) reruns its component's tests. A file imported only through a path alias reruns every test of its project.</li>
+    <li><b>Coverage</b> needs <code>@vitest/coverage-v8</code> in the project, as Angular's testing guide says; templates are measured too. Covering tests on hover come later.</li>
+    <li><b>Nothing written into the project</b>: Angular's build cache (<code>.angular/</code>) stays off for these runs, coverage goes to the extension's own folder.</li>
+    <li><b>Karma</b> projects are not supported; Angular's testing guide describes moving to Vitest. Angular projects on Jest (<code>jest-preset-angular</code>) run as Jest projects.</li>
+  </ul>
+</section>
+
 <section id="pytest">
   <h2>pytest</h2>
   <p>Python projects work like JS ones: open the folder, click <b>▶ Start Testing</b>. A folder is a pytest project when it has a pytest config (<code>pytest.toml</code>, <code>pytest.ini</code>, <code>pyproject.toml</code> <code>[tool.pytest.ini_options]</code>, <code>tox.ini</code> <code>[pytest]</code>, <code>setup.cfg</code> <code>[tool:pytest]</code>), a root <code>conftest.py</code>, or pytest in its dependency files next to test files.</p>
@@ -404,6 +421,7 @@
   <p class="muted">All under <code>liveTestRunner.*</code>.</p>
   <div class="table-wrap"><table>
     <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+    <tr><td><code>showFailuresInEditor</code></td><td><code>true</code></td><td>A failed test's message on the failing line, and its hover</td></tr>
     <tr><td><code>showCoverageInEditor</code></td><td><code>true</code></td><td>Coverage bars and the coverage hover in the editor</td></tr>
     <tr><td><code>hangTimeoutSeconds</code></td><td><code>300</code></td><td>Stops a single test that runs longer than this (an infinite loop) and marks its file failed, so the rest of the run continues. Loading a file does not count. <code>0</code> turns the limit off.</td></tr>
     <tr><td><code>coverageExclude</code></td><td><code>[]</code></td><td>Extra glob patterns of source files left out of the coverage totals, e.g. <code>["**/stories/**"]</code> (<code>node_modules</code>, test files, configs and build folders are always left out).</td></tr>
@@ -478,28 +496,37 @@
   </ol>
 </section>
 
+<!-- ───────────────────────── Privacy ───────────────────────── -->
+<section id="privacy">
+  <h2>Privacy</h2>
+  <p><b>No telemetry. No accounts.</b> Live Test Runner makes no network calls: it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with <b>Clear All Cached Data</b>). It is MIT-licensed and open source, so your security team can review it. This guide, inside VS Code, loads nothing from the internet either: its pictures are links to the online guide, and links open in your browser only when you click them.</p>
+  <p>Your own tests, and VS Code itself, may use the network; that is not the extension. What it keeps on your machine, and what it shares only when you click (copy buttons, and later tools for your AI assistant): the <a href="https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>.</p>
+  <p><b>How to verify:</b> every pull request runs <code>packages/vscode-extension/test/noNetwork.test.ts</code> (part of <code>pnpm test</code>). It scans the source and the built extension for network modules (<code>http</code>, <code>https</code>, <code>net</code>, <code>tls</code>, <code>dns</code>…), network APIs (<code>fetch</code>, <code>XMLHttpRequest</code>, <code>WebSocket</code>…) and telemetry packages, and checks that no view's content security policy allows another origin.</p>
+</section>
+
 <!-- ───────────────────────── Support ───────────────────────── -->
 <section id="support">
   <h2>Support &amp; limits</h2>
+  <p><b>VS Code 1.82 or newer</b> (and editors built on it). The minimum follows one rule: a Node version is supported until 2 years after its end of life, and the minimum VS Code is the first one whose built-in Node is still supported — Node 18 until April 2027, then VS Code 1.90 (Node 20). The code the extension adds to your test runs works on every supported Node. On an older VS Code you keep the last version that supported it.</p>
   <p>pytest 7+ on Python 3.12+ is supported (see <a href="#pytest">pytest</a>), with the project's own environment.</p>
   <p>Jest covers babel-jest, ts-jest and @swc/jest; Create React App (react-scripts 4 / 5) has its Jest config extracted automatically. Vitest 3+ is fully supported, Vitest 1–2 run with results only; the framework is detected from the project (a project that lists Vitest but configures Jest runs on Jest).</p>
   <p><b>Any UI framework.</b> React, Preact, Solid, Lit, Angular and Qwik code is plain JS / TS. Vue, Svelte, Astro and Marko components are compiled by your project's own Jest transformer (vue-jest, svelte-jester…) or Vite plugin, and the extension maps them back to their own lines: saving a component reruns the tests that use it, the coverage hover lists the tests that ran each of its lines, and coverage counts it (an untested component counts from its <code>&lt;script&gt;</code>). Other file types count too when your tests load them — an Angular <code>templateUrl</code>, an HTML file imported with <code>?raw</code>, a template a plugin reads: saving one reruns the tests that use it. More generally: any extension in your Jest config's <code>moduleFileExtensions</code> (e.g. Angular <code>.html</code> templates) reruns its tests on save, and the Vitest trace reaches any file a Vite plugin compiles. With Jest, coverage of a Vue component counts its <code>&lt;script&gt;</code> block only (as <code>jest --coverage</code> does — vue-jest maps only that), but template lines still show the tests that rendered them. Jest's ESM mode is picked up from your test script (<code>NODE_OPTIONS=--experimental-vm-modules jest</code>) or <code>.npmrc</code> (<code>node-options=--experimental-vm-modules</code>) — needed for ESM-only projects and Svelte 4+ with svelte-jester; if a file still fails to load as an ES module, the log says what to change.</p>
   <!-- matrix:start -->
   <div class="table-wrap"><table>
-    <tr><th>Feature</th><th>Jest</th><th>CRA</th><th>Vitest</th><th>pytest</th></tr>
-    <tr><td>Run &amp; pass/fail</td><td>✅</td><td>✅</td><td>✅</td><td>✅ pytest ≥ 7, Python ≥ 3.12</td></tr>
-    <tr><td>▶ Run / ▷ Debug one test or suite</td><td>✅</td><td>✅</td><td>✅</td><td>✅ by node id; Debug needs the Python Debugger extension</td></tr>
-    <tr><td>Rerun a saved test file</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-    <tr><td>Logs / console output</td><td>✅ per file</td><td>✅ per file</td><td>✅ per test</td><td>✅ per test (stdout, stderr, logging)</td></tr>
-    <tr><td>Coverage (gutter, hover)</td><td>✅</td><td>✅</td><td>✅ needs <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>)</td><td>✅ needs <code>coverage</code> (pytest-cov not needed)</td></tr>
-    <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-    <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ only the tests that ran it (execution trace); <code>vitest related</code> when the trace is off</td><td>✅ only the tests that ran it (coverage contexts); importing test files before that</td></tr>
-    <tr><td>Monorepo / multi-project (project switcher)</td><td>✅ one project per package; a root <code>projects</code> config stays one</td><td>🟡 a CRA app is detected as a package (not e2e-tested)</td><td>✅ one project per package; <code>test.projects</code> stays one, grouped by name</td><td>✅ one project per uv workspace member with tests; a root pytest config stays one</td></tr>
-    <tr><td>Mixed Jest + Vitest in one project</td><td>✅ each test file runs with its own framework</td><td>—</td><td>✅</td><td>—</td></tr>
-    <tr><td>JS + Python in one folder</td><td>✅ one project runs Jest / Vitest and pytest</td><td>🟡 not e2e-tested</td><td>✅</td><td>✅ a <code>.py</code> save reruns pytest only, a <code>.js</code> save the JS framework only</td></tr>
-    <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>✅ Vitest ≥ 3 (incl. <code>vitest.workspace</code> files); not in browser mode</td><td>✅ from coverage.py contexts (needs <code>coverage</code>)</td></tr>
-    <tr><td>UI components (<code>.vue</code>, <code>.svelte</code>, <code>.astro</code>, <code>.marko</code>): save reruns, trace, coverage</td><td>✅ through the project's transformer (vue-jest, svelte-jester…)</td><td>— (React is plain JS)</td><td>✅ through the project's Vite plugins</td><td>—</td></tr>
-    <tr><td>Timeline debugger</td><td>⏳ planned</td><td>⏳ planned</td><td>⏳ planned</td><td>⏳ planned</td></tr>
+    <tr><th>Feature</th><th>Jest</th><th>CRA</th><th>Vitest</th><th>Angular</th><th>pytest</th></tr>
+    <tr><td>Run &amp; pass/fail</td><td>✅</td><td>✅</td><td>✅</td><td>✅ Angular 21+ (<code>ng test</code>, Vitest runner)</td><td>✅ pytest ≥ 7, Python ≥ 3.12</td></tr>
+    <tr><td>▶ Run / ▷ Debug one test or suite</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅ by node id; Debug needs the Python Debugger extension</td></tr>
+    <tr><td>Rerun a saved test file</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+    <tr><td>Logs / console output</td><td>✅ per file</td><td>✅ per file</td><td>✅ per test</td><td>✅ per test</td><td>✅ per test (stdout, stderr, logging)</td></tr>
+    <tr><td>Coverage (gutter, hover)</td><td>✅</td><td>✅</td><td>✅ needs <code>@vitest/coverage-v8</code> (or <code>-istanbul</code>)</td><td>✅ needs <code>@vitest/coverage-v8</code></td><td>✅ needs <code>coverage</code> (pytest-cov not needed)</td></tr>
+    <tr><td>Live per-file progress</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+    <tr><td>Rerun tests related to a saved source file</td><td>✅</td><td>✅</td><td>✅ only the tests that ran it (execution trace); <code>vitest related</code> when the trace is off</td><td>✅ the test files that import it (relative imports); all of its project otherwise</td><td>✅ only the tests that ran it (coverage contexts); importing test files before that</td></tr>
+    <tr><td>Monorepo / multi-project (project switcher)</td><td>✅ one project per package; a root <code>projects</code> config stays one</td><td>🟡 a CRA app is detected as a package (not e2e-tested)</td><td>✅ one project per package; <code>test.projects</code> stays one, grouped by name</td><td>✅ one project per workspace; its apps and libraries run with <code>ng test &lt;name&gt;</code>, grouped by name</td><td>✅ one project per uv workspace member with tests; a root pytest config stays one</td></tr>
+    <tr><td>Mixed Jest + Vitest in one project</td><td>✅ each test file runs with its own framework</td><td>—</td><td>✅</td><td>—</td><td>—</td></tr>
+    <tr><td>JS + Python in one folder</td><td>✅ one project runs Jest / Vitest and pytest</td><td>🟡 not e2e-tested</td><td>✅</td><td>🟡 not e2e-tested</td><td>✅ a <code>.py</code> save reruns pytest only, a <code>.js</code> save the JS framework only</td></tr>
+    <tr><td>Execution trace / "covering tests"</td><td>✅</td><td>✅</td><td>✅ Vitest ≥ 3 (incl. <code>vitest.workspace</code> files); not in browser mode</td><td>⏳ planned</td><td>✅ from coverage.py contexts (needs <code>coverage</code>)</td></tr>
+    <tr><td>UI components (<code>.vue</code>, <code>.svelte</code>, <code>.astro</code>, <code>.marko</code>): save reruns, trace, coverage</td><td>✅ through the project's transformer (vue-jest, svelte-jester…)</td><td>— (React is plain JS)</td><td>✅ through the project's Vite plugins</td><td>✅ templates (<code>templateUrl</code>) rerun their component's tests; coverage includes templates</td><td>—</td></tr>
+    <tr><td>Timeline debugger</td><td>⏳ planned</td><td>⏳ planned</td><td>⏳ planned</td><td>⏳ planned</td><td>⏳ planned</td></tr>
   </table></div>
   <!-- matrix:end -->
   <ul>

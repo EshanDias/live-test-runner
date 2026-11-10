@@ -59,6 +59,8 @@ export interface TestNode {
   /** 1-based source line reported by the framework or AST */
   line?: number;
   isDynamicTemplate?: boolean;
+  /** A `test.todo`: status 'skipped' (it never runs), shown with its own icon. */
+  todo?: boolean;
 
   output: ScopedOutput;
   failureMessages: string[];
@@ -595,9 +597,11 @@ export class ResultStore {
     status: TestStatus,
     duration?: number,
     failureMessages: string[] = [],
+    todo = false,
   ): void {
     const node = this.nodes.get(nodeId);
     if (!node) return;
+    node.todo = todo || undefined;
     if (node.type === 'test') {
       this._adjustSummary(node.status, -1);
     }
@@ -1024,6 +1028,7 @@ export class ResultStore {
         duration: node.duration,
         line: node.line,
         isDynamicTemplate: node.isDynamicTemplate,
+        todo: node.todo,
         failureMessages: node.failureMessages,
         // output omitted — fetched on demand via scope-logs
       });

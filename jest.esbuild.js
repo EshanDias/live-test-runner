@@ -11,13 +11,13 @@ module.exports = {
     const { code, map } = transformSync(source, {
       loader: /\.tsx?$/.test(filename) ? 'ts' : 'js',
       format: 'cjs',
-      target: 'node16',
+      target: 'node18',
       sourcemap: 'external',
       sourcefile: filename,
     });
     return { code, map };
   },
   getCacheKey(source, filename) {
-    return crypto.createHash('sha1').update(source).update('\0').update(filename).update('\0esbuild-1').digest('hex');
+    return crypto.createHash('sha1').update(source).update('\0').update(filename).update('\0esbuild-2').digest('hex');
   },
 };

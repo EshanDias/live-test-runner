@@ -6,6 +6,7 @@ import { FrameworkAdapter } from './framework/adapters/FrameworkAdapter';
 import { ExecutionResult, Executor } from './execution/Executor';
 import { emptyRunResult, mergeRunResults } from './parsing/runResults';
 import { createLogger } from './utils/logger';
+import { privateTempDir } from './utils/tempDir';
 import { registerProjectRoot } from './resolution/RunnerPaths';
 
 const log = createLogger('CommandRunner');
@@ -26,7 +27,7 @@ export type RunRequest =
    * Named tests of one file. `testFullName` is the name pattern (Jest / Vitest
    * `-t`); `names` the store's full names, for frameworks that select by id (pytest).
    */
-  | { kind: 'testCase'; file: string; testFullName: string; isTestSuite: boolean; names?: string[] }
+  | { kind: 'testCase'; file: string; testFullName: string; isTestSuite: boolean; names?: string[]; updateSnapshots?: boolean }
   | { kind: 'related'; file: string };
 
 /**
@@ -77,6 +78,9 @@ export abstract class CommandRunner implements TestRunner {
   /** Raw-output sink and temp dir, for subclasses that start helper processes. */
   protected readonly logger: (msg: string) => void;
   protected readonly tmpDir: string | undefined;
+
+  /** The session folder, or (without one) a private temp folder of this process. */
+  protected get workDir(): string { return this.tmpDir ?? privateTempDir(); }
 
   // ── Framework-specific ──────────────────────────────────────────────────────
 
@@ -215,8 +219,9 @@ export abstract class CommandRunner implements TestRunner {
     return results.length === 1 ? results[0] : mergeRunResults(results);
   }
 
-  async runTestCaseJson(filePath: string, testFullName: string, isTestSuite = false): Promise<RunResult> {
-    return this.runJson({ kind: 'testCase', file: filePath, testFullName, isTestSuite }, this.fileTimeoutMs);
+  /** `updateSnapshots`: the framework rewrites the failing snapshots of these tests (Jest `-u`, Vitest `--update`). */
+  async runTestCaseJson(filePath: string, testFullName: string, isTestSuite = false, updateSnapshots = false): Promise<RunResult> {
+    return this.runJson({ kind: 'testCase', file: filePath, testFullName, isTestSuite, ...(updateSnapshots ? { updateSnapshots } : {}) }, this.fileTimeoutMs);
   }
 
   async runRelatedTestsJson(filePath: string): Promise<RunResult> {

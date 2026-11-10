@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Who it is for** | Teams with several packages or services, or a project moving from Jest to Vitest, or a JS front end next to Python |
-| **Frameworks** | Jest, Vitest and pytest, in any combination |
+| **Frameworks** | Jest, Vitest and pytest, in any combination; Angular workspaces (one project each, its apps and libraries inside) |
 | **Requirements** | [Monorepos and mixed frameworks: requirements](../requirements/projects.md) |
 | **How it is built** | [Monorepos and mixed frameworks: design](../development/design/projects.md) |
 
@@ -46,6 +46,8 @@ A project with a Jest config and its own `vitest.config.*` (a migration in progr
 2. The configs: if only one framework's config lists the file, that one.
 3. The file: an import from `vitest` or a `vi.` call means Vitest; `@jest/globals` or a `jest.` call means Jest.
 4. Otherwise the main framework (Jest), with one log line naming the setting.
+
+An **Angular workspace** (`angular.json`) is one project: each of its apps and libraries runs with `ng test <name>`, and the sidebar groups the files by them.
 
 A JS project that also configures pytest runs `.py` tests with pytest and the rest with Jest or Vitest. The sidebar groups files by framework, and the status bar splits the counts (`Jest 12 · pytest 30`).
 

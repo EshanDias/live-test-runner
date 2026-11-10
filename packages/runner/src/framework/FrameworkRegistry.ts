@@ -3,12 +3,15 @@ import { FrameworkAdapter } from './adapters/FrameworkAdapter';
 import { CRAAdapter } from './adapters/CRAAdapter';
 import { JestAdapter } from './adapters/JestAdapter';
 import { VitestAdapter } from './adapters/VitestAdapter';
+import { AngularAdapter } from './adapters/AngularAdapter';
 import { PytestAdapter } from './adapters/PytestAdapter';
 
 /** Priorities of the shipped adapters — higher is checked first. */
 export const ADAPTER_PRIORITIES = {
   /** Must precede Jest — CRA projects also have jest in their deps. */
   cra: 300,
+  /** Angular's builder (angular.json): before Vitest, which the app also depends on. */
+  angular: 250,
   /** Vitest only when nothing marks the project as Jest. */
   vitest: 200,
   /** Plain Jest (and Next.js + Jest, etc.). */
@@ -64,6 +67,7 @@ export class FrameworkRegistry {
   static default(): FrameworkRegistry {
     return FrameworkRegistry._default ??= new FrameworkRegistry()
       .register(new CRAAdapter(), ADAPTER_PRIORITIES.cra)
+      .register(new AngularAdapter(), ADAPTER_PRIORITIES.angular)
       .register(new VitestAdapter(), ADAPTER_PRIORITIES.vitest)
       .register(new JestAdapter(), ADAPTER_PRIORITIES.jest)
       .register(new PytestAdapter(), ADAPTER_PRIORITIES.pytest);

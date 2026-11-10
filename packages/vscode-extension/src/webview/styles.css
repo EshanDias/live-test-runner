@@ -729,7 +729,8 @@ body {
 .test-row:hover .row-rerun,
 .test-row:hover .row-open,
 .test-row:hover .row-copy,
-.test-row:hover .row-timeline {
+.test-row:hover .row-timeline,
+.test-row:focus-within .row-copy {
   display: inline-flex;
   align-items: center;
 }
@@ -758,6 +759,7 @@ body {
 .status-passed  { color: var(--vscode-charts-green, #4caf50); }
 .status-failed  { color: var(--vscode-charts-red, #f44336); }
 .status-skipped { color: var(--vscode-descriptionForeground); }
+.status-todo { color: var(--vscode-descriptionForeground); }
 .status-pending { color: var(--vscode-descriptionForeground); opacity: 0.5; }
 .status-template { color: var(--vscode-descriptionForeground); opacity: 0.7; }
 
@@ -984,13 +986,12 @@ body {
   font-size: 11px;
   padding: 0 3px;
   line-height: 1.4;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.5;
 }
 
-.log-line:hover .log-line-copy {
+.log-line:hover .log-line-copy,
+.log-line-copy:focus-visible {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .log-line-copy:hover {
@@ -1046,15 +1047,14 @@ body {
   color: var(--vscode-descriptionForeground);
   cursor: pointer;
   font-size: 11px;
-  padding: 0 4px;
-  line-height: 1.6;
-  opacity: 0;
-  pointer-events: none;
+  padding: 2px 4px;
+  line-height: 1;
+  opacity: 0.5;
 }
 
-.error-message-wrapper:hover .error-copy-btn {
+.error-message-wrapper:hover .error-copy-btn,
+.error-copy-btn:focus-visible {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .error-copy-btn:hover {
@@ -1177,3 +1177,35 @@ body {
 .test-row.level-group { padding-left: 8px; font-weight: 600; cursor: pointer; }
 .test-row.level-group:hover { background: var(--vscode-list-hoverBackground); }
 .row-group-count { margin-left: 8px; font-size: 11px; font-weight: normal; color: var(--vscode-descriptionForeground); }
+
+/* ── Copy buttons (one icon everywhere; a check after copying) ─────────────── */
+.copy-btn svg { display: block; flex-shrink: 0; }
+.copy-btn.copied { color: var(--vscode-charts-green, #4caf50); opacity: 1; }
+.copy-btn:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+.copy-btn:disabled { opacity: 0.35; cursor: default; }
+.col-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: normal;
+}
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid var(--vscode-button-secondaryBackground, rgba(128,128,128,0.35));
+  border-radius: 3px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 6px;
+  line-height: 1.4;
+}
+.text-btn:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
+.log-tabs .col-actions { padding-right: 6px; }
+/* The failure's copy button is always visible: keep the message text clear of it. */
+.error-message-wrapper > .error-message { padding-right: 28px; }

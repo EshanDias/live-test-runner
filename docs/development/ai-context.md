@@ -45,6 +45,7 @@ src/
 │       ├── FrameworkAdapter.ts       Interface: detect, resolveBinary, resolveConfig, getExtraArgs, outputFileArg, parseResult, capabilities, createRunner
 │       ├── JestAdapter.ts            Plain Jest + Next.js + Jest
 │       ├── CRAAdapter.ts             Create React App
+│       ├── AngularAdapter.ts         Angular: angular.json unit-test builder (Vitest runner) → ng.js test <project>; runner = AngularRunner (extends VitestRunner; per-project commands, runner config in the session folder, CI=true)
 │       └── VitestAdapter.ts          Vitest: detect (no Jest marker), vitest.mjs, config, version → capabilities, Node check; runner = VitestRunner
 │   ├── UnsupportedFrameworkError.ts
 │   ├── refusingAdapter.ts            stand-in adapter a runner keeps for another framework's project
@@ -134,7 +135,7 @@ src/
 ├── cache/
 │   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
 ├── session/
-│   ├── SessionManager.ts           Session lifecycle, batched run pool (CONCURRENCY=cpus/4), on-save, rerun
+│   ├── SessionManager.ts           Session lifecycle, batched run pool (parallelBatches(): cpus/4), on-save, rerun
 │   ├── batchQueue.ts               A run's batch queue: per framework, open test files first (full run), promote a file opened while it waits
 │   ├── ExternalChanges.ts          Files changed on disk outside the editor (git pull, branch switch): drops the editor's own saves, batches 500 ms → SessionManager.onFilesChangedOnDisk (>20 files restart, never for changes from our own runs; changes during our runs — by queue, or by modified time when reported late — rerun once when they end; files no test loaded and unrun test fixtures are dropped)
 │   (cache/Storage.ts)              Every cached path in one place: per-project clear (Stop and Clear Cache), Clear All Cached Data, 30-day pruning on activation
@@ -171,10 +172,14 @@ src/
 │   ├── vitestServices.ts           createVitestServices(): adapter, VitestProjectConfig, VitestBatchRunner (+ VitestTrace), features.trace, traceOffReason, no instrumented runner
 │   ├── RunnerBackedAdapter.ts      Shared IFrameworkAdapter half: file / test-case / related runs, FileRunResult → ResultStore
 │   ├── JestAdapter.ts              Jest detection, JestRunner (jestCommand / runMode), debug config
+│   ├── AngularAdapter.ts / angularServices.ts  Angular: debug via ng test, AngularBatchRunner (split by Angular project over VitestBatchRunner; saves → importing test files via session/jsImporters.ts), html as source (templateUrl)
 │   └── VitestAdapter.ts            Vitest detection, VitestRunner (vitestCommand), debug config (autoAttachChildProcesses)
 ├── editor/
 │   ├── CodeLensProvider.ts         ▶ Run / ▷ Debug / ◈ Results / ⏱ Timeline via regex line scan
 │   ├── DecorationManager.ts        Gutter icons + inline duration text
+│   (views/copyText.ts: Copy all / Copy for AI / Copy Failing Test Names texts; ResultsView.copyFailures → vscode.env.clipboard)
+│   ├── updateSnapshot.ts           Update snapshot (hover link): modal dialog naming the file (never skipped outside e2e), then rerunScope({ updateSnapshots }) → RunRequest.updateSnapshots (Jest --ci=false --updateSnapshot, Vitest --update)
+│   ├── failureInfo.ts / FailureDecorations.ts  A failed test's message after its failing line (test + thrown-from source line); hover: message, Show diff (ltr-failure: docs → vscode.diff), Open in Results, Dismiss; hidden on edited lines; liveTestRunner.showFailuresInEditor
 │   ├── CoverageDecorationManager.ts  Coloured left-edge bar (whole-line border, no text shift) per executable line: green=covered, amber=partial, red=uncovered; stale overlay (grey tint) when rerun is pending; follows unsaved edits via MeasuredLines; hidden by liveTestRunner.showCoverageInEditor
 │   ├── MeasuredLines.ts / lineMatch.ts  Matches the editor's current lines to the lines coverage was measured on (prefix/suffix + LCS), shared by bars and hover
 │   └── CoverageHoverProvider.ts    HoverProvider for JS/TS files: shows which tests cover the hovered line (with status + duration + clickable links), and branch arm hit/miss detail for partially-covered lines. First 5 shown inline; "Show all N" link fires liveTestRunner.showCoveringTests → Quick Pick with fuzzy search over all covering tests

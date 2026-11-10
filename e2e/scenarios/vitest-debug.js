@@ -42,6 +42,11 @@ module.exports = {
     await h.waitForDiscovery(api);
     const terminated = [];
     vscode.debug.onDidTerminateDebugSession((s) => terminated.push(s.name));
+    // Every session this scenario starts must end before VS Code closes, or its
+    // test process is left behind, waiting for the debugger.
+    const running = new Set();
+    vscode.debug.onDidStartDebugSession((s) => { if (!s.parentSession) { running.add(s.id); } });
+    vscode.debug.onDidTerminateDebugSession((s) => running.delete(s.id));
 
     const test = h.nodeByName(api, FILE, 'Math utils adds numbers');
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(test.fileId));
@@ -56,6 +61,8 @@ module.exports = {
     // The real path (8.3 names expanded, symlinks resolved), like the runs.
     const real = (p) => fs.realpathSync.native(p).toLowerCase();
     t.eq('cwd is the project root', real(config.cwd), real(workspace));
+    // Started directly, not typed into a terminal (lost while a slow shell starts).
+    t.eq('the test starts directly, output in the Debug Console', [config.console, config.outputCapture], ['internalConsole', 'std']);
     t.eq('child processes are auto-attached (tests run in workers)', config.autoAttachChildProcesses, true);
     t.check('runs one file at a time without timeouts', ['--no-file-parallelism', '--test-timeout=0'].every((a) => config.args.includes(a)), JSON.stringify(config.args));
     await h.waitFor(() => terminated.length > 0, { what: 'the debug session to end', timeout: 90_000 });
@@ -69,5 +76,6 @@ module.exports = {
     const each = h.allNodes(api).find((n) => n.isDynamicTemplate && n.name === 'add(%i, %i) = %i');
     const eachConfig = each ? await lensDebug(vscode, doc, each.line) : undefined;
     t.eq('test.each debug runs both generated tests', eachConfig ? runConfig(eachConfig) : null, { passed: 2, failed: 0 });
+    await h.waitFor(() => running.size === 0, { what: 'every debug session to end', timeout: 90_000 });
   },
 };

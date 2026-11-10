@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Who it is for** | Everyone. This is what happens under every other feature |
-| **Frameworks** | Jest (including Create React App), Vitest, pytest |
+| **Frameworks** | Jest (including Create React App), Vitest, Angular (Vitest through `ng test`), pytest |
 | **Requirements** | [Test runs: requirements](../requirements/test-runs.md) |
 | **How it is built** | [Test runs: design](../development/design/test-runs.md) |
 
@@ -19,11 +19,11 @@ A full test run can take minutes, use every core, and give you nothing until it 
 
 - **Your files first.** The test files open in your editor run first. A test file you open while the run is going moves to the front of the queue.
 - **Results stream in.** Each file's result appears when that file finishes, not when the run ends. A file only shows ⟳ once the framework actually starts it.
-- **Batches that fit your machine.** Files are grouped into batches that run in parallel, sized to leave the machine responsive: a quarter of the CPU cores. pytest runs one process at a time, as in your terminal, so session fixtures and fixed ports keep working.
+- **Batches that fit your machine.** Files are grouped into batches that run in parallel, sized to leave the machine responsive: a quarter of the CPU cores, and all of them together use at most half the cores (Vitest's workers are capped to fit; a lower `maxWorkers` in your config is kept). pytest runs one process at a time, as in your terminal, so session fixtures and fixed ports keep working.
 - **Hanging tests are stopped.** A test that runs longer than `hangTimeoutSeconds` (5 minutes by default), such as an infinite loop, is stopped and its file marked failed. The rest of the run carries on.
 - **Crashes are contained.** If a batch dies, the files that got no result are retried in smaller batches, then on their own with a plain framework run. The log says so.
 - **Stop means stop.** Every framework process and its children end. Nothing retries, and nothing spins.
-- **Same results as your terminal.** Your config, setup files, test-script flags and plugins apply. The extension runs your project's own Jest, Vitest or pytest.
+- **Same results as your terminal.** Your config, setup files, test-script flags and plugins apply. The extension runs your project's own Jest, Vitest, Angular or pytest.
 
 ### What is written, and where
 

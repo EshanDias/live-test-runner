@@ -71,7 +71,8 @@ it('runs everything when the setting includes browser projects', async () => {
   runner.setProjectRoot(root);
   await runner.runFullSuiteJson(root);
   expect(projectFlags()).toEqual([]);
-  expect(spy).not.toHaveBeenCalled();
+  // Read once anyway: the config's worker limit.
+  expect(spy).toHaveBeenCalledTimes(1);
 });
 
 it("leaves the test script's own --project choice alone (vueuse)", async () => {
@@ -81,7 +82,8 @@ it("leaves the test script's own --project choice alone (vueuse)", async () => {
   runner.setProjectRoot(root);
   await runner.runFullSuiteJson(root);
   expect(projectFlags()).toEqual(['--project=unit', '--project=server']);
-  expect(spy).not.toHaveBeenCalled();
+  // Read once anyway: the config's worker limit.
+  expect(spy).toHaveBeenCalledTimes(1);
 });
 
 it('adds nothing without browser projects, or when the projects cannot be read', async () => {
@@ -101,5 +103,5 @@ it('runs browser projects when there is nothing else, with a warning', async () 
   runner.setProjectRoot(root);
   await runner.runFullSuiteJson(root);
   expect(projectFlags()).toEqual([]);
-  expect(logs.some((l) => l.startsWith('warn') && /Every Vitest project .* uses browser mode/.test(l))).toBe(true);
+  expect(logs.some((l) => l.startsWith('warn') && l.includes('Every Vitest project') && l.includes('uses browser mode'))).toBe(true);
 });

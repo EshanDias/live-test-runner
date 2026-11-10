@@ -129,7 +129,7 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
       : false;
     let jsonResult: Awaited<ReturnType<typeof runner.runTestCaseJson>>;
     try {
-      jsonResult = await this.runNamed(runner, filePath, names, isSuiteRun);
+      jsonResult = await this.runNamed(runner, filePath, names, isSuiteRun, opts?.updateSnapshots);
     } catch (err) {
       this.log.error(`Could not run ${label} in ${filePath}`, err);
       return false;
@@ -158,8 +158,9 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
     filePath: string,
     names: string[],
     isSuite: boolean,
+    updateSnapshots = false,
   ): ReturnType<CommandRunner['runTestCaseJson']> {
-    return runner.runTestCaseJson(filePath, names.map(nameToPattern).join('|'), isSuite);
+    return runner.runTestCaseJson(filePath, names.map(nameToPattern).join('|'), isSuite, updateSnapshots);
   }
 
   // ── Affected tests ─────────────────────────────────────────────────────────
@@ -366,6 +367,7 @@ export abstract class RunnerBackedAdapter implements IFrameworkAdapter {
         status,
         tc.duration,
         (tc.failureMessages ?? []).map(stripAnsi),
+        tc.status === 'todo',
       );
 
       // Bubble up status through parents

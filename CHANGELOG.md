@@ -2,694 +2,486 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [3.4.0] - 2026-11-09
+
+### Added
+- **Angular 21+** (Vitest through `ng test`; fixes BUG-46, where every test failed with `describe is not defined`).
+  - `AngularAdapter` / `AngularRunner`: `ng test <project>` per Angular project, our reporters, a runner config in the session folder, `CI=true` (no `.angular/` cache in the project).
+  - One workspace = one project; `AngularBatchRunner` splits batches by Angular project.
+  - Saves rerun the importing test files (`jsImporters.ts`); templates rerun their component's tests.
+  - Coverage needs `@vitest/coverage-v8` in the project. Karma: a clear warning.
+  - Detected only when the builder runs the tests: Vitest is a dependency and the `test` script doesn't run Jest (jest-preset-angular apps stay Jest).
+  - e2e `angular-full-run`, `angular-debug`, `angular-snapshot-update`; unit `angularRunner`, `jsImporters`.
+- **Failures on the failing line** (D2): message after the line, hover with Show diff / Open in Results / Dismiss; hidden on edited lines; setting `showFailuresInEditor`. e2e `failure-on-line`, unit `failureInfo`.
+- **Update snapshot** (D3, Jest / Vitest / Angular): modal confirmation naming the file, then the framework's own update flag for that one test. e2e `snapshot-update`, `vitest-snapshot-update`.
+- **Copy buttons** (D4): visible copy icon, Copy all, **Copy for AI** (clipboard only), Copy Failing Test Names. Unit `copyText`.
+- **`test.todo` icon**; skipped tests get their own gutter icon.
+- **Privacy policy** (`PRIVACY.md`) and the AI-features rule (G12, `CLAUDE.md`, `CONTRIBUTING.md`, PR template).
+
+### Fixed
+- **Vitest used most of the CPU (fan always on):** each parallel batch started Vitest's default of cores − 1 workers (the project's own `maxWorkers` per process), so 2–4 batches oversubscribed the machine and slow tests ran even slower. Batches now get `--maxWorkers` from one budget: all together use at most half the cores (`workersPerBatch`, runner `utils/resources.ts`); a lower limit in the config (`maxWorkers`, pool `maxThreads` / `maxForks`, `fileParallelism: false`) is kept, read by the config probe; `--minWorkers=1` below Vitest 4 (a higher config `minWorkers` would crash the pool; Vitest 4+ rejects the flag). `SessionManager` takes its batch count from the same `parallelBatches()`. Unit `resources`, `vitestRunnerArgs`; checked against real Vitest 3.2 and 5.0.
+- **BUG-43:** instrumented Jest code lost strict mode and `this` in `obj.fn?.()`. Jest monorepo now matches plain Jest. Unit `jestTraceTransform`.
+- Wrong stack-trace line numbers from instrumented Jest source files (`retainLines`, runtime on line 1, transformer map passed on).
+- **BUG-45:** ▷ Debug of a Jest / Vitest test could hang (command typed into a slow-starting terminal, or `?` unescaped for zsh on VS Code < 1.90). Now `internalConsole`.
+
+### Changed
+- **No network calls**: the shipped guide loads nothing remote (pictures are links); CSP without `https:`; guarded by `noNetwork.test.ts` (also bans AI-service SDKs).
+- **Minimum VS Code 1.82** (was 1.74), from a written policy: Node end of life + 2 years (`scripts/support-floor.js`, monthly check).
+
+### Security / tooling
+- `security.yml`: dependency audit (`scripts/security-audit.js`), dependency review, CodeQL.
+- PR job `E2E (minimum VS Code)`.
+- Dependencies: ESLint 10.14, typescript-eslint 8.72, globals 17.14, shipped Babel parser 7.29.12; TypeScript stays on 6.0 (typescript-eslint does not support TS 7 yet); `overrides` for dev-only advisories (18 → 3); pnpm installs only versions ≥ 7 days old.
+- Dependabot: grouped minor/patch PRs, one PR per major; no Babel parser majors.
+- CI: `actions/setup-python` v7 (from Dependabot #65; only `python-version` and `cache: pip` are used, both unchanged in v7).
+- CodeQL findings fixed:
+  - Runners with no session folder write temp files into a private `mkdtemp` folder (`utils/tempDir.ts`, `CommandRunner.workDir`), not loose names in the shared temp root.
+  - Read-then-write instead of check-then-read: `AngularRunner` runner config, `scripts/support-floor.js`.
+  - Linear-time regexes: `stripAnsi` (an unterminated OSC no longer rescans), `RunnerPaths` trailing-slash trim; two test regexes replaced with `includes`.
+  - Workflows: `pnpm/setup` pinned to a commit hash; `pr-checks.yml` token read-only.
+
 ## [3.3.0] - 2026-11-07
 
+### Added
+- **Python monorepos (uv workspaces).** A root with `[tool.uv.workspace] members` (and `exclude`) and no pytest config / `conftest.py` of its own is split into one pytest project per member with tests (its own pytest setup, or test files when the root names pytest). A root with its own pytest config or `conftest.py` stays one project; members without tests are none.
+  - `projectDiscovery.ts`: `jsProjectsInFolder` + new `pythonProjectsInFolder`, both returned by `projectsInFolder`. New exports: `uvWorkspaceGlobs`, `configuresPytest`, `mentionsPytest`, `hasPytestTestFiles`; `testFrameworkOf(dir, registry, family?)`; `expandWorkspaceGlobs(root, globs, marker?)`.
+  - Interpreter per member: venvs looked up in the project, then each folder above it up to the workspace folder (`venvRoots`; a shared root `.venv` shows as `.venv (<folder>)`). The Python extension is asked for the project's own folder.
+  - Tests: `projectDiscovery.test.ts` (6 uv cases), `pythonDiscovery.test.ts` (`venvRoots`); e2e `pytest-monorepo` (`fixture:monorepo-pytest`), `pytest-venv-per-service` (`fixture:monorepo-pytest-venvs`), `multi-root-js-python` (two workspace folders). Harness: `workspace` may be an array (opens a `.code-workspace`); every fixture folder with `requirements-e2e.txt` gets its own `.venv`.
+- **JS and Python in one folder.** A Jest / CRA / Vitest root that is also a pytest project is one project running both (`projectFrameworks` adds `pytest`).
+  - `.py` files go to pytest; switcher shows `jest + pytest` (session log: `framework: jest + pytest`), Explorer groups by framework, status bar splits (`Jest 2 · pytest 3`).
+  - Discovery: `mixedDiscoverer` (Babel for JS / TS, the line scanner for `.py`; `TestFileDiscoverer.excludeFor`); `ProjectContext.usesFramework('pytest')` shows the Python chip.
+  - Saves wake only their language (`FrameworkServices.language`, `SessionManager._loadsSource`).
+  - No Python → the JS tests still run: a non-main framework that cannot run (`whyNotReady`) is left out for the session (`IFrameworkServicesProvider.disable`, INFO line).
+  - Python subfolders (`backend/` next to a JS app) found two levels down (`nestedPythonRoots`, skipping dependencies, environments and build output).
+  - Tests: `projectDiscovery.test.ts` (3), `frameworkRouting.test.ts` (1); e2e `mixed-js-python`, `mixed-js-python-monorepo`.
+- **The Coverage tab says when coverage is off**, and what to install: `FrameworkServices.coverageOffReason(root)` → `CoverageStore.setOffReasons` → `CoverageTotals.off` (`cov-off-note`). Before: a table of 0 % rows. Tests: `coverageOff.test.ts`; e2e `pytest-no-coverage` (`fixture:pytest-no-coverage`).
+- **Open test files run first** on Start, in batches of their own; a file opened while queued moves to the front (`SessionManager.promote`). Queue logic in `session/batchQueue.ts`. Tests: `batchQueue.test.ts` (5); e2e `basic-open-first`.
+- **Coverage bars on every line of a multi-line statement** (`coverage/statementLines.ts`; a statement holding others marks only its first line, so an uncalled function body never looks green). Used by the bars and the hover's counter fallback; works without the trace. Totals unchanged. Replaces the old `trace-driven-decorations.md` plan. Tests: `statementLines.test.ts` (5); e2e `coverage-editing`.
 
-### Repository: public-ready docs and contribution paths
+### Fixed
+- **Tests that write many files restarted the session forever** (3.2.1 bug, seen on the Jest monorepo: "53 files changed on disk during the run — restarting").
+  - Changes queued during our runs never restart (more than 20 left are logged, not rerun); unrun test fixtures are dropped; late watcher reports inside our runs count as ours (`_writtenDuringLastRuns`); a disk restart never repeats for the same files. e2e `disk-changes` step 5b.
+- **A Jest batch retries once when a test deleted a file mid-crawl** (`ENOENT` on a vanished file; `vanishedFile`, `IBatchRunner.runFiles` → `retry`) instead of falling back to plain Jest per file. Tests: `vanishedFile.test.ts` (3). Known issue: jest-runtime's own tests still fail under the session run.
+- **Files tests write no longer start extra runs** (unplugin: 11 extra Vitest processes). `_runQueuedDiskChanges` drops a queued file the last run's trace knows no test of (`_unusedByLastRun`). e2e `disk-changes`.
+  - Real-repo matrix (unplugin, slidev, vueuse, also on `main`): `repo-vitest` now restores edited files through the editor and waits for that rerun.
 
-- Developer documentation moved to `docs/development/` (index `README.md`): `architecture.md`, `developer-guide.md`, `framework-features.md`, and `ai-context.md`. New bugs and feature ideas go to GitHub Issues. Code comments and test names no longer refer to internal bug IDs; each explains its reason itself. The outdated `packages/vscode-extension/DEVELOPER_GUIDE.md` is gone.
-- Working plans and trackers are no longer in the repository. The real-repo matrix (`e2e/real-repos.js`) no longer lists repositories in code: they come from a local, gitignored `e2e/real-repos.local.json` (template: `e2e/real-repos.example.json`, public open-source projects; `kind` jest / cra / vitest / components / pytest), and the baselines it records go to the gitignored `e2e/baselines/` — private projects can be tested without their names or file lists reaching the repository.
-- GitHub issue forms for bug reports (versions, framework, OS, project layout, extension log) and feature requests, a pull-request template, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1; reports through GitHub's Report content), `SECURITY.md` (private vulnerability reports), Dependabot (`.github/dependabot.yml`: weekly grouped npm and GitHub Actions updates, a new version offered only after a week; the PR checks hold its PRs until their base is changed to a release branch), `.github/CODEOWNERS` (PRs into `main` and `release/*` need the maintainer's approval). The extension ships picomatch's MIT license (`out/vendor/picomatch.LICENSE`), as it already did the Babel parser's: picomatch is bundled into `out/extension.js` and a root `LICENSE` (MIT, copyright Eshan Dias (EshLabs); `license` field in every `package.json`). The root `README.md` is rewritten as the project's GitHub landing page (frameworks, install links, feedback links); the guide's "Known issues" section links to the issue forms.
-- The Timeline Debugger is labelled **planned** (it is not built yet), not "preview": the guide, the website and the extension README describe it as a future feature, the guide no longer lists its command or log message, and `Open Timeline Debugger` shows in the Command Palette only with `liveTestRunner.devMode`.
-- Code comments, e2e labels and the changelog no longer cite internal plan phases, decision IDs or bug IDs; each comment explains its own reason.
-- Documentation in three kinds, listed in `docs/README.md`: `docs/features/` (what a feature does, in plain language), `docs/requirements/` (project-wide requirements, and per feature what it must do, mapped to the e2e scenarios that check it), `docs/development/design/` (how a feature is built). Pages for test runs, the Test Explorer and editor, on-save reruns, the Results panel, coverage, debugging, and monorepos / mixed frameworks; requirements without an automated test are marked ⚠️. `docs/README.md`, `CONTRIBUTING.md`, `CLAUDE.md` and the PR template say which pages a change must update.
-- The GitHub Wiki is generated from `docs/` (`scripts/build-wiki.js`, workflow `wiki.yml`, on merges to `main`, or run by hand on a release branch for an urgent docs fix), with a contents sidebar and a note on every page that edits belong in `docs/`; PR checks fail on a broken docs link.
+### Changed
+- **Timeline Debugger labelled "planned"**, not "preview" (guide, website, README); the guide no longer lists its command or log message, and `Open Timeline Debugger` shows only with `liveTestRunner.devMode`.
+- **Internal: framework router for any number of frameworks.** `ROUTED_FRAMEWORKS` (`jest`, `vitest`, `pytest`) replaces the `'jest' | 'vitest'` pair; `projectFrameworks` lists every framework (`routedFrameworkOf`: CRA / unknown → `jest`); `parseFrameworkRules(setting, base, allowed)` (`SETTING_FRAMEWORKS`); `FrameworkRouter` takes a factory per framework (`FrameworkFactories`); `IFrameworkServicesProvider.frameworks()`. pytest uses the router (no `SingleFrameworkProvider`). Tests: `frameworkRouter.test.ts` (4), `frameworkRouting.test.ts` (2).
+- **Internal: core's dead coverage map removed** (`CoverageMap`, `SelectionPolicy`, `TestSession.start()` / `getCoverageMap()`, `IFrameworkAdapter.getAffectedTests`). It was always empty. No user-visible change.
 
-### Python monorepos
+### Repository and docs
+- Developer docs moved to `docs/development/` (`architecture.md`, `developer-guide.md`, `framework-features.md`, `ai-context.md`); `packages/vscode-extension/DEVELOPER_GUIDE.md` removed.
+- Docs in three kinds, listed in `docs/README.md`: `docs/features/`, `docs/requirements/` (mapped to e2e scenarios; ⚠️ = no test), `docs/development/design/`. Pages for test runs, Test Explorer and editor, on-save reruns, Results panel, coverage, debugging, monorepos / mixed frameworks.
+- GitHub Wiki generated from `docs/` (`scripts/build-wiki.js`, workflow `wiki.yml`, on merges to `main` or by hand on a release branch), with a contents sidebar and a note that edits belong in `docs/`; PR checks fail on a broken docs link. `docs/README.md`, `CONTRIBUTING.md`, `CLAUDE.md` and the PR template say which pages a change must update.
+- Working plans and trackers out of the repository. Real-repo matrix repos come from a gitignored `e2e/real-repos.local.json` (template `e2e/real-repos.example.json`, public open-source projects; `kind` jest / cra / vitest / components / pytest), so private projects can be tested without their names reaching the repository; baselines go to gitignored `e2e/baselines/`.
+- Contribution paths: issue forms, PR template, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1; reports through GitHub's Report content), `SECURITY.md` (private vulnerability reports), Dependabot (weekly grouped npm and Actions updates, one-week delay, held until retargeted to a release branch), `.github/CODEOWNERS` (PRs into `main` and `release/*` need the maintainer's approval). Issue forms ask for versions, framework, OS, project layout and the extension log.
+- Licensing: root `LICENSE` (MIT, Eshan Dias (EshLabs)), `license` in every `package.json`; picomatch's license ships as `out/vendor/picomatch.LICENSE`.
+- Root `README.md` rewritten as the GitHub landing page; the guide's "Known issues" links to the issue forms; its settings table lists `hangTimeoutSeconds`, `coverageExclude`, `testFilePatterns`.
+- Code comments, e2e labels and the changelog no longer cite internal plan phases, decision IDs or bug IDs.
 
-- **uv workspaces**: a folder whose `pyproject.toml` has `[tool.uv.workspace] members` (and `exclude`) and no pytest config or `conftest.py` of its own is split into one pytest project per member with tests — a member that is a pytest project itself (config, `conftest.py`, pytest in its own dependency files), or one with test files when the workspace root names pytest (the usual shared dev group). A root with its own pytest config or `conftest.py` stays one project (pytest run from a member would miss the root's options and fixtures). Members without tests are no project.
-- Detection is split per language family in `projectDiscovery.ts`: `jsProjectsInFolder` (unchanged rules) and the new `pythonProjectsInFolder`; `projectsInFolder` returns both (a root both claim stays the JS project until JS + Python projects below). A JS monorepo and a uv workspace in one folder give both kinds of members. New runner exports: `uvWorkspaceGlobs`, `configuresPytest`, `mentionsPytest`, `hasPytestTestFiles`; `testFrameworkOf(dir, registry, family?)`; `expandWorkspaceGlobs(root, globs, marker?)`.
-- **Interpreter per member**: virtual environments are looked for in the project, then every folder above it up to the workspace folder (`venvRoots`) — a uv workspace's shared `.venv` at its root is found for each member (shown as `.venv (<folder>)`). The Python extension is asked for the project's own folder instead of the workspace folder.
-- Tests: `projectDiscovery.test.ts` (6 uv cases), `pythonDiscovery.test.ts` (`venvRoots`); e2e `pytest-monorepo` on the new `fixture:monorepo-pytest` (uv workspace: a member with its own pytest config, one with tests only, one without tests; shared `.venv`) — per-member results vs plain pytest in the member's folder, a save reruns only its member, Stop All. The harness's `workspacePython` finds the nearest `.venv` above a folder.
-
-- **Per-service environments, multi-root windows (e2e)**: `fixture:monorepo-pytest-venvs` (two services, each with its own `.venv`, nothing shared at the root) runs `pytest-venv-per-service` — each service uses its own `.venv` (its tests assert `sys.prefix`), matches plain pytest, a save reruns only its service. `multi-root-js-python` opens a Vitest front end and a pytest project as two workspace folders: two projects in the switcher, the Python chip only for pytest, each matches its plain runner, a save wakes only its own project, Stop All. Harness: a scenario's `workspace` may be an array (a `.code-workspace` is written and opened; the scenario gets `workspaces`), and every fixture folder with a `requirements-e2e.txt` gets its own `.venv`. No product change was needed: venvs are looked up in the project before folders above it.
-
-### JS and Python in one folder
-
-- **One project, both languages**: a JS root (Jest, CRA or Vitest) that is a pytest project too (a pytest config, a root `conftest.py`, or pytest named next to test files) is one project whose router lists with every framework (runner `projectFrameworks` adds `pytest`; reason `… + a pytest config`). `.py` files go to pytest by ownership; the switcher shows `jest + pytest`, the Explorer groups by framework, the status bar splits (`Jest 2 · pytest 3`), the session log line says `framework: jest + pytest`.
-- **Static discovery for both**: `mixedDiscoverer` (JS / TS → Babel, `.py` → the line scanner, each pattern with its own exclude — `TestFileDiscoverer.excludeFor`); `ProjectContext.discoverer` is chosen from what the root configures; `ProjectContext.usesFramework('pytest')` shows the Python environment chip and drives Select Python Interpreter for mixed projects.
-- **Saves wake only their language**: `FrameworkServices.language` (`python` for pytest); in a mixed project a saved source file reruns only the frameworks that load it (`SessionManager._loadsSource`: a Python framework its own extensions, a JS framework anything no other language claims).
-- **No Python → the JS tests still run**: Start asks every framework in play whether it can run (`all()` builds them); a framework other than the main one that cannot (`whyNotReady`) is left out for the session (`IFrameworkServicesProvider.disable`, INFO line), its files are not run. Before, a missing interpreter stopped the session.
-- **Python subfolders**: a folder with no Python of its own is searched two levels down (`nestedPythonRoots`, skipping dependencies, environments and build output) for folders that configure pytest or are a uv workspace root — each is a project by the Python rules (`backend/` next to a JS app).
-- Tests: `projectDiscovery.test.ts` (3), `frameworkRouting.test.ts` (1); e2e `mixed-js-python` (one project, both frameworks, results vs plain Jest and plain pytest, groups, status-bar split, saves wake only their language, Stop) and `mixed-js-python-monorepo` (JS root + `backend/` pytest project with the root's `.venv`), fixtures of the same names.
-
-### Framework router for any number of frameworks (internal)
-
-- `RoutedFramework` is the list `ROUTED_FRAMEWORKS` (`jest`, `vitest`, `pytest`) instead of the fixed `'jest' | 'vitest'` pair; `projectFrameworks` returns every framework a root configures (`frameworks`, primary first; `routedFrameworkOf` maps detection, CRA / unknown → `jest`); `parseFrameworkRules(setting, base, allowed)` validates against a list (`SETTING_FRAMEWORKS` = Jest, Vitest by default — a `.py` file only runs with pytest).
-- `FrameworkRouter` takes a factory per framework (`FrameworkFactories`, missing = never used), lists with every framework in play, allows each non-primary one in the root (and disallows ones no longer in play), and places a file the listing missed with the framework in play whose test-file rules take it (its hint, then the main framework, when several do). New `IFrameworkServicesProvider.frameworks()` (main first) drives the switcher label and the session log line.
-- pytest projects use the router too (primary `pytest`) instead of a `SingleFrameworkProvider`: the step that lets JS and Python share one project. No user-visible change; tests: `frameworkRouter.test.ts` (4), `frameworkRouting.test.ts` (2).
-
-### Cleanup: core's dead coverage map removed (internal)
-
-- `@live-test-runner/core` no longer has `CoverageMap` or `SelectionPolicy`, and `TestSession` lost its unused warm-up `start()` and `getCoverageMap()`. The map was always empty (it expected a `coveredBy` field Jest / Vitest coverage JSON never has) and nothing reran by it: source saves go by the execution trace, then the framework's related run. `IFrameworkAdapter.getAffectedTests` (read the map) is gone too. Docs (CLAUDE.md, architecture, ai-context, developer guide, core README, guide) no longer describe it. No user-visible change.
-
-### Docs
-
-- The guide's settings table now lists `hangTimeoutSeconds`, `coverageExclude` and `testFilePatterns` (gap audit).
-
-### Tests that write many files no longer restart the session forever (fix, 3.2.1 bug)
-
-- Found on the Jest monorepo: its e2e tests write ~50 files into the project during a full run. The 3.2.1 disk-change watcher took that for a branch switch ("53 files changed on disk during the run — restarting the session") — the restart wiped the results and its run wrote the same files again, so results never stayed. Reproduced on a small fixture as a restart every 2 s.
-- Now: (1) changes queued during our runs never restart the session — more than 20 left after filtering are logged ("probably written by the tests … save a file or Start to rerun") and not rerun; (2) test files the project's config does not run (fixtures a test writes) are dropped like files no test loads; (3) the watcher reports a run's last writes after it ended — a file whose modified time falls inside our last runs is handled as changed during them (`_writtenDuringLastRuns`), so a pull after the run still reruns as before; (4) a restart for disk changes never repeats for the same set of files. e2e `disk-changes` step 5b (a test writing 25 modules it loads and 3 test files under the ignored `e2e/`).
-
-### A Jest batch retries once when a test deleted a file mid-crawl
-
-- In a project whose tests create and delete files (the Jest monorepo's `e2e/timeouts/`), a batch whose haste-map crawl saw such a file come and go failed before any test and fell back to plain Jest one file at a time. Now a batch that returns nothing and names a vanished file (`ENOENT … '<file>'`, gone again) is run once more first (`vanishedFile`, `IBatchRunner.runFiles` → `retry`). Other failures fall back as before. Known issue: jest-runtime's own tests still fail under the session run. Tests: `vanishedFile.test.ts` (3).
-
-### The Coverage tab says when coverage is off (internal)
-
-- A framework that cannot measure coverage for the root says so in the Coverage tab, with what to install: `FrameworkServices.coverageOffReason(root)` (pytest: no `coverage` package in the project's environment; Vitest: neither `@vitest/coverage-v8` nor `-istanbul`). `SessionManager.start` collects the reasons into the project's `CoverageStore` (`setOffReasons`, cleared with the data); `CoverageTotals.off` carries them to both coverage views (`cov-off-note` under the project totals). Before, the tab showed a table of 0 % rows with no reason. The other per-framework gaps were already handled: covering tests say why in the hover (`features.trace`, `traceOffReason`), ▶ Run and ▷ Debug work for every framework, and the dormant Timeline refuses with a message. Tests: `coverageOff.test.ts`; e2e `pytest-no-coverage` on the new `fixture:pytest-no-coverage` (pytest without coverage.py).
-
-### Open test files run first (internal)
-
-- On Start the test files on screen (`visibleTextEditors`) run first, in batches of their own (a framework orders a batch's files itself, so being first in a shared batch would not help). A test file opened while it still waits in a run's queue moves to a batch of its own at the front (`SessionManager.promote`, from `onDidChangeActiveTextEditor`). Saves are unchanged. The queue logic moved to `session/batchQueue.ts` (`buildBatchQueue`, `promoteInQueue`). Tests: `batchQueue.test.ts` (5); e2e `basic-open-first` (the first Jest run is the open file alone, every file still runs once).
-
-### Coverage bars on every line of a multi-line statement (internal)
-
-- A statement spanning several lines got a bar on its first line only (`CoverageDecorationManager` used `start.line`). New `coverage/statementLines.ts`: a statement with no other statement inside it marks every line it spans; one holding others (`const f = () => { … }`) only its first line, so an uncalled function body never looks green. Used by the bars and the hover's counter fallback; coverage totals are unchanged (statements, not lines). Works for every framework without the trace — the old `trace-driven-decorations.md` plan is replaced and removed. Tests: `statementLines.test.ts` (5); e2e `coverage-editing` (the `basic` fixture's `module.exports = { … }` now spans five lines).
-
-### Files tests write no longer start extra runs (fix)
-
-- A file that changed on disk during one of our runs is rerun when the run finishes (3.2.1) — but projects whose tests write into the project (unplugin writes `output.js` / `main.js` into its fixtures) got one `vitest related` / `jest --findRelatedTests` process per written file, each finding nothing (11 extra Vitest processes after unplugin's full run). `SessionManager._runQueuedDiskChanges` now drops a queued file the last run's execution trace knows no test of — no line of it ran and no test loaded it (`_unusedByLastRun`; DEBUG line). Test files, possible config files, and frameworks whose trace is off keep the related run. Changes while nothing runs (a pull, a branch switch) are handled as before.
-- The real-repo matrix failed on unplugin, slidev and vueuse ("nothing left running") also on `main`: `repo-vitest` restored its edited files by writing them on disk, which is itself an outside change and started a rerun right before the check. It now restores through the editor and waits for that rerun. e2e `disk-changes` checks that a file a test writes and no test loads starts no rerun.
+---
 
 ## [3.2.1] - 2026-11-05
 
-### Stop really stops (fix, 3.2.0 bug)
+### Added
+- **Files changed outside the editor rerun their tests** (git pull, branch switch, code generators, other editors), like a save (`SessionManager.onFilesChangedOnDisk` → `onFileChanged`; log "Changed on disk:").
+  - `session/ExternalChanges.ts` batches file-system events for 500 ms and drops our own saves (2 s window), files with unsaved edits, `node_modules` and `.git`.
+  - More than 20 changed files at once (a branch switch) restart the session instead.
+  - Changes during a run are queued until it ends; a file changing again during its own rerun is not queued again (warned). Stopped sessions ignore disk changes.
+  - Tests: `externalChanges.test.ts` (4); e2e `disk-changes`.
+- **Clear All Cached Data** (`liveTestRunner.clearAllCaches`, asks first) and **Open Cached Data Folder** (`liveTestRunner.openDataFolder`).
+- **Show / hide coverage in the editor**: setting `liveTestRunner.showCoverageInEditor` (default on), commands **Hide / Show Coverage in Editor** (eye buttons in the editor title). Hidden also turns the coverage hover off.
+- **Settings gear** in the Test Explorer title bar (`liveTestRunner.openSettings`).
+- e2e `commands`: runs every command from the Command Palette and checks its effect.
 
-- After **Stop**, the Explorer's "Running — 1 / N files" timer kept counting and the CPU stayed busy. Two causes: the background source scan (`SourceCounter`, parses every source file for the coverage totals) was never cancelled — it now has `cancel()`, called by Stop and restarts; and the webview only cleared its run timer on `run-finished`, which Stop deliberately never sends for the run it abandons — `session-stopped` now clears it. `_postProgress` no longer posts after Stop (a late result of a killed batch brought "Running…" back to the status bar). e2e `basic-stop` checks all three.
+### Fixed
+- **Stop really stops** (3.2.0 bug): the "Running — 1 / N files" timer kept counting and the CPU stayed busy. `SourceCounter.cancel()` (called by Stop and restarts); `session-stopped` clears the webview timer; `_postProgress` posts nothing after Stop. e2e `basic-stop`.
+- **Nothing written into the project:** Select Project Root kept its pin in `.vscode/settings.json`; it now lives in workspace storage (`ProjectRegistry.pinRoot`, key `liveTestRunner.pinnedProjectRoot`). A user-written `liveTestRunner.projectRoot` still works. It also always asks now, even in a single-folder workspace.
+- **Clearing really clears:** Stop Testing and Clear Cache / Clear Cache and Restart also delete the runnable-files list (`runnable-files-*.json`), the Jest transform cache and coverage manifests (`transform-cache-*`) and the CRA config (`ltr-cra-config-*.json`).
+- **Unused data pruned:** on activation, data unused for 30 days is deleted (`cache/Storage.ts` `pruneUnused`); before, these files were never deleted (Windows never cleans its temp folder). Discovery-cache limit (10 projects / 500 MB) unchanged. A window's session folder is deleted when it closes (`deactivate`). `cache/Storage.ts` knows every path (`transformCacheDir`, `runnableFilesPath`, runner `craConfigPath`). Tests: `storage.test.ts` (2).
+- **Commands from the Command Palette:** Rerun Test at Line, Debug Test at Line, Focus Test in Results Panel and Show All Covering Tests now use the cursor (or say what to open). Dump Trace Store shows only with `liveTestRunner.devMode`.
 
-### Nothing written into the project
+### Changed
+- **Coverage bars stay out of the way while editing.**
+  - A thin, faded 1px left border (whole-line decoration, `border-image` gradient) instead of a `▌` character in the text: code never shifts, the gutter stays free. Grey "not executable" bars removed.
+  - Bars and hover follow unsaved edits: `editor/MeasuredLines.ts` keeps each measurement's text, `lineMatch.ts` matches current lines to it (prefix / suffix + LCS). Edited, new and moved lines get no bar until measured again; spacing is ignored, indentation is not; under half the lines left → no bars until saved. Redraw 150 ms after typing. `CoverageHoverProvider` maps lines the same way.
+  - Tests: `lineMatch.test.ts` (12); e2e `coverage-editing`; `diag-coverage-bars` screenshots.
 
-- **Select Project Root** kept its pin in the workspace settings (`.vscode/settings.json`, creating the folder in projects without one). The pin now lives in VS Code's workspace storage (`ProjectRegistry.pinRoot`, key `liveTestRunner.pinnedProjectRoot`); a `liveTestRunner.projectRoot` setting the user writes still works.
-
-### Storage: clearing really clears, unused data is pruned
-
-- **Stop Testing and Clear Cache / Clear Cache and Restart** now delete everything cached for the project: besides the discovery cache, the runnable-files list (`runnable-files-*.json`, so a restart asks the framework again), the Jest transform cache + coverage manifests (`transform-cache-*`) and the CRA config (`ltr-cra-config-*.json`). Before, those stayed.
-- **New: Clear All Cached Data** (`liveTestRunner.clearAllCaches`, asks first): stops this window's projects and deletes every cached file, except other live windows' session folders and the discovery caches they hold locked.
-- **Pruning:** on activation, cached data unused for 30 days is deleted (`cache/Storage.ts` `pruneUnused`; transform caches and runnable lists are touched when used). Before, transform caches, runnable lists and CRA configs were never deleted (a project opened once stayed forever; on Windows the temp folder is never cleaned). The 10-project / 500 MB discovery-cache limit is unchanged.
-- A window's session folder is deleted when the window closes (`deactivate`), not only on the next start.
-- **New: Open Cached Data Folder** (`liveTestRunner.openDataFolder`) opens either base folder in the OS file manager.
-- `cache/Storage.ts` is the one place that knows every path (`transformCacheDir`, `runnableFilesPath`, runner `craConfigPath`).
-- Tests: `storage.test.ts` (2); e2e `commands` checks the files are gone.
-
-### Commands checked end to end
-
-- New e2e `commands` runs every command the way a user does (Command Palette, no arguments) and checks its effect.
-- **Fixed:** Rerun Test at Line, Debug Test at Line, Focus Test in Results Panel and Show All Covering Tests did nothing useful from the Command Palette (they expected a file and line from a CodeLens or hover link); they now use the active editor's cursor (Show All Covering Tests maps it to the measured line) or say what to open.
-- **Fixed:** Select Project Root picked the only folder of a single-folder workspace without asking; it now always asks (and no longer writes settings at all — see above).
-- Dump Trace Store shows in the Command Palette only with `liveTestRunner.devMode` (as documented).
-
-### Files changed outside the editor rerun their tests
-
-- While a session is on, a file changed on disk outside the editor (git pull, a branch switch, a code generator, another editor) reruns what depends on it, exactly like a save (`SessionManager.onFilesChangedOnDisk` → `onFileChanged`, the old `onSave` body; log lines say "Changed on disk:"). `session/ExternalChanges.ts` batches file-system events for 500 ms, drops the editor's own save (seen in `onWillSaveTextDocument` / `onDidSaveTextDocument`, 2 s window), files with unsaved edits, `node_modules` and `.git`.
-- More than 20 changed project files at once (a branch switch) restart the session instead of one rerun per file.
-- Changes made during a run are queued and rerun when the last run ends. A file that changes again during its own queued rerun is not queued again (warned): a test that writes it would otherwise rerun forever. Stopped sessions ignore disk changes (session guard).
-- Tests: `externalChanges.test.ts` (4); e2e `disk-changes`.
-
-### Coverage bars stay out of the way while editing
-
-- **Bars no longer sit in the text.** They were a `▌` character inserted before each line (`before:` decoration), so they took editing space and moved with typing. Each bar is now a thin, faded 1px left border of a whole-line decoration, drawn over the middle of the line only (`border-image` gradient) so neighbouring lines read as separate marks: code never shifts, the gutter stays free for breakpoints. The grey "not executable" bars are gone (they only kept the old text shift even).
-- **Bars and hover follow unsaved edits.** Redraws used the measured file's line numbers, so after an edit bars and the hover landed on the wrong lines. New `src/editor/MeasuredLines.ts` remembers each measurement's file text (keyed by the entry's counters object) and `lineMatch.ts` matches the editor's current lines to it (common prefix / suffix + LCS of the changed middle). Bars are drawn where each measured line is now; edited and new lines get none until the next measurement. Spacing inside or at the end of a line is ignored, indentation is not (code wrapped in a new `if` loses its bars); moved code loses its bars (and the lines it moved across); when less than half the file's lines remain, the whole file shows no bars until saved. Typing redraws after 150 ms. `CoverageHoverProvider` maps the hovered line the same way.
-- **Show / hide coverage in the editor:** setting `liveTestRunner.showCoverageInEditor` (default on), commands **Hide / Show Coverage in Editor** (eye buttons in the editor title while the file has coverage). Hidden clears bars and stale tint and turns the coverage hover off.
-- **Settings gear** in the Test Explorer title bar (`liveTestRunner.openSettings`): opens Settings filtered to the extension.
-- Tests: `lineMatch.test.ts` (12); e2e `coverage-editing` (insert / edit / hide / show / revert on a Jest fixture); `diag-coverage-bars` captures screenshots.
+---
 
 ## [3.2.0] - 2026-10-30
 
-### pytest support (Python)
+### Added
+- **pytest support.** Every Jest / Vitest feature except the Timeline: static discovery, live per-file results, per-test output, failures, hang limit, Stop, ▶ Run / ▷ Debug (test, class, parametrized function), saved-file reruns, coverage (gutter, hover, totals), covering tests and precise source-save reruns.
+  - **Nothing installed or changed in the project:** our own plugin `ltr_pytest.py` (embedded into `ltrPytestSource.ts` by `scripts/embed-pytest-plugin.js`, `--check` in lint), written to the session folder and loaded only with `-p ltr_pytest` on our command line (never `PYTEST_PLUGINS` / `PYTEST_ADDOPTS`).
+  - Our runs add `-o cache_dir=<session>/pytest-cache`, `--no-cov` (with pytest-cov), `-n 0` (with pytest-xdist), `--continue-on-collection-errors`, `--color=no`; plain environment plus `PYTHONPATH` (plugin first), `PYTHONUNBUFFERED`, `PYTHONIOENCODING=utf-8` (no `NODE_ENV` / `CI`).
+  - **Plugin protocol** (`$LTR_PYTEST_EVENTS`, JSON lines): `config`, `file-start`, `test-start` / `test-end`, `file-end` (a `FileRunResult`), `coverage` / `coverage-off`, `session-end`. `--ltr-result=<file>` writes the `RunResult`; `$LTR_PYTEST_LIST` the files of `--collect-only`.
+  - **Results:** setup / teardown errors fail the test ("Error in setup of …"); skip and xfail → skipped (reason kept); strict xpass → failed; names are classes + function + parametrize id (`TestCart test_total[2-items]`); location is the `def` line; per-test output (stdout → log, stderr → error, logging → info), never shared; collection errors fail the file; files with nothing to run report empty; a package's `__init__.py` collector (pytest 7) is not a test file.
+  - **Runner:** `PytestAdapter` (family `python`, below every JS adapter), `PytestRunner` (`python -m pytest -p ltr_pytest …`, root-relative files, `runTestsByName` by node id, `liveCommand`, `debugArgs`, `listTestFiles`), `pytestConfig.ts` (pytest's own config order: `pytest.toml`, `.pytest.toml`, `pytest.ini`, `.pytest.ini`, `pyproject.toml`, `tox.ini`, `setup.cfg`; detection by config, root `conftest.py` or pytest in the dependency files), `pytestNodeIds.ts` (names ⇄ node ids, never `-k`), `python.ts` (isolated probe of Python, pytest, coverage, xdist, pytest-cov, debugpy; minimums pytest ≥ 7.0, Python ≥ 3.12). `pytestExitReason` explains exit 2 / 3 / 4.
+  - **Interpreter** (`python/PythonInterpreters.ts`): **Select Python Interpreter** (`liveTestRunner.selectPythonInterpreter`; every environment found + Browse…, remembered per project in `workspaceState`), `liveTestRunner.pythonPath`, `.venv` / `venv` / `env`, `UV_PROJECT_ENVIRONMENT`, poetry, pipenv, the Python extension's interpreter, an activated `VIRTUAL_ENV` / `CONDA_PREFIX` inside the project, then PATH. The first with pytest wins; the user's choice is never replaced. Logged on every Start. None usable → one notification with **Select Interpreter**, nothing runs (`FrameworkServices.whyNotReady`).
+  - **One pytest process at a time** (`FrameworkServices.batchPolicy`: `maxParallel: 1`, up to 300 files per process): projects share fixtures, ports and files (httpx deadlocked with two processes). Scoped and fallback runs follow the cap.
+  - **Coverage:** coverage.py started where pytest-cov would, with the project's config and `--cov=` sources from `addopts`; data in the session folder; istanbul-shaped `coverage-final.json` (statements, branches from arcs, functions from coverage ≥ 7.6). Test files, `conftest.py` and environments never count. Without `coverage`, tests run and one line says why.
+  - **Covering tests and source saves:** one coverage context per test (`switch_context`, read from `CoverageData.contexts_by_lineno`), written as the same `T` / `H` trace records Jest and Vitest produce. Before coverage exists, `PytestBatchRunner.runRelated` uses a static import graph (`session/pythonImports.ts`; a saved `conftest.py` reruns the tests under its folder).
+  - **Decoupled from JavaScript:** `IFrameworkAdapter.runTestCase(…, names)`, `RunnerBackedAdapter.runNamed` (Jest / Vitest command lines unchanged), pluggable `TestFileDiscoverer` (`session/discovery/pythonDiscovery.ts` line scanner: test functions, `Test*` classes, `unittest.TestCase`, nested classes, `parametrize` templates, `python_*` / `testpaths`), `Executor` `jsEnv`, `FrameworkAdapter.family`, Python project names from `pyproject.toml`, `configFileNames` (saving `pyproject.toml` / `pytest.ini` / root `conftest.py` restarts), pytest config in the runnable-files cache key, CodeLens for `.py`.
+  - New settings: `liveTestRunner.pythonPath`, `liveTestRunner.pytestArgs`.
+  - Tests: runner `pytest.test.ts` (17); plugin `python-tests/test_ltr_pytest.py` (10; CI job **pytest plugin** on pytest 7.4 / 8.4 / 9.1 × Python 3.12 / 3.13 / 3.14); `pythonDiscovery.test.ts` (7), `pythonImports.test.ts` (5). e2e fixtures `pytest-basic`, `pytest-no-pytest`; scenarios `pytest-full-run` (vs plain pytest JUnit), `pytest-scoped-run`, `pytest-on-save`, `pytest-stop`, `pytest-hang`, `pytest-coverage` (totals equal coverage.py's), `pytest-debug`, `pytest-no-pytest`, `pytest-related`. Real repos (`repo-pytest`): click (2287 tests), httpx (1418; one flaky timing test), erdantic (pytest 7.4, pytest-cov in `addopts`) match plain pytest; pytest's own suite (4811, opt-in).
+- **Running score card** next to Total / Passed / Failed: tests with status `running` (`getSummary().running`), for every framework. Click it (or **Running** in the status dropdown) to filter. Rides on existing messages as `runningTests`; cards lay out as a flexible grid. Tests: `statusFilter.test.ts`, `resultStore.test.ts`; e2e `basic-running-count`.
+- **Python environment chip** under Start / Stop for pytest projects: `🐍 Python 3.12.4 · .venv · pytest 9.1.1` (tooltip: path, where found, coverage version); click → Select Python Interpreter; amber with a reason when it can't run (`pytest not installed · .venv`, `Python 3.9.6 · needs 3.12+`, `No Python found`). Probed quietly when shown (`ensure(root, { quiet: true })`); the first run logs the interpreter at INFO. Files: `python/pythonEnvChip.ts`, `ExplorerView.setPythonEnv`. Tests: `pythonEnvChip.test.ts` (4); e2e `pytest-env-chip`, `pytest-no-pytest`, `basic-full-run`.
 
-pytest projects get every feature Jest and Vitest projects have, except the Timeline debugger: static discovery, live per-file results, per-test output, failures, hang limit, Stop, ▶ Run / ▷ Debug one test, class or parametrized function, saved-test-file reruns, coverage (gutter, hover, totals), covering tests and precise reruns when a source file is saved.
+### Fixed
+- **Coverage started at 100 %** ("0 of 0") before anything was measured; with every total at 0 it now shows 0 % (`testListView.js` `_nothingMeasured`).
+- **Running card flickered** when the count touched 0 between files; it now stays from `run-started` / `files-rerunning` to `run-finished` / Stop.
+- **pytest durations** are whole milliseconds (were `302.763`).
 
-- **Nothing is installed or changed in the project (CLAUDE.md rule 9):** the extension ships its own pytest plugin (`packages/runner/src/framework/pytest/ltr_pytest.py`, embedded at build into `ltrPytestSource.ts` by `scripts/embed-pytest-plugin.js`, `--check` in lint), written to the session folder and loaded **only with `-p ltr_pytest` on our own command line** (never `PYTEST_PLUGINS` / `PYTEST_ADDOPTS`: pytester's inner sessions and the user's terminal never see it). Our runs pass `-o cache_dir=<session>/pytest-cache` (the user's `--lf` state is untouched), `--no-cov` when pytest-cov is installed (no second tracer, no `htmlcov/` or `coverage.xml` from the project's `addopts`), `-n 0` when pytest-xdist is installed, `--continue-on-collection-errors` and `--color=no`, run with the plain process environment (no `NODE_ENV` / `CI`, which change pytest's own output) plus `PYTHONPATH` (plugin first), `PYTHONUNBUFFERED`, `PYTHONIOENCODING=utf-8`.
-- **Plugin protocol** (`$LTR_PYTEST_EVENTS`, JSON lines): `config` (capture mode, rootdir, inifile, versions), `file-start`, `test-start` / `test-end` heartbeats, `file-end` with the file's finished `FileRunResult`, `coverage` / `coverage-off`, `session-end`. Results are built from the three phase reports: a setup / teardown error fails the test ("Error in setup of …"), skip and xfail → skipped (reason kept), strict xpass → failed; names are classes + function + parametrize id, space-joined (`TestCart test_total[2-items]`); locations are the `def` line (pytest reports a decorated test at its first decorator). Per-test output from the capture sections (stdout → log, stderr → error, logging → info), never shared between tests; collection errors fail the file with pytest's message; files without a test to run (all deselected, module-level skip) report empty; a package's own collector (`__init__.py`, pytest 7) is not a test file. `--ltr-result=<file>` writes the whole `RunResult`; `$LTR_PYTEST_LIST` the collected files of a `--collect-only` run.
-- **Runner:** `PytestAdapter` (family `python`, priority below every JS adapter — a folder a JS framework claims stays JS), `PytestRunner` (`python -m pytest -p ltr_pytest …`, test files relative to the root so node ids read like the user's own, `runTestsByName` by node id, `liveCommand`, `debugArgs`, `listTestFiles` via the plugin), `framework/pytest/pytestConfig.ts` (pytest's own config file order: `pytest.toml`, `.pytest.toml`, `pytest.ini`, `.pytest.ini`, `pyproject.toml` `[tool.pytest]` / `[tool.pytest.ini_options]`, `tox.ini`, `setup.cfg`; small INI and TOML readers; detection by config, root `conftest.py`, or pytest in the dependency files next to test files), `pytestNodeIds.ts` (names ⇄ node ids — never `-k`; a template `name[…]` selects the function, a class suite its class), `python.ts` (probe in isolated mode: Python, pytest, coverage, xdist, pytest-cov, debugpy versions; per-root registry; minimums pytest ≥ 7.0, Python ≥ 3.12 with a "not supported" reason). `pytestExitReason` explains exit 2 / 3 / 4 (4: usually an `addopts` flag whose plugin is not installed).
-- **Interpreter:** `python/PythonInterpreters.ts` — the user's choice (**Select Python Interpreter**, `liveTestRunner.selectPythonInterpreter`, quick pick of every environment found + Browse…, remembered per project in `workspaceState`, never in the project), `liveTestRunner.pythonPath`, `.venv` / `venv` / `env` in the project then the workspace folder, `UV_PROJECT_ENVIRONMENT`, `poetry env info -p` (with `poetry.lock`), `pipenv --venv` (with a Pipfile), the Python extension's interpreter for the folder, an activated `VIRTUAL_ENV` / `CONDA_PREFIX` inside the project, then PATH (`python3` / `python`, `py` on Windows). The first with pytest wins; the user's own choice is never silently replaced. Logged on every Start (`Python 3.12.4 · pytest 9.1.1 · coverage 7.17.0 — <path> (.venv)`). None usable → one notification with **Select Interpreter** and nothing runs (`FrameworkServices.whyNotReady`, checked by `SessionManager.start`).
-- **One pytest process at a time (`FrameworkServices.batchPolicy`):** pytest projects share session fixtures, ports and files between tests — httpx's test server binds a fixed port, so two pytest processes side by side deadlocked. A framework can now cap its parallel processes and batch size; pytest runs `maxParallel: 1`, up to 300 files per process (session fixtures set up once, far below Windows' command-line limit), and the scheduler in `SessionManager._runFiles` keeps the shared budget for everything else. Scoped and fallback runs follow the same cap.
-- **Coverage:** the plugin starts coverage.py where pytest-cov would (`pytest_load_initial_conftests`), with the project's own config (`.coveragerc`, `setup.cfg`, `tox.ini`, `pyproject.toml`) and pytest-cov's `--cov=` sources from `addopts`, data in the session folder, and writes `coverage-final.json` istanbul-shaped (statements per line, branches from arcs grouped by source line, functions from coverage ≥ 7.6 regions, 0/1 counters) — `applyIstanbulCoverage` maps it unchanged. Test files, `conftest.py` and environments never count (`coverageRules`); files no test imported come from coverage.py itself when `source` is set (no source scan). Missing `coverage` package → tests run, one line says why.
-- **Covering tests and source saves:** each test runs in its own coverage context (`switch_context(nodeid)`), read back from `CoverageData.contexts_by_lineno` (coverage's own JSON report with contexts was 1.24 GB on httpx) and written as the same `T` / `H` trace records Jest and Vitest produce (`trace.jsonl`) — `applyTraceRecords`, the hover and **Show All Covering Tests** are unchanged; a saved source file reruns exactly the tests that ran it, by node id. Before a file has coverage (or without the coverage package), `PytestBatchRunner.runRelated` uses a static import graph (`session/pythonImports.ts`: `import` / `from … import` / relative imports against the root, `src/`, pytest's `pythonpath` and each test's folder; transitive; a saved `conftest.py` reruns the tests under its folder).
-- **Decoupled from JavaScript:** scoped runs pass test **names** to the framework (`IFrameworkAdapter.runTestCase(…, names: string[], …)`; `RunnerBackedAdapter.runNamed` builds Jest / Vitest's anchored pattern — command lines byte-identical), static discovery is a pluggable `TestFileDiscoverer` (Babel for JS, `session/discovery/pythonDiscovery.ts` — a line scanner for test functions, `Test*` classes without `__init__`, `unittest.TestCase` subclasses, nested classes, `@pytest.mark.parametrize` templates, `python_classes` / `python_functions` / `python_files` / `testpaths`), `Executor` `jsEnv` option, `FrameworkAdapter.family` (projects of different languages never swallow each other), Python project names from `pyproject.toml`, `configFileNames` (a saved `pyproject.toml` / `pytest.ini` / root `conftest.py` restarts the session), pytest config files in the runnable-files cache key (plus the plugin's hash), CodeLens for `.py`.
-- **New settings:** `liveTestRunner.pythonPath`, `liveTestRunner.pytestArgs`.
-- Tests: runner `pytest.test.ts` (17), plugin tests `packages/runner/python-tests/test_ltr_pytest.py` (10, pytester; CI job **pytest plugin** on pytest 7.4 / 8.4 / 9.1 × Python 3.12 / 3.13 / 3.14), extension `pythonDiscovery.test.ts` (7), `pythonImports.test.ts` (5). e2e: fixtures `pytest-basic` (own `.venv` built from `requirements-e2e.txt` by `e2e/run.js`; CI gets `actions/setup-python` and `LTR_E2E_PYTHON`) and `pytest-no-pytest`; scenarios `pytest-full-run` (compared test by test with a plain pytest JUnit run), `pytest-scoped-run`, `pytest-on-save`, `pytest-stop`, `pytest-hang`, `pytest-coverage` (totals equal coverage.py's own report), `pytest-debug`, `pytest-no-pytest`, `pytest-related`. Real repos (`e2e/real-repos.js`, scenario `repo-pytest`, baseline `e2e/baselines/pytest.json`; clones get their editable installs pointed at the clone and copied `__pycache__` dropped): click (2287 tests), httpx (1418; one known-flaky timing test), erdantic (pytest 7.4, pytest-cov in `addopts`) — all match plain pytest test for test; pytest's own suite (4811 tests, opt-in).
+### Docs
+- **README** rewritten short (274 → 166 lines): one hero GIF (`resources/gifs/demo.gif`), feature bullets, `coverage-hover.png`, `monorepo-switcher.png`; every `[TODO: USER_INPUT_NEEDED]` filled.
+- **Website** hero: a slider of five scenes (`gifs/scene-*.gif`; tabs, progress bar, arrows, swipe, auto-advance, off with reduced motion); feature images `coverage-hover.png`, `results-panel.png`, `explorer-running.png`; `pages.yml` publishes the scenes at `/gifs/`.
+- **Guide:** hero GIF, Vitest and pytest scenes, coverage hover, Results panel; "Jest and Vitest" wording updated where pytest applies too.
+- Recording tooling: fixtures `demo-jest` / `demo-vitest` / `demo-pytest`, `diag-demo-*` scenarios, `e2e/lib/demo.js`, `devtools.js` `recorder`, `scripts/demo-gifs.js`. Removed unused images (`code_coverage.png`, `explorer-test-run.png`, `test-results-column-split.png`, `status_bar.png`, `live test runner demo.gif`).
 
-### Explorer: Running card
-
-- **Running score card** next to Total / Passed / Failed: the number of individual tests with status `running` in the `ResultStore` (`getSummary().running`), so it works for Jest, Vitest and pytest alike. Shown only while the count is above 0. Clicking it (or **Running** in the status dropdown, shown with the card) filters the list to files with a running test (`fileMatchesStatus` in `testListLayout.js`). When the count drops to 0 a `running` filter switches back to `all`; a saved `running` filter restored with nothing running falls back the same way.
-- **No new messages:** the count rides on the existing Explorer messages as `runningTests` — `init`, `files-rerunning`, the 50 ms-batched `batch-file-results`, `run-finished` and `session-stopped` (`BaseWebviewProvider`). Summary cards now lay out as a flexible grid (hidden cards take no column).
-- Tests: `statusFilter.test.ts` (webview filter), `resultStore.test.ts` (running count through a run, a single-test rerun and Stop). e2e: scenario `basic-running-count` (counts the Explorer is sent during and after a full run and a scoped rerun).
-
-### Docs: demo GIFs, website slider, shorter README
-
-- **README** rewritten short: one hero GIF (`resources/gifs/demo.gif` — Jest Start with the Running card, a Vitest save rerunning only its tests, pytest, the coverage hover, ▶ Run with per-test output), a bullet list of features, two images (`coverage-hover.png`, `monorepo-switcher.png`); commands, settings, the framework matrix and limitations stay. 274 → 166 lines; every `[TODO: USER_INPUT_NEEDED]` placeholder filled (the Timeline one went with its section).
-- **Website** hero: the static screenshot became a slider of the five scenes (`gifs/scene-*.gif`) — labelled tabs with a progress bar, arrows, swipe, auto-advance per scene length (off with reduced motion), each GIF restarted when shown. Feature rows use the new `coverage-hover.png`, `results-panel.png`, `explorer-running.png`. `pages.yml` publishes `resources/gifs/scene-*.gif` at `/gifs/`.
-- **Guide:** the hero GIF in Quick start, the Vitest and pytest scenes, the coverage hover and the Results panel; mentions of "Jest and Vitest" that apply to pytest too updated.
-- Recording tooling: `fixture:demo-jest` / `demo-vitest` / `demo-pytest`, scenarios `diag-demo-*` + `e2e/lib/demo.js`, `devtools.js` `recorder`, `scripts/demo-gifs.js` (developer guide → End-to-end tests). Old unreferenced images removed (`code_coverage.png`, `explorer-test-run.png`, `test-results-column-split.png`, `status_bar.png`, `live test runner demo.gif`).
-
-### Explorer: Python environment chip
-
-- **pytest projects show which Python runs the tests** on a chip under Start / Stop: `🐍 Python 3.12.4 · .venv · pytest 9.1.1` (environment = the venv's folder — `.venv`, a poetry / conda env — else `system`); the tooltip has the interpreter path, where it was found and the coverage version. Click → **Select Python Interpreter**. Amber with a short reason when it can't run the tests (`pytest not installed · .venv`, `Python 3.9.6 · needs 3.12+`, `No Python found`), already before Start. Hidden for JS projects. `python/pythonEnvChip.ts` (text), `ExplorerView.setPythonEnv` (`python-env` message, also in `init`), webview `renderPythonEnv`.
-- **Probed when the project is shown, quietly:** `PythonInterpreters.ensure(root, { quiet: true })` logs at debug level and shows no notification; `PythonInterpreters.status()` / `onDidChange` feed the chip. The first run that uses the interpreter still logs `Python 3.12.4 · pytest 9.1.1 · coverage 7.17.0 — …/.venv/bin/python (.venv)` at INFO — or the warning with every interpreter tried plus one notification (`_announce` / `_warnOnce`; the resolver itself logs at debug only).
-- Tests: `pythonEnvChip.test.ts` (4); e2e `pytest-env-chip` (chip before Start, tooltip, unchanged after a run), `pytest-no-pytest` (+ amber chip before Start), `basic-full-run` (+ no chip on a JS project).
-
-### Fixes
-
-- **Coverage starts at 0%, not 100%:** when nothing was counted up front (pytest always — coverage.py reports untouched files itself; Jest / Vitest without `collectCoverageFrom` / `coverage.include`), the badge read "0 of 0" as 100% (the per-metric convention: no branches = 100% branches) from Start until the first results. With every total at 0 the Explorer badge and the Coverage tab totals now show 0% (`0/0` in N/M mode); a single 0/0 metric next to real data stays 100% (`testListView.js` `_nothingMeasured`).
-- **Running card stays up for the whole run:** it hid whenever the count touched 0 — between pytest files, or before the first test started — and came back a moment later. It now shows from `run-started` (or a rerun's `files-rerunning`) to `run-finished` / Stop, counting down to 0 in the gaps; outside a run it shows only while something is still marked running. A Running filter goes back to All when the card hides.
-- **pytest durations in whole milliseconds:** the plugin reported `302.763` ms (3 decimals) and the coverage hover showed it as is; durations are now rounded like Jest's and Vitest's.
+---
 
 ## [3.1.0] - 2026-10-28
 
-### Any UI framework: components, Vitest workspaces, Jest ESM mode
+### Added
+- **Monorepos and multi-project workspaces.** Every test project is detected; none runs automatically.
+  - Runner `framework/projectDiscovery.ts` (`findTestProjects`, `projectsInFolder`, `workspaceGlobs`, `pnpmWorkspacePackages`, `expandWorkspaceGlobs`, `hasOwnTestConfig`, `testFrameworkOf`): a folder with its own test config is one project (its config covers its packages: the `jest` repo's root `projects`, vueuse / slidev `test.projects`); a monorepo root (`pnpm-workspace.yaml`, `package.json#workspaces`, `*` / `**` / `!` globs) without one gives one project per package with tests; nested and duplicate roots dropped; a lone unrecognised folder stays the project (plain Jest). Tests: `projectDiscovery.test.ts` (11). The real repos (jest, jest-dom, vscode-jest, a CRA project, unplugin, slidev, vueuse) stay one project each.
+  - **`ProjectContext` per project** (`src/project/`): its own stores, discovery + cache, framework provider, `SessionManager` (fixed `projectRoot`, status sink) and session folder (`session-<pid>-<ts>/p<N>-<name>`). `ProjectRegistry` owns them and the selected project (remembered per workspace, else the active editor's, else the first); others are discovered on first selection or Start. `ProjectObserverGate` forwards events only for the selected project; switching rebinds the views (`bindProject`, fresh `init`, mid-run progress included).
+  - **Editor features decorate every file from its own project** (`editor/FileStores.ts`, `editorObservers`); saves go to the file's project, so a background project keeps rerunning.
+  - **Project switcher** at the top of the Explorer (two or more projects): `name ▾ ● running 3/10 ✓120 ✗2`, a menu with framework, path, state and counts. Commands **Select Project** (`liveTestRunner.selectProject`) and **Stop All Projects** (`liveTestRunner.stopAllProjects`); `startTesting` / `stopTesting` take an optional project id.
+  - **Status bar** with several projects: `Live Tests: web · ✅ 12 passed · 2 running` (tooltip: every project).
+  - **Setting `liveTestRunner.maxRunningProjects`** (`"auto"` = 2, or 1 with ≤ 4 cores or < 8 GB; or a number). Over the limit: "Stop a running project first — …" (`project/projectLimits.ts`, tests (3)).
+  - `liveTestRunner.projectRoot` / Select Project Root pin the window to one root (the 3.0 behaviour); "Detect all projects" clears the pin. Changing the setting or folders re-detects (contexts kept when roots are unchanged).
+  - **Vitest `test.projects` grouping:** `CommandRunner.listTestFiles()` returns each file's `projectName` (`vitest list --json`, two or more projects; "a, b" for several); cached; `FileResult.group` → one collapsible row per project.
+  - A package whose `test` script runs `vitest` is Vitest even when Vitest is installed only at the root. Copy Diagnostic Report lists every project.
+  - e2e fixtures `monorepo-jest`, `monorepo-vitest`; scenarios `monorepo-select`, `monorepo-run`, `monorepo-stop`. The e2e API returns `projects` and selected-project getters.
+- **Mixed Jest + Vitest projects.** Each test file's framework decides its binary, config, flags, batch runner, reporter and coverage.
+  - Runner `framework/frameworkRouting.ts`: `projectFrameworks(root, detected)` (mixed = a Jest marker **and** the root's own `vitest.config.*` / `vitest.workspace.*`; a `vitest` dependency or `vite.config.*` alone stays Jest — jest-dom), `frameworkHint(source)` (imports `vitest` / `@vitest/*` vs `@jest/globals`, then `vi.` / `jest.` calls; comments ignored), `parseFrameworkRules` / `matchFrameworkRule` / `globToRegExp`, `assignFrameworks` (setting → single framework → each framework's own list → hint → primary + WARN). `framework/allowedFrameworks.ts` `allowFrameworkAt`: runners refuse the other framework's root unless allowed. Tests: `frameworkRouting.test.ts` (25).
+  - **`FrameworkRouter`** replaces `DetectingFrameworkProvider`; the provider gains `prepare()`, `listTestFiles(root, discovered)` (both frameworks in parallel, each file placed once), `restore(listing)`, `fileChanged(file)` (an added `vitest` import moves a file, INFO), `fingerprint()`, `isMixed()`. Single-framework projects behave as before.
+  - **SessionManager:** batches never mix frameworks; the fallback uses the batch's framework; a source save reruns each framework's dependents in parallel and ignores the other's files (`owns`; `runRelatedTests` gets `accept`); either config restarts; session line `framework: jest + vitest`; status bar `· Jest 5 · Vitest 3`.
+  - Runnable-files cache stores each file's framework and rule (`"vitest:hint"`).
+  - **Coverage across frameworks** (`coverageRules.combineWithEntry` / `mergeByLine`): counters merge by line, a line either framework ran stays covered. Tests: `coverageMerge.test.ts`.
+  - UI: files grouped by framework (`Jest`, `Vitest`, `Vitest · <project>`); switcher / diagnostics show `jest + vitest`; the Timeline says "not available yet" for Vitest files.
+  - **Setting `liveTestRunner.frameworks`** — `{ "<glob>": "jest" | "vitest" }` (or `{ "framework": … }`), globs relative to the workspace folder, first match wins; also makes a Jest project mixed. Per-glob `config` / `root` not supported (WARN).
+  - e2e fixtures `mixed-same-package`, `mixed-monorepo`; scenarios `mixed-full-run`, `mixed-on-save`, `mixed-stop`, `mixed-monorepo`.
+- **Vitest execution trace** (as Jest has): the hover lists the tests that ran a line; a source save reruns only those tests (`-t` patterns; a file where every non-skipped test ran it reruns whole, with coverage); `vitest related` is the fallback. Same JSONL records, so `ExecutionTraceStore`, the hover and Show All Covering Tests are unchanged.
+  - **How:** a wrapper config (`<session>/vitest-trace/<root>/ltr.vitest.config.mjs`) loads the project's config with its own Vite (`loadConfigFromFile`, `mergeConfig`) and adds the `live-test-runner:trace` plugin: the trace setup file first in `test.setupFiles` (`server.fs.allow`), and an `enforce: 'post'` transform inserting `globalThis.__strace?.step(line, file)` before each statement of the project's own sources, lines read through the source map. Insertions are pure, unmapped and `/* istanbul ignore next */` — coverage unchanged (vueuse, 361 files, identical totals).
+  - `vitestTraceSetup.mjs`: test context in `beforeEach` (`fullName` = suites + test), `beforeAll` hits as hooks, flush in `afterAll`; `Function.prototype.toString` hides the inserted calls (slidev's `page.evaluate` tests); hook callbacks take no parameters.
+  - **`test.projects`:** inline projects get the plugin (idempotent; Vitest 5 inline `extends` inherits it); file and folder entries (`'packages/*'`) get a wrapper each.
+  - **Workers:** one trace file per worker (`<base>.<pid>-<threadId>`, `LTR_TRACE_PER_WORKER`); an `F` record when the setup ran.
+  - **Fallback:** the trace turns off until the next Start, with one log line (`VitestTrace`): setting off, Vitest < 3, no Vite, the wrapper failing, a traced batch with no result (rerun without it), or a file run without the setup. The hover then says "covering tests are off for this project — <reason>"; saves use `vitest related`. New `FrameworkServices.traceOffReason()`.
+  - **Setting `liveTestRunner.vitestTrace`** (default `true`).
+  - Refactor: trace parsing in `session/traceRecords.ts` (`applyTraceRecords`, both frameworks; a retried test's records merge). Runner: `vitestTrace.ts` (`viteEntryFor`, `vitestDirFor`), `resolvePackageDir` exported, `VitestRunner.liveCommand({ config })` / `projectConfigPath()`, `CommandRunner.commandArgs(request, configOverride)`.
+  - Whole-file trace reruns when every non-skipped test ran the source; skipped / todo tests no longer force name patterns (Jest too).
+  - Tests: runner `vitestTrace.test.ts` (6); `vitestTraceTransform.test.ts` (15), `vitestTraceConfig.test.ts` (9), `traceRecords.test.ts` (3). e2e fixture / scenario `vitest-trace`; `vitest-session`, `vitest-coverage`, `mixed-on-save` use the trace; `vitest-related` runs with it off; `repo-vitest` checks it. A batch stopped by the hang limit still applies its finished files' trace.
+- **Any UI framework: components, Vitest workspaces, Jest ESM mode.** If the project's Jest or Vitest runs it, every feature works (React, Solid, Preact, Lit, Angular and Qwik were always plain JS / TS).
+  - **What counts as source** (`session/sourceFiles.ts`): JS / TS, compiled formats (`.vue`, `.svelte`, `.astro`, `.marko`, `.mdx`, `.riot`, `.imba`, `.coffee`, `.civet`, `.gjs` / `.gts`, `.elm`), extensions Jest's `moduleFileExtensions` loads (`IProjectConfig.sourceExtensions`; `html` with jest-preset-angular), or anything the trace saw run. Assets, data and docs (`NON_SOURCE_EXTENSIONS`) start nothing. Before, every non-JS/TS save was ignored. Untested components are counted from their `<script>` / Astro frontmatter (`scriptOf`).
+  - **Vitest trace reaches components** without an extension list: any module a Vite plugin compiled whose source map leads back to the file (`sourceMapLookup.mapsBackTo`), script and template lines; query sub-modules and map-less components untouched; `nonSourceExtensions` in the wrapper options. Vitest coverage unchanged (Vitest 3.2 / 4.1, Vue 3.5 + Svelte 5).
+  - Shared reader `instrumentation/shared/sourceMapLookup.js` (Vitest and Jest transforms).
+  - **Jest trace and coverage reach components:** `<root>/**/*.<ext>` routed to our transform for every extension the project transforms itself; the project's transformer runs, its output is instrumented and moved back through its map (`remapLocations`); compiler-added code gets nothing. vue-jest maps `<script>`, svelte-jester the whole component; Vue templates under Jest are marked run when the render function runs (trace only). No map → runs uninstrumented.
+  - **Jest's ESM mode:** Node options from the test script or `.npmrc` (`node-options=`; project, monorepo root, else `~/.npmrc` — `npmrcNodeOptions`) reach every Jest we start (`testScriptNodeOptions` / `jestNodeEnv`; ▷ Debug as `runtimeArgs`). A file still failing as ESM gets one WARN per session (`jestEsmHint`). The transform has `processAsync`, loads ESM-only transformers with `import()`, and instrumented ES modules `import` the runtime; the cache key includes the mode.
+  - **Vitest 3 workspaces traced:** the wrapper loads `vitest.workspace.*` / `vitest.projects.*` (via the project's Vite; JSON read directly) or `test.workspace`, and passes the list inline; entries' `root` / `extends` resolved against the file's folder. Vitest 4+ has none. Checked on 3.0.9, 3.1.4, 3.2.4.
+  - **Type-check files** (`*.test-d.ts`) no longer turn the trace off (reporter tag `typecheck: true`) and rerun on save (`vitest related <src> --typecheck.only`; `IBatchRunner.hasTypecheckFiles`, `RelatedRunOptions.typecheckOnly`).
+  - **Any file a test loads reruns its tests (Vitest):** the trace plugin writes the module graph (`LTR_VITEST_DEPS`: `?raw` / `?url` imports, `addWatchFile` templates); `ExecutionTraceStore` (`addImporters`, `isLoaded`, `getDependentTestFiles`) → "Module-graph rerun". `vitest related` finds neither.
+  - **Templates named by a relative path (Jest):** saving a non-JS file nothing ran reruns the tests of the sources next to it that name it (`templateUrl: './x.html'`).
+  - Tests: `sourceFiles.test.ts` (4), `sourceMapLookup.test.ts` (3), `jestComponentTransform.test.ts` (4), `vitestTraceConfig.test.ts` (+5), `vitestTraceTransform.test.ts` (+2); runner `jestConfig.test.ts` (+4), `vitestReporterSource.test.ts` (+2). e2e `vitest-components`, `vitest-workspace`, `jest-vue`, `jest-svelte-esm`; the plain-Jest comparison uses the script's Node options.
 
-The extension never depended on React — React, Solid, Preact, Lit, Angular and Qwik code is plain JS / TS — but single-file components and a few project setups were left out. Now whatever UI framework a project uses, if its test framework (Jest or Vitest) can run the tests, the extension runs them with every feature.
+### Fixed
+- **Vitest 3.0 / 3.1 failed at startup with Vite 6.4** ("Failed to load custom Reporter"): the reporter now lives at `<session>/node_modules/.ltr/ltr-vitest-reporter.mjs`, which every Vitest from 2 to 4 loads.
+- Found on real projects (new `repo-components` real-repo scenario: vue-testing-library, vue-multiselect, jest-preset-angular's Angular 22 example, svelte-testing-library):
+  - Babel configs adding `@babel/runtime` imports failed every file: our files are in `transformIgnorePatterns` (`JestProjectConfig.ownFilesPattern`).
+  - jest-preset-angular ran TypeScript untranspiled: treated like ts-jest (compile, then instrument); any transformer rejecting instrumented code is compiled first from then on; compiled-first code records source lines through the map (ts-jest too).
+  - TypeScript generics broke instrumentation (`.ts` parsed with JSX): now without JSX, with decorators.
+  - Babel 8 discovery lost decorators: rejected parser plugins dropped one by one; the fallback includes `decorators-legacy`.
+  - A `test` script running only Vitest next to a `jest.config.*` (svelte-testing-library) ran on Jest: the script decides.
+  - The ESM hint recognises relative `node_modules` paths.
+- **Vitest: one test or suite showed "Could not read Vitest's JSON result"** when the config set a single `outputFile`: `--outputFile=<ours>` now overrides every form (Vitest 1–5) and nothing is written into the project.
+- **Vitest 1: one test or suite matched nothing:** `toVitestNamePattern` allows one leading space.
+- **Clear Cache and Restart Testing** didn't restart and left the views stale: both cache commands share `stopAndClear`; the restart then waits for fresh discovery. Works without a discovery cache.
+- **Mixed coverage:** a called function's first and last line stayed red (Vitest's v8 counts them, Jest's instrumentation doesn't); `mergeByLine` counts them.
+- **Jest batches skipped custom `testMatch` / `testRegex` files** (e.g. `*.jest.js`, which fell back to plain Jest one by one): the overlay keeps the project's pattern (`testRegex`, else `testMatch`).
+- Tests: `vitestRunnerArgs.test.ts`, `adapterRunContract.test.ts`; e2e `vitest-scoped-run`, `basic-clear-restart`.
 
-- **What counts as source follows the test framework** (`session/sourceFiles.ts`): a saved file reruns tests when it is JS / TS or a compiled format on the list (`.vue`, `.svelte`, `.astro`, `.marko`, `.mdx`, `.riot`, `.imba`, `.coffee`, `.civet`, `.gjs` / `.gts`, `.elm`), when the project's Jest config loads its extension (`moduleFileExtensions` — e.g. `html` with jest-preset-angular; `IProjectConfig.sourceExtensions`), or when the execution trace saw a test run it — whatever its extension. Assets, data and docs (`NON_SOURCE_EXTENSIONS`) start nothing. The coverage hover answers for any file with coverage. Saving one reruns the tests that use it — before, `SessionManager.onSave` ignored every non-JS/TS save, for Jest and Vitest alike. The coverage hover (covering tests) is registered for them, and the coverage source scan counts untested components from their `<script>` blocks (and Astro's `---` frontmatter) at their own lines (`scriptOf`).
-- **Vitest trace reaches components — without a list of extensions:** the trace plugin instruments any module a Vite plugin compiled to JavaScript whose combined source map leads back to the file itself (`sourceMapLookup.mapsBackTo`; assets never), so `.vue`, `.svelte`, `.astro`, `.mdx`, `.coffee`, … all work — instrumented after their Vite plugin compiled them (`enforce: 'post'`, as for TypeScript), recording the component's own lines through the combined source map — script and template (render function) lines. Sub-modules with a query (`?vue&type=style`) and components without a map stay untouched. The never-source list is passed in the wrapper options (`nonSourceExtensions`). Vitest's own coverage is unchanged (checked on Vitest 3.2 and 4.1 with Vue 3.5 + Svelte 5: identical `coverage-summary.json`).
-- **Shared source map reader** `instrumentation/shared/sourceMapLookup.js` (line + column, segments of other sources — helpers, virtual modules — ignored), used by the Vitest transform and the Jest transform.
-- **Jest trace and coverage reach components:** the batch config routes `<root>/**/*.<ext>` to our transform for every extension the project transforms itself (vue-jest, svelte-jester, a CoffeeScript transformer…) — candidates are the list plus the project's `moduleFileExtensions`, never JS / TS or assets. The transform runs the project's transformer, instruments its JS output and moves every location back to the component through the transformer's map (`remapLocations`); compiler-added code (unmapped) gets no counter and no step. vue-jest maps the `<script>` block (as Istanbul's own Vue coverage), svelte-jester the whole component. **Vue templates under Jest:** the render function vue-jest leaves unmapped marks every `<template>` line as run when it runs (trace only — covering tests on template lines; coverage numbers stay those of `jest --coverage`). A transformer without a map: the compiled code runs uninstrumented.
-- **Jest's ESM mode:** Node options in the test script (`NODE_OPTIONS=--experimental-vm-modules jest`, `cross-env NODE_OPTIONS=…`, `node --experimental-vm-modules …/jest`) or in `.npmrc` (`node-options=…`: the project's, a monorepo root's, else `~/.npmrc` — runner `npmrcNodeOptions`) are passed to every Jest the extension starts (runner `testScriptNodeOptions` / `jestNodeEnv`: batches, ▶ Run, the timeline, ▷ Debug as `runtimeArgs`; only loading-related flags NODE_OPTIONS accepts). Before, ESM-only projects failed to load every file. When a file still fails to load as an ES module, one WARN per session says what to change (runner `jestEsmHint`): Jest's ESM mode and where to turn it on, or `transformIgnorePatterns` for an ESM package in `node_modules`. The session transform has `processAsync` (components whose transformer is async / ESM-only — svelte-jester for Svelte 4+), loads ESM-only transformers with `import()`, and instrumented ES modules (`supportsStaticESM`) load the trace runtime with an `import` instead of `require`; the cache key includes the mode.
-- **Vitest 3 workspaces are traced:** Vitest looks for `vitest.workspace.*` / `vitest.projects.*` next to the config it is given — our wrapper, in the session folder — so it never found the project's. The wrapper loads the file (through a loader module in the session folder: the project's Vite bundles it, so TS and `defineWorkspace` work; JSON read directly) or takes `test.workspace` (a list or a file path), and passes the list inline as `test.workspace`, each entry wrapped as for `test.projects`; inline entries' `root` / `extends` are resolved against the file's folder first. An entry naming the root config is the root project (the wrapper). Vitest 4+ has no workspaces (left alone). `VitestTrace` no longer turns the trace off for workspace files. Checked on Vitest 3.0.9, 3.1.4 and 3.2.4 (file and inline).
-- **Type-check files no longer turn the trace off:** a `typecheck.enabled` run of `*.test-d.ts` never starts a worker, so it never ran the trace setup and looked like "a project the trace could not reach". Our reporter tags type-check results (`file-end` … `typecheck: true`, from Vitest's `meta.typecheck`) and `VitestBatchRunner` does not expect a trace for them.
-- **Fix — Vitest 3.0 / 3.1 failed at startup with Vite 6.4** ("Failed to load custom Reporter … Does the file exist?"): those versions load reporters through vite-node, which runs files outside `node_modules` through Vite, and Vite 6.4 refuses files outside `server.fs.allow`. The reporter is now written to `<session>/node_modules/.ltr/ltr-vitest-reporter.mjs` (in our session folder), which vite-node imports natively — every Vitest version from 2 to 4 loads it.
-- **Any file a test loads reruns its tests (Vitest):** when Vitest closes its Vite server, the trace plugin writes the module graph (`LTR_VITEST_DEPS`: every project file and the project files importing it — `?raw` / `?url` imports, files a plugin reads with `addWatchFile` such as Angular templates). `ExecutionTraceStore` keeps it (`addImporters`, `isLoaded`, `getDependentTestFiles`); saving a file no line of which ran but which a test loads reruns exactly the test files that reach it ("Module-graph rerun"). `vitest related` was checked first and finds neither a `?raw` HTML import nor a plugin-read template.
-- **Templates named by a relative path (Jest):** an Angular `templateUrl: './x.html'` is a string, not an import, so `jest --findRelatedTests` finds nothing for it. Saving a non-JS file nothing ran or loaded now reruns the tests of the source files in its folder that name it (`'./x.html'`), each by its own trace.
-- **Type-check files rerun on save:** after a trace or module-graph rerun, a Vitest root that ran type-check files (`*.test-d.ts`) also runs `vitest related <src> --typecheck.only` (`IBatchRunner.hasTypecheckFiles`, `RelatedRunOptions.typecheckOnly`, `VitestRunner.liveCommand({ typecheckOnly })`).
-- **Found on real projects** (new `repo-components` scenario in `e2e/real-repos.js`: vue-testing-library, vue-multiselect, jest-preset-angular's Angular 22 example app, svelte-testing-library):
-  - *Jest projects whose Babel config adds `@babel/runtime` imports failed every test file* — Jest ran the extension's own setup and runtime files through the project's transforms; the batch and Timeline configs now add the extension's instrumentation folder to `transformIgnorePatterns` (`JestProjectConfig.ownFilesPattern`).
-  - *Angular (jest-preset-angular) ran its TypeScript untranspiled* — the transformer type-checks and rejected the instrumented code, and the fallback returned the raw source. It is now treated like ts-jest (compile first, then instrument), and any transformer that rejects instrumented code is compiled first from then on; compiled-first code now records the source's own lines through the transformer's map (returned or inline — ts-jest projects included).
-  - *TypeScript generics broke instrumentation* — `.ts` sources were parsed with the JSX plugin (`<T>(x: T) => …` read as a tag), so those files lost coverage and trace; TypeScript source is parsed without JSX, with decorators.
-  - *Test discovery with Babel 8 lost decorators* — the project's Babel 8 parser rejects some plugins of the full list (`decimal`, `importAssertions`, `pipelineOperator` "minimal") and the minimal fallback had no decorators, hiding Angular spec files from the tree; rejected plugins are now dropped one by one and the fallback includes `decorators-legacy`.
-  - *A project whose `test` script runs only Vitest but keeps a `jest.config.*` (svelte-testing-library) ran on Jest* — without a Vitest config of its own (which would make it a mixed project), the test script now decides: Vitest, as `npm test`.
-  - The ES-module hint recognises packages under `node_modules` when Jest prints the path relative.
-- Tests: extension `sourceFiles.test.ts` (4), `sourceMapLookup.test.ts` (3), `jestComponentTransform.test.ts` (4), `vitestTraceConfig.test.ts` (+5 workspace cases), `vitestTraceTransform.test.ts` (+2 component cases); runner `jestConfig.test.ts` (+4 Node options), `vitestReporterSource.test.ts` (+2 type-check tag). e2e: fixtures / scenarios `vitest-components` (Vue + Svelte on Vitest 3.2: covering tests at script and template lines, hover, coverage, component saves rerun only their tests), `vitest-workspace` (Vitest 3.1 workspace file with an inline and a folder project + a type-check file), `jest-vue` (vue3-jest: covering tests, coverage, an untested component counted, save rerun), `jest-svelte-esm` (Svelte 4 + svelte-jester in Jest's ESM mode from the test script). The e2e plain-Jest comparison uses the test script's Node options too.
+### Website and docs
+- The website deploys from `main` only (`pages.yml`). Hero badge "New in 3.1 — Monorepos · Jest and Vitest in one project"; table rows for monorepos and mixed projects.
+- Screenshots of the switcher and a mixed project, captured from the real UI by opt-in `e2e/scenarios/diag-screenshots*.js` (`LTR_E2E_CDP_PORT` + `LTR_E2E_SHOTS_DIR`; `diag-` never runs in `--all`).
 
-### Fixes from 3.0.0 use
-
-- **Vitest: running one test or suite showed "Could not read Vitest's JSON result (invalid JSON)"** and no result, while the whole file worked. A project config whose `outputFile` is a single path (`outputFile: 'report.xml'`, usual with a junit / json reporter for CI) wins over `--outputFile.json=<ours>`, so Vitest wrote the result into the project's own file and the runner fell back to parsing Vitest's printed output. Session file runs never noticed: they read results from our reporter's events. `VitestAdapter.outputFileArg` now passes `--outputFile=<ours>`, which overrides every form of the config's setting (only our json reporter uses it — the CLI's reporters replace the config's) and no longer writes a report into the project. Checked on Vitest 1, 2, 3, 4 and 5.
-- **Vitest 1: running one test or suite matched nothing** — Vitest 1 matches `-t` against a name that starts with a space (the file is an unnamed parent). `toVitestNamePattern` allows one leading space (`^ ?(?:…)`).
-- **Clear Cache and Restart Testing did not restart, and left the views stale** — it stopped the session, cleared the results and rediscovered, but never resynced the Explorer / Results views to the cleared store (the old list and counts stayed while rediscovery progress came in) and never started a session (Start Testing still showed). Both cache commands now share `stopAndClear` (stop, clear results, traces and the discovery cache, resync the views), and Clear Cache and Restart then starts the session, which waits for the fresh discovery and runs everything. It also works when the project runs without a discovery cache.
-- Tests: runner `vitestRunnerArgs.test.ts` (Vitest 1 names), `adapterRunContract.test.ts`; e2e `vitest-scoped-run` (failing test with a config `outputFile`), new `basic-clear-restart`.
-
-### Vitest execution trace
-
-- **Vitest gets the per-test execution trace Jest has.** The coverage hover lists the tests that ran a line, and saving a source file reruns only the tests that ran it (`SessionManager._runAffectedBySourceFile` trace path, `-t` name patterns; a test file where every non-skipped test ran it runs whole, as a batch with coverage) instead of every importing test file (`vitest related`, now the fallback). Same JSONL records as Jest, so `ExecutionTraceStore`, the hover and **Show All Covering Tests** are unchanged.
-- **How:** batches run with a wrapper config (`<session>/vitest-trace/<root>/ltr.vitest.config.mjs`, `--config`) that loads the project's own config with the project's own Vite (`loadConfigFromFile`, `mergeConfig`; function / async / TS configs) and adds the `live-test-runner:trace` Vite plugin (`instrumentation/vitest/`): its `config` hook puts the trace setup file first in `test.setupFiles` (and allows serving it via `server.fs.allow`), its `enforce: 'post'` transform inserts `globalThis.__strace?.step(line, file)` before every statement of the project's own source files (not tests, `node_modules`, browser-mode projects; components — see above), with the source's line numbers read through the incoming source map. Insertions are pure (no new lines), unmapped in the returned source map (wrapper `{` / `}` / `return ` map to the code they wrap) and carry `/* istanbul ignore next */`, so coverage is unchanged (verified on vueuse: 361 files, identical statement / function / branch totals). The setup file (`vitestTraceSetup.mjs`) opens a test's context in `beforeEach` (`fullName` = suites + test joined by spaces, as `ResultStore`), marks `beforeAll` hits as hooks, flushes in `afterAll`, and makes `Function.prototype.toString` return functions without the inserted calls (slidev's `page.evaluate`-style self-containedness tests pass). Hook callbacks take no parameters (Vitest parses them for `test.extend` fixtures).
-- **`test.projects`:** inline projects get the plugin (it is idempotent; on Vitest 5 an inline project that extends the declaring config inherits it and keeps its shared Vite server); config-file and folder entries (`'packages/*'`) are replaced by a wrapper each that keeps their root and default name (package name / folder). Vitest 3 workspaces (`test.workspace`, `vitest.workspace.*`) are handled too — see *Any UI framework* above.
-- **Workers:** each worker (threads, forks, vm pools) writes its own trace file (`<base>.<pid>-<threadId>`, runtime option `LTR_TRACE_PER_WORKER`); the runtime also writes an `F` record when the setup file ran for a test file.
-- **Fallback:** the trace turns itself off for the project until the next Start, with one log line saying why (`VitestTrace`): setting `liveTestRunner.vitestTrace` off, Vitest < 3, Vite not found, the wrapper reporting it could not add the trace, a traced batch with no result at all (rerun at once without the wrapper), or a test file that ran without the setup (`F` missing — the trace would be incomplete). The hover then says "covering tests are off for this project — <reason>" and saves use `vitest related`. `FrameworkServices.traceOffReason()` is new; Jest has none.
-- **New setting `liveTestRunner.vitestTrace`** (default `true`).
-- **Refactor:** trace parsing moved from `JestBatchRunner` to `session/traceRecords.ts` (`applyTraceRecords`, used by both frameworks; a retried test's records now merge instead of replacing each other). Runner: `vitestTrace.ts` (`viteEntryFor`, `vitestDirFor`), `resolvePackageDir` exported, `VitestRunner.liveCommand({ config })` / `projectConfigPath()`, `CommandRunner.commandArgs(request, configOverride)`.
-- **Trace reruns of a whole file** — when every test of a file that is not skipped ran the saved source file, the file reruns whole (a batch, coverage measured again); skipped / todo tests no longer keep it at name-pattern runs (Jest too).
-- Tests: runner `vitestTrace.test.ts` (6); extension `vitestTraceTransform.test.ts` (15), `vitestTraceConfig.test.ts` (9), `traceRecords.test.ts` (3). e2e: fixture `vitest-trace` (Vitest 3.2, an inline and a folder project, TypeScript, a `test.extend` fixture, a function serialised with `toString()`), scenario `vitest-trace` (covering tests per line from both projects, hover, a save rerunning one test by name, nothing written into the project, the broken-wrapper fallback); `vitest-session`, `vitest-coverage`, `mixed-on-save` expect the traced path; `vitest-related` runs with the trace off. `repo-vitest` (real repos) checks the trace is on and a source save reruns by it. A batch stopped by the hang limit still applies the trace of the files that finished.
-
-### Monorepos & multi-project workspaces
-
-- **Every test project in the workspace is detected; none runs automatically.** New runner module `framework/projectDiscovery.ts` (`findTestProjects`, `projectsInFolder`, `workspaceGlobs`, `pnpmWorkspacePackages`, `expandWorkspaceGlobs`, `hasOwnTestConfig`, `testFrameworkOf`): per VS Code workspace folder, a folder with its own test config (`jest.config.*`, `package.json#jest`, `vitest.config.*` / `vite.config.*` / `vitest.workspace.*`, `react-scripts test`) is **one** project — its config already covers its packages (the `jest` repo's root `projects`, vueuse / slidev `test.projects`); a monorepo root (`pnpm-workspace.yaml` `packages:`, `package.json#workspaces`, `*` / `**` / `!` globs) without one gives one project per workspace package with tests (framework dependency, config or a jest / vitest / react-scripts test script); nested and duplicate roots are dropped; a single folder with nothing recognised stays the project (plain Jest, as before). Unit tests: `runner/test/projectDiscovery.test.ts` (11). All real repos (jest, jest-dom, vscode-jest, a Create React App project, unplugin, slidev, vueuse) stay one project each.
-- **`ProjectContext` per project** (`vscode-extension/src/project/`): its own `ResultStore`, `ExecutionTraceStore`, `CoverageStore`, `TestDiscoveryService` + `DiscoveryCache`, `DetectingFrameworkProvider` (own batch runners), `SessionManager` (now constructed with a fixed `projectRoot` and a status sink) and session folder (`session-<pid>-<ts>/p<N>-<name>`; the session folder itself with one project). `ProjectRegistry` owns the contexts and the selected project (remembered per workspace, else the active editor's project, else the first); only the selected project is discovered at activation, the others on first selection or Start. Each project's `ProjectObserverGate` records its live state and forwards events to the views only while it is selected (observer pattern kept); switching rebinds the Explorer and Results views (`bindProject`) and sends a fresh `init` (with run progress when the project is mid-run). Gutter icons, inline durations, CodeLens, coverage bars and the coverage hover decorate **every file from its own project** (`editor/FileStores.ts`, `editorObservers` hear every project) — opening a file of another project shows its results and ▶ Run / ▷ Debug there run in that project. Saves go to the file's project, so a background project keeps rerunning.
-- **Project switcher row** at the top of the Explorer (two or more projects): `name ▾ ● running 3/10 ✓120 ✗2`, a menu of every project with framework, path, state and counts; picking one runs the new **Select Project** command (`liveTestRunner.selectProject`, also a quick pick; takes an id / name argument). **Stop All Projects** (`liveTestRunner.stopAllProjects`). `startTesting` / `stopTesting` take an optional project id; without one they act on the selected project.
-- **Status bar** with several projects: `Live Tests: web · ✅ 12 passed · 2 running` (tooltip lists every project's state); unchanged with one project.
-- **New setting `liveTestRunner.maxRunningProjects`** (`"auto"` = 2, or 1 with ≤ 4 CPU cores or < 8 GB total memory; or a number ≥ 1). Starting one more project shows "Stop a running project first — "web" is running and liveTestRunner.maxRunningProjects allows 1 at a time." (also logged at INFO). Pure helper `project/projectLimits.ts` + unit tests (3).
-- **`liveTestRunner.projectRoot` / Select Project Root** now pin the window to that one root (exactly the 3.0 behaviour); the command lists detected projects and workspace folders, plus "Detect all projects" to clear the pin. Changing the setting or the workspace folders re-detects (contexts are kept when the set of roots is unchanged).
-- **Vitest `test.projects` grouping**: `CommandRunner.listTestFiles()` returns the files plus Vitest's `projectName` per file (`vitest list --json`, only with two or more projects; a file in several projects gets "a, b"); the runnable-files cache stores the groups; `FileResult.group` is serialised to the webviews and the test list (Explorer and Results) shows one collapsible row per Vitest project.
-- **Vitest detection**: a workspace package whose `test` script runs `vitest` is a Vitest project even when Vitest is installed only in the monorepo root.
-- Copy Diagnostic Report lists every project (name · framework · state · root).
-- e2e: fixtures `monorepo-jest` (npm workspaces: a Jest package with a config, one with only a `jest` script, a package without tests) and `monorepo-vitest` (a package with two `test.projects`, one configured only by its script, one without tests); scenarios `monorepo-select` (detection, nothing auto-runs, lazy discovery, switching views and status bar, the limit message, Stop by project id, projectRoot pin / unpin), `monorepo-run` (two Vitest projects at once, switching six times while both run, per-project results vs plain Vitest, project groups, background on-save rerun, no process left), `monorepo-stop` (Stop on one project kills only its Jest; the other finishes; none left after both). The e2e API returns `projects` and selected-project getters for `store` / `session` / ….
-
-### Mixed Jest + Vitest projects
-
-- **A test file's framework decides its binary, config, flags, batch runner, reporter and coverage.** Runner `framework/frameworkRouting.ts`: `projectFrameworks(root, detected)` — mixed = a Jest marker (jest dependency, `jest.config.*`, `package.json#jest`, CRA) **and** a `vitest.config.*` / `vitest.workspace.*` of the root's own (a `vitest` dependency or `vite.config.*` alone stays Jest — jest-dom); `frameworkHint(source)` (imports `vitest` / `@vitest/*` vs `@jest/globals` first, then `vi.` / `jest.` calls; comments ignored); `parseFrameworkRules` / `matchFrameworkRule` / `globToRegExp` for the new setting; pure `assignFrameworks` (setting → single-framework project → ownership by each framework's own list → hint → primary + WARN; when one listing failed, the other's list decides). `framework/allowedFrameworks.ts`: `allowFrameworkAt(root, fw)` — `JestRunner` / `VitestRunner` refuse a root detected as the other framework unless the router allowed it. Unit tests: `runner/test/frameworkRouting.test.ts` (25).
-- **`FrameworkRouter`** (`vscode-extension/src/framework/FrameworkRouter.ts`) replaces `DetectingFrameworkProvider` as each project's `IFrameworkServicesProvider`. The interface gains `prepare()` (every Start: detection + setting), `listTestFiles(root, discovered)` (a mixed project lists with both frameworks in parallel and places every file once), `restore(listing)` (remembered placements; files placed by a hint are read again), `fileChanged(file)` (a saved test file's hint is re-read — adding `import … from 'vitest'` moves it, logged at INFO), `fingerprint()` (runnable-cache key incl. the setting) and `isMixed()`. Single-framework projects behave exactly as before (one bundle, one listing).
-- **SessionManager**: batches never mix frameworks (queue built per framework); the plain-run fallback and its log wording use the batch's framework; on a source-file save a mixed project reruns each framework's dependents in parallel (Jest by trace / `--findRelatedTests`, Vitest with `vitest related`) and ignores results for the other framework's files (`owns` filter; `IFrameworkAdapter.runRelatedTests` gets an `accept` filter); any framework's config file restarts the session; the session line says `framework: jest + vitest`; the status bar adds `· Jest 5 · Vitest 3` (tests per framework).
-- **Runnable-files cache** stores each file's framework and rule (`frameworks: { file: "vitest:hint" }`).
-- **Coverage across frameworks** (`coverageRules.combineWithEntry` / `mergeByLine`): when a source file's entry was measured by the other framework, counters merge by line (statement / function start line, branch line + arm count) on the incoming manifest — a line either framework ran stays covered. Same-framework behaviour is unchanged. Unit tests `test/coverageMerge.test.ts`.
-- **UI**: a mixed project's Explorer groups files by framework (`Jest`, `Vitest`, or `Vitest · <project>`), the switcher / Select Project / diagnostics show `jest + vitest`; the Timeline asks the test file's framework (Vitest files: "not available yet").
-- **New setting `liveTestRunner.frameworks`** — `{ "<glob>": "jest" | "vitest" }` (or `{ "framework": … }`), globs relative to the workspace folder, first match wins; it also makes a Jest project without a Vitest config mixed when it sends one of its files to Vitest. Per-glob `config` / `root` are not supported (reported at WARN).
-- e2e: fixtures `mixed-same-package` (Jest `*.test.js` + `*.jest.js`, Vitest `*.test.js` + `*.vitest.js`, one shared source file) and `mixed-monorepo` (Jest, Vitest and mixed packages); scenarios `mixed-full-run` (placement, results that only pass under the right framework, groups, the two-configs WARN, status split, merged coverage, ▶ Run), `mixed-on-save` (test-file saves, a source-file save rerunning both frameworks without cross-applying results, a file moving to Vitest, config restart), `mixed-stop` (both frameworks' processes killed, nothing restarts), `mixed-monorepo`.
-
-### Website & screenshots
-
-- **The website deploys from `main` only** (`pages.yml`): release branches no longer publish a pre-release copy. Hero badge: "New in 3.1 — Monorepos · Jest and Vitest in one project"; framework table rows for monorepos and mixed projects.
-- README / guide screenshots of the project switcher and a mixed Jest + Vitest project (Explorer grouped by framework, merged coverage) — captured from the real UI by the opt-in `e2e/scenarios/diag-screenshots*.js` (`LTR_E2E_CDP_PORT` + `LTR_E2E_SHOTS_DIR`: VS Code gets a DevTools port and the scenario captures its own window; `diag-` scenarios never run in `--all`).
-
-### Bug Fixes
-
-- **Mixed-project coverage: a function's first and last line stayed red** when the other framework had called it — Vitest's v8 coverage has a statement for the `function f() {` and `}` lines, Jest's instrumentation only for the body; `mergeByLine` now counts the start and end line of a called function too (found in the screenshot; `mixed-full-run` checks every line of the shared file).
-- **Jest batches skipped files of a custom `testMatch` / `testRegex`** — the batch config dropped both (files are passed by path), so Jest applied its *default* `testMatch` and silently left out e.g. `*.jest.js`; those files fell back to plain Jest one by one (slower, no coverage, no trace). The overlay now keeps the project's own pattern (`testRegex` when set, else `testMatch`; only one of the two, as `--showConfig` may fill in both) — the passed files come from `jest --listTests` with that config, and ts-jest, which reads the patterns too, sees the real ones.
+---
 
 ## [3.0.0] - 2026-10-22
 
-### Bug Fixes
+### Added
+- **Vitest support.**
+  - **Runner `VitestAdapter`** (replaces the `ViteAdapter` stub; id `vitest`: `FRAMEWORK_IDS.vite` → `.vitest`, `ADAPTER_PRIORITIES.vite` → `.vitest`). Detection: a `vitest` dependency or `vitest.config.*` / `vitest.workspace.*`, and no Jest marker. Binary `vitest/package.json#bin` (`vitest.mjs`) run with node (local, hoisted, pnpm; no `.bin` shim, no npx). Config: `vitest.config.*` before `vite.config.*`. Version sets the capabilities (≥ 3 full; older: runs and results). If Vitest's `engines.node` rules out the editor's Node and none is on PATH, the run stops with an explanation; an old PATH Node is a WARN.
+  - **`FrameworkAdapter.capabilities(projectRoot)`**: `FrameworkCapabilities` (`results`, `nameFilter`, `listTests`, `related`, `liveStream`, `coverage`).
+  - **`VitestRunner`**: `vitest run [files] … --reporter=json --includeTaskLocation --passWithNoTests --watch=false [-t pattern] --outputFile=<tmp>`, `vitest list --filesOnly --json`, `vitest related <file> --run` (Vitest < 3: full run). No `--root`. `toVitestNamePattern()` matches Vitest 5's `Outer > Inner > adds` and older `Outer Inner adds`. Test-script flags read by `testScriptVitestArgs` (`--config`, `--project`, `--root`, `--dir`, `--mode`, `--environment`, `--globals`, …; follows `nr` / `npm run` / `pnpm` / `yarn` / `bun run`). Checked on unplugin (Vitest 5).
+  - **`parseVitestResult()`** (`parsing/VitestResultParser.ts`), built from real reports of Vitest 1.6–5.0 (fixtures): Vitest 1's empty ancestor dropped, counts from the tests, load errors / failing hooks / unhandled errors explained, durations rounded, colour and stack lines stripped. unplugin: all 201 statuses equal plain Vitest.
+  - **Projects and the browser-mode guard:** `framework/vitestProjects.ts` asks the project's own Vitest (`createVitest` probe, ~0.5 s, cached) for its projects; browser-mode ones are left out with `--project=<name>` for the rest (one INFO line). Setting **`liveTestRunner.vitestIncludeBrowserProjects`** (default false); `RunnerOptions.includeBrowserProjects`; hook `CommandRunner.prepare()`. Checked on vueuse (136 files).
+  - **Session parity:** `FrameworkServices.terms` (log / status wording; Jest's text unchanged) and `features` (`trace`, `timeline`). Verified in VS Code: session guard, saved test / source files, ▶ Run with `-t`, Stop (CLI and workers), hang limits. e2e `vitest-session`, `vitest-stop`, `vitest-hang`; harness `vitestProcesses()`.
+  - **Extension:** framework-neutral half of `JestAdapter` moved to `framework/RunnerBackedAdapter.ts`; new `VitestAdapter.ts` (▷ Debug: `vitest.mjs run <file> [-t …] --no-file-parallelism --test-timeout=0`, `autoAttachChildProcesses`), `session/VitestBatchRunner.ts`, `VitestProjectConfig.ts`, `vitestServices.ts`. `DetectingFrameworkProvider` builds the Jest or Vitest bundle. The Timeline says "not available for Vitest yet"; `runMode: npm` ignored for Vitest (one WARN). Setting **`liveTestRunner.vitestCommand`**.
+  - **Console output per test:** our reporter (`framework/vitestReporter.ts`, `--reporter=<file>` next to `default` and `json`; JSON to `--outputFile.json=`) records each console call with its task (`onUserConsoleLog`; `LTR_VITEST_EVENTS`); `VitestRunner.afterRun` attaches `scope` / `scopeName`; each test gets exactly its own output. Vitest's default output streams to Test Output (`forwardStdout`). Verified on Vitest 1.6–5.0. Hooks `CommandRunner.runEnv()` / `afterRun()` / `forwardsStdout`. e2e `vitest-output`.
+  - **Failure details:** name, message, expected / received diff and `❯ src/a.test.ts:5:30` (first project frame, source-mapped); a failing `beforeAll` / `afterAll` shows its real error. `formatVitestError()`, `errorLocation()`.
+  - **Live progress:** the reporter streams `file-start`, `test-start` / `test-end` and `file-end` (Vitest 3+ reporter API; 1–2 `onTaskUpdate`). `VitestBatchRunner` applies them as they arrive (`runWithReporterPolling`); a test over `hangTimeoutSeconds` stops the batch, and a batch with no event for `hangTimeoutSeconds × 3` too (unfinished files retried one by one). Tests: `vitestReporterSource.test.ts`; e2e `vitest-batch`, `vitest-save-during-run`.
+  - **Coverage** with Vitest's own provider (`@vitest/coverage-v8` / `-istanbul`): `--coverage.enabled=true --coverage.reporter=json --coverage.reportsDirectory=<session>/vitest-coverage/<batch> --coverage.reportOnFailure=true` (`--coverage.all=false` below 4); otherwise one INFO line. `coverage/istanbulCoverage.ts` maps `coverage-final.json` (one manifest per file version, max-merged); rules shared in `coverage/coverageRules.ts`. The source scan falls back to the shipped parser (`utils/babel.ts`). Tests: `istanbulCoverage.test.ts` (`test/vscodeStub.ts`); e2e `vitest-coverage`; `repo-vitest` checks coverage on real repos.
+  - **Related tests on save:** `vitest related <src> --run` through the live batch runner (`IBatchRunner.runRelated`, `SessionManager._runRelatedBatch`), with fresh coverage. e2e `vitest-related`.
+  - **Discovery:** without the project's Babel, the shipped `@babel/parser` (`out/vendor/`) and a built-in walker. Vitest syntax: `.for(...)`, `.skipIf`, `.runIf`, `suite`, renamed imports, `.extend(…)` fixtures, `test` / `it` from the project's own modules. `bench` stays out. Files the framework lists without static tests are added and filled in by their results (slidev). Tests: `testDiscovery.test.ts`; unplugin 180, slidev 314, vueuse 1568 tests found.
+  - e2e fixture `vitest-basic` (Vitest 3.2.4) and `vitest-full-run`, `vitest-scoped-run`, `vitest-debug`; `repo-vitest` on unplugin, slidev, vueuse vs plain Vitest (`vitest-baseline.json`). Harness `plainVitestJson`, `checkMatchesPlainVitest`.
+- **Config saves restart the session** (`FrameworkServices.isConfigFile()`, Jest and Vitest). e2e `basic-config-save`.
+- **Open Guide** (`liveTestRunner.openGuide`, `views/GuidePanel.ts`): the guide in an editor tab, shipped in the .vsix (`out/guide/guide.html`), nonce CSP; a dev build opens the online guide. Tests: `guidePanel.test.ts`; e2e `guide-open`.
+- **Website** `site/index.html` at https://eshandias.github.io/live-test-runner/ (install buttons for the Marketplace and Open VSX, features, screenshots, framework table, FAQ); the guide moves to `/guide/`. SEO: meta, canonical, Open Graph / Twitter, JSON-LD, `site/sitemap.xml`. `pages.yml` publishes from `main` and `release/*`. `package.json` gains `keywords`, `homepage`, `bugs`.
+- **Framework feature matrix:** `docs/development/framework-features.md` is the source; `scripts/framework-matrix.js` copies it into the README and guide (`--check`).
 
-- **Live run timer updates every second** — the running file-count timer now advances while files are running, and displays elapsed time in the correct units.
-- **File durations use whole milliseconds** — fractional millisecond values are rounded; durations of a second or more omit the millisecond remainder.
-- **Coverage totals follow the project's coverage config** — the totals (and the source scan that adds untouched files at 0%) used fixed built-in rules over every `*.{js,ts,jsx,tsx}` in the workspace, ignoring the project's own settings. Generated files such as Vitest's html-reporter bundle (`.vitest/ui/assets/index-*.js`, ~14k statements) and `public/` scripts landed in the denominator, roughly halving the percentage against `vitest run --coverage`. New `coverage/coverageScope.ts`: a `CoverageScope` per framework, exposed as `IProjectConfig.coverageScope(root)`:
-  - **Vitest** — the resolved `coverage.include` / `exclude` (Vitest's defaults merged) and, below Vitest 4, `all`, read by the existing config probe (`vitestConfigInfo` now also returns `coverage`).
-  - **Jest** — `collectCoverageFrom`, `coveragePathIgnorePatterns`, test files (`testMatch` / `testRegex`), setup files and `__mocks__` — the rules of Jest's `shouldInstrument` — from the `--showConfig` read the session already does (`ResolvedProjectConfig.coverage`).
-  - Untouched files are added only when the config lists the files to cover (Vitest `include`, Jest `collectCoverageFrom`); otherwise, like the CLI, only loaded files count and the scan is skipped.
-  - The same scope filters measured files in both batch runners (`applyIstanbulCoverage` takes a `counts` predicate). When the config cannot be read, the built-in rules apply as before, and the scan also skips git-ignored files (`git check-ignore`).
-  - Glob matching uses `picomatch` (bundled), with micromatch-style `!` negation.
-- **Coverage % / N/M toggle updates the totals** — the toggle re-rendered only the file table; the Project totals row (and the Tests-panel badge) kept the old format until the next coverage update. `testListView.js` now keeps the last totals and re-renders them on toggle.
+### Fixed
+- **Coverage totals follow the project's coverage config** (generated files like Vitest's html-reporter bundle, ~14k statements, roughly halved the percentage). `coverage/coverageScope.ts`, `IProjectConfig.coverageScope(root)`: Vitest `coverage.include` / `exclude` (+ `all` below 4); Jest `collectCoverageFrom`, `coveragePathIgnorePatterns`, test, setup and `__mocks__` files (Jest's `shouldInstrument` rules). Untouched files counted only when the config lists files to cover. Fallback rules skip git-ignored files. Globs via bundled `picomatch`.
+- **Coverage % / N/M toggle** now updates the totals row and badge.
+- Live run timer updates every second; file durations in whole milliseconds.
+- Files in top-level `test/`, `tests/`, `__tests__/`, `__mocks__/`, `dist/`, `build/`, `out/`, `coverage/` were measured as source.
+- **A file that fails to load shows its reason** (any framework).
+- `describe.each([...])(name, fn)` closed the suite early; `.ts` / `.mts` / `.cts` parsed with JSX broke files with generic arrows.
+- **Vitest on Windows with an 8.3 short path** (`C:\Users\RUNNER~1\…`) found or ran no tests: `CommandRunner.spawnPath()` and `toSpawnPath()` spell the CLI entry, cwd, `--config`, filters, probe and ▷ Debug the same way.
+- `jestCommand` `npx jest` ran `npx jest jest …`; quotes inside test-script tokens (`--project="browser (chromium)"`).
+- On Vitest 2 a describe suite was taken for a file.
 
-### Framework decoupling (Vitest support)
+### Changed
+- **"Jest Output" → "Test Output"**: channel **Live Test Runner: Test Output**, command **Show Test Output** (same id `liveTestRunner.showOutput`); lines keep `[jest#N]`.
+- **External links** on the website and guide open in a new tab.
+- **Guide refresh:** a Vitest section; framework-neutral wording; Debugging describes the Vitest launch; Known issues lists open bugs; matrix Vitest Timeline "⏳ later".
+- **Internal: framework decoupling.**
+  - `Framework` → `FrameworkId = string` with `FRAMEWORK_IDS` (old name deprecated); `toJestPath` / `fromJestPath` → `toRunnerPath` / `fromRunnerPath` (`RunnerPaths.ts`); `ProjectJestConfig` → `JestProjectConfig` implementing `IProjectConfig`; `PLAIN_RUN_HANG_FACTOR` in `constants.ts`.
+  - Abstract `CommandRunner` (`buildArgs({ kind })`, `leadingArgs`, `processLabel`, chunking, kill, coverage); `FrameworkAdapter` gains `outputFileArg`, `parseResult`, `createRunner`; `Executor.runWithJsonCapture(command, outputFileArg)`. Jest command lines pinned by snapshot tests, unchanged.
+  - `FrameworkRegistry` (`register`, `unregister`, `get`, `default()`); `FrameworkDetector.detectWithReason()`; an unrecognised project logs one WARN.
+  - `IBatchRunner`; `SessionTraceRunner` → `JestBatchRunner`; `FrameworkServices` bundle and `IFrameworkServicesProvider`; `SessionManager` builds no framework classes.
+  - Instrumentation split into `shared/` and `jest/` (protocol in `architecture.md`); the transform cache rebuilds once.
+  - Adapter conformance suite (`adapterConformance.ts`) for Jest, CRA and Vitest; services `displayName`, `settingsFingerprint()`.
+  - `refusingAdapter()`, `UnsupportedFrameworkError` in their own files; `JestRunner` refuses non-Jest projects. Helpers `utils/semver.ts`, `nodeRuntimeVersion()`, `resolvePackageBin()`, `resolvePackageDir()`.
 
-- **Neutral naming and open framework ids** — `Framework` (closed union `'jest' | 'cra' | 'next' | 'vite' | 'unknown'`) is now `FrameworkId = string` with the shipped ids in `FRAMEWORK_IDS`; `Framework` stays as a deprecated alias. `toJestPath` / `fromJestPath` → `toRunnerPath` / `fromRunnerPath` (`resolution/JestPaths.ts` → `RunnerPaths.ts`; old names kept as deprecated aliases for one release). `PLAIN_RUN_HANG_FACTOR` moved from the Jest adapter to the extension's `constants.ts`. `ProjectJestConfig` → `JestProjectConfig` implementing the new `IProjectConfig` interface, which `SessionManager`, `SessionTraceRunner` and `JestInstrumentedRunner` now depend on.
-- **Generic runner layer** — new abstract `CommandRunner` holds everything that is not Jest-specific (adapter per project root, binary / user-command prefix / `--config` / adapter extra args, Windows command-line chunking, file timeout, kill, coverage file); `JestRunner` now only builds Jest's args per run kind (`buildArgs({ kind: 'list' | 'full' | 'files' | 'testCase' | 'related' })`) and parses `--listTests`. `FrameworkAdapter` gains `outputFileArg(file)`, `parseResult(passed, raw, stderr)` and `createRunner(options)` (Jest + CRA: `--outputFile=`, `ResultParser`, `JestRunner`; the Vite stub throws "not supported"). `Executor.runWithJsonCapture(command, outputFileArg)` takes the result-file flag instead of hard-coding `--outputFile`. `emptyRunResult` / `mergeRunResults` moved out of the Jest parser. `FrameworkDetector` builds its adapter list on first use (adapters now import their runners). Snapshot tests pin the Jest command lines — unchanged.
-- **`FrameworkRegistry`** — the detector's fixed adapter list is now a registry (`register(adapter, priority)`, `unregister`, `get`; `FrameworkRegistry.default()` = CRA 300 → Vite 200 → Jest 100, same order as before). `FrameworkDetector` takes a registry and gains `detectWithReason()` (`{ adapter, framework, matched, reason }`). A project no adapter recognises still runs as plain Jest, but now logs one WARN per project root instead of a DEBUG line; the diagnostic report shows the reason.
-- **Batch runner interface + framework services bundle** — `IBatchRunner` (`runFiles(BatchRunOptions)`, `kill`, `reset`) is extracted from the session's batch runner, which is renamed `SessionTraceRunner` → `JestBatchRunner`. New `FrameworkServices` bundle (`adapter`, `projectConfig`, `batchRunner`, `instrumentedRunner`, `createSessionRunner()`) and `IFrameworkServicesProvider` (`servicesFor(fileOrRoot)`, `all()`; `SingleFrameworkProvider` for now). `SessionManager` takes the provider instead of the adapter + project config, and no longer constructs `SessionTraceRunner` or `JestRunner` (core's `TestSession` gets `createSessionRunner()`, i.e. the runner `JestAdapter.createRunner()`). `extension.ts` composes the Jest bundle (`createJestServices`); the Jest command setting is read by one helper (`jestCommandSetting`).
-- **Instrumentation split** — `session/instrumentation/` is now `shared/` (`sessionTraceRuntime.js`, `testDiscovery.js` — framework-neutral) and `jest/` (`sessionTraceTransform.js`, `ltrCoverageSetup.js`, `liveReporter.js`); `out/instrumentation/` mirrors the layout. The contract between them (`__strace` API, trace / coverage / per-file record formats, environment variables) is documented in `docs/development/architecture.md` → *Session instrumentation protocol*. File moves and path updates only; because the transform's own source changed, the persistent transform cache is rebuilt once on the first Start.
-- **Adapter conformance suite + regression gate** — `packages/runner/test/adapterConformance.ts`: a reusable suite every `FrameworkAdapter` must pass (registered id, claims its projects and no others, result-file flag, canned result with a passing and a failing test, unreadable output → failed result, the created runner passes the file and the adapter's result-file flag, kill is safe), applied to Jest and CRA. The services bundle gains `displayName` and `settingsFingerprint()`, so `SessionManager` no longer reads Jest settings or names Jest in code (log wording is unchanged for Jest projects). "Adding a framework" checklist in the developer guide.
-- **"Jest Output" → "Test Output"** — the raw output channel is now **Live Test Runner: Test Output** and the command **Show Test Output** (same id, `liveTestRunner.showOutput`); lines keep their `[jest#N]` tag.
-
-### Vitest support (related tests on save)
-
-- **Live related runs** — a saved source file (no trace for Vitest yet) now runs `vitest related <src> --run` through the live batch runner instead of a plain run: optional `IBatchRunner.runRelated(RelatedRunOptions)`; `VitestRunner.liveCommand(files, { related })`; `VitestBatchRunner` claims each test file on its `file-start` (they are only known once Vitest starts them; paths mapped to the store's keys), streams results, applies the hang limits and measures coverage, so the saved file's coverage is fresh after the rerun (before: old counters, stale overlay just cleared). `SessionManager._runRelatedBatch` counts files in the progress as they start and retries started-without-result files through the normal batch path. Frameworks without `runRelated` (Jest — it has the trace) keep the plain related run. A file nothing imports logs "no tests depend on this file" (DEBUG in the batch runner, no WARN).
-- **Config saves restart the session** — `FrameworkServices.isConfigFile()` (Jest: `jest.config.*` in the root; Vitest: `vitest.config.*` / `vite.config.*` / `vitest.workspace.*` in the root or the config the test script names): saving it restarts the session, so the config, the runnable-files list and every result are re-read (before: treated as a source file → nothing reran, stale config kept until the next Start). Applies to Jest too.
-- **Tests** — e2e `vitest-related` (live related batch with coverage, file shown running before its result, progress, coverage of a new uncalled function, untested file reruns nothing, config save restarts), `basic-config-save` (Jest config save restarts); `repo-vitest` saves a source file a passing test imports on every real Vitest repo; runner unit test for the related live command. Lint: unused `eslint-disable` in `utils/babel.ts` removed.
-
-### Docs, guide & release prep
-
-- **Website and guide links open in a new tab** — every external link on `site/index.html` and `docs/live-test-runner-guide.html`, and the site's links to the guide, now use `target="_blank" rel="noopener"`; in-page anchors are unchanged. CLAUDE.md / developer guide: the guide (and landing page, for headline features) must be updated with every important change, and new links follow the same rule.
-- **Marketing website + SEO** — new landing page `site/index.html` (hero with install buttons for the VS Code Marketplace and Open VSX, feature grid, screenshots, quick start, framework table, review links, FAQ) served at https://eshandias.github.io/live-test-runner/; the guide moves to `/guide/` (`GuidePanel.GUIDE_URL` and the README link updated). SEO: meta description, canonical, Open Graph / Twitter cards, JSON-LD `SoftwareApplication` + `FAQPage`, `site/sitemap.xml`; the guide gets a description, canonical and OG tags. The Pages workflow now assembles `_site/` from `site/`, the guide and `resources/images/*.png`, and also runs when those change, on `main` and on `release/*` branches. Reviews link to each marketplace's review page (posting needs sign-in there). Extension `package.json` gains `keywords`, `homepage` and `bugs` for marketplace search.
-- **Open Guide command + guide on GitHub Pages** — new command **Live Test Runner: Open Guide** (`liveTestRunner.openGuide`, `views/GuidePanel.ts`) shows the user guide in an editor tab: `esbuild.js` copies `docs/live-test-runner-guide.html` to `out/guide/guide.html` (shipped in the .vsix, works offline, matches the installed version); the page's scripts run under a nonce CSP; a missing copy (dev build) opens the online guide instead. `.github/workflows/pages.yml` publishes the same file to GitHub Pages (https://eshandias.github.io/live-test-runner/) when it changes on `main` — needs Settings → Pages → Source "GitHub Actions" once. The guide's links to `bugs-and-issues.md` / `architecture.md` / `developer-guide.md` are absolute GitHub URLs so they work on Pages and in the tab. README links the guide. Unit test `test/guidePanel.test.ts`, e2e `guide-open`.
-- **Guide refresh** — new *Vitest* section (detection, versions, config flags, per-test output, failures, coverage provider, projects / browser guard, what is not there yet); Jest-only wording made framework-neutral (overview, quick start, Stop, Test Output); Debugging describes the Vitest launch and drops the ▷ Debug warning (fixed); hover and Timeline say what Vitest lacks; *Known issues* lists the open bugs instead of fixed ones; Open Guide in the commands table. Matrix: the Vitest Timeline cell is "⏳ later" (deferred). README: guide link, Open Guide command, Vitest coverage note and screenshot placeholder; core README says the package is framework-neutral; developer guide (Pages setup, roadmap, known limitations), ai-context (command, key files) updated.
-- **Release checks (tasks 11.2, 11.3)** — version 3.0.0 in both package.json files; the e2e suite runs against the packed `.vsix` (`vsce package --no-dependencies`, unpacked, `LTR_E2E_EXTENSION_DIR`); real-repo matrix incl. the Jest monorepo.
-
-### Vitest support (coverage)
-
-- **Coverage tests** — unit tests for the istanbul → CoverageStore mapping (`test/istanbulCoverage.test.ts`: manifest shape incl. older-provider entries without `decl` / branch `loc`, percentages, max-merge of the same file version, a changed file starting over, a source-scan count replaced by the measurement, exclusions); the extension's unit tests map `vscode` to a small stub (`test/vscodeStub.ts`) so store / coverage modules load. `repo-vitest` checks coverage on the real repos: measured when the project has a provider package (vueuse), otherwise exactly one "coverage is off" line and nothing measured (unplugin, slidev), and no `coverage/` folder written. **Fix (any framework):** files in top-level `test/`, `tests/`, `__tests__/`, `__mocks__/`, `dist/`, `build/`, `out/` or `coverage/` folders were measured as source — the exclusion rules got a project-relative path but needed a leading separator.
-- **Vitest coverage (tasks 5.1, 5.2)** — session batches measure coverage with Vitest's own provider: the project probe now also reads `coverage.provider`; when its package (`@vitest/coverage-v8` / `-istanbul`) is installed, `VitestRunner.liveCommand(files, { coverageDir })` adds `--coverage.enabled=true --coverage.reporter=json --coverage.reportsDirectory=<session>/vitest-coverage/<batch> --coverage.reportOnFailure=true` (plus `--coverage.all=false` below Vitest 4, which would otherwise instrument the whole project); otherwise one INFO line says what to install. `coverage/istanbulCoverage.ts` maps `coverage-final.json` into the CoverageStore — one manifest per file version (hash of path + maps; same counters model as the Jest instrumentation), counters max-merged across runs — so the gutter, hover and totals work unchanged. Coverage rules (exclusions, counter merge) moved to `coverage/coverageRules.ts`, shared with Jest. The coverage source scan (`SourceCounter`) falls back to the shipped parser and a minimal walker (`utils/babel.ts`) — Vitest projects have no Babel, so untested files counted 0. The hover says "covering tests are not available for Vitest yet" instead of "trace data unavailable", and shows partial-branch detail without a trace. A full-suite coverage run (`runFullSuiteJson(root, true)`, unused by the extension) writes into the session dir, never the project's `coverage/`. e2e: fixture gets `@vitest/coverage-v8` and an untested source file; scenario `vitest-coverage`.
-
-### Vitest support (live progress)
-
-- **Reporter tests** — `test/vitestReporterSource.test.ts` loads the generated reporter in a separate node process and drives it with synthetic Vitest task trees and hooks: the Vitest 3+ path (live events in order, json-shaped `file-end` result, failures before `file-end`, no duplicates from `onTestRunEnd` / `onFinished` / `onTaskUpdate`), the `onTaskUpdate` path of Vitest 1–2, a crashed file reported at run end with its hook failure, and Vitest 1's `<file>:<line>:<col>` console tags.
-- **Live Vitest batches** — `VitestBatchRunner` now runs `VitestRunner.liveCommand()` through `Executor.runWithReporterPolling` and applies the reporter's events as they arrive: a file shows running on `file-start` (not when the batch starts — Vitest runs a batch's files in parallel workers), each file's result (with its console output and failures, `applyVitestEvents`) is applied on its `file-end`, so results and progress stream per file. Hangs: one test running longer than `hangTimeoutSeconds` (from `test-start` / `test-end` heartbeats) stops the batch and fails that file, like Jest's batch runner; a worker stuck in a synchronous loop may never send its "test started" update (Vitest batches them), so a batch with no event for `hangTimeoutSeconds × 3` is stopped too and its unfinished files retried one by one. The reporter writes a file's failures before its `file-end` so a live reader has them when it applies the result. e2e: new `vitest-batch` (math.test.js has its result while slow.test.js still runs; per-file progress), `vitest-save-during-run` (one run-finished, progress ≤ 100 %, newest run wins, no process left); `vitest-hang` accepts either hang path.
-- **Live reporter** — the runner's Vitest reporter also streams progress: `file-start`, `test-start` / `test-end` heartbeats and `file-end` with the file's result in the json reporter's shape (built from the finished task tree, so `liveFileResult()` parses it with `parseVitestResult`). Vitest 3+ uses the new reporter API (`onTestModuleStart` / `End`, `onTestCaseReady` / `Result`), Vitest 1–2 `onTaskUpdate` (Vitest 2 has part of the new API but not those hooks, so the choice is by `ctx.version`); failures are written per file as it ends, and anything not reported (crashed files) at run end. `applyVitestEvents()` (console output + failures for a RunResult) is shared by plain runs and the batch runner; `VitestRunner.liveCommand(files)` builds a batch command with its events file. Checked on Vitest 1.6, 2.1 and 5.0: each file's result arrives when that file finishes. Fixed on the way: on Vitest 2 a describe suite (no parent link) was taken for a file.
-
-### Vitest support (logs & output)
-
-- **Failure details** — the runner's Vitest reporter also records failures from the finished task tree (`onTestRunEnd` on Vitest 3+, `onFinished` before; 4+ dropped `onFinished`): for tests, suites and files, each error's name, message, diff and stack (parsed `stacks` on 4+). A failed test now shows `Name: message`, the expected / received diff (ANSI stripped) and `❯ src/a.test.ts:5:30` — the first frame in the project's own code, source-mapped, relative to the root; the json report had none of that. A failing `beforeAll` / `afterAll` shows its real error and location (`In "Hooked" (…): setup broke ❯ src/hook.test.js:6:11`) instead of the placeholder from 2.3, and the file is marked failed while its skipped tests stay skipped; a file that cannot load gets its location. Checked on Vitest 1.6, 3.2 and 5.0. `formatVitestError()`, `errorLocation()` in `framework/vitestReporter.ts`. e2e: fixture `src/hook.test.js` + 5 checks in `vitest-output`.
-- **Console output per test** — the json reporter drops console output, so the runner adds its own Vitest reporter (`framework/vitestReporter.ts`; written to the session dir and loaded with `--reporter=<file>` next to `default` and `json`, the JSON now goes to `--outputFile.json=`). It records each console call from `onUserConsoleLog` with the task that made it (the task chain is found in the file's tree — parent links are not filled in for suites on every version; Vitest 1 tags module-scope output `<file>:<line>:<col>`) into a JSON-lines file (`LTR_VITEST_EVENTS`). `VitestRunner.afterRun` attaches the lines to each file's `consoleOutput` with `scope` (`file` / `suite` / `test`) and `scopeName`. `RunnerBackedAdapter` gives every test that ran exactly its own output (empty for a quiet test), suites their hooks' output, the file all lines; Jest output (no scope) is handled as before. Vitest's default reporter output streams to the Test Output channel (`ExecutorCommand.forwardStdout`). Same attribution verified on Vitest 1.6, 2.1, 3.2, 4.1 and 5.0. New runner hooks `CommandRunner.runEnv()` / `afterRun()` / `forwardsStdout`. e2e: fixture `src/logs.test.js` + scenario `vitest-output`.
-
-### Vitest support
-
-- **Runner `VitestAdapter`** — replaces the `ViteAdapter` stub; the framework id is now `vitest` (`FRAMEWORK_IDS.vite` → `FRAMEWORK_IDS.vitest`, `ADAPTER_PRIORITIES.vite` → `.vitest`). Detection: a `vitest` dependency or a `vitest.config.*` / `vitest.workspace.*` file, and nothing marking the project as Jest (rule kept). Binary: `vitest/package.json#bin` (`vitest.mjs`), resolved like Node would (local, hoisted, pnpm) and run with node — no `.bin` shim, no npx fallback; a missing install gives an actionable error. Config: `vitest.config.*` before `vite.config.*`, else Vitest decides. The installed version sets the capabilities (≥ 3 full; older: runs and results only). If Vitest's `engines.node` rules out the editor's built-in Node and no `node` is on PATH, the run stops with an explanation; a too-old PATH Node only logs a WARN. `outputFileArg` = `--outputFile=`; `createRunner` still throws `UnsupportedFrameworkError` until task 2.2.
-- **`FrameworkAdapter.capabilities(projectRoot)`** — new `FrameworkCapabilities` (`results`, `nameFilter`, `listTests`, `related`, `liveStream`, `coverage`); Jest and CRA report everything. The conformance suite checks it.
-- **`JestRunner` refuses non-Jest projects** — a Vitest project handed to the Jest runner gets a stand-in adapter that throws `UnsupportedFrameworkError` when a run starts (same moment and message as the old stub), so it can never launch `vitest` with Jest flags. `UnsupportedFrameworkError` moved to `framework/UnsupportedFrameworkError.ts`.
-- **`VitestRunner`** — `VitestAdapter.createRunner()` now returns a `VitestRunner extends CommandRunner`: `vitest run [abs files] … --reporter=json --includeTaskLocation --passWithNoTests --watch=false [-t pattern] --outputFile=<tmp>`, `vitest list --filesOnly --json` (deduplicated across projects; no list → folder scan), `vitest related <file> --run` (Vitest < 3: full run). `--reporter=json` always replaces config reporters; no `--root` (cwd is the project root, so a config's own `root` wins). Name patterns: Vitest 5 matches `-t` against `Outer > Inner > adds`, Vitest ≤ 4 against `Outer Inner adds`; `toVitestNamePattern()` makes each literal space `(?: > | )` so the extension's patterns work on both (verified on Vitest 4.1 and 5.0). `VitestAdapter.getExtraArgs()` / `resolveConfig()` read the `test` script (`testScriptVitestArgs`: `--config`, `--project`, `--root`, `--dir`, `--mode`, `--environment`, `--globals`, …), following `nr x` / `npm run x` / `pnpm x` / `yarn x` / `bun run x` with their extra args (vueuse: `--project=unit --project=server`). Vitest joins the adapter conformance suite. Checked on read-only clones: unplugin (Vitest 5) per-file results equal a plain `vitest run`.
-- **Vitest result parsing** — `parseVitestResult()` (`parsing/VitestResultParser.ts`) replaces the borrowed Jest parser for Vitest. Built from real reports of Vitest 1.6, 2.1, 3.2, 4.1 and 5.0 (kept as fixtures): Vitest 1's empty file-level ancestor is dropped (`['', 'Outer']` / `' Outer adds'`); counts come from the tests (Vitest 1 reported 8 passed for 4; pending = skipped, not todo, as in Jest); a file that cannot load or has no tests gets Vitest's `message` as its `failureMessage`; a failing `beforeAll` / `afterAll` (file failed, tests skipped, error not in the report) and an unhandled error (exit 1 while every test passed, nothing printed) get plain explanations instead of nothing / "Tests failed"; Vitest 1's assertion positions on failed tests are not used as test lines; durations are rounded; colour codes and stack lines are stripped. On a read-only unplugin clone, all 201 test statuses and the counts equal a plain `vitest run`.
-- **Vitest projects and the browser-mode guard** — a Vitest config with `test.projects` runs from the project root once (Vitest fans out). Browser-mode projects (Playwright / WebdriverIO) are left out by default: `framework/vitestProjects.ts` asks the project's own Vitest node API (`createVitest`, a small probe script run with node, ~0.5 s, cached per config / package.json mtime) for its projects and their `browser.enabled`; when some use browser mode and the test script picks no `--project` itself, `VitestRunner` names every other project with `--project=<name>` (a positive list — `!name` negation is newer than our Vitest baseline) and logs one INFO line saying which were left out. New setting `liveTestRunner.vitestIncludeBrowserProjects` (default false) runs them too; `RunnerOptions.includeBrowserProjects`; new `CommandRunner.prepare()` hook (async work before a command is built). Checked on a vueuse clone with a plain `vitest run` script: `browser (chromium)` and `browser (webkit)` left out, server / unit / exports run, results equal a plain `vitest run --project=server --project=unit --project=exports` (136 files, 942 passed, 63 failed — vueuse's exports test needs a build). The json reporter has no project name per file, so results do not carry it yet (phase 7 / the live reporter).
-- **Session parity for Vitest** — `FrameworkServices` gains `terms` (wording for log / status messages: config name and rules, list / related commands, batch and plain-run names, what a fallback loses) and `features` (`trace`, `timeline`; both false for Vitest). `SessionManager`'s messages use them — Jest projects keep the exact old text ("Jest config (testMatch / testPathIgnorePatterns)", "jest --listTests", "falling back to plain Jest …"); Vitest projects read "Vitest config (include / exclude)", "vitest list", "vitest related", "plain Vitest". Confirmed with Vitest in real VS Code: no runs before Start (session guard), a saved test file reruns alone, a saved source file runs `vitest related`, ▶ Run uses a `-t` pattern and leaves siblings alone, saves after Stop run nothing, Stop kills the Vitest CLI and its workers with no retries afterwards, an infinite loop stops its batch after `hangTimeoutSeconds × 3` and the per-file retry fails only the hanging file, a never-resolving promise fails on Vitest's timeout. New e2e scenarios `vitest-session`, `vitest-stop`, `vitest-hang`; harness `vitestProcesses()` (Vitest renames its processes to `node (vitest)` / `node (vitest N)`, so they are matched by title too).
-- **Discovery: Vitest syntax** — static discovery (`testDiscovery.js`) now reads Vitest's curried `.for([...])(…)`, `.skipIf(c)(…)`, `.runIf(c)(…)` (on tests and describes) like `.each`; `suite` imported from vitest as `describe`; renamed imports (`import { test as base } from 'vitest'`); fixtures made with `.extend(…)` (chained, TS generics, `as` / `satisfies`); and `test` / `it` imported from the project's own modules (relative paths, `@/` `~/` `#` aliases — Vitest fixture files) — before, those imports were treated like tstyche's and hidden. `bench` stays out. Fixes (any framework): the inner call of `describe.each([...])(name, fn)` closed the suite early, so its tests were discovered at the file's root until the first run rebuilt the tree; `.ts` / `.mts` / `.cts` files are parsed without the JSX plugin, so a generic arrow `<T>(x: T) => …` no longer makes the whole file unparseable (vueuse's useFetch test). New unit tests `test/testDiscovery.test.ts`; on the real repos every test file with static tests is found (unplugin 180, slidev 314, vueuse 1568 tests; only two generated-test files have none), and the Jest repos discover exactly what they did before.
-- **Extension: Vitest projects run** — the extension `JestAdapter`'s framework-neutral half (single-file / test-case / related runs, mapping `FileRunResult`s into the `ResultStore`) moved to `framework/RunnerBackedAdapter.ts`; `JestAdapter` keeps detection, its `JestRunner` and the debug config. New `framework/VitestAdapter.ts` (detection, `VitestRunner` with `liveTestRunner.vitestCommand`, debug launch of `vitest.mjs run <file> [-t …] --no-file-parallelism --test-timeout=0` with `autoAttachChildProcesses`), `session/VitestBatchRunner.ts` (one Vitest process per batch, results applied when it exits; whole-batch hang limit, then per-file retries), `session/VitestProjectConfig.ts`, `framework/vitestServices.ts`. `DetectingFrameworkProvider` replaces `SingleFrameworkProvider` in `extension.ts`: it detects the project's framework and builds the Jest or Vitest bundle on first use. `FrameworkServices.instrumentedRunner` is optional; the Timeline command reports "not available for Vitest yet". `runMode: npm` is ignored for Vitest (one WARN). New setting `liveTestRunner.vitestCommand`. Vitest / Vite config files are part of the runnable-files cache key only when present (Jest keys unchanged).
-- **Discovery without the project's Babel** — static test discovery used the project's `@babel/parser` / `@babel/traverse` only; Vitest projects usually have none, so no tests were found. It now falls back to `@babel/parser` shipped in `out/vendor/` (copied by `esbuild.js`; the .vsix has no node_modules) and a built-in call-expression walker. `describe` / `it` / `test` imported from `vitest` count as test functions (they were treated like tstyche's).
-- **A file that fails to load shows its reason** (any framework) — `RunnerBackedAdapter` fails the file's tests with `FileRunResult.failureMessage` when no test ran, and adds a file-level failure (e.g. a failing hook) to the file's output. Before, the tests stayed pending with no reason.
-- **Framework feature matrix** — `docs/development/framework-features.md` is the single source; `node scripts/framework-matrix.js` copies it into the README and the HTML guide (`--check` reports drift).
-- **Fix: Vitest found no tests on Windows when the project path has an 8.3 short name** (`C:\Users\RUNNER~1\…`, GitHub's Windows runners, `%TEMP%` for long user names) — file filters were sent as the real path (`runneradmin`), as Jest needs, but Vitest takes its root from the cwd exactly as given, so nothing matched and every run came back empty. New `CommandRunner.spawnPath()` hook (default: unchanged, so Jest is unaffected); `VitestRunner` and the project probe run Vitest from the real path with the real `--config` path, so root, config and filters agree. Unit test with a junction / symlinked root.
-- **Fix: Vitest still ran no tests on Windows with an 8.3 project path** ("Vitest failed to find the current suite") — the CLI entry came from `require.resolve`, which keeps short names and the editor's lower-case drive (`c:\Users\RUNNER~1\…\vitest.mjs`), while root and test files used the real path, so Vitest loaded twice and tests registered with the wrong copy. New `toSpawnPath()` (native realpath, upper-case drive, falls back to `toRunnerPath`) spells the CLI entry, cwd, `--config`, file filters, the project probe and the ▷ Debug launch config the same way. `CommandRunner.spawnPath()` now applies to the binary too (identity for Jest). The live batch command (`VitestRunner.liveCommand`) spells its binary the same way.
-- **e2e** — fixture `vitest-basic` (Vitest 3.2.4; config reporter `dot`, a TS file, a file that cannot load, a file outside `include`) and scenario `vitest-full-run` (framework chosen, `[vitest#N]` processes, `--reporter=json`, results = plain `vitest run`, nested suites / `.each` / todo / test lines, load error shown, excluded file not run, no fallbacks). Harness: `plainVitestJson`, `checkMatchesPlainVitest`.
-- **Runner layer** — `CommandRunner` gains `leadingArgs(request)` (subcommand + positionals before the config; empty for Jest, so Jest command lines are unchanged — snapshots pass) and `processLabel` (output tag; `ExecutorCommand.label`, so Vitest lines read `[vitest#N]`). `refusingAdapter()` moved to `framework/refusingAdapter.ts` and is used by both runners. `requireAdapter()` / `requireProjectRoot()` are protected.
-- **Fixes** — the Executor no longer adds `jest` after `npx` when the command already names a package (a `jestCommand` of `npx jest` ran `npx jest jest …`; `npx vitest` now works). The test-script tokenizer handles quotes inside a token (`--project="browser (chromium)"`, `--config="my config.js"`), for Jest and Vitest scripts.
-- Runner helpers: `utils/semver.ts` (`parseVersion`, `compareVersions`, `satisfies` — enough for `engines.node` ranges, no dependency), `nodeRuntimeVersion()`, generic `resolvePackageBin(pkg, bin, fromDir)` / `resolvePackageDir()`.
-
-### Tests
-
-- **Vitest e2e and real repos** — new scenarios `vitest-scoped-run` (test / suite / `test.each` template reruns with the right `-t` patterns, nothing else touched) and `vitest-debug` (▷ Debug builds a `vitest.mjs run <file> -t …` launch with `autoAttachChildProcesses`; the configs run exactly 1 test, a suite's 2, both `.each` rows); `repo-vitest` runs real Vitest projects through `real-repos.js` (unplugin, slidev, vueuse — compared test for test with a plain `vitest run` on the same clone, plus discovery before Start, ▶ Run, save-to-rerun, Stop). Vitest repos get a plain-Vitest baseline in `vitest-baseline.json`. Found with slidev: a test file whose tests are generated at runtime (no static `test(...)` calls) was dropped by discovery even though the framework runs it — files the framework lists (`vitest list` / `jest --listTests`) are now added to the tree without static tests, and their results fill them in (any framework).
-- **Real-repository matrix** — `node e2e/real-repos.js [repo… | --all | --fresh]` copies each real Jest project (APFS copy-on-write on macOS), runs the repo scenarios on the copy, and fails if the original repository changed (HEAD, `git status`, newest mtime). Plain-Jest per-file counts and the match result are recorded in `e2e/baselines/vitest.json`. Vitest repos are registered for when Vitest support lands.
-- **Jest monorepo in the matrix** — `node e2e/real-repos.js jest` now works end to end: the plain-Jest reference runs used spawnSync's 1 MB default buffer, which killed Jest on big projects (exit null, no baseline); `repo-tsjest` picks the source file for the save test from `packages/*` when there is no top-level `src/`, and reports how many files differ. Found that jest-runtime's own tests fail under the session run (present in 2.0.4 too, open).
-
-### CI
-
-- Workflows use `pnpm/setup@v3` (pnpm from `packageManager`, Node 24, pnpm store cache and install in one step) instead of `pnpm/action-setup` + `actions/setup-node`. The release job keeps the install conditional (`install: false`).
-- GitHub Actions on their current majors (all Node 24): `actions/checkout` v5 → v7, `actions/cache` v4 → v6, `actions/upload-artifact` v4 → v7, and in the Pages workflow `configure-pages` v5 → v6, `upload-pages-artifact` v3 → v5, `deploy-pages` v4 → v5 (+ `actions: read` permission; the `.nojekyll` marker is dropped — `upload-pages-artifact` ≥ 4 leaves dotfiles out, and an Actions-deployed site is not built with Jekyll anyway). No workflow uses `pull_request_target`, so checkout v7's fork-PR block does not apply.
+### Tests and CI
+- e2e runs against the packed `.vsix` (`LTR_E2E_EXTENSION_DIR`); real-repo matrix `e2e/real-repos.js` (copies, fails if the original changed; Jest monorepo incl. — known: jest-runtime's own tests fail under the session run, also in 2.0.4).
+- Workflows use `pnpm/setup@v3`; Actions on current majors (`checkout` v7, `cache` v6, `upload-artifact` v7, Pages `configure-pages` v6, `upload-pages-artifact` v5, `deploy-pages` v5; `.nojekyll` dropped).
+- Version 3.0.0 in both `package.json` files.
 
 ---
 
 ## [2.0.4] - 2026-10-19
 
-### Maintenance
+### Added
+- **Levelled log channel:** "Live Test Runner" is a `LogOutputChannel` (`error` / `warning` / `info` / `debug` / `trace`, timestamps, Output ⚙ → Set Log Level); lines read `[Area] message`.
+  - Raw Jest output in its own channel, **Live Test Runner: Jest Output** (ANSI-stripped, line-buffered, `[jest#12]` per process, `──── Run #N · label ────` separators).
+  - One summary per run (`Run #N <trigger> — files · passed · failed · skipped · time — failing: …`) and one per discovery.
+  - Noise removed: per-batch `[Coverage]` INFO lines, per-file transform lines, the reporter's PASS/FAIL dump, the decoration `console.log`, the timeline `ltr-debug.log` (now Debug level only).
+  - Diagnostics added: Jest's stderr tail when a batch returns nothing, a WARN per test file that fails to run, why files fall back to plain Jest, `ENOENT` fixes, one line for dropped coverage.
+  - Runner / core logs reach the channel (`createLogger` / `setLogSink`); instrumentation inside Jest writes `[LTR:<level>] msg` to stderr, routed by `Executor` (`LTR_LOG_LEVEL` passed to Jest).
+  - Slow vs stuck: `liveReporter.js` writes a `start` record per file; a watchdog WARNs when no file finished for 60 s (repeats every 2 min); an INFO line when an on-save run cancels a batch sharing a file.
+  - Repeated lines collapse; lines before the channel exists are buffered.
+  - Commands **Show Logs** and **Copy Diagnostic Report** (versions, setup, settings, last 300 log lines → clipboard + untitled Markdown). `Show Raw Output` → `Show Jest Output`.
+- **Setting `liveTestRunner.hangTimeoutSeconds`** (default 300): a test running longer is stopped and its file failed with an explanation.
+- **Tests:** an end-to-end suite (`e2e/`, real VS Code, fixtures in a path with spaces, test-for-test comparison with plain Jest; `node e2e/run.js --all`), run in CI on Windows, Linux and macOS; unit tests and an ESLint config (`pnpm lint` in PR checks).
+- **Release flow:** PR checks (branch rules, tests, version bump on PRs to `main`); `release.yml` (merge to `main` → build, test, publish, tag `vX.Y.Z`, GitHub Release) replaces the tag-triggered publish; `release/*` branches.
+- **Docs:** `docs/live-test-runner-guide.html` (user and contributor guide); a Logging section in the developer guide; an audit of 22 issues (symptom, cause, fix, verification).
 
-- Added PR checks workflow (branch naming/target rules, tests, version-bump check on PRs to `main`).
-- Replaced the tag-triggered publish workflow with `release.yml`: merging to `main` builds, tests, publishes, then tags `vX.Y.Z` and creates a GitHub Release.
-- Introduced `release/*` branches; documented the branching workflow in `CLAUDE.md` and `docs/development/developer-guide.md`.
+### Fixed
+- **Console logs missing in the Results panel** (Jest's verbose mode for single files empties `testResult.console`): session runs pass `--verbose=false`.
+- **Garbled symbols in Output** (multi-byte characters split across chunks): `setEncoding('utf8')`, complete lines only, ANSI stripped.
+- **Jest runs without a shell:** Windows ran Jest's `.cmd` shim through `cmd.exe` (paths with spaces failed, `^` stripped, `|` piped). Jest's JS entry (CRA: react-scripts' Jest) runs with `node`; Stop kills the whole tree; combined patterns are grouped (`^(?:a|b)$`).
+- **Run lifecycle:** one `run-started` / `run-finished` across overlapping runs; progress totals from the extension (`run-progress`); Stop is final; ⟳ only when Jest starts a file; spinners always cleared; a save no longer cancels the batch running the same file. `pending` / `todo` show as skipped; files the config never runs (`jest --listTests`) show as skipped and are not run.
+- **Config loading:** `ProjectJestConfig` reads `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session — `.ts` / `.mjs` / `.json` configs, function exports, presets, multi-project configs, `--config` / `--resetMocks` / `--env` from the test script. babel-jest fallback via Node lookup (pnpm); CRA transformer options kept.
+- **Per-test trace:** context opened from the setup file, so on-save reruns and covering tests work; `setupTests.js` hooks add to the test; no `process.on('exit')` listener per file.
+- **Lost results:** stale-suite cleanup removed finished subtrees (vscode-jest showed 165 of 2012 tests); same-name tests no longer collapse; `nameToPattern` understands `$variable` placeholders.
+- **Instrumentation errors** no longer fail test files (nested `?.` in call arguments crashed the transform: "Container is falsy"); any error falls back to plain transpiled code.
+- **▷ Debug** debugs only its test or suite (Jest's JS entry from the project root, CRA's config, `nameToPattern`, upper-case drive letter).
+- **Timeline:** Windows-safe source pattern, `.each` names, no env leak into the extension host, resolved config, CRA's Jest, transformers loaded like Jest (ts-jest recorded nothing).
+- **Symlinked roots** (macOS `/var` → `/private/var`): `JestPaths` maps real paths to the editor's spelling. **Windows 8.3 short paths**, junctions and `subst` drives likewise (`realpathSync.native`, case- and slash-insensitive).
+- **Jest + Vitest dependencies:** a `vitest` dependency no longer wins over Jest (`@testing-library/jest-dom` ran nothing); `jest.config.cts/.mts/.json` recognised.
+- **`__tests__` folders:** default `testFilePatterns` adds `**/__tests__/**/*.*`; files `jest --listTests` reports but discovery missed are added.
+- **One file in several Jest projects:** results merged (`mergeFileResults`); a test fails if it failed in any project.
+- **Coverage after the first Start:** manifests live next to the persistent transform cache.
+- **`--findRelatedTests` reruns:** `ResultParser` reads Jest's `name` field; the stale flag clears when a rerun ends.
+- **Faster Start:** the `jest --listTests` answer is cached per project (`RunnableFiles.ts`) until test files, `package.json` / `jest.config.*` or run settings change.
+- New test files created after Start run on save. File durations are Jest's start → end time.
+- Inline durations sit at the end of the test's line; a line past a shortened file's end is skipped; results without a location keep discovery's line (`.each` → the template's line).
+- Smaller fixes: coverage race / O(N²) updates, pattern reruns keep file output, total count and line maps, drive-letter case, `.mjs` / `.cjs` test files, real `fs` when tests mock it, transform cache per project, saves outside the project ignored, per-file node index, summary running count.
 
-### Logging overhaul
-
-- **Levelled log channel** — "Live Test Runner" is now a VS Code `LogOutputChannel` with real `error` / `warning` / `info` / `debug` / `trace` levels, timestamps and a user-selectable level (Output ⚙ → Set Log Level). Lines read `[Area] message`.
-- **Raw Jest output split out** — Jest's own output moved to a separate channel, **Live Test Runner: Jest Output**. It is ANSI-stripped, line-buffered, and each line is tagged with its process (`[jest#12]`) so output from concurrent batches can be told apart. Each run starts with a `──── Run #N · label ────` separator.
-- **One summary per run** — `Run #N <trigger> — files · passed · failed · skipped · time — failing: …` replaces scattered start/finish lines. Discovery logs one summary (files, tests, cache hits, parse failures) instead of a "Cache hit" line per file.
-- **Noise removed** — about 20 `[Coverage]` INFO lines per batch, the per-file `[LTR-SESSION-TRANSFORM] …` and `[LTR-TRANSFORM] …` lines, the reporter's PASS/FAIL dump (duplicated Jest's output), the `console.log` on every coverage-decoration refresh, and the timeline `ltr-debug.log` written on every run (now only at Debug level).
-- **Diagnostics that matter kept or added** — when an instrumented batch returns no results, the warning includes the tail of Jest's stderr. Test files that fail to execute are a WARN with the first error line. The fallback to plain Jest says which files and why. Spawn failures (`ENOENT`) suggest the fix. Coverage drops (missing manifests) are summarised in one line.
-- **Runner/core logs now visible** — `@live-test-runner/runner` exposes `createLogger` / `setLogSink`. The extension installs a sink, so runner/core warnings (e.g. the `npx jest` fallback) appear in the log channel instead of only in DevTools. `core` reuses the runner logger.
-- **Child-process log protocol** — instrumentation running inside Jest writes `[LTR:<level>] msg` to stderr. `Executor` routes those lines to the log at that level and removes them from captured stderr. `LTR_LOG_LEVEL` is passed to Jest so instrumentation skips debug/trace writes at the default level.
-- **Slow vs. stuck diagnostics** — `liveReporter.js` now writes a `start` record when Jest begins a file. `SessionTraceRunner` runs a watchdog: when no file has finished for 60 s it logs a WARN naming the file currently executing and how long it has been on it (repeats every 2 min while stuck). When an on-save run cancels an in-flight batch that shares a file, an INFO line says which batch was cancelled and that its files will be retried.
-- **Repeat collapsing and early buffering** — identical consecutive lines collapse into "previous message repeated N more times". Lines logged before the channel exists are buffered and flushed.
-- **New commands** — `Live Test Runner: Show Logs`, and `Live Test Runner: Copy Diagnostic Report` (versions, project/Jest setup, settings, last 300 debug+ log lines from an in-memory ring buffer → clipboard + untitled Markdown doc). `Show Raw Output` is renamed `Show Jest Output`.
-
-### Bug Fixes
-
-- **Console logs missing from the Results panel** — Jest enables verbose mode on its own when a single test file runs (and when the config sets `verbose: true`). Verbose mode prints console calls directly and leaves `testResult.console` empty, so single-file reruns (e.g. saving a test file) showed no logs. Session runs now pass `--verbose=false`. Verified against Jest 29: 0 → 2 captured entries.
-- **Garbled symbols in the Output panel** — `Executor` decoded each pipe chunk separately, so multi-byte characters (`✓ ✕ ● ›`) split across chunks became `�`. It now uses `setEncoding('utf8')`, emits only complete lines, and strips ANSI codes (the channel's `ansi` language id did not render them).
-
-### Audit fixes
-
-- **Jest runs without a shell** — on Windows Jest ran through its `.cmd` shim via `cmd.exe`: every run failed in project paths containing a space, `^` was stripped and `|` piped. Jest's JS entry point is now resolved (CRA: react-scripts' Jest) and run with `node` from PATH; arguments arrive verbatim. Stop kills the whole process tree. Combined name patterns are grouped (`^(?:a|b)$`; `^a|b$` meant "starts with a OR ends with b").
-- **Run lifecycle** — one `run-started`/`run-finished` across overlapping runs (a save during the full suite no longer "finishes" it), progress totals from the extension (`run-progress`), Stop is final (no retry/fallback after it). Files show ⟳ only when Jest starts them; every failure path clears spinners; Stop reverts them. A save no longer cancels the batch running the same file. New setting `liveTestRunner.hangTimeoutSeconds` (default 300): a single test running longer is stopped and its file failed with an explanation. Jest's `pending`/`todo` show as skipped; files the project's config never runs (`jest --listTests`) show as skipped and are not run.
-- **Config loading** — `ProjectJestConfig` reads the project config with `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session: `jest.config.ts/.mjs/.json`, function exports, presets, multi-project configs and `--config` / `--resetMocks` / `--env` in the test script now apply. babel-jest fallback resolved via Node lookup (pnpm). CRA transformer options kept.
-- **Per-test trace** — the trace context is opened from the setup file (test files are not instrumented), so smart on-save reruns and "covering tests" work; hooks in `setupTests.js` add to the test instead of erasing it; no `process.on('exit')` listener per file.
-- **Lost results** — stale-suite cleanup removed whole subtrees of finished tests when a discovered placeholder (e.g. `it.each` `case $case`) got no result: vscode-jest showed 165 of 2012 tests. Same-name tests no longer collapse into one node (a failure could be hidden). `nameToPattern` understands `$variable` placeholders.
-- **Instrumentation errors no longer fail test files** — an optional chain inside another chain's call arguments (`a?.b?.c().includes(x?.d())`) crashed the session transform ("Container is falsy") and every test file importing that module failed to run. That `?.` is skipped for branch counting; any instrumentation error falls back to the plain transpiled code.
-- **Debug** — ▷ Debug debugs only its test/suite; the launch config uses Jest's JS entry from the project root, CRA's config, `nameToPattern` and an upper-case drive letter.
-- **Timeline** — Windows-safe source pattern, `.each` names, no env leak into the extension host, resolved config, CRA's Jest; transformers loaded like Jest does (ts-jest projects recorded nothing).
-- **Smaller fixes** — coverage race / O(N²) updates; pattern reruns keep file output; total test count and line maps; drive-letter case mapping; `.mjs`/`.cjs` test files and `testFilePatterns`; instrumentation uses the real `fs` when tests mock it; transform cache kept per project across sessions; saves outside the project ignored; per-file node index and no full-tree resend on view show; summary running count fixed.
-- **Settings** — removed unused `showOutputOnFailure`; declared `coverageExclude`.
-- **Faster Start** — the `jest --listTests` answer is kept per project (`RunnableFiles.ts`) and reused while no test file, `package.json` / `jest.config.*` or run setting changed; Start waited 20 s for it on a large Create React App project.
-- **New test files run on save** — a test file created after Start is checked with Jest again instead of being ignored.
-- **`--findRelatedTests` reruns** — `ResultParser` reads the file path from Jest's `name` field (results were filed under an empty path); the coverage "stale" flag is cleared when any on-save rerun ends.
-- **File durations** — test files show their total time (Jest's start → end) in both test lists; `ResultParser` now prefers that over the sum of test times.
-
-### macOS verification and fixes
-
-- **Symlinked project roots** — Jest resolves symlinks in `rootDir`, so on macOS (`/var` → `/private/var`) and in any project opened through a symlink every listed file looked unknown (all shown skipped), ▷ Debug found no tests and coverage/trace paths never matched. New `JestPaths` (runner) records each root's real path: paths sent to Jest use it, paths read back are mapped to the editor's spelling.
-- **Windows 8.3 short paths** — the same translation now covers Windows: a project opened by a short name (`C:\Users\RUNNER~1\…`, as on GitHub's Windows runners), a junction or a `subst` drive ran nothing ("No files found"). Roots are resolved with `realpathSync.native`, like Jest, and compared case- and slash-insensitively.
-- **Jest + Vitest projects** — a `vitest` dependency no longer wins over a Jest dependency or Jest config (e.g. `@testing-library/jest-dom` ran nothing). `jest.config.cts/.mts/.json` are recognised.
-- **`__tests__` folders** — the default `testFilePatterns` adds `**/__tests__/**/*.*` (Jest's default `testMatch`); on Start, files `jest --listTests` reports but discovery missed are added.
-- **One file in several Jest projects** — results of a file run by more than one project (e.g. `jsdom` + `node`) are merged (`mergeFileResults`): a test fails if it failed in any project. Before, the last report replaced the others and could hide a failure.
-- **Coverage after the first Start** — coverage manifests now live next to the persistent transform cache, named by file path and content; cached transforms wrote none into the new session folder, so coverage was dropped.
-- **Tooling** — removed the unused `runner` → `core` dependency (a cycle pnpm 10+ refuses); build-script approvals moved to `pnpm-workspace.yaml` (`allowBuilds`); pnpm pinned to 12.14.0 via `packageManager`, used by CI through `pnpm/action-setup`. e2e: the launcher finds VS Code ≥ 1.142's `Code` binary on macOS; plain-Jest comparisons keep path case and map symlinks; the real-project scenario handles multi-project configs and checks that no coverage is dropped.
-- **Dependencies** — Jest 30, `@types/jest` 30, ESLint 10 with a flat config (`eslint.config.mjs`, `typescript-eslint` 8), TypeScript 6.0, esbuild 0.28, `@vscode/test-electron` 3. `@types/vscode` and the extension's `@types/node` 16 stay matched to the minimum VS Code (1.74). `tsc` over the extension passes again (the logger class returned by `activate()` is exported).
-- **Smaller package** — `packages/vscode-extension/.vscodeignore` (from `develop` / `feat/eshan/timeline`, corrected: the webviews load their files from `src/webview`, so that folder is kept) leaves out TypeScript sources, unit tests, source maps, build files and README media (served from GitHub via `--baseContentUrl`): 91 → 34 files, about 150 KB. New e2e option `LTR_E2E_EXTENSION_DIR` runs the suite against an unpacked `.vsix`; it passes.
-- **From `feat/eshan/timeline`** — inline durations sit at the end of the test's line, and a line past the end of a shortened file is skipped (it showed at the end of the file). A result without a location keeps the line discovery found, and generated `.each` tests fall back to their template's line, so "go to file" lands on the `test.each(...)` call.
-- **Verified on macOS** — every e2e scenario; vscode-jest (49 files / 2012 tests), jest-dom (31 files, two Jest projects) and a CRA app (14 files / 143 tests) match plain Jest test for test.
-
-### Tests
-
-- **End-to-end suite** (`e2e/`): launches a real VS Code with the extension and drives real commands against fixture projects (in a path with spaces) and real repositories, including a test-for-test comparison with plain Jest. `node e2e/run.js --all`.
-- **Unit tests** (`packages/*/test`, esbuild transformer) and a root ESLint config; `pnpm lint` added to PR checks.
-- **E2E in CI** — a PR-check job runs the e2e suite on Windows, Linux and macOS with a downloaded VS Code. Fixtures encode what the real projects taught: `it.each` `$var` tables, duplicate names, `jest.mock('fs')`, `setupTests.js` hooks, `--resetMocks` in the test script, slow-loading files, nested `?.`, and a Create React App fixture. Every fixture's results are compared with plain Jest.
-
-### Docs
-
-- A full audit: 22 issues, each with symptom, root cause, fix and verification steps.
-- `docs/live-test-runner-guide.html` — navigable user & contributor guide.
-- Developer guide: new **Logging** section (levels, scopes, correlation tags, child-process protocol).
+### Changed
+- Settings: removed unused `showOutputOnFailure`; declared `coverageExclude`.
+- Smaller package: `.vscodeignore` (README media served via `--baseContentUrl`): 91 → 34 files, about 150 KB; `LTR_E2E_EXTENSION_DIR` runs e2e against an unpacked `.vsix`.
+- Dependencies: Jest 30, `@types/jest` 30, ESLint 10 (flat config, `typescript-eslint` 8), TypeScript 6.0, esbuild 0.28, `@vscode/test-electron` 3; `@types/vscode` and `@types/node` 16 stay matched to VS Code 1.74.
+- Tooling: removed the `runner` → `core` dependency (a cycle pnpm 10+ refuses); build approvals in `pnpm-workspace.yaml` (`allowBuilds`); pnpm 12.14.0 via `packageManager`; the e2e launcher finds VS Code ≥ 1.142's `Code` binary on macOS.
+- Verified on macOS: every e2e scenario; vscode-jest (49 files / 2012 tests), jest-dom (31 files, two Jest projects) and a CRA app (14 files / 143 tests) match plain Jest test for test.
 
 ---
 
 ## [2.0.3] - 2026-05-15
 
-### Bug Fixes
-
-- Fixed issues with running tests with optional chaining. Ex: ?.()
+### Fixed
+- Running tests with optional chaining (e.g. `?.()`).
 
 ---
 
 ## [2.0.2] - 2026-05-01
 
-### Bug Fixes
-
-- **Code Coverage Works on Windows** - Fixed path issues with Forward Backward slashes and capital simple dive letters. Also, Fixed the node path finder to work on both windows and macOS
+### Fixed
+- **Code coverage on Windows:** forward / backward slashes and drive-letter case; the Node path finder works on Windows and macOS.
 
 ---
 
 ## [2.0.1] — 2026-04-23
 
-### Bug Fixes
-
-- **CRA: tests staying "pending" after run** — `liveReporter.js` only implemented `onTestFileResult` (Jest 27+). In Jest 26 (react-scripts 4 / CRA 4), the reporter method is `onTestResult`. When neither fired, every file landed in the "missing" bucket: files were marked failed at the file level but individual test nodes were never updated, leaving them all as pending. Fixed by implementing both methods with deduplication (Jest 27 calls both; the set guard prevents double-reporting).
-- **Noisy raw output** — `sessionTraceTransform.js` was writing a `process.stderr.write` debug line for every file it transformed, flooding the raw output channel. These lines are now removed (resolve/require errors are still logged).
+### Fixed
+- **CRA: tests stayed "pending" after a run.** Jest 26 (react-scripts 4) calls the reporter's `onTestResult`, not `onTestFileResult` (Jest 27+); `liveReporter.js` implements both, deduplicated.
+- **Noisy raw output:** `sessionTraceTransform.js` no longer writes a debug line per transformed file (resolve / require errors still logged).
 
 ---
 
 ## [2.0.0] — 2026-04-21
 
-### Code Coverage
+### Added
+- **Code coverage.**
+  - **Explorer badge** `Stmts X% | Branch X% | Fns X% | Lines X%`, updated after each run (hidden without a session; scan progress while the first scan runs).
+  - **Line bars** `▌`: green covered, amber partial, red uncovered, grey not executable; mirrored in the overview ruler.
+  - **Hover:** the tests covering a line (status, duration, links to the Results panel and the test file) and which branch arms hit or missed (`then` / `else`, `truthy` / `falsy`, `&&` / `||`, `?.`). More than 5 tests → "Show all N" Quick Pick (`liveTestRunner.showCoveringTests`).
+  - **Stale overlay:** a saved file is tinted grey until its rerun brings fresh coverage.
+  - **Coverage tab** in the Explorer: project totals and a per-file table (click to open).
+  - **Correct totals:** files no test imports are scanned at Start (`SourceCounter`) and count as 0 % (Istanbul's `all: true`).
+  - **No extra pass:** counters share the Jest transform; the scan yields every 10 files.
+  - How: `sessionTraceTransform.js` adds `__cov` counters and writes a manifest per file (`<tmp>/coverage/manifests/`); `sessionTraceRuntime.js` flushes them as JSONL on exit; `SessionTraceRunner._parseCoverage()` merges workers (counters max-merged across runs). `CoverageDecorationManager` (five decoration types, `before` pseudo-element), `CoverageHoverProvider` (`ExecutionTraceStore.getTestsForLine()`, `ResultStore.findNodeByFullName()`). Commands `liveTestRunner.revealTestInPanel`, `liveTestRunner.openTestFile`.
 
-#### What's new
-
-- **Live coverage badge** — the Explorer sidebar now shows a four-metric coverage badge (`Stmts X% | Branch X% | Fns X% | Lines X%`) that updates automatically after each test run. Hidden when no session is active; shows a scanning progress indicator while the initial source scan runs.
-- **Coverage line decorations** — source lines are marked with a coloured `▌` bar: green (covered), amber (partial branch coverage), red (not covered), grey (non-executable). The overview ruler mirrors the same states so you can navigate uncovered regions from the scrollbar.
-- **Coverage hover** — hovering any decorated source line shows: which tests cover it (with pass/fail status and duration), and for partially-covered branches, which arms hit or missed (`then`/`else`, `truthy`/`falsy`, `&&`/`||` leaves, `?.` null vs non-null, etc.). Each test name is a clickable link that reveals the test in the results panel; a file icon opens the test file directly.
-- **Stale coverage overlay** — when you save a source file and a rerun is pending, the entire file gets a grey background tint until the rerun completes and fresh coverage data arrives.
-- **Coverage Explorer tab** — the Explorer sidebar gains a second tab ("Coverage") showing project-level totals (Stmts / Branch / Fns / Lines) and a scrollable per-file breakdown. Click any file row to open it in the editor.
-- **Correct coverage denominators** — source files that no test ever imports are scanned in the background at session start (`SourceCounter`) and included as 0% in the aggregate totals. This matches Istanbul's `all: true` behaviour — no more inflated percentages.
-- **No performance impact** — coverage instrumentation shares the existing Jest transform pass (no second AST walk, no extra process). The background source scan yields to the event loop every 10 files to keep the UI responsive.
-
-#### Technical details
-
-- `sessionTraceTransform.js` now injects `__cov` statement/branch/function counters alongside the existing `__strace.step()` calls, and writes a per-file coverage manifest (JSON) to `<tmp>/coverage/manifests/`.
-- `sessionTraceRuntime.js` flushes `globalThis.__cov` as a JSONL line to `COVERAGE_OUTPUT_FILE` on `process.exit`.
-- `SessionTraceRunner._parseCoverage()` reads the JSONL, merges multi-worker counters, reads manifests, and promotes `CoverageStore` entries.
-- Cross-run counter merging uses `max()` — re-running a subset of tests never reduces previously measured coverage.
-- `CoverageDecorationManager` applies the `▌` bar via VS Code's `before` pseudo-element decoration (`contentText: '▌'`) so breakpoint gutters are never blocked. Five decoration types: covered, partial, uncovered, neutral, stale.
-- `CoverageHoverProvider` is a `vscode.HoverProvider` registered for all JS/TS files. It reads the manifest and counters from the `CoverageStore` entry for the hovered file and line, then cross-references `ExecutionTraceStore.getTestsForLine()` + `ResultStore.findNodeByFullName()` for live status and duration.
-- Two new commands wired for hover links: `liveTestRunner.revealTestInPanel` (reveals the test row in the Results panel) and `liveTestRunner.openTestFile` (opens the test file at the relevant test).
-- **Bug fix (ts-jest):** `sessionTraceTransform.js` no longer injects `__covF.f["f0"]++` inside `jest.mock()` factory arrow functions. Babel's `jest-hoist` plugin hoists `jest.mock()` to the top of the file — before the `__covF` preamble — so any counter access inside the factory caused a `ReferenceError`. The fix detects this pattern and skips counter injection for mock factory functions.
-- **Bug fix (stale after on-save rerun):** scoped reruns (individual test cases via `--testNamePattern`) do not produce a new coverage counters file, so `_parseCoverage` was never called and the `measured-stale` state was never cleared. Fixed by calling `CoverageStore.clearStale(sourceFilePath)` after `_runTestCases` completes in `_runAffectedBySourceFile`.
-- **"Show all covering tests" Quick Pick** — when a line is covered by more than 5 tests, the hover now shows a "Show all N" link that opens a VS Code Quick Pick listing every covering test with pass/fail icon and file name. Selecting a test reveals it in the Results panel. New command: `liveTestRunner.showCoveringTests`.
+### Fixed
+- **ts-jest:** no counter inside `jest.mock()` factories (hoisted above the `__covF` preamble → `ReferenceError`).
+- **Stale after an on-save rerun:** scoped reruns write no counters, so the stale state never cleared; `CoverageStore.clearStale` after `_runTestCases`.
 
 ---
 
 ## [1.4.0] — 2026-04-19
 
-### Persistent Discovery Cache, Batch Execution & UI Performance
+### Added
+- **Persistent discovery cache:** parse results cached per file with its mtime (`globalStorage/EshLabs.live-test-runner/cache/<project>/discovery-cache.json`); a restart re-parses only changed files (800+ files: ~30–60 s → a few seconds).
+  - One cache dir per project (`<folderName>-<sha256(workspacePath)[0:8]>`); a `session.lock` with the VS Code PID.
+  - LRU rotation at Start: inactive caches evicted oldest first above 500 MB or 10 projects (a single project is never capped). All active and still over → modal "Continue Without Cache" / "Cancel".
+- **Clearing the cache:** Shift-click Stop (`stopAndClearCache`), commands **Stop Testing and Clear Cache** and **Clear Cache and Restart Testing**.
 
-#### Added
-- **Persistent discovery cache** — Babel AST parse results are now cached per file alongside mtime in `~/.../globalStorage/EshLabs.live-test-runner/cache/<project>/discovery-cache.json`. On restart, only files whose mtime has changed are re-parsed; everything else loads from cache. Large projects (800+ files) drop from ~30–60 s cold parse to a few seconds on warm restart.
-- **Project-keyed cache directories** — each project gets its own cache dir keyed by `<folderName>-<sha256(workspacePath)[0:8]>`. Different projects with the same folder name never collide.
-- **Session lock files** — a `session.lock` file containing the current VS Code PID is written on activation and deleted on deactivate. Cache rotation uses PID liveness checks to skip active sessions.
-- **LRU cache rotation** — at Start Testing time, inactive project caches are evicted oldest-first when total cache size exceeds 500 MB or more than 10 projects are cached. Single-project installs are never capped.
-- **Over-cap warning** — if all cached projects are active and the total still exceeds limits, a modal offers "Continue Without Cache" (runs exactly as before, no data lost) or "Cancel".
-- **Shift+Stop to clear cache** — Shift-clicking the Stop button in either the sidebar or panel sends `stopAndClearCache`: stops the session and wipes this project's disk cache. In-memory state (test tree, results) is unaffected.
-- **"Clear Cache and Restart Testing" command** — palette command that wipes the current project's cache and immediately restarts discovery + testing from scratch.
-- **"Stop Testing and Clear Cache" command** — palette equivalent of Shift+Stop.
+### Changed
+- Discovery batches: 5 files cold, 25 warm.
+- File results batched in 50 ms windows (`batch-file-results`) — no webview freeze when many files finish at once.
+- `files-rerunning` renders once; discovery appends rows with a `DocumentFragment`; row selection swaps a class (no full re-render).
+- The collapse arrow no longer selects the row (which re-expanded it).
+- A panel shown again scrolls to the current selection (`_sendInit` includes it).
 
-#### Changed
-- **Discovery batch size adapts to cache warmth** — cold pass (no cache): 5 files per batch (unchanged, keeps UI progressive). Warm pass (cache present): 25 files per batch, reducing event-loop round-trips ~5× for large projects.
-- **`onFileResult` messages batched** — file result postMessages are now collected in a 50 ms window and flushed as a single `batch-file-results` message instead of one message per file. Eliminates the webview freeze that occurred when dozens of files completed simultaneously.
-- **`files-rerunning` renders once** — marking N files as running now updates all in memory and renders the test list once, rather than once per file (was O(N) full re-renders).
-- **Discovery appends to DOM incrementally** — during discovery, new file rows are appended to the list using a `DocumentFragment` per batch instead of triggering a full list re-render per file. Fixes the slowdown / freeze that appeared as the list approached 200–800 files.
-- **Row selection uses targeted DOM update** — clicking a test row now swaps the `selected` CSS class in-place instead of re-rendering the entire list. Full re-render only happens when ancestor nodes need to be structurally expanded.
-- **Collapse toggle no longer triggers selection** — clicking the ▶ arrow to collapse/expand a row no longer fires a `select` message, which previously caused `scope-changed` → `_expandAncestors` to immediately re-expand the collapsed item.
-- **Cross-panel selection restored on visibility** — `_sendInit` now includes the current selection. When either panel becomes visible after being hidden, it scrolls to the previously selected row.
-
-#### Internal
-- `src/cache/DiscoveryCache.ts` — new file: `DiscoveryCache` class + `rotateAndCheckCapacity` function
-- `TestDiscoveryService` — accepts optional `DiscoveryCache`; cache-first in `_populateFile`; `BATCH_SIZE_COLD = 5`, `BATCH_SIZE_WARM = 25`
-- `BaseWebviewProvider` — `onFileResult` now buffers into `_pendingFileResults`; flushes via `_flushFileResults()` after 50 ms
-- `testListLayout.js` — `appendFiles()` for O(1) per-batch DOM appends during discovery; `markFilesRunning()` for single-render batch running state; `setSelected()` targeted class swap
-- `Executor.runWithReporterPolling` — new method that polls a reporter JSONL file while a Jest child process runs, calling a callback for each parsed record.
-- `IFrameworkAdapter.applyFileResult` — new interface method; `JestAdapter` exposes the existing `_applyFileResult` logic publicly so `SessionTraceRunner` can apply liveReporter records into the store without bypassing the adapter.
-- `SessionTraceRunner.runFiles` replaces the old `runFile` (per-file trace) method entirely.
+### Internal
+- `src/cache/DiscoveryCache.ts` (`DiscoveryCache`, `rotateAndCheckCapacity`); `TestDiscoveryService` cache-first (`BATCH_SIZE_COLD = 5`, `BATCH_SIZE_WARM = 25`); `BaseWebviewProvider` buffers `onFileResult` (`_pendingFileResults`, `_flushFileResults()`); `testListLayout.js` `appendFiles()`, `markFilesRunning()`, `setSelected()`.
+- `Executor.runWithReporterPolling` reads the reporter's JSONL while Jest runs; `IFrameworkAdapter.applyFileResult`; `SessionTraceRunner.runFiles` replaces `runFile`.
 
 ---
 
 ## [1.3.0] — 2026-04-14
 
-### Dynamic Test Groups & Multi-Session Isolation
+### Added
+- **Dynamic test groups:** `test.each` / loop tests are permanent "template" nodes (kept with zero children); variations attach as results arrive; clicking a variation reruns its template.
+- **Multi-session isolation:** each window uses its own `session-<pid>-<timestamp>` temp folder; folders of dead PIDs are pruned at startup (`process.kill(pid, 0)`).
 
-#### Added
-- **Persistent dynamic anchors** — parameterized tests (`test.each`, loops) are now elevated to permanent "template" nodes in the sidebar. They remain visible as structural anchors even if they temporarily have zero children.
-- **Lazy variation attachment** — dynamic test variations are attached as children to their parent templates in real-time as Jest emits results.
-- **Multi-session isolation** — each VSCode window now uses a unique `session-<pid>-<timestamp>` temporary directory. This prevents concurrent windows from deleting or overwriting each other's temporary Jest configs and trace files.
-- **Safe stale-data cleanup** — the extension now performs a PID-check on startup (`process.kill(pid, 0)`) to safely prune temporary session folders from previous crashes while leaving active sessions untouched.
-- **Command pivoting** — clicking a dynamic variation in the sidebar now correctly reruns the parent template, ensuring that the full parameterized suite is executed.
+### Changed
+- Status bubbles up through every ancestor (nested `describe`s and dynamic groups).
+- Gutter icons turn to spinners as a test starts (scoped reruns too) and update at once.
+- Line maps managed by `ResultStore` (icons stayed stale after partial runs).
 
-#### Changed
-- **Recursive status bubbling** — finalized the "nested branch compatibility." Status changes (pass/fail/running) deep in the tree correctly bubble up through all ancestors, including complex nested `describe` blocks and dynamic groups.
-- **Real-time gutter synchronization** — gutter icons now flip to spinners the moment a test starts (even in scoped reruns) and update to their final result state without delay.
-- **Unified LineMap management** — moved mapping responsibility into `ResultStore`, eliminating desync bugs where icons wouldn't update after partial test runs.
-
-#### Internal
-- `LTR_TMP_DIR` renamed to `LTR_BASE_TMP_DIR`; all internal components now use an injected `_tmpDir` or `_sessionDir` path for isolation.
-- `ResultStore.cleanupStaleNodes` now explicitly ignores `template` nodes to preserve the structural anchors.
+### Internal
+- `LTR_TMP_DIR` → `LTR_BASE_TMP_DIR`; components get an injected `_tmpDir` / `_sessionDir`. `ResultStore.cleanupStaleNodes` keeps `template` nodes.
 
 ---
 
 ## [1.2.0] — 2026-04-14
 
-### Recursive Nested Node Tree
+### Changed
+- **Unlimited `describe` nesting:** a recursive `File → Node[]` tree (flat `TestNode` pool with `parentId` / `children`) replaces File → Suite → Test.
+- Stable node ids `{filePath}::{suite1}::…::{name}`; dynamic tests use placeholders cleaned up once Jest reports.
+- `bubbleUpStatus()` rolls status up in O(depth); `getSummary()` uses an incremental counter (10,000+ tests).
+- Any node scopes the Output and Errors columns to its subtree; output is never back-filled.
+- Webview renders recursively (`_renderNode()`, collapsed nodes create no DOM).
+- `SelectionState`, `IResultObserver`, `IFrameworkAdapter` and `LineMap` (`{ nodeId, fileId }`) use `nodeId`; `testDiscovery.js` returns a nested tree; `TestDiscoveryService._populateSuiteTree()`; `JestAdapter._applyFileResult()` builds the hierarchy from `ancestorTitles`.
 
-#### Changed
-- **Unlimited `describe` nesting** — the test tree now supports deeply nested `describe` blocks (5+, 10+, or more levels). The old rigid File → Suite → Test hierarchy has been replaced with a recursive `File → Node[]` tree. Every suite and test is a `TestNode` in a flat pool with `parentId`/`children` references.
-- **Stable node IDs** — node IDs use the convention `{filePath}::{suite1}::…::{name}`. Static discovery and Jest results match automatically without a lookup table. Dynamic tests (`.each`, template literals, loops) use placeholder nodes cleaned up once Jest emits real results.
-- **Live status rollup** — `bubbleUpStatus()` propagates worst-case status from any leaf up through all ancestors in O(depth). If one test fails deep in the tree, every parent suite and the file itself show a failure icon in real time.
-- **O(1) summary counter** — `getSummary()` uses an incremental running counter instead of scanning all nodes. Safe for 10,000+ tests.
-- **Scoped output at any level** — clicking any node in the tree (file, suite at any depth, or individual test) scopes the Output and Errors columns to that subtree. Output is never back-filled from parent scopes.
-- **Webview renders recursively** — `testListLayout.js` uses `_renderNode()` for unlimited nesting depth with lazy child rendering (collapsed nodes don't generate DOM).
-- **`SelectionState`**, **`IResultObserver`**, and **`IFrameworkAdapter`** interfaces all use `nodeId` instead of `suiteId`/`testId`.
-- **`LineMap`** entries are now `{ nodeId, fileId }` instead of `{ suiteId, testId, fileId }`.
-- **`testDiscovery.js`** returns a nested suite tree with `children[]` arrays instead of a flat map.
-- **`TestDiscoveryService`** recursively walks the discovery tree using `_populateSuiteTree()`.
-- **`JestAdapter._applyFileResult()`** builds node hierarchy from `ancestorTitles` and calls `bubbleUpStatus()` after each test result.
-
-#### Internal
-- `ResultStore` rewritten: flat `Map<string, TestNode>` pool, `rootNodeIds` per file, `makeNodeId()` helper, `serialiseFile()` for recursive JSON output.
-- `DecorationManager`, `CodeLensProvider`, `BaseWebviewProvider`, `ExplorerView`, `ResultsView`, `SessionManager`, and `extension.ts` all updated to use `nodeId` throughout.
+### Internal
+- `ResultStore` rewritten (`Map<string, TestNode>`, `rootNodeIds`, `makeNodeId()`, `serialiseFile()`); views, decorations, CodeLens, `SessionManager` and `extension.ts` use `nodeId`.
 
 ---
 
 ## [1.1.1] - 2026-04-13
-- Fixed tests not running on large projects
-- Fiixed tests not running on windows machines
+
+### Fixed
+- Tests not running on large projects.
+- Tests not running on Windows.
 
 ---
 
 ## [1.1.0] — 2026-04-12
 
-### Static Test Discovery, Smart On-Save Reruns & Execution Trace Store
+### Added
+- **Static test discovery on load** (before Start): `testDiscovery.js` walks each test file's AST with the project's `@babel/parser` / `@babel/traverse` (`describe`, `it`, `test`, `.only`, `.skip`, `.each`, `.concurrent`; template literals shown as `"accepts valid severity …"`; no code run).
+  - `TestDiscoveryService`: batches of 8 with event-loop yields; files pushed as parsed (`discovery-progress`); a `FileSystemWatcher` on `**/*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}` adds new files and re-discovers saved ones not running.
+  - `○` pending icons and `▶ Run` / `▷ Debug` CodeLens as soon as a file is discovered (CodeLens registered on activate); `◈ Results` after a result.
+  - Start shows `⟳ Discovering… N / total` until done; `_sendInit()` carries `isDiscovering`, `discoveryTotal`, `discoveryDone`; the Total ticks up.
+  - `ResultStore.fileDiscovered` / `suiteDiscovered` / `testDiscovered` (never overwrite results), `removeFile`; `fileStarted` keeps a discovered tree. `IResultObserver.onDiscoveryStarted` / `Progress` / `Complete`. `DecorationManager` keeps its types between sessions (`clearAll()`, not `dispose()`).
+- **Run one test** by name (`--testNamePattern`).
+- **Workers scale to the CPU count** (was 3).
+- Loading pane while traces are collected; trace progress in the Explorer.
+- **Test-level reruns on source save:** only the test cases that ran code from the saved file (one combined `--testNamePattern` per file); suites with shared state rerun whole.
+  - `ExecutionTraceStore` from per-test JSONL traces: `traceIndex`, `coverageIndex`, `sourceToTests` (filled by `SessionTraceRunner._partitionAndStore`).
+  - `SessionManager._runAffectedBySourceFile`: the trace first, else `CoverageMap` / `jest --findRelatedTests`.
 
-#### Added
-- **Run individual tests by name pattern** — `▶ Run` on a specific `it`/`test` line now passes `--testNamePattern` to Jest so only that single test case executes, rather than the whole file.
-- **Parallel execution scaled to CPU count** — the concurrent file runner now defaults the worker pool size to the number of logical CPUs, replacing the previous hard-coded limit of 3.
-- **Loading pane while collecting traces** — the Session panel shows a loading indicator while instrumented trace data is being collected, so there is no blank state between triggering a run and results appearing.
-- **Trace tracker in the Explorer sidebar** — the Explorer now surfaces trace collection progress inline alongside the test tree so users can see which files have been traced without switching panels.
-- **Static test discovery on project load** — the extension now parses every test file's AST immediately on activate (before the user clicks Start Testing). The full file → suite → test tree appears in the sidebar as files are scanned, with accurate line numbers and pending status icons.
-- **`testDiscovery.js`** — lightweight AST walker (reuses project's `@babel/parser` + `@babel/traverse`). Extracts `describe`, `it`, `test`, `*.only`, `*.skip`, `*.each`, and `*.concurrent.*` calls. Template literals with interpolations are shown as readable patterns (`"accepts valid severity …"`). No code is executed or injected.
-- **`TestDiscoveryService`** — orchestrates discovery on activate and file watching during idle periods. Parses files in batches of 8 with event-loop yields between batches so the extension host stays responsive on large projects (500+ files).
-- **Incremental UI updates** — each parsed file is pushed to the webview immediately via `discovery-progress`, so the test list builds up progressively rather than appearing all at once after a full scan.
-- **FileSystemWatcher** — monitors `**/*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs}`. New files appear in the tree immediately on create. Existing files are re-discovered on save as long as no run is in progress (status `running` is the only guard — files with prior results are also re-discovered so newly added tests appear straight away).
-- **Pending gutter icons** — `○` pending icons appear next to every discovered test line as soon as discovery finishes, before any test is run.
-- **`▶ Run` / `▷ Debug` CodeLens on project load** — CodeLensProvider is now registered on extension activate instead of on session start, so run and debug buttons appear above `it`/`test` lines as soon as a file is open.
-- **`◈ Results` CodeLens** — unchanged behaviour: only shown after a test has been run and a LineMap entry exists.
-- **Discovering… button state** — Start Testing is disabled and shows `⟳ Discovering… N / total` while the initial scan is in progress. Re-enabled when discovery completes.
-- **Race-condition safe init** — `_sendInit()` now carries `isDiscovering`, `discoveryTotal`, and `discoveryDone` fields so webviews that load mid-discovery restore the correct button state and progress counter without depending on message delivery order.
-- **Test total counter during discovery** — the summary Total count ticks up as each file is parsed.
-- **Three new `ResultStore` methods**: `fileDiscovered`, `suiteDiscovered`, `testDiscovered` — create `pending` entries; all no-op if the entry already exists so live results are never overwritten.
-- **`ResultStore.removeFile`** — removes a single file entry and its line map; used by the watcher to force a fresh re-discovery of modified files.
-- **`ResultStore.fileStarted` preserves structure** — when a file was pre-populated by discovery, `fileStarted` now preserves the suite/test tree and marks everything `running` instead of recreating with empty suites, so the tree stays visible during a run.
-- **`IResultObserver` discovery events** (`onDiscoveryStarted`, `onDiscoveryProgress`, `onDiscoveryComplete`) — optional methods; `BaseWebviewProvider`, `DecorationManager`, and `CodeLensProvider` all implement them.
-- **`DecorationManager` no longer disposes on session stop** — decoration types are kept alive between sessions so pending icons from discovery persist; `clearAll()` is called instead of `dispose()`.
-- **Test-level smart reruns on source file save** — when a source file is saved, Live Test Runner now reruns only the specific test cases that actually executed code from that file (not the whole test file). After the first full run, the extension knows exactly which tests touched which source files via the execution trace. Tests in suites without shared state are rerun individually with a single combined `--testNamePattern`; suites with shared state rerun the whole file to keep results correct.
-- **`ExecutionTraceStore`** — three in-memory indexes derived from per-test JSONL trace files and rebuilt after each instrumented run:
-  - `traceIndex` — maps each test's full name to its `.jsonl` trace file path
-  - `coverageIndex` — accumulates every source line executed by any test in the session (foundation for coverage overlay)
-  - `sourceToTests` — maps each source file to the test files, suites, and individual test cases that covered it; drives smart on-save reruns
-- **`SessionTraceRunner._partitionAndStore`** now populates `sourceToTests` — after each instrumented file run, all source files referenced in trace steps are mapped back to their covering suites and test cases.
-- **`SessionManager._runAffectedBySourceFile`** — new method that consults `ExecutionTraceStore` first, falls back to `CoverageMap` / `jest --findRelatedTests` if no trace data is available yet (e.g. before the first full run completes).
+### Changed
+- `SessionManager.start()` awaits `TestDiscoveryService.awaitDiscovery()` instead of discovering itself; `onSave` routes source files through `_runAffectedBySourceFile`.
+- `testListView.js` / `resultsView.js` handle `discovery-progress`; a `'discovering'` session state.
 
-#### Changed
-- `SessionManager.start()` no longer runs its own file discovery. It awaits `TestDiscoveryService.awaitDiscovery()` (no-op if already done) then reads file paths directly from the store.
-- `CodeLensProvider` is registered in `extension.ts` on activate rather than in `SessionManager.start()`.
-- `testListView.js` and `resultsView.js` both handle `discovery-progress` to update the test list incrementally.
-- `testListView.js` `applySessionState` now supports a `'discovering'` state that disables Start Testing and shows a file progress counter.
-- `SessionManager.onSave` source-file branch now routes through `_runAffectedBySourceFile` instead of calling `_adapter.getAffectedTests` directly.
-- On-save now runs individual test cases (one Jest invocation per affected file with combined pattern) instead of always rerunning whole test files when trace data is available.
-
-#### Internal
-- Trace files remain the ground truth. `ExecutionTraceStore` entries are derived caches — always rebuilt from trace files, never written independently. Clear both together on session reset.
+### Internal
+- Trace files are the ground truth; `ExecutionTraceStore` is rebuilt from them and cleared with them on reset.
 
 ---
 
 ## [1.0.0] — 2026-04-09
 
-### Test List Improvements
-
-#### Features
-- **Search filters to test case level** — typing in the search bar now narrows results down to
-  individual test cases. Only matching suites and tests are shown within each file; if a suite name
-  matches the query all of its tests are shown, otherwise only the matching tests appear
-- **State preserved across tab switches** — the Start / Stop buttons, live blinking indicator, and
-  watch state are now correctly restored when returning to the explorer after switching VS Code tabs.
-  Search query, failures-only filter, and folder-view toggle also survive the tab switch
-- **Gutter status icons** — pass ✓ / fail ✗ / running ⟳ / pending ○ icons appear next to each
-  `it()` and `test()` line as soon as results arrive; cleared automatically when the session stops
-- **Inline duration text** — muted duration label rendered after the closing paren of each test
-  block, colour-coded green (< 100 ms) / amber (100–500 ms) / red (> 500 ms)
-- **CodeLens run button** — `▶ Run` appears above each `describe`, `it`, and `test` block while a
-  session is active; clicking reruns that test (or the whole file if no result exists yet)
-- **CodeLens debug button** — `▷ Debug` above each block launches Jest in debug mode via
-  `vscode.debug.startDebugging` with `--runInBand --no-coverage`, scoped to that test via
-  `--testNamePattern`
-- **Jump to results** — `◈ Results` CodeLens on `it`/`test` lines with known results; clicking
-  focuses the Test Results panel and scrolls to and selects the matching row
-- **Session-scoped** — CodeLens entries and gutter decorations are only visible while a session is
-  active; stopping clears everything immediately
+### Added
+- **Search down to test cases:** only matching suites and tests are shown (a matching suite shows all its tests).
+- **State kept across tab switches:** Start / Stop, the live indicator, search, failures-only and folder view.
+- **Gutter icons** ✓ / ✗ / ⟳ / ○ on `it()` / `test()` lines; cleared when the session stops.
+- **Inline durations** after each test: green < 100 ms, amber 100–500 ms, red > 500 ms.
+- **CodeLens** `▶ Run` (the test, or the file without a result), `▷ Debug` (`vscode.debug.startDebugging`, `--runInBand --no-coverage --testNamePattern`), `◈ Results` (focuses and selects the row).
+- CodeLens and gutter icons shown only while a session is active.
 
 ---
 
 ## [0.2.0] — 2026-04-04
 
-### Editor Inline Decorations
+### Added
+- **Custom Test Explorer** sidebar (file → suite → test) and **Live Test Results** panel (test list, console output, errors).
+- Action bar (Start, Stop, Rerun), live watch indicator, summary bar (total / passed / failed, elapsed), failures-only filter, search, Collapse / Expand All, per-row rerun (▶) and open file (↗), colour-coded duration badges (file, suite, test), empty state, run progress line.
+- `session-started` / `session-stopped` messages for the UI state.
+- Jest auto-detection: standard Jest, CRA / react-scripts, local `node_modules/.bin/jest`.
+- `--outputFile` capture (Windows pipe-buffer loss), a stdout JSON fallback for CRA, console output parsed from stderr for CRA.
+- Concurrent runner (up to 3 parallel Jest workers).
 
-#### Features
-- **Custom Test Explorer** sidebar panel with file → suite → test hierarchy
-- **Live Test Results** panel (3 columns: test list, console output, errors)
-- **Action bar** — Start Testing, Stop Testing, and Rerun Tests buttons
-- **Live watch indicator** shown when the session is active
-- **Summary bar** — total / passed / failed counts with elapsed time
-- **Failures-only filter** toggle on the test list toolbar
-- **Search** bar to filter the test tree by name
-- **Collapse All / Expand All** toolbar buttons
-- **Per-row rerun** (▶) and **open file** (↗) buttons on hover
-- **Duration badges** — color-coded fast / moderate / slow at file, suite, and test level
-- **Empty state** message when no tests have been discovered yet
-- **Run progress** line showing file count and elapsed time during a run
-- `session-started` / `session-stopped` broadcast messages for accurate UI state
-- Smart Jest auto-detection: standard Jest, CRA / react-scripts, local `node_modules/.bin/jest`
-- `--outputFile` temp-file capture to avoid Windows pipe-buffering data loss
-- `stdout` JSON fallback for CRA runs that skip writing `--outputFile` on failure
-- Concurrent file runner (up to 3 parallel Jest workers)
-- Console output parsed from stderr for CRA projects that omit the `console` array in JSON
-
-#### Internal
-- `JestTestCaseResult` now carries an optional `location: { line, column }` field populated from
-  Jest's `--json` output
-- New `LineEntry` type and `LineMap` methods added to `ResultStore`
-- New `EditorDecorationManager` class owns all `TextEditorDecorationType` instances
-- New `LiveTestCodeLensProvider` class provides CodeLens via regex line scan (no AST)
-- SVG gutter icons in `resources/icons/` (passed / failed / running / pending)
+### Internal
+- `JestTestCaseResult.location`; `LineEntry` / `LineMap` in `ResultStore`; `EditorDecorationManager`; `LiveTestCodeLensProvider` (regex line scan); SVG gutter icons in `resources/icons/`.
 
 ---
 
 ## [0.1.0] — 2026-04-03
 
-### Initial release
+### Added
+- Initial release.
+- **Auto-detection** of the package manager (npm, pnpm, yarn) and the Jest binary.
+- **Live runs on save**, results shown as each file finishes; files run in parallel.
+- **Test tree** in the VS Code Testing panel (files, suites, tests), with running / ✓ / ✗ states and pass / fail / skip counts per file.
+- **Durations** per file and test (files over 3 s yellow, over 10 s red).
+- **"Live Test Runner (ANSI)" output channel** with Jest's coloured output and the exact command.
+- **Diagnostics:** red squiggles at the failing line, cleared on the next pass.
+- **Status bar:** Off / Running… N/M / ✅ N passed / ❌ N failed; click to start.
+- Commands: Start Testing, Stop Testing, Run Related Tests (current file), Refresh Tests, Rebuild Map, Clear Diagnostics, Show Output, Select Project Root.
 
-#### Features
-- **Auto-detection** — automatically discovers the package manager (npm, pnpm, yarn) and Jest
-  binary used by the workspace; no configuration required for standard setups
-- **Live test execution** — runs Jest tests on file save and surfaces results in real time without
-  waiting for the full run to finish
-- **Test hierarchy in sidebar** — the VS Code Testing panel shows files, describe suites, and
-  individual test cases as a collapsible tree, updated live as each file finishes
-- **Status indicators** — spinning indicator while a file is running; ✓ / ✗ icons with green/red
-  colouring once results arrive; pass/fail/skip counts shown at the file level
-- **Durations** — per-file and per-test durations displayed inline; files taking over 3 s are
-  highlighted in yellow, over 10 s in red
-- **Concurrent execution** — test files run in parallel (up to the worker pool limit); the sidebar
-  updates file-by-file rather than waiting for the entire suite
-- **ANSI output channel** — a dedicated "Live Test Runner (ANSI)" output channel shows full Jest
-  output with colours, including startup logs and the exact command invoked
-- **Diagnostics** — failed tests produce red squiggles in the editor at the failing line; cleared
-  automatically on the next passing run
-- **Project root selection** — command to manually select the project root when auto-detection is
-  insufficient (useful for monorepos)
-- **Status bar** — shows current state (Off / Running… N/M / ✅ N passed / ❌ N failed) with a
-  click-to-start shortcut
-- **Commands**: Start Testing, Stop Testing, Run Related Tests (current file), Refresh Tests,
-  Rebuild Map, Clear Diagnostics, Show Output, Select Project Root
-
-#### Known Limitations & Bugs
-
-- **Per-test output not shown on macOS** — clicking an individual test case in the VS Code Test
-  Results panel shows *"The test case did not report any output."* on macOS. The global run output
-  (visible via the "Show Results Output" button) is complete and unaffected. This is caused by
-  inconsistent behaviour in the VS Code `TestRun.appendOutput()` API on macOS when a `test`
-  parameter is supplied.
-
-- **No per-test click-to-view output** — as a consequence of the above, there is currently no way
-  to click a passing test and see its isolated output. Failure messages for failed tests do appear
-  in the Messages tab of the Test Results panel on all platforms.
-
-- **Monorepo support is manual** — in workspaces with multiple Jest configs the correct project
-  root must be set manually via the "Select Project Root" command.
-
-- **No coverage support** — code coverage is not yet surfaced in the UI. Planned for a future
-  release.
-
-- **Windows path edge cases** — Jest normalises file paths differently on Windows; path matching
-  uses `fileResults[0]` as a workaround and may behave unexpectedly in edge cases with multiple
-  Jest projects in a single config.
+### Known limitations
+- **Per-test output not shown on macOS:** clicking a test in VS Code's Test Results panel shows "The test case did not report any output." (`TestRun.appendOutput()` with a `test` behaves inconsistently on macOS); the global run output is complete.
+- So no click-to-view output for a passing test; failure messages appear in the Messages tab on every platform.
+- **Monorepos are manual:** set the project root with Select Project Root.
+- **No coverage** in the UI yet (planned).
+- **Windows path edge cases:** Jest normalises paths differently; matching uses `fileResults[0]` and may misbehave with several Jest projects in one config.
 
 ---
 
