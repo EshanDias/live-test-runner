@@ -21,7 +21,8 @@ import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
-import { combineWithEntry } from '../coverage/coverageRules';
+import { combineWithEntry, cloneCounters, sumCounters } from '../coverage/coverageRules';
+import { MeasuredFile } from '../coverage/CoverageStore';
 import { CoverageScope, coverageScopeOf } from '../coverage/coverageScope';
 import { logger } from '../utils/logger';
 import { IProjectConfig } from './IProjectConfig';
@@ -611,6 +612,9 @@ module.exports = _projects
     }
     // Files a newer batch took over are that batch's business, not missing here.
     const missing = stopped ? [] : filePaths.filter((fp) => owns(fp) && !received.has(fp));
+    // Coverage replaces only what finished here: not a file killed by the
+    // hang limit (it wrote nothing), not one a newer batch took over.
+    const measured = new Set([...received].filter((fp) => owns(fp) && fp !== timedOut?.file));
     release();
 
     // Parse trace hits and update ExecutionTraceStore.
@@ -625,7 +629,7 @@ module.exports = _projects
 
     // Parse coverage counters and promote CoverageStore entries.
     try {
-      this._parseCoverage(covCountersFile, projectRoot, batch, coverageScope);
+      this._parseCoverage(covCountersFile, projectRoot, batch, coverageScope, { startedAt, ran: measured, toKey });
     } catch (err) {
       covLog.error(`${batch}: could not parse coverage counters`, err);
     }
@@ -654,111 +658,125 @@ module.exports = _projects
     return this._binaryResolver.resolve(projectRoot);
   }
 
-  // ── Private: parse light-trace JSONL and update ExecutionTraceStore ──────────
+  // ── Private: coverage counters → the CoverageStore ──────────────────────────
 
-  private _parseCoverage(covCountersFile: string, projectRoot: string, batch: string, scope: CoverageScope): void {
-    if (!fs.existsSync(covCountersFile)) {
-      // Normal when the batch imported no instrumented source files (or was killed).
-      covLog.debug(`${batch}: no coverage counters written`);
-      return;
-    }
-
-    let raw: string;
-    try {
-      raw = fs.readFileSync(covCountersFile, 'utf8');
-    } catch (err) {
-      covLog.error(`${batch}: could not read ${covCountersFile}`, err);
-      return;
-    }
-
-    const lines = raw.split('\n').filter((l) => l.trim().length > 0);
-
-    // Merge all workers: sum within this run
-    const mergedCov: Record<string, FileCov> = {};
-    let parseErrors = 0;
-    for (const line of lines) {
-      let parsed: { workerPid: number; cov: Record<string, FileCov> };
-      try { parsed = JSON.parse(line); } catch { parseErrors++; continue; }
-      for (const [hash, fileCov] of Object.entries(parsed.cov)) {
-        if (!mergedCov[hash]) {
-          mergedCov[hash] = { s: { ...fileCov.s }, b: {}, f: { ...fileCov.f } };
-          for (const [id, arms] of Object.entries(fileCov.b)) {
-            mergedCov[hash].b[id] = [...(arms as number[])];
-          }
-        } else {
-          for (const [id, val] of Object.entries(fileCov.s)) {
-            mergedCov[hash].s[id] = (mergedCov[hash].s[id] ?? 0) + val;
-          }
-          for (const [id, arms] of Object.entries(fileCov.b)) {
-            mergedCov[hash].b[id] = (arms as number[]).map(
-              (v, i) => (mergedCov[hash].b[id]?.[i] ?? 0) + v,
-            );
-          }
-          for (const [id, val] of Object.entries(fileCov.f)) {
-            mergedCov[hash].f[id] = (mergedCov[hash].f[id] ?? 0) + val;
-          }
-        }
+  /**
+   * One record per test file (`tf`, see ltrCoverageSetup.js): each test file
+   * that finished in the batch (`run.ran`) replaces its coverage contribution
+   * — one with results but no record covers no instrumented file now, so its
+   * old contribution goes. A test file several Jest projects ran sums its records.
+   */
+  private _parseCoverage(
+    covCountersFile: string,
+    projectRoot: string,
+    batch: string,
+    scope: CoverageScope,
+    run: { startedAt: number; ran: Set<string>; toKey: (p: string) => string },
+  ): void {
+    const startedAt = Date.now();
+    let raw = '';
+    if (fs.existsSync(covCountersFile)) {
+      try {
+        raw = fs.readFileSync(covCountersFile, 'utf8');
+      } catch (err) {
+        covLog.error(`${batch}: could not read ${covCountersFile}`, err);
+        return;
       }
     }
+    const lines = raw.split('\n').filter((l) => l.trim().length > 0);
 
+    // Per test file, per instrumented file (hash): summed counters.
+    const byTestFile = new Map<string, Record<string, FileCov>>();
+    /** Records without a test file (expect.getState() had no testPath): merged the old way. */
+    const untagged: Record<string, FileCov> = {};
+    let parseErrors = 0;
+    for (const line of lines) {
+      let parsed: { workerPid: number; tf?: string; cov: Record<string, FileCov> };
+      try { parsed = JSON.parse(line); } catch { parseErrors++; continue; }
+      const key = parsed.tf ? run.toKey(parsed.tf) : undefined;
+      let into = untagged;
+      if (key) {
+        into = byTestFile.get(key) ?? {};
+        byTestFile.set(key, into);
+      }
+      for (const [hash, fileCov] of Object.entries(parsed.cov)) { into[hash] = into[hash] ? sumCounters(into[hash], fileCov) : cloneCounters(fileCov); }
+    }
     if (parseErrors > 0) {
       covLog.warn(`${batch}: ${parseErrors} coverage record(s) were corrupt and skipped (a Jest worker may have been killed mid-write)`);
     }
 
-    // Promote CoverageStore entries — max() merge with existing for cross-run accumulation
-    let promoted = 0;
-    let excluded = 0;
-    const missingManifests: string[] = [];
+    // Manifests, read once per batch.
+    const manifests = new Map<string, { manifestPath: string; manifest: Manifest; filePath: string } | null>();
+    const missingManifests = new Set<string>();
     let manifestReadErrors = 0;
-
-    for (const [fileHash, counters] of Object.entries(mergedCov)) {
+    let excluded = 0;
+    const manifestOf = (fileHash: string) => {
+      if (manifests.has(fileHash)) { return manifests.get(fileHash) ?? undefined; }
       const manifestPath = path.join(this._manifestDir(projectRoot), `${fileHash}.json`);
+      let found: { manifestPath: string; manifest: Manifest; filePath: string } | null = null;
       if (!fs.existsSync(manifestPath)) {
-        missingManifests.push(fileHash);
-        continue;
+        missingManifests.add(fileHash);
+      } else {
+        try {
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Manifest;
+          const filePath = normPath(manifest.filePath);
+          if (scope.counts(filePath)) { found = { manifestPath, manifest, filePath }; } else { excluded++; }
+        } catch (err) {
+          manifestReadErrors++;
+          covLog.debug(`${batch}: unreadable manifest ${manifestPath} — ${(err as Error).message}`);
+        }
       }
-
-      let manifest: Manifest;
-      try {
-        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as Manifest;
-      } catch (err) {
-        manifestReadErrors++;
-        covLog.debug(`${batch}: unreadable manifest ${manifestPath} — ${(err as Error).message}`);
-        continue;
+      manifests.set(fileHash, found);
+      return found ?? undefined;
+    };
+    const measuredFiles = (cov: Record<string, FileCov>) => {
+      const files = new Map<string, MeasuredFile>();
+      for (const [hash, counters] of Object.entries(cov)) {
+        const m = manifestOf(hash);
+        if (!m) { continue; }
+        const prev = files.get(m.filePath);
+        // Two versions of one file in one test file's run cannot happen; two Jest projects with different transforms can.
+        files.set(m.filePath, prev && prev.manifestPath === m.manifestPath ? { ...prev, counters: sumCounters(prev.counters, counters) } : { manifestPath: m.manifestPath, manifest: m.manifest, counters });
       }
+      return files;
+    };
 
-      const normalizedFilePath = normPath(manifest.filePath);
-      if (!scope.counts(normalizedFilePath)) {
-        excluded++;
-        continue;
-      }
+    let contributions = 0;
+    const sources = new Set<string>();
+    for (const testFile of run.ran) {
+      const files = measuredFiles(byTestFile.get(testFile) ?? {});
+      for (const f of files.keys()) { sources.add(f); }
+      this._coverageStore.replaceContribution(testFile, files, run.startedAt);
+      contributions++;
+    }
 
-      // Merge with counters of the same file version (same manifest); with a
-      // Vitest-measured entry (mixed project) by line.
-      // A stale entry (its source was saved) starts over, as before.
-      const existing = this._coverageStore.getEntry(normalizedFilePath);
-      const merged: LiveCov = existing?.state === 'measured-stale' ? counters : combineWithEntry(existing, manifestPath, manifest, counters);
-
-      const pct = calcCoverage(manifest, merged);
-      this._coverageStore.setMeasuredEntry(normalizedFilePath, { manifestPath, counters: merged, pct });
-      promoted++;
+    // Untagged records: the per-batch path (merged with what the store has).
+    let untaggedFiles = 0;
+    for (const [filePath, mf] of measuredFiles(untagged)) {
+      const existing = this._coverageStore.getEntry(filePath);
+      const merged: LiveCov = existing?.state === 'measured-stale' ? mf.counters : combineWithEntry(existing, mf.manifestPath, mf.manifest, mf.counters);
+      this._coverageStore.setMeasuredEntry(filePath, { manifestPath: mf.manifestPath, counters: merged, pct: calcCoverage(mf.manifest, merged) });
+      untaggedFiles++;
     }
 
     covLog.debug(
-      `${batch}: ${promoted} file(s) measured, ${excluded} excluded (from ${lines.length} worker record(s))`,
+      `${batch}: ${contributions} test file(s) → ${sources.size} file(s) measured${untaggedFiles ? ` (+${untaggedFiles} without a test file)` : ''}, ${excluded} excluded ` +
+      `(from ${lines.length} worker record(s), ${Math.round(raw.length / 1024)} KB, ${Date.now() - startedAt} ms)`,
     );
-    if (missingManifests.length > 0 || manifestReadErrors > 0) {
+    if (missingManifests.size > 0 || manifestReadErrors > 0) {
       // Counters without a manifest cannot be mapped to lines — those files show no coverage.
       covLog.warn(
-        `${batch}: coverage dropped for ${missingManifests.length + manifestReadErrors} file(s) — ` +
-        `${missingManifests.length} manifest(s) missing, ${manifestReadErrors} unreadable (folder: ${this._manifestDir(projectRoot)})`,
+        `${batch}: coverage dropped for ${missingManifests.size + manifestReadErrors} file(s) — ` +
+        `${missingManifests.size} manifest(s) missing, ${manifestReadErrors} unreadable (folder: ${this._manifestDir(projectRoot)})`,
       );
     }
 
-    try {
-      fs.unlinkSync(covCountersFile);
-    } catch (err) {
-      covLog.debug(`${batch}: could not delete ${covCountersFile} — ${(err as Error).message}`);
+    if (raw) {
+      try {
+        fs.unlinkSync(covCountersFile);
+      } catch (err) {
+        covLog.debug(`${batch}: could not delete ${covCountersFile} — ${(err as Error).message}`);
+      }
     }
   }
 
@@ -776,6 +794,7 @@ module.exports = _projects
       return;
     }
 
+    const startedAt = Date.now();
     let raw: string;
     try {
       raw = fs.readFileSync(traceFile, 'utf8');
@@ -786,7 +805,7 @@ module.exports = _projects
 
     const lines = raw.split('\n').filter((l) => l.trim().length > 0);
     const summary = applyTraceRecords(lines, traceStore, toKey);
-    log.debug(`${batch}: traced ${summary.tests} test(s) across ${summary.files} file(s)`);
+    log.debug(`${batch}: traced ${summary.tests} test(s) across ${summary.files} file(s) (${Math.round(raw.length / 1024)} KB, ${Date.now() - startedAt} ms)`);
   }
 }
 

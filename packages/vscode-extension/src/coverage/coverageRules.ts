@@ -44,6 +44,27 @@ export function mergeCounters(a: LiveCov, b: FileCov): LiveCov {
   };
 }
 
+/** A copy of a counter set. */
+export function cloneCounters(c: FileCov): FileCov {
+  return {
+    s: { ...c.s },
+    f: { ...c.f },
+    b: Object.fromEntries(Object.entries(c.b ?? {}).map(([id, arms]) => [id, [...(arms as number[])]])),
+  };
+}
+
+/** Two counter sets of the same file version added up (two runs of it within one test file's coverage, e.g. two Jest projects). */
+export function sumCounters(a: FileCov, b: FileCov): FileCov {
+  const out = cloneCounters(a);
+  for (const [id, n] of Object.entries(b.s ?? {})) { out.s[id] = (out.s[id] ?? 0) + n; }
+  for (const [id, n] of Object.entries(b.f ?? {})) { out.f[id] = (out.f[id] ?? 0) + n; }
+  for (const [id, arms] of Object.entries(b.b ?? {})) {
+    const cur = out.b[id] ?? new Array<number>((arms as number[]).length).fill(0);
+    out.b[id] = (arms as number[]).map((n, i) => (cur[i] ?? 0) + n);
+  }
+  return out;
+}
+
 /** Which framework wrote a manifest: Vitest's live in `vitest-manifests`, Jest's in `ltr-manifests`. */
 function manifestSource(manifestPath: string): 'vitest' | 'jest' {
   return /[/\\]vitest-manifests[/\\]/.test(manifestPath) ? 'vitest' : 'jest';

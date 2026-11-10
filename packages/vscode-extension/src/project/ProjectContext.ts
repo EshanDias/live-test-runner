@@ -127,6 +127,8 @@ export class ProjectContext implements vscode.Disposable {
     this.relPath = _deps.folder ? path.relative(_deps.folder, project.root).split(path.sep).join('/') : '';
     this.sessionDir = _deps.sessionDir;
     this.traceDir = path.join(_deps.sessionDir, 'traces');
+    // Each test file's latest coverage (replaced when it reruns), next to the session's other files.
+    this.coverageStore.setContributionDir(path.join(_deps.sessionDir, 'coverage-contrib'));
     try { fs.mkdirSync(this.sessionDir, { recursive: true }); } catch (err) {
       log.error(`Could not create the session folder ${this.sessionDir} for "${this.name}" — its runs will fail`, err);
     }

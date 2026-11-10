@@ -469,7 +469,7 @@ export function activate(context: vscode.ExtensionContext) {
       for (const [ctx, files] of byProject) { ctx.session.onFilesChangedOnDisk(files); }
     },
   });
-  const diskWatcher = vscode.workspace.createFileSystemWatcher('**/*', false, false, true);
+  const diskWatcher = vscode.workspace.createFileSystemWatcher('**/*');
 
   /** The active editor's file and cursor line (1-based); else a hint saying what to open. */
   const cursorOrHint = (what: string): { filePath: string; line: number } | undefined => {
@@ -749,6 +749,8 @@ export function activate(context: vscode.ExtensionContext) {
     diskWatcher,
     diskWatcher.onDidChange((uri) => externalChanges.fileChanged(uri.fsPath)),
     diskWatcher.onDidCreate((uri) => externalChanges.fileChanged(uri.fsPath)),
+    // A deleted file (or folder) leaves the coverage totals.
+    diskWatcher.onDidDelete((uri) => { if (!/[\\/](node_modules|\.git)([\\/]|$)/.test(uri.fsPath)) { owner(uri.fsPath)?.session.onFilesDeleted([uri.fsPath]); } }),
     { dispose: () => externalChanges.dispose() },
     vscode.workspace.onDidChangeWorkspaceFolders(() => { projects.refresh(); }),
     vscode.workspace.onDidChangeConfiguration((e) => {

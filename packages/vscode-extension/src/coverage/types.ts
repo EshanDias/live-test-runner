@@ -44,6 +44,13 @@ export interface CoverageTotals {
   functions:  { covered: number; total: number; pct: number };
   lines:      { covered: number; total: number; pct: number };
   scanComplete: boolean;
+  /**
+   * Files whose coverage was measured before their last change and whose
+   * tests are running again: the totals are not final until it is 0 / absent.
+   */
+  updating?: number;
+  /** Test files whose latest run measured no coverage (a plain fallback run): the totals leave them out. */
+  unmeasuredTestFiles?: number;
   /** Why coverage is not measured this session (a framework without its coverage package), one line per framework. */
   off?: string[];
 }

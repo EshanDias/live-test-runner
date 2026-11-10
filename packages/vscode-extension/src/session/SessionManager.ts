@@ -73,6 +73,8 @@ import { extensionOf, isSourceFile, NON_SOURCE_EXTENSIONS } from './sourceFiles'
  */
 /** More files than this changed on disk at once restart the session instead of one rerun per file. */
 const MAX_DISK_CHANGES_PER_FILE = 20;
+/** Wait after the last run ends before the coverage refresh starts (a burst of saves settles first). */
+const COVERAGE_REFRESH_DELAY_MS = 750;
 
 /** `a.ts`, `a.ts and b.ts`, `a.ts and 3 more` — for log lines. */
 function describeFiles(files: string[]): string {
@@ -104,6 +106,15 @@ export class SessionManager {
   private readonly _diskQueue = new Set<string>();
   /** The files the last queued disk rerun ran for (loop guard). */
   private _lastDiskRerun = new Set<string>();
+  /**
+   * Coverage refresh: when each test file was last rerun whole because its
+   * coverage was measured before a change (at most once per change, so a
+   * refresh that measures nothing new does not loop).
+   */
+  private _coverageRefreshedAt = new Map<string, number>();
+  /** When a source file last changed (save or disk), for the refresh guard. */
+  private _lastSourceChangeAt = 0;
+  private _coverageRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   /** When our last runs started and ended (see _writtenDuringLastRuns). */
   private _runsStartedAt = 0;
   private _runsEndedAt = 0;
@@ -276,6 +287,7 @@ export class SessionManager {
       this._notify('onSessionStarted');
 
       // Background source scan — runs in parallel with test execution.
+      this._clearCoverageRefresh();
       this._coverageStore.clear();
       // A framework that cannot measure here says so in the Coverage tab (the tests still run).
       const off = this._services.all().map((s) => s.coverageOffReason?.(projectRoot)).filter((r): r is string => !!r);
@@ -318,6 +330,7 @@ export class SessionManager {
     this._diskQueue.clear();
     this._lastDiskRerun.clear();
     this._clearSaveTimers();
+    this._clearCoverageRefresh();
     this._killBatches();
     if (this._session) {
       this._session.stop();
@@ -498,6 +511,16 @@ export class SessionManager {
    * would otherwise rerun themselves forever. Many files at once
    * (a branch switch) restart the session instead of one rerun per file.
    */
+  /**
+   * Files or folders were deleted: their coverage leaves the totals (source
+   * files) or stops counting (test files). Discovery removes deleted test
+   * files from the tree itself.
+   */
+  onFilesDeleted(filePaths: string[]): void {
+    if (!this._session?.isTestingActive()) { return; }
+    for (const fp of filePaths) { this._coverageStore.removePath(fp); }
+  }
+
   onFilesChangedOnDisk(filePaths: string[]): void {
     if (!this._session?.isTestingActive()) { return; }
     const root = this._getProjectRoot();
@@ -684,7 +707,10 @@ export class SessionManager {
           ran = [filePath];
           await this._runFiles(ran, projectRoot, token);
         } else {
+          this._lastSourceChangeAt = Date.now();
           this._coverageStore.markFileStale(filePath);
+          // Counted from its new content: a new file no test loads shows as 0%, an edited one keeps its totals right.
+          void this._sourceCounter?.countFile(filePath);
           ran = await this._runAffectedBySourceFile(filePath, projectRoot, token);
         }
       } catch (error) {
@@ -1219,6 +1245,8 @@ export class SessionManager {
           this._store.fileResult(fp, 'failed');
         }
       }
+      // A plain run measures no coverage: the Coverage tab says so.
+      this._coverageStore.markUnmeasured(fp);
       onFileDone(fp, status);
     };
 
@@ -1619,7 +1647,42 @@ export class SessionManager {
       this._runsEndedAt = Date.now();
       this._finishRuns();
       this._runQueuedDiskChanges();
+      this._scheduleCoverageRefresh();
     }
+  }
+
+  /**
+   * Once nothing else runs: test files whose coverage was measured before a
+   * file they cover changed (single tests reran by name, a related run
+   * without coverage, a test file that only loads the changed file) run
+   * again whole, so coverage — and their results — are current. Only in a
+   * session; Stop cancels it (a new token).
+   */
+  private _clearCoverageRefresh(): void {
+    if (this._coverageRefreshTimer) { clearTimeout(this._coverageRefreshTimer); this._coverageRefreshTimer = undefined; }
+    this._coverageRefreshedAt.clear();
+    this._lastSourceChangeAt = 0;
+  }
+
+  private _scheduleCoverageRefresh(): void {
+    if (this._coverageRefreshTimer || !this._session?.isTestingActive()) { return; }
+    const token = this._token;
+    this._coverageRefreshTimer = setTimeout(() => {
+      this._coverageRefreshTimer = undefined;
+      if (token !== this._token || this._activeRuns > 0 || !this._session?.isTestingActive()) { return; }
+      const projectRoot = this._getProjectRoot();
+      if (!projectRoot) { return; }
+      const files = this._coverageStore.outdatedContributors().filter((fp) =>
+        (this._coverageRefreshedAt.get(fp) ?? 0) < this._lastSourceChangeAt && this._isRunnable(fp) && fs.existsSync(fp));
+      if (files.length === 0) { return; }
+      const at = Date.now();
+      for (const fp of files) { this._coverageRefreshedAt.set(fp, at); }
+      log.info(`Coverage refresh: ${files.length} test file(s) measured before a change run again whole`);
+      const run = this._beginRun(`coverage refresh (${files.length} file(s))`);
+      void this._runFiles(files, projectRoot, token)
+        .catch((err) => log.error('Coverage refresh failed', err))
+        .finally(() => this._endRun(run, files));
+    }, COVERAGE_REFRESH_DELAY_MS);
   }
 
   private _logRunSummary(run: RunHandle, fileIds: string[], nodeId?: string): void {
