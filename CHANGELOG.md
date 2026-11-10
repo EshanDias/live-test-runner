@@ -33,6 +33,7 @@ All notable changes to Live Test Runner are documented here.
 - PR job `E2E (minimum VS Code)`.
 - Dependencies: ESLint 10.14, typescript-eslint 8.72, globals 17.14, shipped Babel parser 7.29.12; TypeScript stays on 6.0 (typescript-eslint does not support TS 7 yet); `overrides` for dev-only advisories (18 → 3); pnpm installs only versions ≥ 7 days old.
 - Dependabot: grouped minor/patch PRs, one PR per major; no Babel parser majors.
+- CI: `actions/setup-python` v7 (from Dependabot #65; only `python-version` and `cache: pip` are used, both unchanged in v7).
 
 ## [3.3.0] - 2026-11-07
 
