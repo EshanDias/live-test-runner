@@ -258,8 +258,29 @@ export class SessionManager {
       // (in parallel) how it resolves that config — re-read every session.
       services.projectConfig.reset();
       void services.projectConfig.get(projectRoot);
+
+      // The framework's own list of the files it runs (jest --listTests, pytest
+      // --collect-only, …) can take half a minute on a large project. When it is
+      // not remembered from the last session, the test files on screen start
+      // now; a file the list then leaves out loses its results again. Not in a
+      // mixed project (the lists also say which framework runs a file), and only
+      // when the budget allows two processes at once (the list is one of them).
+      const early = !this._services.isMixed() && parallelBatches() > 1 && !this._runnableIsRemembered(projectRoot, discovered)
+        ? this._onScreenTestFiles(discovered) : [];
+      let run: ReturnType<SessionManager['_beginRun']> | undefined;
+      let earlyRun: Promise<void> | undefined;
+      if (early.length > 0) {
+        this._startSessionState(projectRoot, services, discovered);
+        run = this._beginRun('full suite', { fullSuite: true });
+        log.debug(`Running the ${early.length} test file(s) open in the editor while ${this._terms(projectRoot).name} lists the files it runs`);
+        earlyRun = this._runFiles(early, projectRoot, token, { openFirst: true });
+      }
       const runnableList = await this._runnableFiles(projectRoot, discovered);
-      if (token !== this._token) { return; }
+      if (token !== this._token) {
+        // Stopped while the list was made: the early run ends as a stopped full run does.
+        if (run) { await earlyRun; this._endRun(run, early); }
+        return;
+      }
       // A mixed project's second framework: its config is re-read too.
       for (const s of this._services.all()) {
         if (s !== services) { s.projectConfig.reset(); void s.projectConfig.get(projectRoot); }
@@ -277,50 +298,43 @@ export class SessionManager {
         }
       }
       const testFiles = discovered.filter((fp) => this._isRunnable(fp));
-      this._markExcluded(discovered.filter((fp) => !this._isRunnable(fp)));
+      const startedEarly = new Set(early.map(runnableKey));
+      // Files started early are marked once their run is over (below).
+      this._markExcluded(discovered.filter((fp) => !this._isRunnable(fp) && !startedEarly.has(runnableKey(fp))));
       // A config with several Vitest projects groups the Explorer by project name.
       this._store.setFileGroups(runnableList ? this._groups : undefined);
       log.info(`Session started — ${testFiles.length} test file(s) · framework: ${framework} · root: ${projectRoot}`);
+
+      if (earlyRun) {
+        // The files started early that the list leaves out: their results, coverage and trace go.
+        const dropped = early.filter((fp) => !this._isRunnable(fp));
+        if (dropped.length > 0) {
+          await earlyRun;
+          if (token !== this._token) { this._endRun(run!, early); return; }
+          for (const fp of dropped) {
+            this._coverageStore.removePath(fp);
+            this._traceStore.forgetTestFiles([fp]);
+          }
+          this._markExcluded(dropped);
+          for (const fp of dropped) { this._notify('onFileResult', fp); }
+        }
+      }
 
       if (testFiles.length === 0) {
         log.warn(`No test files found — nothing to run. ${this._terms(projectRoot).name} listed no test files, and none match the liveTestRunner.testFilePatterns setting`);
         this._updateStatusBar('✅ Ready');
         this._session.activate();
+        if (run) { await earlyRun; this._endRun(run, []); }
         return;
       }
 
-      this._session.activate();
-      for (const s of this._services.all()) { s.batchRunner.reset(); }
-      this._notify('onSessionStarted');
-
-      // Background source scan — runs in parallel with test execution.
-      this._clearCoverageRefresh();
-      this._coverageStore.clear();
-      // A framework that cannot measure here says so in the Coverage tab (the tests still run).
-      const off = this._services.all().map((s) => s.coverageOffReason?.(projectRoot)).filter((r): r is string => !!r);
-      if (off.length > 0) { this._coverageStore.setOffReasons(off); }
-      this._sourceCounter?.cancel();
-      const sourceCounter = new SourceCounter(projectRoot, this._coverageStore, coverageScopeOf(services.projectConfig, projectRoot));
-      this._sourceCounter = sourceCounter;
-      sourceCounter.on('progress', (scanned: number, total: number) => {
-        this._observers.forEach((o) => o.onSourceScanProgress?.(scanned, total));
-      });
-      sourceCounter.on('done', () => {
-        this._observers.forEach((o) => o.onSourceScanDone?.());
-      });
-      void sourceCounter.run();
-
-      // Push the discovered (pending) tree to the UI so the run-started state
-      // shows all tests before the first result arrives.
-      this._notify('onRunStarted', {
-        fileCount: testFiles.length,
-        files: (this._store.toJSON() as { files: unknown[] }).files,
-      });
+      if (!run) { this._startSessionState(projectRoot, services, testFiles); }
 
       // ── Run the tests ──────────────────────────────────────────────────────
-      const run = this._beginRun('full suite', { fullSuite: true });
+      const rest = testFiles.filter((fp) => !startedEarly.has(runnableKey(fp)));
+      run ??= this._beginRun('full suite', { fullSuite: true });
       try {
-        await this._runFiles(testFiles, projectRoot, token, { openFirst: true });
+        await Promise.all([earlyRun, this._runFiles(rest, projectRoot, token, { openFirst: true })]);
       } finally {
         this._endRun(run, testFiles);
       }
@@ -1505,6 +1519,48 @@ export class SessionManager {
       log.warn(`Could not ask ${terms.name} which files it runs (${terms.listCommand}) — running every discovered test file`, err);
       return undefined;
     }
+  }
+
+  /** The session is on: batch runners reset, coverage cleared and source files counted, the pending tree shown. */
+  private _startSessionState(projectRoot: string, services: FrameworkServices, files: string[]): void {
+    this._session?.activate();
+    for (const s of this._services.all()) { s.batchRunner.reset(); }
+    this._notify('onSessionStarted');
+
+    // Background source scan — runs in parallel with test execution.
+    this._clearCoverageRefresh();
+    this._coverageStore.clear();
+    // A framework that cannot measure here says so in the Coverage tab (the tests still run).
+    const off = this._services.all().map((s) => s.coverageOffReason?.(projectRoot)).filter((r): r is string => !!r);
+    if (off.length > 0) { this._coverageStore.setOffReasons(off); }
+    this._sourceCounter?.cancel();
+    const sourceCounter = new SourceCounter(projectRoot, this._coverageStore, coverageScopeOf(services.projectConfig, projectRoot));
+    this._sourceCounter = sourceCounter;
+    sourceCounter.on('progress', (scanned: number, total: number) => {
+      this._observers.forEach((o) => o.onSourceScanProgress?.(scanned, total));
+    });
+    sourceCounter.on('done', () => {
+      this._observers.forEach((o) => o.onSourceScanDone?.());
+    });
+    void sourceCounter.run();
+
+    // Push the discovered (pending) tree to the UI so the run-started state
+    // shows all tests before the first result arrives.
+    this._notify('onRunStarted', {
+      fileCount: files.length,
+      files: (this._store.toJSON() as { files: unknown[] }).files,
+    });
+  }
+
+  /** Start can use the last session's list of runnable files (no test or config file changed since). */
+  private _runnableIsRemembered(projectRoot: string, discovered: string[]): boolean {
+    return !!this._runnableCache.readEntry(projectRoot, runnableCacheKey(projectRoot, discovered, this._runnerSettings(projectRoot)));
+  }
+
+  /** The discovered test files open in an editor on screen. */
+  private _onScreenTestFiles(discovered: string[]): string[] {
+    const onScreen = new Set(vscode.window.visibleTextEditors.map((e) => runnableKey(e.document.uri.fsPath)));
+    return discovered.filter((fp) => onScreen.has(runnableKey(fp)));
   }
 
   /**

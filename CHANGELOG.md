@@ -4,6 +4,9 @@ All notable changes to Live Test Runner are documented here.
 
 ## [3.4.1] - Unreleased
 
+### Changed
+- **First Start of a large project: the open test files run while the framework lists its files** (`jest --listTests`, `pytest --collect-only`: 29–36 s on 2,500 pytest files, nothing ran meanwhile). Only when the list is not remembered, single-framework projects, budget ≥ 2. A file the list leaves out loses its results, coverage and trace and is marked excluded. e2e `pytest-open-first-while-listing`; T18.
+
 ### Fixed
 - **Coverage is truthful while the session runs** (Jest, Vitest, Angular, pytest). Before, numbers only went up: a deleted test, a deleted test file or code that no longer calls a file left lines covered.
   - `CoverageStore`: each test file's latest run is one contribution (sparse counters per source version, on disk in the session folder `coverage-contrib/`), replaced when the file runs again; a version counts once measured after the file's last change. Unit `coverageContributions`.

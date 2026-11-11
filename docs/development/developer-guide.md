@@ -699,11 +699,12 @@ Planned work and ideas are tracked as [GitHub Issues](https://github.com/EshanDi
 
 Next, in order (details and status in the GitHub Issues):
 
-1. Larger projects: trace only open / recently changed test files on 2k+ file projects (the rest lazily on first save), and a lighter discovery parser
-2. AI-agent bridge: VS Code language-model tools and a local stdio MCP server (never a network port)
-3. More frameworks, each with results and coverage: Mocha, Playwright, node:test, Cypress
-4. Coverage: file detail page, function-level stale marking, sole-coverage warnings
-5. Mirroring results into VS Code's Testing view (optional); the Timeline debugger rewrite comes last
+1. AI-agent bridge: VS Code language-model tools and a local stdio MCP server (never a network port)
+2. More frameworks, each with results and coverage: Mocha, Playwright, node:test, Cypress
+3. Coverage: file detail page, function-level stale marking, sole-coverage warnings
+4. Mirroring results into VS Code's Testing view (optional); the Timeline debugger rewrite comes last
+
+Measured and not planned: tracing only some test files on large projects, and a lighter discovery parser. On 2,500-file projects the trace costs almost nothing (Jest ~0%, Vitest ~3%) and discovery takes 1–5 s; the time was elsewhere (fixed in 3.4.1, see the changelog).
 
 Shipped:
 
