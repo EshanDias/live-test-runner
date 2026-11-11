@@ -18,12 +18,12 @@ What the feature must do, and how we check it does. For the plain-language descr
 | C10 | Merge a file's coverage by line when Jest and Vitest both test it | unit: `coverageMerge` |
 | C11 | Map coverage of compiled files (TypeScript, Vue, Svelte, Astro, Marko) back to their source lines | `ts-config`, `jest-vue`, `jest-svelte-esm`, `vitest-components` |
 | C12 | Write no coverage files into the project | `vitest-coverage`, `pytest-coverage` |
-| C13 | Equal what a fresh full run would report now: a test file's rerun **replaces** its coverage, so a removed test, a test file that reaches less, or code that stops calling a file lowers it | `coverage-live`; unit: `coverageContributions` |
-| C14 | Remove a deleted test file's coverage, and a deleted or renamed source file from the totals | `coverage-live`; unit: `coverageContributions`, `traceRecords` |
-| C15 | Count a source file created during the session (0% while no test loads it) and recount an edited one, by the same rules as the scan at Start | `coverage-live` |
-| C16 | After a save, rerun in full, once nothing else runs, the test files whose coverage predates the change (single tests rerun by name and related runs measure nothing); replace their results too; only in a session, stopped by Stop, once per change | `coverage-live`, `basic-on-save` |
+| C13 | Equal what a fresh full run would report now: a test file's rerun **replaces** its coverage, so a removed test, a test file that reaches less, or code that stops calling a file lowers it | `coverage-live`, `coverage-live-vitest`, `coverage-live-pytest`; unit: `coverageContributions` |
+| C14 | Remove a deleted test file's coverage (a file the coverage settings list then shows 0%), and a deleted or renamed source file from the totals | `coverage-live`, `coverage-live-vitest`, `coverage-live-pytest`; unit: `coverageContributions`, `traceRecords` |
+| C15 | Count a source file created during the session (0% while no test loads it) and recount an edited one, by the same rules as the scan at Start (Python: coverage.py's own analysis, nothing run) | `coverage-live`, `coverage-live-vitest`, `coverage-live-pytest` |
+| C16 | After a save, rerun in full, once nothing else runs, the test files whose coverage predates the change (single tests rerun by name and related runs measure nothing); replace their results too; only in a session, stopped by Stop or a change on disk, once per change | `coverage-live`, `coverage-live-vitest`, `coverage-live-pytest`, `basic-on-save`, `disk-changes` |
 | C17 | Say **Updating coverage (N files)…** and grey the totals while any file waits for that rerun; say how many test files ran without coverage (fallback runs) | unit: `coverageContributions` ⚠️ no e2e of the webview text |
-| C18 | Measure per test file on every framework: Jest records per test file; Vitest and Angular through a wrapper of the project's own provider; pytest from its per-test contexts, crediting import-time lines to each importing test file | `coverage-live` (Jest) ⚠️ Vitest, Angular, pytest e2e pending; plugin: `test_coverage_is_written_per_test_file` |
+| C18 | Measure per test file on every framework: Jest records per test file; Vitest and Angular through a wrapper of the project's own provider; pytest from its per-test contexts, crediting import-time lines to each importing test file | `coverage-live`, `coverage-live-vitest`, `coverage-live-pytest`, `angular-full-run`; plugin: `test_coverage_is_written_per_test_file` |
 
 ## Quality requirements
 
