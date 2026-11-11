@@ -10,7 +10,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | T2 | Run the test files open in the editor first, and move a test file opened during the run to the front | `basic-open-first`; unit: `batchQueue` |
 | T3 | Show a file as running only once the framework starts it, and its result as soon as it ends | `vitest-batch`, `basic-full-run` |
 | T4 | Run batches in parallel within the budget; pytest one process at a time | unit: `batchQueue`, `resources` |
-| T5 | Stop a test that runs longer than `hangTimeoutSeconds`, fail its file with the reason, and finish the other files | `basic-hang`, `vitest-hang`, `pytest-hang` |
+| T5 | Stop a test that runs longer than `hangTimeoutSeconds` (timed by the extension's clock, not the test's: fake timers do not count), fail its file with the reason, and finish the other files | `basic-hang`, `vitest-hang`, `pytest-hang` |
 | T6 | Retry the files of a crashed batch in smaller batches, then on their own with a plain run; log a warning | ⚠️ no test yet (scenarios only check that no fallback runs when none is needed) |
 | T7 | Retry a batch once when a file vanished while the framework scanned the project (tests that create and delete files) | unit: `vanishedFile` |
 | T8 | On Stop, end every framework process and its children; start no retry, fallback or queued batch; leave nothing spinning | `basic-stop`, `vitest-stop`, `pytest-stop`, `mixed-stop` |

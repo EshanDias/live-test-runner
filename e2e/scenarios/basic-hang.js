@@ -24,8 +24,19 @@ module.exports = {
       'const end = Date.now() + 20000;\nwhile (Date.now() < end) { /* slow import */ }\nmodule.exports = { ready: true };\n');
     fs.writeFileSync(path.join(workspace, 'src', 'slowload.test.js'),
       "const { ready } = require('./slowload');\ntest('loads slowly, runs fast', () => { expect(ready).toBe(true); });\n");
+    // Learnt from Sentry: its tests set fake timers to 2017, and the hang limit read the test's own clock —
+    // every test then looked years old and was stopped. A 6 s test (real time, past a watchdog tick) must pass.
+    fs.writeFileSync(path.join(workspace, 'src', 'faketime.test.js'), [
+      "const { spawnSync } = require('child_process');",
+      "jest.useFakeTimers({ now: new Date('2017-10-17T02:41:20Z') });",
+      "test('runs on a 2017 clock', () => {",
+      "  spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, 6000)']);",
+      '  expect(new Date().getFullYear()).toBe(2017);',
+      '});',
+      '',
+    ].join('\n'));
     await h.waitForDiscovery(api);
-    await h.waitFor(() => ['loop.test.js', 'never.test.js', 'slowload.test.js'].every((n) => api.store.getAllFiles().some((f) => f.filePath.endsWith(n))),
+    await h.waitFor(() => ['loop.test.js', 'never.test.js', 'slowload.test.js', 'faketime.test.js'].every((n) => api.store.getAllFiles().some((f) => f.filePath.endsWith(n))),
       { what: 'the new test files to be discovered', timeout: 30_000 });
 
     const since = h.isoNow();
@@ -45,6 +56,8 @@ module.exports = {
 
     t.eq('a file slow to load (20 s > 15 s limit) is not stopped as hung', h.statusCounts(api, 'src/slowload.test.js'), { passed: 1 });
     t.check('the slow-loading file is not named as hanging', !logs.some((l) => /slowload\.test\.js has run for/.test(l)));
+    t.eq('a test on a fake 2017 clock is not stopped as hung', h.statusCounts(api, 'src/faketime.test.js'), { passed: 1 });
+    t.check('…nor named as hanging', !logs.some((l) => /faketime\.test\.js has run for/.test(l)), logs.filter((l) => /faketime/.test(l)).join('\n'));
     t.eq('other files still ran: math', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });
     t.eq('other files still ran: strings', h.statusCounts(api, 'src/strings.test.js'), { passed: 4 });
     t.eq('nothing left running', h.nodesWithStatus(api, 'running').map((n) => n.id), []);

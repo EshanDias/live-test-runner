@@ -455,17 +455,18 @@ module.exports = _projects
     const onRecord = (raw: unknown) => {
       // Stopped: results still flushed by a dying Jest must not reach the tree.
       if (generation !== this._generation) { return; }
-      const ev = raw as { ltrEvent?: string; testFilePath?: string; at?: number; name?: string };
+      const ev = raw as { ltrEvent?: string; testFilePath?: string; name?: string };
       if (ev?.ltrEvent === 'start') {
         if (ev.testFilePath) {
-          current = { file: toKey(ev.testFilePath), at: ev.at ?? Date.now() };
+          // Our clock, not the event's: a test's fake timers set Jest's Date (Sentry: 2017), every test then looked years old.
+          current = { file: toKey(ev.testFilePath), at: Date.now() };
           currentTest = undefined;
           log.trace(`${batch}: started ${path.basename(current.file)}`);
           if (owns(current.file)) { options.onFileStart?.(current.file); }
         }
         return;
       }
-      if (ev?.ltrEvent === 'test-start') { currentTest = { name: ev.name, at: ev.at ?? Date.now() }; return; }
+      if (ev?.ltrEvent === 'test-start') { currentTest = { name: ev.name, at: Date.now() }; return; }
       if (ev?.ltrEvent === 'test-end') { currentTest = undefined; return; }
       const rec = raw as ReporterRecord;
       if (!rec || !rec.testFilePath) { return; }
