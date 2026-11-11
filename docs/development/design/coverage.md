@@ -28,7 +28,7 @@ flowchart TD
 | `src/coverage/CoverageStore.ts` | Contributions per test file (on disk), summed per source version; entries `counted` → `measured` → `measured-stale` (changed, waiting for its tests) → `measured`; totals with `updating`; off reasons |
 | `src/coverage/SourceCounter.ts` | At Start, counts statements / branches / functions / lines of every source file in scope, so untested files count as 0% (C3); `countFile` for a file created or edited later (C15) |
 | `src/session/instrumentation/vitest/vitestCoverageProvider.mjs` | Vitest / Angular: wraps the project's own coverage provider and writes each test file's coverage on its own (C18). During that pass it remembers the provider's include answer per file name (`rememberIncluded`: Vitest 3 test-exclude compiles its globs on every call, run once per test file; same output) |
-| `src/coverage/coverageScope.ts` | Which files count: the framework's own include / exclude (C4) |
+| `src/coverage/coverageScope.ts` | Which files count: the framework's own include / exclude (C4). Angular (`angularServices.ts`): every file `ng test`'s report lists, since the builder already applied `coverageInclude` / `coverageExclude` (the built-in rules would drop `app.config.ts` as a tool config) |
 | `src/coverage/istanbulCoverage.ts` | Reads Vitest's and pytest's istanbul-shaped output into the store |
 | `src/coverage/coverageRules.ts` | Merging by line when two frameworks test one file (C10) |
 | `src/coverage/statementLines.ts` | The lines a multi-line statement covers (C2) |

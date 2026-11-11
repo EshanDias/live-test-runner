@@ -12,7 +12,7 @@ import { VitestBatchRunner } from '../session/VitestBatchRunner';
 import { AngularBatchRunner } from '../session/AngularBatchRunner';
 import { IProjectConfig } from '../session/IProjectConfig';
 import { CoverageStore } from '../coverage/CoverageStore';
-import { CoverageScope, defaultCoverageScope } from '../coverage/coverageScope';
+import { CoverageScope } from '../coverage/coverageScope';
 
 /** angular.json holds the test setup; no config file to resolve. */
 class AngularProjectConfig implements IProjectConfig {
@@ -20,10 +20,21 @@ class AngularProjectConfig implements IProjectConfig {
   /**
    * `ng test --coverage` lists only the files the tests load (Vitest 4+ adds
    * files no test loads only for an include list: `coverageInclude`, which
-   * the provider's own untested pass then counts). So no source scan.
+   * the provider's own untested pass then counts). So no source scan, and
+   * every file the builder's report lists counts (its `coverageInclude` /
+   * `coverageExclude` already applied; `app.config.ts` is the app's code, not
+   * a tool config): only files outside the project or in node_modules are left out.
    */
   async coverageScope(projectRoot: string): Promise<CoverageScope> {
-    return { ...defaultCoverageScope(projectRoot), source: 'Angular (ng test --coverage)', includesUntouched: false, isDefault: false };
+    return {
+      source: 'Angular (ng test --coverage)',
+      includesUntouched: false,
+      isDefault: false,
+      counts: (fp) => {
+        const rel = path.relative(projectRoot, fp);
+        return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel) && !/(^|[\\/])node_modules([\\/]|$)/.test(rel);
+      },
+    };
   }
   /** Component templates (`templateUrl`): saving one reruns its component's tests. */
   async sourceExtensions(): Promise<string[]> { return ['html']; }

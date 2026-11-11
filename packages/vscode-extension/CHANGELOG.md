@@ -14,7 +14,7 @@ All notable changes to Live Test Runner are documented here.
 - **Faster Jest runs on big projects** — compiled files are now reused across batches and sessions (a 2,500-file project: first run ~40% faster, the first result twice as fast), and the cache uses a tenth of the disk space.
 - **Much faster pytest runs on big projects** — coverage per test file no longer slows each batch down, and VS Code stays responsive while it is worked out.
 - Vitest with the execution trace turned off: coverage now follows deleted tests too.
-- Angular coverage lists the same files as `ng test --coverage` (no extra files at 0%).
+- Angular coverage lists the same files as `ng test --coverage` (no extra files at 0%, and with `coverageInclude` the files no test loads, `app.config.ts` too).
 - **Faster Vitest runs with coverage** — a 500-file project runs about 15% faster; the first Start no longer runs one test process more than your machine's budget allows.
 
 ## [3.4.0] - 2026-11-09

@@ -201,6 +201,8 @@ function runScenario(name, exe) {
     return Promise.resolve({ name, skipped: true });
   }
   const workspace = folders[0];
+  // A variant of a fixture: the scenario adjusts its fresh copy before the window opens.
+  if (typeof scenario.prepare === 'function') { scenario.prepare(folders); }
 
   const runDir = path.join(RUNS_ROOT, name);
   fs.rmSync(runDir, { recursive: true, force: true });
