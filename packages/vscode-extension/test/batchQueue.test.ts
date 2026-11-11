@@ -60,6 +60,14 @@ describe('batchSize', () => {
     expect(batchSize(500, 1)).toBe(50);
     expect(batchSize(0, 3)).toBe(5);
   });
+
+  it('a framework\'s own largest batch (Angular 200, pytest 300 one at a time), still in whole rounds', () => {
+    expect(batchSize(2500, 3, 200)).toBe(167);
+    expect(Math.ceil(2500 / batchSize(2500, 3, 200)) % 3).toBe(0);
+    expect(batchSize(100, 3, 200)).toBe(34);
+    expect(batchSize(2500, 1, 300)).toBe(278);
+    expect(batchSize(2500, 3, 1)).toBe(5);
+  });
 });
 
 describe('BatchSlots', () => {

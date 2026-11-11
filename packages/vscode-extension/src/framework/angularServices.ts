@@ -67,6 +67,9 @@ export function createAngularServices(options: {
       fallbackLoss: 'slower',
     },
     features: { trace: false, timeline: false },
+    // Each `ng test` builds its files before a test runs (~7 s): 588 files in 3 parallel batches took 41 s
+    // in 49-file batches, 18 s in 196-file ones.
+    batchPolicy: { maxFilesPerBatch: 200 },
     traceOffReason: () => 'Angular runs without the execution trace for now',
     coverageOffReason: (projectRoot) => vitestCoverageInstalled(projectRoot, 'v8') || vitestCoverageInstalled(projectRoot, 'istanbul')
       ? undefined

@@ -1,6 +1,6 @@
 import { runnableKey } from './RunnableFiles';
 
-/** Largest batch: results stream per file, but a crash or hang retries the batch's unfinished files. */
+/** Largest batch by default: results stream per file, but a crash or hang retries the batch's unfinished files. */
 export const MAX_BATCH_FILES = 50;
 /** Smallest batch: below this a process's startup outweighs the files it runs. */
 export const MIN_BATCH_FILES = 5;
@@ -10,12 +10,14 @@ export const MIN_BATCH_FILES = 5;
  * At most MAX_BATCH_FILES, and as many batches as fill whole rounds: 10
  * batches with 3 at a time left a last round of one batch, with the rest of
  * the budget idle until it ended (12 smaller batches finish together).
+ * `max`: a framework's own largest batch (BatchPolicy.maxFilesPerBatch).
  */
-export function batchSize(total: number, parallel: number): number {
+export function batchSize(total: number, parallel: number, max: number = MAX_BATCH_FILES): number {
   const p = Math.max(1, Math.floor(parallel));
+  const most = Math.max(MIN_BATCH_FILES, Math.floor(max));
   if (total <= 0) { return MIN_BATCH_FILES; }
-  const rounds = Math.ceil(total / (MAX_BATCH_FILES * p));
-  return Math.max(MIN_BATCH_FILES, Math.min(MAX_BATCH_FILES, Math.ceil(total / (rounds * p))));
+  const rounds = Math.ceil(total / (most * p));
+  return Math.max(MIN_BATCH_FILES, Math.min(most, Math.ceil(total / (rounds * p))));
 }
 
 /** One batch of a run: files of one framework, run by one process. */

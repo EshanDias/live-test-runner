@@ -1231,9 +1231,6 @@ export class SessionManager {
     const totalFiles  = filePaths.length;
     if (totalFiles === 0 || token !== this._token) { return; }
 
-    // Share a process's startup across files, keep batches small enough that a
-    // crash or hang retries little, and fill whole rounds of parallel batches.
-    const BATCH_SIZE = batchSize(totalFiles, CONCURRENCY);
 
     // Files are NOT marked running here: in a batch Jest runs its files one
     // after another, so a queued file only shows ⟳ once Jest starts it.
@@ -1392,7 +1389,11 @@ export class SessionManager {
     // The test files on screen run first (full run), and a test file opened
     // while it waits moves to the front (promote()).
     const onScreen = new Set(opts.openFirst ? vscode.window.visibleTextEditors.map((e) => runnableKey(e.document.uri.fsPath)) : []);
-    const batchQueue = buildBatchQueue(byFramework, (s) => s.batchPolicy?.maxFilesPerBatch ?? BATCH_SIZE, onScreen);
+    // Share a process's startup across files, keep batches small enough that a
+    // crash or hang retries little, and fill whole rounds of each framework's parallel batches.
+    const sizeOf = new Map([...byFramework].map(([s, files]) => [s,
+      batchSize(files.length, Math.min(CONCURRENCY, s.batchPolicy?.maxParallel ?? CONCURRENCY), s.batchPolicy?.maxFilesPerBatch)]));
+    const batchQueue = buildBatchQueue(byFramework, (s) => sizeOf.get(s)!, onScreen);
     const first = batchQueue.filter((q) => q.batch.every((f) => onScreen.has(runnableKey(f))));
     if (first.length > 0) {
       log.debug(`Running the ${first.reduce((n, q) => n + q.batch.length, 0)} test file(s) open in the editor first`);

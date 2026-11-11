@@ -2,7 +2,7 @@
 'use strict';
 /**
  * Measures the extension on a large project and a plain run of the same
- * project by its framework (Jest, Vitest or pytest, from the project's
+ * project by its framework (Jest, Vitest, Angular or pytest, from the project's
  * files), with the same number of processes / workers the extension uses.
  * The before/after check for performance work. Build first: `pnpm build`.
  *
@@ -58,10 +58,11 @@ function workCopy(src, label) {
 }
 
 function frameworkOf(dir) {
+  if (fs.existsSync(path.join(dir, 'angular.json')) && fs.existsSync(path.join(dir, 'node_modules', '@angular', 'build'))) { return 'angular'; }
   if (fs.existsSync(path.join(dir, 'node_modules', 'vitest'))) { return 'vitest'; }
   if (fs.existsSync(path.join(dir, 'node_modules', 'jest'))) { return 'jest'; }
   if (['pyproject.toml', 'pytest.ini', 'setup.cfg', 'tox.ini'].some((f) => fs.existsSync(path.join(dir, f)))) { return 'pytest'; }
-  throw new Error(`no Jest, Vitest or pytest project in ${dir}`);
+  throw new Error(`no Jest, Vitest, Angular or pytest project in ${dir}`);
 }
 
 /**
@@ -72,7 +73,7 @@ function frameworkOf(dir) {
 function extensionWorkers(framework) {
   const { parallelBatches, workersPerBatch } = require(path.join(ROOT, 'packages', 'runner', 'dist', 'utils', 'resources.js'));
   if (framework === 'pytest') { return 1; }
-  return framework === 'vitest' ? parallelBatches() * workersPerBatch() : parallelBatches();
+  return framework === 'vitest' || framework === 'angular' ? parallelBatches() * workersPerBatch() : parallelBatches();
 }
 
 function timed(fn) {
@@ -93,6 +94,20 @@ function plainRun(dir, framework) {
     const tail = String(r.stdout).trim().split('\n').pop() || '';
     const n = (k) => Number((new RegExp(`(\\d+) ${k}`).exec(tail) || [])[1] || 0);
     return { seconds, workers, passed: n('passed'), failed: n('failed'), skipped: n('skipped') };
+  }
+  if (framework === 'angular') {
+    // `ng test` (every project with a test target, the build included); Vitest's workers through a runner config.
+    const config = path.join(os.tmpdir(), `ltr-perf-runner-${process.pid}.mjs`);
+    fs.writeFileSync(config, `export default { test: { maxWorkers: ${workers} } };\n`);
+    const ng = [path.join(dir, 'node_modules', '@angular', 'cli', 'bin', 'ng.js'), 'test', '--watch=false', '--reporters=json', `--output-file=${out}`, '--runner-config', config];
+    const { r, seconds } = timed(() => spawnSync(process.execPath, ng, { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 1 << 30 }));
+    fs.rmSync(config, { force: true });
+    fs.rmSync(path.join(dir, '.angular'), { recursive: true, force: true });
+    let json;
+    try { json = JSON.parse(fs.readFileSync(out, 'utf8')); } catch { json = undefined; }
+    fs.rmSync(out, { force: true });
+    if (!json) { console.log(`[perf] plain ng test wrote no results (exit ${r.status})`); return { seconds, workers }; }
+    return { seconds, workers, files: json.numTotalTestSuites, passed: json.numPassedTests, failed: json.numFailedTests, skipped: json.numPendingTests + (json.numTodoTests || 0) };
   }
   const args = framework === 'vitest'
     ? [path.join(dir, 'node_modules', 'vitest', 'vitest.mjs'), 'run', `--maxWorkers=${workers}`, '--reporter=json', `--outputFile=${out}`]

@@ -5,7 +5,7 @@
  * (scripts/perf-measure.js). Deterministic: the same options always write the
  * same files, so numbers taken on different days compare.
  *
- *   node scripts/perf-project.js <out-dir> [--framework jest|vitest|pytest]
+ *   node scripts/perf-project.js <out-dir> [--framework jest|vitest|pytest|angular]
  *                                [--tests 2500] [--sources 600] [--install]
  *
  * Layout: src/lib/mNNN.js source modules (each imports up to two lower-numbered
@@ -13,9 +13,11 @@
  * test files, each importing two or three modules. Some files use nested
  * describes and `test.each`, like real suites. The same project exists for
  * each framework (pytest: src/lib/mNNN.py and tests/gNN/test_tNNNN.py, with
- * classes and parametrize), so numbers compare across frameworks.
+ * classes and parametrize; Angular: the e2e Angular fixture's app project with
+ * src/lib/mNNN.ts and src/tests/gNN/tNNNN.spec.ts, run by `ng test`), so
+ * numbers compare across frameworks.
  * --install installs the framework into <out-dir> only: `npm install`
- * (Jest, or Vitest + @vitest/coverage-v8), or a `.venv` with pytest and
+ * (Jest, Vitest + @vitest/coverage-v8, or the Angular fixture's packages), or a `.venv` with pytest and
  * coverage for pytest (Python 3.12 through uv when installed).
  */
 const { spawnSync } = require('child_process');
@@ -32,8 +34,8 @@ function parseArgs(argv) {
     else if (a === '--framework') { opts.framework = argv[++i]; }
     else if (!a.startsWith('--')) { opts.out = path.resolve(a); }
   }
-  if (!opts.out || !(opts.tests > 0) || !(opts.sources > 2) || !['jest', 'vitest', 'pytest'].includes(opts.framework)) {
-    console.log('Usage: node scripts/perf-project.js <out-dir> [--framework jest|vitest|pytest] [--tests N] [--sources N] [--install]');
+  if (!opts.out || !(opts.tests > 0) || !(opts.sources > 2) || !['jest', 'vitest', 'pytest', 'angular'].includes(opts.framework)) {
+    console.log('Usage: node scripts/perf-project.js <out-dir> [--framework jest|vitest|pytest|angular] [--tests N] [--sources N] [--install]');
     process.exit(2);
   }
   return opts;
@@ -60,14 +62,15 @@ function moduleDeps(i, rand) {
 
 function sourceModule(i, deps, fw) {
   if (fw === 'pytest') { return pySourceModule(i, deps); }
-  const esm = fw === 'vitest';
+  const esm = fw === 'vitest' || fw === 'angular';
+  const ts = fw === 'angular';
   const lines = esm ? [] : ["'use strict';"];
   for (const d of deps) {
-    lines.push(esm ? `import * as m${d} from './m${pad(d, 3)}.js';` : `const m${d} = require('./m${pad(d, 3)}');`);
+    lines.push(esm ? `import * as m${d} from './m${pad(d, 3)}${ts ? '' : '.js'}';` : `const m${d} = require('./m${pad(d, 3)}');`);
   }
   lines.push(
     '',
-    `function add${i}(a, b) {`,
+    ts ? `function add${i}(a: unknown, b: unknown): number {` : `function add${i}(a, b) {`,
     '  if (typeof a !== \'number\' || typeof b !== \'number\') {',
     "    throw new TypeError('numbers only');",
     '  }',
@@ -78,7 +81,7 @@ function sourceModule(i, deps, fw) {
     `  return ${i % 7};`,
     '}',
     '',
-    `function label${i}(items) {`,
+    ts ? `function label${i}(items: unknown[]): string {` : `function label${i}(items) {`,
     '  const out = [];',
     '  for (const item of items) {',
     '    if (item == null) { continue; }',
@@ -87,8 +90,8 @@ function sourceModule(i, deps, fw) {
     "  return out.join(',');",
     '}',
     '',
-    `function pick${i}(obj, keys) {`,
-    '  const res = {};',
+    ts ? `function pick${i}(obj: Record<string, unknown>, keys: string[]): Record<string, unknown> {` : `function pick${i}(obj, keys) {`,
+    ts ? '  const res: Record<string, unknown> = {};' : '  const res = {};',
     '  for (const k of keys) {',
     '    if (Object.prototype.hasOwnProperty.call(obj, k)) { res[k] = obj[k]; }',
     '  }',
@@ -147,10 +150,11 @@ function testMods(sources, rand) {
 
 function testFile(n, mods, fw) {
   if (fw === 'pytest') { return pyTestFile(n, mods); }
-  const esm = fw === 'vitest';
-  const lines = esm ? ["import { describe, test, expect } from 'vitest';"] : ["'use strict';"];
+  const esm = fw === 'vitest' || fw === 'angular';
+  // Angular's unit-test builder provides Vitest's globals (tsconfig.spec.json: vitest/globals).
+  const lines = fw === 'vitest' ? ["import { describe, test, expect } from 'vitest';"] : fw === 'angular' ? [] : ["'use strict';"];
   for (const m of mods) {
-    lines.push(esm ? `import * as m${m} from '../../lib/m${pad(m, 3)}.js';` : `const m${m} = require('../../lib/m${pad(m, 3)}');`);
+    lines.push(esm ? `import * as m${m} from '../../lib/m${pad(m, 3)}${fw === 'angular' ? '' : '.js'}';` : `const m${m} = require('../../lib/m${pad(m, 3)}');`);
   }
   lines.push('', `describe('suite ${n}', () => {`);
   for (const m of mods) {
@@ -225,6 +229,7 @@ function writeProjectFiles(opts) {
     for (const d of ['src', path.join('src', 'lib')]) { write(path.join(d, '__init__.py'), ''); }
     return;
   }
+  if (opts.framework === 'angular') { writeAngularFiles(opts); return; }
   const vitest = opts.framework === 'vitest';
   write('package.json', JSON.stringify({
     name: `ltr-perf-large-${opts.framework}`,
@@ -238,6 +243,36 @@ function writeProjectFiles(opts) {
   } else {
     write('jest.config.js', "module.exports = { testEnvironment: 'node' };\n");
   }
+}
+
+/**
+ * The e2e Angular fixture's app project (configs, src/ without its spec files,
+ * which fail on purpose), without the library project.
+ */
+function writeAngularFiles(opts) {
+  const fixture = path.join(__dirname, '..', 'e2e', 'fixtures', 'angular');
+  const read = (rel) => fs.readFileSync(path.join(fixture, rel), 'utf8');
+  const write = (rel, text) => { fs.mkdirSync(path.dirname(path.join(opts.out, rel)), { recursive: true }); fs.writeFileSync(path.join(opts.out, rel), text); };
+  const pkg = JSON.parse(read('package.json'));
+  pkg.name = 'ltr-perf-large-angular';
+  delete pkg.devDependencies['ng-packagr'];
+  write('package.json', JSON.stringify(pkg, null, 2) + '\n');
+  const ng = JSON.parse(read('angular.json'));
+  delete ng.projects.mylib;
+  write('angular.json', JSON.stringify(ng, null, 2) + '\n');
+  // tsconfig.json: without its leading comments, the library's path and reference.
+  const tsconfig = JSON.parse(read('tsconfig.json').replace(/\/\*[\s\S]*?\*\//g, ''));
+  delete tsconfig.compilerOptions.paths;
+  tsconfig.references = tsconfig.references.filter((r) => !/mylib/.test(r.path));
+  write('tsconfig.json', JSON.stringify(tsconfig, null, 2) + '\n');
+  for (const f of ['tsconfig.app.json', 'tsconfig.spec.json']) { write(f, read(f)); }
+  const copySrc = (rel) => {
+    for (const e of fs.readdirSync(path.join(fixture, rel), { withFileTypes: true })) {
+      const r = path.join(rel, e.name);
+      if (e.isDirectory()) { copySrc(r); } else if (!/\.spec\.ts$/.test(e.name)) { write(r, read(r)); }
+    }
+  };
+  copySrc('src');
 }
 
 function install(opts) {
@@ -258,7 +293,7 @@ function install(opts) {
     run(py, ['-m', 'pip', 'install', '--quiet', 'pytest', 'coverage']);
     return;
   }
-  if (!fs.existsSync(path.join(opts.out, 'node_modules', opts.framework))) {
+  if (!fs.existsSync(path.join(opts.out, 'node_modules', opts.framework === 'angular' ? '@angular/build' : opts.framework))) {
     run('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error']);
   }
 }
@@ -267,7 +302,7 @@ function main() {
   const opts = parseArgs(process.argv.slice(2));
   const rand = rng(20261110);
   const py = opts.framework === 'pytest';
-  const ext = py ? '.py' : '.js';
+  const ext = py ? '.py' : opts.framework === 'angular' ? '.ts' : '.js';
   const lib = path.join(opts.out, 'src', 'lib');
   const testsDir = py ? path.join(opts.out, 'tests') : path.join(opts.out, 'src', 'tests');
   fs.rmSync(path.join(opts.out, 'src'), { recursive: true, force: true });
@@ -280,7 +315,7 @@ function main() {
   for (let n = 0; n < opts.tests; n++) {
     const dir = path.join(testsDir, `g${pad(Math.floor(n / 100), 2)}`);
     fs.mkdirSync(dir, { recursive: true });
-    const name = py ? `test_t${pad(n, 4)}.py` : `t${pad(n, 4)}.test.js`;
+    const name = py ? `test_t${pad(n, 4)}.py` : opts.framework === 'angular' ? `t${pad(n, 4)}.spec.ts` : `t${pad(n, 4)}.test.js`;
     fs.writeFileSync(path.join(dir, name), testFile(n, testMods(opts.sources, rand), opts.framework));
   }
   writeProjectFiles(opts);

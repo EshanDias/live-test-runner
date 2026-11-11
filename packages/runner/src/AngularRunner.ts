@@ -12,6 +12,7 @@ import { FRAMEWORK_IDS } from './types';
 import { VITEST_COVERAGE_MODULE_ENV, VitestRunner, toVitestNamePattern } from './VitestRunner';
 import { fromRunnerPath } from './resolution/RunnerPaths';
 import { createLogger } from './utils/logger';
+import { coreCount, workersPerBatch } from './utils/resources';
 
 const log = createLogger('AngularRunner');
 
@@ -185,8 +186,11 @@ export class AngularRunner extends VitestRunner {
 
   /**
    * Our runner config, in the session folder: test line numbers, the
-   * snapshot update flag (the builder has no `-u`), and the coverage folder
-   * from the environment (json only, never the project's coverage folder).
+   * snapshot update flag (the builder has no `-u`), the coverage folder
+   * from the environment (json only, never the project's coverage folder),
+   * and Vitest's workers within the machine's budget (the builder has no
+   * flag for them; left to Vitest, every batch started a worker per core:
+   * 3 batches at once ran each twice as slowly).
    */
   private runnerConfig(update: boolean): string {
     const file = path.join(this.workDir, `ltr-ng-runner${update ? '-update' : ''}.config.mjs`);
@@ -199,6 +203,7 @@ export class AngularRunner extends VitestRunner {
       'export default {',
       '  test: {',
       '    includeTaskLocation: true,',
+      `    maxWorkers: ${workersPerBatch(coreCount())},`,
       '    passWithNoTests: true,',
       ...(update ? ['    update: true,'] : []),
       '    ...(coverageDir ? { coverage: { reportsDirectory: coverageDir, reportOnFailure: true, ...(perFile ? { provider: \'custom\', customProviderModule: perFile } : {}) } } : {}),',
