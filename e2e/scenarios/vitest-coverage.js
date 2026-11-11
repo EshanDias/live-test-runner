@@ -30,8 +30,15 @@ module.exports = {
     t.check('…with a manifest on disk (gutter / hover read it)', cov && fs.existsSync(cov.manifestPath), cov?.manifestPath);
 
     const untested = api.coverageStore.getEntry(key(path.join(workspace, 'src', 'untested.js')));
-    t.check('an untested source file counts with 0 coverage (source scan without the project\'s Babel)',
-      untested && untested.state === 'counted' && untested.statements > 0, JSON.stringify(untested));
+    const zero = (e) => e && (e.state === 'counted' ? e.statements > 0 : e.pct.statements.total > 0 && e.pct.statements.covered === 0);
+    t.check('an untested source file counts with 0 coverage', zero(untested), JSON.stringify(untested));
+    // The numbers Vitest itself reports (its provider counts the files no test loads its own way).
+    const plain = h.plainCoverage(workspace, 'vitest');
+    for (const rel of ['src/math.js', 'src/untested.js']) {
+      const e = api.coverageStore.getEntry(key(path.join(workspace, ...rel.split('/'))));
+      const four = (p) => p && ['statements', 'branches', 'functions', 'lines'].map((m) => `${p[m].covered}/${p[m].total}`).join(' ');
+      t.eq(`${rel}: the numbers of a plain Vitest run`, four(e?.pct), four(plain.get(rel)));
+    }
     t.check('no "Could not load a Babel parser" warning', !logs.some((l) => /Could not load (a )?Babel/.test(l)), logs.filter((l) => /Babel/.test(l)).join('\n'));
     t.check('test files are not measured', !api.coverageStore.getEntry(key(path.join(workspace, 'src', 'math.test.js'))));
 

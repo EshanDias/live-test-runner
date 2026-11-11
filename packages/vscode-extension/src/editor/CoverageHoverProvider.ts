@@ -57,10 +57,17 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
     if (entry.state !== 'measured') { return undefined; }
 
     const manifest = _readManifest(entry.manifestPath);
+    // A line the framework's report counts no statement on (Jest + vue-jest maps a component's
+    // code to other lines) gets no verdict, as it gets no bar; the tests the trace saw run it are listed.
+    const noStatement = !!manifest && (statementLines(manifest).get(line) ?? []).length === 0;
+    if (noStatement) {
+      const ran = traceStore.getTestsForLine(filePath, line);
+      if (ran.length === 0) { return undefined; }
+    }
     // The counters decide (the same as the bar): each test file's latest run, never an old one.
-    const counterCovered = manifest
+    const counterCovered = noStatement || (manifest
       ? (statementLines(manifest).get(line) ?? []).some((id) => (entry.counters.s[id] ?? 0) > 0)
-      : traceStore.getCoveredLines(filePath).has(line);
+      : traceStore.getCoveredLines(filePath).has(line));
     // The trace knows the file: a covered line it lists no test for ran while a module loaded.
     const traceKnowsFile = traceStore.getCoveredLines(filePath).size > 0;
     const isLineCovered = counterCovered && traceKnowsFile;
@@ -114,7 +121,9 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
       md.appendMarkdown(`${icon} **Covered** — runs when the file is loaded (module-level code), not inside a single test`);
       return new vscode.Hover(md);
     }
-    md.appendMarkdown(`${icon} **Covered by ${tests.length} test${tests.length !== 1 ? 's' : ''}**\n\n`);
+    md.appendMarkdown(noStatement
+      ? `$(info) **Run by ${tests.length} test${tests.length !== 1 ? 's' : ''}** — the coverage report counts no statement on this line\n\n`
+      : `${icon} **Covered by ${tests.length} test${tests.length !== 1 ? 's' : ''}**\n\n`);
 
     const shown = tests.slice(0, MAX_TESTS_SHOWN);
     for (const { testFileId, fullName } of shown) {

@@ -13,7 +13,18 @@ export interface Manifest {
   statements: Record<string, { start: { line: number; col: number }; end: { line: number; col: number } }>;
   branches: Record<string, { type: string; line: number; arms: number }>;
   functions: Record<string, { name: string; start: { line: number }; end: { line: number } }>;
+  /**
+   * Istanbul's own locations (manifests made from istanbul data: Vitest,
+   * Angular, pytest), as istanbul's merge keys them: the statement range, the
+   * function's `loc`, the branch's first location. Two measurements with
+   * different maps (Vitest's v8 maps depend on what ran) merge by them
+   * (`mergeIstanbul`), as the framework's own report does.
+   */
+  locs?: { s: Record<string, IstanbulRange>; f: Record<string, IstanbulRange>; b: Record<string, IstanbulRange> };
 }
+
+/** An istanbul source range (1-based lines, 0-based columns). */
+export interface IstanbulRange { start: { line: number; column: number }; end: { line: number; column: number } }
 
 /** Per-file counter object stored in globalThis.__cov[fileHash] */
 export interface FileCov {

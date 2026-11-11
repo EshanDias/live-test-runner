@@ -36,6 +36,36 @@ function ltrLog(level, msg) {
   process.stderr.write(`[LTR:${level}] vitest coverage: ${String(msg).replace(/\s*\r?\n\s*/g, ' ↵ ')}\n`);
 }
 
+/**
+ * $LTR_VITEST_COVERAGE_UNTESTED (a file path): the project's provider's own
+ * coverage of the files no test loaded — every file its coverage settings
+ * include, with no test's coverage (`allTestsRun`: what a full run adds) — so
+ * the extension counts them exactly as `vitest --coverage` does (Vitest 3's v8
+ * provider counts every line of such a file; a source scan cannot know that).
+ */
+async function writeUntested(provider, generate, options) {
+  const out = process.env.LTR_VITEST_COVERAGE_UNTESTED;
+  if (!out) { return; }
+  const started = Date.now();
+  const all = provider.coverageFiles;
+  // Vitest < 4: batches run with `coverage.all: false` (no untested files in every batch); this pass is the one that adds them.
+  const opts = provider.options;
+  const hadAll = opts && Object.prototype.hasOwnProperty.call(opts, 'all') ? opts.all : undefined;
+  try {
+    if (hadAll !== undefined) { opts.all = true; }
+    provider.coverageFiles = new Map();
+    const map = await generate({ ...options, allTestsRun: true });
+    const json = typeof map?.toJSON === 'function' ? map.toJSON() : map;
+    fs.writeFileSync(out, JSON.stringify(json ?? {}));
+    ltrLog('debug', `${Object.keys(json ?? {}).length} file(s) counted as the provider counts files no test loads in ${Date.now() - started} ms`);
+  } catch (err) {
+    ltrLog('warn', `could not count the files no test loads (${err && err.message}) — they are counted from their source`);
+  } finally {
+    provider.coverageFiles = all;
+    if (hadAll !== undefined) { opts.all = hadAll; }
+  }
+}
+
 export default {
   ...real,
   async getProvider() {
@@ -76,6 +106,7 @@ export default {
         this.coverageFiles = all;
       }
       ltrLog('debug', `${n} test file(s) measured one by one in ${Date.now() - started} ms`);
+      await writeUntested(this, generate, options);
       return generate(options);
     };
     return provider;

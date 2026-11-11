@@ -9,6 +9,7 @@ module.exports = {
   spec: {
     aTest: 'src/a.test.js', aSrc: 'src/a.js', bSrc: 'src/b.js', cSrc: 'src/c.js', eSrc: 'src/e.js', otherTest: 'src/other.test.js',
     removeTwo: (s) => s.replace(/test\('two'[\s\S]*?\n\}\);\n/, ''),
+    shared: { src: 'src/s.js', test: 'src/s1.test.js', removeSecond: (s) => s.replace(/\ntest\('second'[\s\S]*?\n\}\);\n/, '') },
     stopCallingHelper: (s) => s.replace('return helper(x);', 'return x + 1;'),
     counter: { src: 'src/counter.js', test: 'src/counter.test.js', tests: 3 },
     newFile: {
@@ -16,6 +17,7 @@ module.exports = {
       content: "export function brandNew() {\n  return 'd';\n}\n",
       more: "\nexport function another() {\n  return 'dd';\n}\n",
     },
+    framework: 'vitest',
     process: /^\[vitest#\d+\] > /,
     byName: /(^|\s)(-t|--testNamePattern)(\s|=)/,
   },

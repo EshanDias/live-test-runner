@@ -458,6 +458,7 @@
     "@types/vscode": "1.82.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
+    "istanbul-lib-coverage": "3.2.2",
     "picomatch": "^4.0.7",
     "typescript": "~6.0.3"
   }

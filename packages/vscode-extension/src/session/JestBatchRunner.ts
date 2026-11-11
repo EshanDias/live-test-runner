@@ -17,12 +17,13 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults, jestNodeEnv, jestEsmHint } from '@live-test-runner/runner';
+import { Executor, BinaryResolver, nodeRuntime, FileRunResult, TestCaseRunResult, tail, toJestPathArg, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults, jestNodeEnv, jestEsmHint } from '@live-test-runner/runner';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { calculate as calcCoverage } from '../coverage/CoverageReport';
 import { Manifest, FileCov, LiveCov } from '../coverage/types';
-import { combineWithEntry, cloneCounters, sumCounters } from '../coverage/coverageRules';
+import { combineWithEntry, cloneCounters, sumCounters, zeroCounters } from '../coverage/coverageRules';
+import { combineMeasured, IstanbulFileCoverage, measuredFiles as istanbulMeasuredFiles } from '../coverage/istanbulCoverage';
 import { MeasuredFile } from '../coverage/CoverageStore';
 import { CoverageScope, coverageScopeOf } from '../coverage/coverageScope';
 import { logger } from '../utils/logger';
@@ -51,6 +52,9 @@ const LIVE_REPORTER_PATH = path.resolve(
   'jest',
   'liveReporter.js',
 );
+
+/** Counts files no test loads as `jest --coverage` does (a child process, Jest's own generateEmptyCoverage). */
+const COUNT_PATH = path.resolve(__dirname, 'instrumentation', 'jest', 'jestCoverageCount.js');
 
 const COVERAGE_SETUP_PATH = path.resolve(
   __dirname,
@@ -123,6 +127,10 @@ export class JestBatchRunner implements IBatchRunner {
   private readonly _hintsGiven = new Set<string>();
   /** Bumped by kill(): records from batches started before it are dropped. */
   private _generation = 0;
+  /** Roots whose batches measured with Jest's own coverage this session. */
+  private readonly _jestCoverageRoots = new Set<string>();
+  /** Roots whose files no test loads were counted by Jest this session (or are being counted). */
+  private readonly _untestedCounted = new Set<string>();
 
   kill(): void {
     this._killed = true;
@@ -137,6 +145,8 @@ export class JestBatchRunner implements IBatchRunner {
   reset(): void {
     this._killed = false;
     this._hintsGiven.clear();
+    this._jestCoverageRoots.clear();
+    this._untestedCounted.clear();
   }
 
   private get _coverageDir()  { return path.join(this._tmpDir, 'coverage'); }
@@ -193,6 +203,7 @@ export class JestBatchRunner implements IBatchRunner {
     const reporterFile    = path.join(this._tmpDir, `ltr-reporter-${ts}-${rand}.jsonl`);
     const traceFile       = path.join(this._tmpDir, `ltr-trace-${ts}-${rand}.jsonl`);
     const covCountersFile = path.join(this._coverageDir, `ltr-cov-${ts}-${rand}.jsonl`);
+    const jestCoverageFile = path.join(this._coverageDir, `ltr-jestcov-${ts}-${rand}.jsonl`);
 
     for (const dir of [this._coverageDir, this._manifestDir(projectRoot)]) {
       try {
@@ -328,7 +339,7 @@ function _overlay(cfg) {
   for (const ext of _candidates) {
     if (_skip.has(ext) || !/^[\\w-]+$/.test(ext)) { continue; }
     const handled = Object.keys(baseTransformObj).some((p) => { try { return new RegExp(p).test('src/Comp.' + ext); } catch (_) { return false; } });
-    if (handled) { componentTransform[${JSON.stringify(compiledPatternPrefix)} + ext + '$'] = ${JSON.stringify(SESSION_TRANSFORM_PATH)}; }
+    if (handled) { componentTransform[${JSON.stringify(compiledPatternPrefix)} + ext + '$'] = _ours; }
   }
   let fallbackTransform = {};
   if (!hasGeneralJsTransform) {
@@ -343,7 +354,7 @@ function _overlay(cfg) {
   return {
     ...c,
     transform: {
-      [${JSON.stringify(srcPattern)}]: ${JSON.stringify(SESSION_TRANSFORM_PATH)},
+      [${JSON.stringify(srcPattern)}]: _ours,
       ...componentTransform,
       ...baseTransformObj,
       ...fallbackTransform,
@@ -365,7 +376,20 @@ function _overlay(cfg) {
 }
 
 const _upperDrive = (p) => String(p).replace(/^([a-z]):/, (_, d) => d.toUpperCase() + ':');
+// Jest's own coverage, with the project's provider ('babel': istanbul, or 'v8'), so the numbers are
+// what \`jest --coverage\` reports. The live reporter keeps each test file's; Jest's coverage reporter
+// reports nothing (no untested-file pass per batch: collectCoverageFrom empty; the extension applies
+// the project's rules and has Jest count the untested files once).
+const _covFile = process.env.LTR_JEST_COVERAGE_FILE;
+const _provider = baseConfig.coverageProvider === 'v8' ? 'v8' : 'babel';
+const _cov = _covFile
+  ? { collectCoverage: true, coverageProvider: _provider, collectCoverageFrom: [], coverageReporters: ['none'], coverageThreshold: undefined,
+      coverageDirectory: _path.dirname(_covFile) }
+  : {};
+// Our transform adds only the trace on top of Jest's coverage (and maps its code back to the file).
+const _ours = _covFile ? [${JSON.stringify(SESSION_TRANSFORM_PATH)}, { coverage: _provider }] : ${JSON.stringify(SESSION_TRANSFORM_PATH)};
 const _shared = {
+  ..._cov,
   // Raise test timeout to account for the instrumentation overhead added by
   // sessionTraceTransform (step() calls before every statement slow React renders).
   // Tests that approach the default 5 s limit will timeout under instrumentation.
@@ -569,6 +593,7 @@ module.exports = _projects
             ...jestNodeEnv(projectRoot),
             SESSION_TRACE_FILE:   traceFile,
             COVERAGE_OUTPUT_FILE: covCountersFile,
+            LTR_JEST_COVERAGE_FILE: jestCoverageFile,
             LTR_MANIFEST_DIR:     this._manifestDir(projectRoot),
             LTR_LOG_LEVEL:        logger.level,
             LTR_REPORTER_FILE:    reporterFile,
@@ -630,7 +655,12 @@ module.exports = _projects
 
     // Parse coverage counters and promote CoverageStore entries.
     try {
-      this._parseCoverage(covCountersFile, projectRoot, batch, coverageScope, { startedAt, ran: measured, toKey });
+      if (fs.existsSync(jestCoverageFile)) {
+        try { fs.unlinkSync(covCountersFile); } catch { /* none */ }
+        if (generation === this._generation) { this._parseJestCoverage(jestCoverageFile, projectRoot, batch, coverageScope, { startedAt, ran: measured, toKey }); }
+      } else {
+        this._parseCoverage(covCountersFile, projectRoot, batch, coverageScope, { startedAt, ran: measured, toKey });
+      }
     } catch (err) {
       covLog.error(`${batch}: could not parse coverage counters`, err);
     }
@@ -657,6 +687,137 @@ module.exports = _projects
       if (entry) { return entry; }
     }
     return this._binaryResolver.resolve(projectRoot);
+  }
+
+  // ── Private: Jest's own coverage → the CoverageStore ────────────────────────
+
+  /**
+   * One line per test file (liveReporter.js): Jest's own coverage of it
+   * (either provider), converted as Jest converts it. Each test file that
+   * finished replaces its contribution (none: it covers nothing now).
+   */
+  private _parseJestCoverage(
+    file: string,
+    projectRoot: string,
+    batch: string,
+    scope: CoverageScope,
+    run: { startedAt: number; ran: Set<string>; toKey: (p: string) => string },
+  ): void {
+    const startedAt = Date.now();
+    const manifestDir = path.join(this._coverageDir, 'jest-manifests');
+    const byTestFile = new Map<string, Map<string, MeasuredFile>>();
+    let bytes: number;
+    try {
+      const raw = fs.readFileSync(file, 'utf8');
+      bytes = raw.length;
+      // Maps arrive once per batch (by key), then only hit counts: each becomes a manifest once.
+      const maps = new Map<string, Omit<IstanbulFileCoverage, 's' | 'f' | 'b'>>();
+      const versions = new Map<string, { filePath: string; manifestPath: string; manifest: Manifest } | null>();
+      for (const line of raw.split('\n')) {
+        if (!line.trim()) { continue; }
+        let doc: { tf: string; files: Record<string, { k: string; s: FileCov['s']; f: FileCov['f']; b: FileCov['b'] }>; maps: Record<string, Omit<IstanbulFileCoverage, 's' | 'f' | 'b'>> };
+        try { doc = JSON.parse(line); } catch { continue; }
+        for (const [k, m] of Object.entries(doc.maps ?? {})) { maps.set(k, m); }
+        const key = run.toKey(doc.tf);
+        const into = byTestFile.get(key) ?? new Map<string, MeasuredFile>();
+        for (const hits of Object.values(doc.files ?? {})) {
+          let version = versions.get(hits.k);
+          if (version === undefined) {
+            const m = maps.get(hits.k);
+            const zero = m ? { ...m, s: {}, f: {}, b: {} } as IstanbulFileCoverage : undefined;
+            const [entry] = zero ? [...istanbulMeasuredFiles({ [m!.path]: zero }, manifestDir, projectRoot, (f) => scope.counts(f)).files] : [];
+            version = entry ? { filePath: entry[0], manifestPath: entry[1].manifestPath, manifest: entry[1].manifest } : null;
+            versions.set(hits.k, version);
+          }
+          if (!version) { continue; }
+          const counters: FileCov = { s: { ...hits.s }, f: { ...hits.f }, b: Object.fromEntries(Object.entries(hits.b ?? {}).map(([id, arms]) => [id, [...arms]])) };
+          into.set(version.filePath, combineMeasured(into.get(version.filePath), { manifestPath: version.manifestPath, manifest: version.manifest, counters }));
+        }
+        byTestFile.set(key, into);
+      }
+    } finally {
+      try { fs.unlinkSync(file); } catch { /* gone */ }
+    }
+    const first = !this._jestCoverageRoots.has(projectRoot);
+    this._jestCoverageRoots.add(projectRoot);
+    let sources = 0;
+    for (const testFile of run.ran) {
+      const files = byTestFile.get(testFile) ?? new Map<string, MeasuredFile>();
+      this._coverageStore.replaceContribution(testFile, files, run.startedAt);
+      sources += files.size;
+    }
+    covLog.debug(`${batch}: coverage — ${run.ran.size} test file(s) → ${sources} file measurement(s) (${Math.round(bytes / 1024)} KB, ${Date.now() - startedAt} ms)`);
+    if (first) { void this._countUntested(projectRoot); }
+  }
+
+  /**
+   * Once per session: every source file the coverage settings count, as
+   * \`jest --coverage\` counts a file no test loads — what each shows while no
+   * test reaches it (Jest's own generateEmptyCoverage, either provider).
+   */
+  private async _countUntested(projectRoot: string): Promise<void> {
+    if (this._untestedCounted.has(projectRoot)) { return; }
+    this._untestedCounted.add(projectRoot);
+    // The source scan lists them (the project's rules); wait for it, and for the
+    // batches to finish: the count is one more process, outside their shared budget.
+    const generation = this._generation;
+    for (let i = 0; i < 600 && !this._coverageStore.isScanComplete() && !this._killed; i++) { await new Promise((r) => setTimeout(r, 200)); }
+    while (this._running.size > 0 && !this._killed && generation === this._generation) { await new Promise((r) => setTimeout(r, 500)); }
+    if (this._killed || generation !== this._generation) { this._untestedCounted.delete(projectRoot); return; }
+    const under = (fp: string) => { const rel = path.relative(projectRoot, fp); return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
+    const files = [...this._coverageStore.getAllEntries()].map(([fp]) => fp).filter(under);
+    if (!(await this._countJest(files, projectRoot))) { this._untestedCounted.delete(projectRoot); }
+  }
+
+  /**
+   * Source files created or edited during the session that no test loads:
+   * counted as \`jest --coverage\` counts them (until then, the source scan's count).
+   */
+  async countSources(files: string[], projectRoot: string): Promise<void> {
+    if (!this._jestCoverageRoots.has(projectRoot)) { return; }
+    const wanted = files.filter((fp) => fs.existsSync(fp) && this._coverageStore.contributorsOf(fp).length === 0);
+    if (wanted.length > 0) { await this._countJest(wanted, projectRoot); }
+  }
+
+  /** @returns whether the files were counted */
+  private async _countJest(files: string[], projectRoot: string): Promise<boolean> {
+    const generation = this._generation;
+    const scope = await coverageScopeOf(this._projectConfig, projectRoot);
+    const counted = files.filter((fp) => scope.counts(fp));
+    if (counted.length === 0) { return true; }
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const request = path.join(this._coverageDir, `ltr-count-${stamp}.json`);
+    const out = path.join(this._coverageDir, `ltr-count-${stamp}.out.json`);
+    const resolvedConfig = await this._projectConfig.get(projectRoot);
+    if (!resolvedConfig) { covLog.debug(`No resolved Jest config for ${projectRoot} — files no test loads keep the source scan's count`); return false; }
+    try {
+      fs.mkdirSync(this._coverageDir, { recursive: true });
+      const provider = (JSON.parse(fs.readFileSync(resolvedConfig, 'utf8')) as { global?: { coverageProvider?: string } }).global?.coverageProvider === 'v8' ? 'v8' : 'babel';
+      fs.writeFileSync(request, JSON.stringify({
+        rootDir: toRunnerPath(projectRoot), files: counted.map((fp) => toRunnerPath(fp)), out, resolvedConfig, provider,
+        cacheDirectory: this._transformCacheDir(projectRoot),
+      }));
+      const node = nodeRuntime();
+      const r = await new Executor(() => {}).run({ binary: node.binary, args: [COUNT_PATH, request], cwd: projectRoot, extraEnv: { ...jestNodeEnv(projectRoot), ...node.env }, timeoutMs: 120_000 });
+      if (generation !== this._generation) { return false; }
+      if (!fs.existsSync(out)) {
+        covLog.debug(`Could not have Jest count ${counted.length} file(s) no test loads: ${tail(r.stderr || r.stdout, 3)}`);
+        return false;
+      }
+      const manifestDir = path.join(this._coverageDir, 'jest-manifests');
+      const { files: measured } = istanbulMeasuredFiles(JSON.parse(fs.readFileSync(out, 'utf8')), manifestDir, projectRoot, (fp) => scope.counts(fp));
+      for (const [fp, mf] of measured) {
+        const zero = zeroCounters(mf.counters);
+        this._coverageStore.setMeasuredEntry(fp, { manifestPath: mf.manifestPath, counters: zero, pct: calcCoverage(mf.manifest, zero) });
+      }
+      covLog.debug(`Jest counted ${measured.size} source file(s) no test loads (${projectRoot})`);
+      return true;
+    } catch (err) {
+      covLog.debug(`Could not have Jest count files no test loads: ${(err as Error).message}`);
+      return false;
+    } finally {
+      for (const f of [request, out]) { try { fs.rmSync(f, { force: true }); } catch { /* gone */ } }
+    }
   }
 
   // ── Private: coverage counters → the CoverageStore ──────────────────────────

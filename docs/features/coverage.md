@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Who it is for** | Anyone who wants to know what their tests reach, and which test to look at when a line breaks |
-| **Frameworks** | Jest (including Create React App), Vitest (needs `@vitest/coverage-v8` or `-istanbul`), Angular (needs `@vitest/coverage-v8`; no covering tests yet), pytest (needs `coverage`) |
+| **Frameworks** | Jest (including Create React App; Babel or `coverageProvider: 'v8'`), Vitest (needs `@vitest/coverage-v8` or `-istanbul`), Angular (needs `@vitest/coverage-v8`; no covering tests yet), pytest (needs `coverage`) |
 | **Requirements** | [Coverage: requirements](../requirements/coverage.md) |
 | **How it is built** | [Coverage: design](../development/design/coverage.md) |
 
@@ -28,7 +28,8 @@ There's no extra command or extra run: the normal runs measure it.
 - **Hover a line** to see which tests ran it, whether they passed, and which branches were missed. **Show All Covering Tests** lists every one.
 - **The Coverage tab** in the sidebar has project totals (statements, branches, functions, lines) and a row per file. Click a row to open the file.
 - **Files no test imports count as 0%**, so the totals cover the whole project, as your framework's own coverage report does.
-- **Your coverage settings apply:** Jest's `collectCoverageFrom`, Vitest's `coverage.include` / `exclude`, coverage.py's `[tool.coverage.run]`.
+- **Your coverage settings apply:** Jest's `collectCoverageFrom` and `coverageProvider`, Vitest's `coverage.provider` and `coverage.include` / `exclude`, coverage.py's `[tool.coverage.run]`.
+- **The same numbers as your own coverage command.** Your framework measures, with your settings: every file shows the statements, branches, functions and lines that `jest --coverage`, `vitest run --coverage` or `coverage run -m pytest` would report, so they agree with your CI. Providers count differently (Vitest 3's v8 counts every line of a file no test loads, for example); you see what yours counts.
 
 ### While you edit
 

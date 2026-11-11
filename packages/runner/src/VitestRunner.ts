@@ -14,6 +14,8 @@ import { VITEST_EVENTS_ENV, applyVitestEvents, readVitestEvents, vitestReporterF
 export const VITEST_COVERAGE_REAL_ENV = 'LTR_VITEST_COVERAGE_REAL';
 /** Where the wrapper provider writes each test file's coverage. */
 export const VITEST_COVERAGE_PER_FILE_ENV = 'LTR_VITEST_COVERAGE_PER_FILE';
+/** Where the wrapper provider writes the project's provider's own coverage of the files no test loaded (asked for once per session, and for new / edited files). */
+export const VITEST_COVERAGE_UNTESTED_ENV = 'LTR_VITEST_COVERAGE_UNTESTED';
 /** The wrapper provider module (for configs that name it themselves: Angular's runner config). */
 export const VITEST_COVERAGE_MODULE_ENV = 'LTR_VITEST_COVERAGE_MODULE';
 import { RunResult } from './types';
@@ -147,6 +149,11 @@ export class VitestRunner extends CommandRunner {
        * the trace wrapper does that). Written to `<coverageDir>/per-test-file`.
        */
       perTestFileProvider?: string;
+      /**
+       * With the wrapper provider: also write the provider's own coverage of
+       * the files no test loaded (what a full run adds) to this file.
+       */
+      untestedFile?: string;
     } = {},
   ): Promise<{ command: ExecutorCommand; eventsFile: string; resultFile: string; coverageFile?: string; perTestFileDir?: string }> {
     // `related`: Vitest finds the test files that import this source file (`vitest related <src> --run`); `files` is ignored.
@@ -167,6 +174,7 @@ export class VitestRunner extends CommandRunner {
         env[VITEST_COVERAGE_REAL_ENV] = coverage.provider;
         env[VITEST_COVERAGE_PER_FILE_ENV] = perTestFileDir;
         env.LTR_VITEST_ROOT = root;
+        if (options.untestedFile) { env[VITEST_COVERAGE_UNTESTED_ENV] = options.untestedFile; }
       }
     }
     return {

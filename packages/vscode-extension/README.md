@@ -134,7 +134,7 @@ All settings under `liveTestRunner.*`.
 | ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ | ✅ | ✅ by node id; Debug needs the Python Debugger extension |
 | Rerun a saved test file | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Logs / console output | ✅ per file | ✅ per file | ✅ per test | ✅ per test | ✅ per test (stdout, stderr, logging) |
-| Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) | ✅ needs `@vitest/coverage-v8` | ✅ needs `coverage` (pytest-cov not needed) |
+| Coverage (gutter, hover) — the numbers your own coverage command reports | ✅ Babel or `coverageProvider: 'v8'` | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) | ✅ needs `@vitest/coverage-v8` | ✅ needs `coverage` (pytest-cov not needed) |
 | Live per-file progress | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off | ✅ the test files that import it (relative imports); all of its project otherwise | ✅ only the tests that ran it (coverage contexts); importing test files before that |
 | Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ✅ one project per workspace; its apps and libraries run with `ng test <name>`, grouped by name | ✅ one project per uv workspace member with tests; a root pytest config stays one |

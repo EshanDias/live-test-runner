@@ -2,8 +2,10 @@
  * Coverage rules shared by every framework's batch runner, so a file counts
  * the same way whichever framework measured it.
  */
+import * as crypto from 'crypto';
 import * as fs from 'fs';
-import { CoverageEntry, FileCov, LiveCov, Manifest } from './types';
+import * as path from 'path';
+import { CoverageEntry, FileCov, IstanbulRange, LiveCov, Manifest } from './types';
 
 /** Files that never count toward coverage (tests, configs, build output, dependencies). */
 const COVERAGE_EXCLUDE_RE = [
@@ -150,4 +152,93 @@ export function mergeByLine(prev: Manifest, prevCov: LiveCov, next: Manifest, ne
     b[id] = arms.map((v, i) => (v > 0 ? v : (other?.[i] ?? 0) > 0 ? 1 : 0));
   }
   return { s, f, b };
+}
+
+/**
+ * Two istanbul measurements of one file whose maps differ, merged as
+ * istanbul-lib-coverage's `FileCoverage.merge` merges them — what the
+ * framework's own report does with them (Vitest's v8 maps depend on what each
+ * test file ran: two test files give two maps of one file). Items at the same
+ * location add their hits; an item only one side has keeps its hits plus those
+ * of the narrowest item of the other side that contains it. Undefined when a
+ * manifest has no istanbul locations (Jest's own instrumentation).
+ */
+export function mergeIstanbul(a: Manifest, ac: FileCov, b: Manifest, bc: FileCov): { manifest: Manifest; counters: LiveCov } | undefined {
+  if (!a.locs || !b.locs) { return undefined; }
+  const manifest: Manifest = { filePath: b.filePath, statements: {}, branches: {}, functions: {}, locs: { s: {}, f: {}, b: {} } };
+  const counters: LiveCov = { s: {}, f: {}, b: {} };
+
+  const s = mergeProp(a.statements, a.locs.s, (id) => ac.s[id] ?? 0, b.statements, b.locs.s, (id) => bc.s[id] ?? 0);
+  s.forEach(([hits, item, loc], i) => { manifest.statements[i] = item; manifest.locs!.s[i] = loc; counters.s[i] = hits; });
+  const f = mergeProp(a.functions, a.locs.f, (id) => ac.f[id] ?? 0, b.functions, b.locs.f, (id) => bc.f[id] ?? 0);
+  f.forEach(([hits, item, loc], i) => { manifest.functions[i] = item; manifest.locs!.f[i] = loc; counters.f[i] = hits; });
+  const arms = (m: Manifest, c: FileCov) => (id: string) => c.b[id] ?? new Array<number>(m.branches[id].arms).fill(0);
+  const br = mergeProp(a.branches, a.locs.b, arms(a, ac), b.branches, b.locs.b, arms(b, bc));
+  br.forEach(([hits, item, loc], i) => { manifest.branches[i] = item; manifest.locs!.b[i] = loc; counters.b[i] = hits; });
+  return { manifest, counters };
+}
+
+type Hits = number | number[];
+
+function mergeProp<T, H extends Hits>(
+  aMap: Record<string, T>, aLocs: Record<string, IstanbulRange>, aHits: (id: string) => H,
+  bMap: Record<string, T>, bLocs: Record<string, IstanbulRange>, bHits: (id: string) => H,
+): Array<[H, T, IstanbulRange]> {
+  const items = (map: Record<string, T>, locs: Record<string, IstanbulRange>, hits: (id: string) => H) => {
+    const out = new Map<string, [H, T, IstanbulRange]>();
+    for (const id of Object.keys(map)) {
+      const loc = locs[id];
+      if (loc) { out.set(locKey(loc), [hits(id), map[id], loc]); }
+    }
+    return out;
+  };
+  const aItems = items(aMap, aLocs, aHits);
+  const bItems = items(bMap, bLocs, bHits);
+  const merged = new Map<string, [H, T, IstanbulRange]>();
+  for (const [key, [hits, item, loc]] of aItems) {
+    const other = bItems.get(key);
+    merged.set(key, [other ? addHits(hits, other[0]) : addNearestContainerHits(loc, hits, bItems), item, loc]);
+  }
+  for (const [key, [hits, item, loc]] of bItems) {
+    if (merged.has(key)) { continue; }
+    merged.set(key, [addNearestContainerHits(loc, hits, aItems), item, loc]);
+  }
+  return [...merged.values()];
+}
+
+function locKey({ start, end }: IstanbulRange): string {
+  return `${start.line}|${start.column}|${end.line}|${end.column}`;
+}
+
+function addHits<H extends Hits>(a: H, b: H): H {
+  if (typeof a === 'number' && typeof b === 'number') { return (a + b) as H; }
+  if (Array.isArray(a) && Array.isArray(b)) { return a.map((n, i) => (n || 0) + (b[i] || 0)) as H; }
+  return a;
+}
+
+/** The hits of the narrowest item of `others` containing `loc` added (closer line before closer column), as istanbul does. */
+function addNearestContainerHits<T, H extends Hits>(loc: IstanbulRange, hits: H, others: Map<string, [H, T, IstanbulRange]>): H {
+  let nearest: [H, T, IstanbulRange] | undefined;
+  let best: number[] | undefined;
+  for (const other of others.values()) {
+    const o = other[2];
+    const d = [loc.start.line - o.start.line, loc.start.column - o.start.column, o.end.line - loc.end.line, o.end.column - loc.end.column];
+    if (d[0] < 0 || d[2] < 0 || (d[0] === 0 && d[1] < 0) || (d[2] === 0 && d[3] < 0)) { continue; }
+    if (!best) { nearest = other; best = d; continue; }
+    const closerBefore = d[0] < best[0] || (d[0] === 0 && d[1] < best[1]);
+    const closerAfter = d[2] < best[2] || (d[2] === 0 && d[3] < best[3]);
+    if (closerBefore || closerAfter) { nearest = other; best = d; }
+  }
+  return nearest ? addHits(hits, nearest[0]) : hits;
+}
+
+/** A manifest written once, named by its content, in `dir`; returns its path. */
+export function writeManifest(dir: string, manifest: Manifest): string {
+  const json = JSON.stringify(manifest);
+  const file = path.join(dir, `${crypto.createHash('sha1').update(json).digest('hex')}.json`);
+  if (!fs.existsSync(file)) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, json);
+  }
+  return file;
 }

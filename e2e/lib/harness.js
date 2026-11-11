@@ -544,7 +544,90 @@ function rawSinceWithoutRefresh(api, mark) {
   return out;
 }
 
+/**
+ * The framework's own coverage from a plain full run of the project (reports in
+ * a temp folder, nothing written into the project), per source file the four
+ * numbers the extension shows: Map<path relative to the workspace (forward
+ * slashes), { statements, branches, functions, lines: { covered, total } }>.
+ * Counted as the extension counts (CoverageReport.calculate): Jest / Vitest from
+ * coverage-final.json (lines = start lines of statements); pytest from
+ * coverage.py's JSON report (statements = lines, branches = arcs, functions =
+ * regions with lines).
+ * @param framework 'jest' | 'vitest' | 'pytest'
+ */
+function plainCoverage(workspace, framework) {
+  const { spawnSync } = require('child_process');
+  const fs = require('fs');
+  const os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-e2e-plaincov-'));
+  const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
+  const root = real(workspace);
+  const rel = (abs) => path.relative(root, real(abs)).split(path.sep).join('/');
+  const env = { ...process.env, CI: 'true', PYTHONIOENCODING: 'utf-8' };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const node = process.platform === 'win32' ? 'node.exe' : 'node';
+  const opts = { cwd: root, env, encoding: 'utf8', timeout: 10 * 60_000, maxBuffer: 1 << 30 };
+  const out = new Map();
+  try {
+    if (framework === 'pytest') {
+      const python = workspacePython(workspace);
+      const data = path.join(dir, '.coverage');
+      spawnSync(python, ['-m', 'coverage', 'run', `--data-file=${data}`, '-m', 'pytest', '-p', 'no:cacheprovider', '--continue-on-collection-errors', '-q'], opts);
+      const file = path.join(dir, 'coverage.json');
+      const r = spawnSync(python, ['-m', 'coverage', 'json', `--data-file=${data}`, '-o', file], opts);
+      if (!fs.existsSync(file)) { throw new Error(`coverage.py wrote no report: ${(r.stderr || r.stdout || '').slice(-1500)}`); }
+      const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+      for (const [name, f] of Object.entries(json.files)) {
+        const lines = { covered: f.summary.covered_lines, total: f.summary.num_statements };
+        const fns = Object.entries(f.functions || {}).filter(([n, r]) => n && r.summary.num_statements > 0);
+        out.set(rel(path.join(root, name)), {
+          statements: lines,
+          lines,
+          branches: { covered: f.summary.covered_branches ?? 0, total: f.summary.num_branches ?? 0 },
+          functions: { covered: fns.filter(([, r]) => r.summary.covered_lines > 0).length, total: fns.length },
+        });
+      }
+      return out;
+    }
+    let args;
+    if (framework === 'jest') {
+      const { testScriptJestArgs, jestNodeEnv } = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'framework', 'jestConfig.js'));
+      Object.assign(env, jestNodeEnv(workspace));
+      const entry = path.join(path.dirname(require.resolve('jest/package.json', { paths: [workspace] })), 'bin', 'jest.js');
+      args = [entry, ...testScriptJestArgs(workspace), '--watchAll=false', '--coverage', '--coverageReporters=json', `--coverageDirectory=${dir}`];
+    } else {
+      const runner = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'index.js'));
+      const adapter = new runner.VitestAdapter();
+      args = [real(adapter.findInstall(workspace).entry), 'run', ...adapter.getExtraArgs(workspace),
+        // reportOnFailure: a project with failing tests still gets its report (as the extension's runs do).
+        '--coverage.enabled=true', '--coverage.reporter=json', `--coverage.reportsDirectory=${dir}`, '--coverage.reportOnFailure=true'];
+    }
+    const r = spawnSync(node, args, opts);
+    const file = path.join(dir, 'coverage-final.json');
+    if (!fs.existsSync(file)) { throw new Error(`plain ${framework} wrote no coverage (exit ${r.status}): ${(r.stderr || '').slice(-1500)}`); }
+    for (const [abs, fc] of Object.entries(JSON.parse(fs.readFileSync(file, 'utf8')))) {
+      const sIds = Object.keys(fc.statementMap);
+      const hit = sIds.filter((id) => fc.s[id] > 0);
+      let bTotal = 0;
+      let bCov = 0;
+      for (const [id, b] of Object.entries(fc.branchMap)) { bTotal += b.locations.length; bCov += (fc.b[id] || []).filter((n) => n > 0).length; }
+      const fIds = Object.keys(fc.fnMap);
+      const line = (id) => fc.statementMap[id].start.line;
+      out.set(rel(fc.path || abs), {
+        statements: { covered: hit.length, total: sIds.length },
+        branches: { covered: bCov, total: bTotal },
+        functions: { covered: fIds.filter((id) => fc.f[id] > 0).length, total: fIds.length },
+        lines: { covered: new Set(hit.map(line)).size, total: new Set(sIds.map(line)).size },
+      });
+    }
+    return out;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 module.exports = {
+  plainCoverage,
   settle, rawSinceWithoutRefresh,
   workspacePython, plainPytestResults, checkMatchesPlainPytest, sortedCounts, pytestProcesses,
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,

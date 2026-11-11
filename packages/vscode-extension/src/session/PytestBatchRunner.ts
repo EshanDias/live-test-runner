@@ -38,10 +38,10 @@ import { BatchRunOptions, IBatchRunner, RelatedRunOptions } from './IBatchRunner
 import { PythonImportGraph, pythonImportRoots } from './pythonImports';
 import { runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
-import { applyIstanbulCoverage, IstanbulFileCoverage, measuredFiles } from '../coverage/istanbulCoverage';
+import { applyIstanbulCoverage, combineMeasured, IstanbulFileCoverage, measuredFiles } from '../coverage/istanbulCoverage';
 import { MeasuredFile } from '../coverage/CoverageStore';
 import { calculate } from '../coverage/CoverageReport';
-import { sumCounters, zeroCounters } from '../coverage/coverageRules';
+import { zeroCounters } from '../coverage/coverageRules';
 import { coverageScopeOf } from '../coverage/coverageScope';
 import { IProjectConfig } from './IProjectConfig';
 import { pythonInterpreters } from '../python/PythonInterpreters';
@@ -408,8 +408,7 @@ export class PytestBatchRunner implements IBatchRunner {
           const into = contributions.get(testFile);
           if (!into) { return; }
           for (const [fp, mf] of files) {
-            const prev = into.get(fp);
-            into.set(fp, prev && prev.manifestPath === mf.manifestPath ? { ...prev, counters: sumCounters(prev.counters, mf.counters) } : mf);
+            into.set(fp, combineMeasured(into.get(fp), mf));
           }
         };
         for (const [testFile, cov] of Object.entries(doc.tests ?? {})) {

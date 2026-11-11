@@ -10,8 +10,8 @@ import * as path from 'path';
 import { fromRunnerPath } from '@live-test-runner/runner';
 import { CoverageStore, MeasuredFile } from './CoverageStore';
 import { calculate } from './CoverageReport';
-import { combineWithEntry, isExcludedFromCoverage } from './coverageRules';
-import { FileCov, LiveCov, Manifest } from './types';
+import { combineWithEntry, isExcludedFromCoverage, mergeIstanbul, sumCounters, writeManifest } from './coverageRules';
+import { FileCov, IstanbulRange, LiveCov, Manifest } from './types';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Coverage');
@@ -44,7 +44,29 @@ export function toManifest(fc: IstanbulFileCoverage, filePath: string): Manifest
   for (const [id, f] of Object.entries(fc.fnMap ?? {})) {
     functions[id] = { name: f.name, start: { line: (f.decl ?? f.loc).start.line }, end: { line: f.loc.end.line } };
   }
-  return { filePath, statements, branches, functions };
+  const range = (r: Range | undefined): IstanbulRange => ({
+    start: { line: r?.start.line ?? 0, column: r?.start.column ?? 0 },
+    end: { line: r?.end.line ?? 0, column: r?.end.column ?? 0 },
+  });
+  const locs: NonNullable<Manifest['locs']> = { s: {}, f: {}, b: {} };
+  for (const [id, r] of Object.entries(fc.statementMap ?? {})) { locs.s[id] = range(r); }
+  for (const [id, f] of Object.entries(fc.fnMap ?? {})) { locs.f[id] = range(f.loc); }
+  for (const [id, b] of Object.entries(fc.branchMap ?? {})) { locs.b[id] = range(b.locations[0]); }
+  return { filePath, statements, branches, functions, locs };
+}
+
+/**
+ * Two measurements of one source file in one run (a test file in several
+ * Vitest projects or environments): summed when their maps are the same,
+ * else merged as istanbul merges them (`mergeIstanbul`; the merged manifest
+ * is written next to the others).
+ */
+export function combineMeasured(prev: MeasuredFile | undefined, next: MeasuredFile): MeasuredFile {
+  if (!prev) { return next; }
+  if (prev.manifestPath === next.manifestPath) { return { ...prev, counters: sumCounters(prev.counters, next.counters) }; }
+  const merged = mergeIstanbul(prev.manifest, prev.counters, next.manifest, next.counters);
+  if (!merged) { return next; }
+  return { manifestPath: writeManifest(path.dirname(next.manifestPath), merged.manifest), manifest: merged.manifest, counters: merged.counters };
 }
 
 /**

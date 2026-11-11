@@ -50,10 +50,10 @@ import {
 import { BatchRunOptions, IBatchRunner, RelatedRunOptions } from './IBatchRunner';
 import { runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
-import { applyIstanbulCoverage, IstanbulFileCoverage, measuredFiles } from '../coverage/istanbulCoverage';
+import { applyIstanbulCoverage, combineMeasured, IstanbulFileCoverage, measuredFiles } from '../coverage/istanbulCoverage';
 import { MeasuredFile } from '../coverage/CoverageStore';
 import { calculate } from '../coverage/CoverageReport';
-import { sumCounters, zeroCounters } from '../coverage/coverageRules';
+import { zeroCounters } from '../coverage/coverageRules';
 import { CoverageScope, coverageScopeOf, defaultCoverageScope } from '../coverage/coverageScope';
 import { IProjectConfig } from './IProjectConfig';
 import { PLAIN_RUN_HANG_FACTOR } from '../constants';
@@ -77,6 +77,12 @@ export class VitestBatchRunner implements IBatchRunner {
   private readonly _typecheckRoots = new Set<string>();
   /** Roots where Vitest ran nothing with the per-test-file provider outside the trace wrapper: merged coverage there (this session). */
   private readonly _mergedCoverageRoots = new Set<string>();
+  /** Roots whose files no test loads were counted by Vitest's own provider this session (or are being counted). */
+  private readonly _untestedCounted = new Set<string>();
+  /** Per root: the count-only run in flight, and the files waiting for the next one. */
+  /** Untested-count files read by _applyCoverage (the batch then has its answer). */
+  private readonly _untestedApplied = new Set<string>();
+  private readonly _counting = new Map<string, { running: Promise<void>; next: Set<string> | undefined }>();
   /** Bumped by kill(): events of batches started before it are dropped. */
   private _generation = 0;
 
@@ -118,6 +124,8 @@ export class VitestBatchRunner implements IBatchRunner {
     this._trace?.trace.reset();
     this._typecheckRoots.clear();
     this._mergedCoverageRoots.clear();
+    this._untestedCounted.clear();
+    this._counting.clear();
   }
 
   /** The root has type-check files (`*.test-d.ts`, typecheck.enabled) — they never get a trace. */
@@ -178,6 +186,7 @@ export class VitestBatchRunner implements IBatchRunner {
     let live: Awaited<ReturnType<VitestRunner['liveCommand']>>;
     /** This batch's trace: the wrapper config and where the workers write. */
     let trace: { config: string; base: string; marker: string; deps: string } | undefined;
+    let untestedFile: string | undefined;
     try {
       runner.setProjectRoot(projectRoot);
       const coverageDir = this._coverage ? path.join(this._coverage.sessionDir, 'vitest-coverage', batch) : undefined;
@@ -197,7 +206,11 @@ export class VitestBatchRunner implements IBatchRunner {
       // is replaced when it runs again; merged per batch, deleted tests stayed covered).
       // Without the trace wrapper, unless Vitest could not run with it here.
       const perTestFile = trace || this._coverage?.perTestFile === 'always' || !this._mergedCoverageRoots.has(projectRoot);
-      live = await runner.liveCommand(filePaths, { coverageDir, related, config: trace?.config, typecheckOnly: options.typecheckOnly, perTestFileProvider: perTestFile ? COVERAGE_PROVIDER_PATH : undefined });
+      // Once per root per session: Vitest's own count of the files no test loads (its provider counts them its way:
+      // Vitest 3's v8 counts every line), so they show what `vitest --coverage` shows.
+      untestedFile = coverageDir && perTestFile && !this._untestedCounted.has(projectRoot) ? path.join(coverageDir, 'untested.json') : undefined;
+      if (untestedFile) { this._untestedCounted.add(projectRoot); }
+      live = await runner.liveCommand(filePaths, { coverageDir, related, config: trace?.config, typecheckOnly: options.typecheckOnly, perTestFileProvider: perTestFile ? COVERAGE_PROVIDER_PATH : undefined, untestedFile });
       if (trace) {
         live.command.extraEnv = {
           ...live.command.extraEnv,
@@ -349,8 +362,10 @@ export class VitestBatchRunner implements IBatchRunner {
         : defaultCoverageScope(projectRoot);
       // Only what finished here: not the file the hang limit stopped, not one a newer batch took over, not type-check-only files.
       const measured = new Set([...received].filter((fp) => owns(fp) && fp !== timedOut?.file && !typecheckOnly.has(fp)));
-      if (generation === this._generation) { this._applyCoverage(live.coverageFile, live.perTestFileDir, projectRoot, batch, scope, { startedAt, ran: measured, toKey, batchFiles: filePaths }); }
+      if (generation === this._generation) { this._applyCoverage(live.coverageFile, live.perTestFileDir, projectRoot, batch, scope, { startedAt, ran: measured, toKey, batchFiles: filePaths, untestedFile }); }
     }
+    // Asked but not answered (stopped, crashed, the provider refused): the next batch asks again.
+    if (untestedFile && !this._untestedApplied.delete(untestedFile)) { this._untestedCounted.delete(projectRoot); }
 
     const stopped = generation !== this._generation;
     if (stopped) {
@@ -458,6 +473,84 @@ export class VitestBatchRunner implements IBatchRunner {
   }
 
   /**
+   * Vitest's own coverage of the files no test loaded (the wrapper's
+   * untested.json), zeroed: what each shows while no test reaches it — counted
+   * as the project's provider counts it, not by a source scan.
+   * @returns how many files it lists
+   */
+  private _applyUntested(file: string, projectRoot: string, counts: (fp: string) => boolean): number {
+    const store = this._coverage!.store;
+    const manifestDir = path.join(this._coverage!.sessionDir, 'vitest-manifests');
+    const { files } = measuredFiles(JSON.parse(fs.readFileSync(file, 'utf8')), manifestDir, projectRoot, counts);
+    for (const [fp, mf] of files) {
+      const zero = zeroCounters(mf.counters);
+      store.setMeasuredEntry(fp, { manifestPath: mf.manifestPath, counters: zero, pct: calculate(mf.manifest, zero) });
+    }
+    return files.size;
+  }
+
+  /**
+   * Source files created or edited during the session that no test loads:
+   * counted by Vitest's own provider (a run that matches no test file, so
+   * nothing runs) — a new file shows as `vitest --coverage` would. Files a test
+   * loads are measured by that test's rerun. One count-only run per root at a
+   * time; saves meanwhile wait for the next.
+   */
+  async countSources(files: string[], projectRoot: string): Promise<void> {
+    if (!this._coverage || this._killed || this._mergedCoverageRoots.has(projectRoot)) { return; }
+    const store = this._coverage.store;
+    const wanted = files.filter((fp) => fs.existsSync(fp) && store.contributorsOf(fp).length === 0);
+    if (wanted.length === 0) { return; }
+    const busy = this._counting.get(projectRoot);
+    if (busy) {
+      busy.next = new Set([...(busy.next ?? []), ...wanted]);
+      return busy.running;
+    }
+    const entry: { running: Promise<void>; next: Set<string> | undefined } = { running: Promise.resolve(), next: undefined };
+    this._counting.set(projectRoot, entry);
+    entry.running = (async () => {
+      try {
+        await this._countOnce(projectRoot);
+        while (entry.next && this._counting.get(projectRoot) === entry) {
+          entry.next = undefined;
+          await this._countOnce(projectRoot);
+        }
+      } finally {
+        if (this._counting.get(projectRoot) === entry) { this._counting.delete(projectRoot); }
+      }
+    })();
+    return entry.running;
+  }
+
+  private async _countOnce(projectRoot: string): Promise<void> {
+    const generation = this._generation;
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const dir = path.join(this._coverage!.sessionDir, 'vitest-coverage', `count-${stamp}`);
+    const untestedFile = path.join(dir, 'untested.json');
+    try {
+      const runner = this._createRunner(() => {}) as VitestRunner;
+      runner.setProjectRoot(projectRoot);
+      // A file filter no test file matches: Vitest runs nothing (--passWithNoTests) and still asks its provider for coverage.
+      const none = path.join(this._coverage!.sessionDir, `ltr-count-only-${stamp}.test.js`);
+      const live = await runner.liveCommand([none], { coverageDir: dir, perTestFileProvider: COVERAGE_PROVIDER_PATH, untestedFile });
+      const r = await new Executor(() => {}).run({ ...live.command, timeoutMs: 60_000 });
+      for (const f of [live.eventsFile, live.resultFile]) { try { fs.unlinkSync(f); } catch { /* gone */ } }
+      if (generation !== this._generation) { return; }
+      if (!fs.existsSync(untestedFile)) {
+        log.debug(`Could not count new / edited files with Vitest's provider (${projectRoot}): ${tail(r.stderr || r.stdout, 3)}`);
+        return;
+      }
+      const scope = this._coverage!.projectConfig ? await coverageScopeOf(this._coverage!.projectConfig, projectRoot) : defaultCoverageScope(projectRoot);
+      const n = this._applyUntested(untestedFile, projectRoot, (fp) => scope.counts(fp));
+      log.debug(`Counted ${n} source file(s) no test loads with Vitest's provider (${projectRoot})`);
+    } catch (err) {
+      log.debug(`Could not count new / edited files with Vitest's provider: ${(err as Error).message}`);
+    } finally {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ }
+    }
+  }
+
+  /**
    * The batch's coverage into the store. With per-test-file coverage (the
    * wrapper provider), each test file that finished replaces its
    * contribution; the merged report then adds only files no test loaded
@@ -469,7 +562,7 @@ export class VitestBatchRunner implements IBatchRunner {
     projectRoot: string,
     batch: string,
     scope: CoverageScope,
-    run: { startedAt: number; ran: Set<string>; toKey: (p: string) => string; batchFiles: string[] },
+    run: { startedAt: number; ran: Set<string>; toKey: (p: string) => string; batchFiles: string[]; untestedFile?: string },
   ): void {
     const dir = path.dirname(coverageFile);
     const store = this._coverage!.store;
@@ -506,8 +599,7 @@ export class VitestBatchRunner implements IBatchRunner {
           const { files } = measuredFiles(doc.coverage, manifestDir, projectRoot, counts);
           const into = contributions.get(id) ?? new Map<string, MeasuredFile>();
           for (const [fp, mf] of files) {
-            const prev = into.get(fp);
-            into.set(fp, prev && prev.manifestPath === mf.manifestPath ? { ...prev, counters: sumCounters(prev.counters, mf.counters) } : mf);
+            into.set(fp, combineMeasured(into.get(fp), mf));
           }
           contributions.set(id, into);
         }
@@ -526,6 +618,11 @@ export class VitestBatchRunner implements IBatchRunner {
             store.setMeasuredEntry(fp, { manifestPath: mf.manifestPath, counters: zero, pct: calculate(mf.manifest, zero) });
             if (store.contributorsOf(fp).length === 0) { untested++; }
           }
+        }
+        if (run.untestedFile && fs.existsSync(run.untestedFile)) {
+          const n = this._applyUntested(run.untestedFile, projectRoot, counts);
+          this._untestedApplied.add(run.untestedFile);
+          log.debug(`${batch}: ${n} file(s) counted by Vitest's provider as files no test loads`);
         }
         log.debug(`${batch}: coverage — ${contributions.size} test file(s) → ${sources} file measurement(s)${untested ? `, ${untested} untested file(s)` : ''} (${Date.now() - coverageStartedAt} ms)`);
         return;

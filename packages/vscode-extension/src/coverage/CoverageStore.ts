@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { CoverageEntry, CoveragePct, CoverageTotals, FileCov, LiveCov, Manifest } from './types';
 import { calculate } from './CoverageReport';
-import { mergeByLine } from './coverageRules';
+import { mergeByLine, mergeIstanbul, writeManifest } from './coverageRules';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Coverage');
@@ -484,15 +484,27 @@ function entryOf(ledger: Ledger): CoverageEntry | undefined {
     v.pct = pct;
     return { state, manifestPath: v.manifestPath, counters: v.sum, pct };
   }
-  // Several current versions (Jest and Vitest both test the file, or two
-  // Jest projects transform it differently): a line any of them ran counts.
+  // Several current versions. Istanbul maps of one framework that differ
+  // (Vitest's v8 maps depend on what each test file ran): merged as the
+  // framework's own report merges them. Else (Jest and Vitest both test the
+  // file, or two Jest projects transform it differently): a line any of them
+  // ran counts.
   let manifestPath = shown[0].manifestPath;
-  let manifest = readManifest(manifestPath);
+  const first = readManifest(manifestPath);
+  if (!first) { return undefined; }
+  let manifest: Manifest = first;
   let counters: LiveCov = shown[0].sum;
-  if (!manifest) { return undefined; }
   for (const v of shown.slice(1)) {
     const next = readManifest(v.manifestPath);
     if (!next) { continue; }
+    const sameTool = path.dirname(v.manifestPath) === path.dirname(manifestPath);
+    const merged: { manifest: Manifest; counters: LiveCov } | undefined = sameTool ? mergeIstanbul(manifest, counters, next, v.sum) : undefined;
+    if (merged) {
+      manifest = merged.manifest;
+      counters = merged.counters;
+      manifestPath = writeManifest(path.dirname(v.manifestPath), manifest);
+      continue;
+    }
     counters = mergeByLine(manifest, counters, next, v.sum);
     manifest = next;
     manifestPath = v.manifestPath;

@@ -136,52 +136,25 @@ Reported paths are mapped back to the store's own keys. A file shows ⟳ only on
 
 #### Transform pipeline — how `sessionTraceTransform.js` works
 
-Every source file passes through a two-stage pipeline before Jest executes it. The order of the two stages depends on what transformer the project uses:
+Coverage is Jest's own, with the project's provider: every batch runs with `collectCoverage` on (`coverageProvider` from the project, `coverageReporters: ['none']`, an empty `collectCoverageFrom`, so Jest does no untested-file pass per batch). Our transform adds only the trace on top:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    sessionTraceTransform.js  (Jest transform)           │
-│                                                                         │
-│  Detect project transformer from jest.config transform map              │
-│           │                                                             │
-│           ▼                                                             │
-│   ┌───────────────────┐         ┌──────────────────────────────┐        │
-│   │  Lenient?         │         │  Strict?                     │        │
-│   │  (babel-jest,     │         │  (ts-jest, @swc/jest,        │        │
-│   │   CRA, default)   │         │   esbuild-jest, …)           │        │
-│   └────────┬──────────┘         └──────────────┬───────────────┘        │
-│            │                                   │                        │
-│   Stage 1  ▼  our Babel AST instrumentation    │  Stage 1               │
-│   ┌──────────────────────────────┐             │  Project transformer   │
-│   │ Raw TS/JS source             │             │  (TS → clean JS)       │
-│   │   → inject __strace.step()  │             ▼                        │
-│   │   → inject __covF counters  │  ┌──────────────────────────────┐    │
-│   │   → write coverage manifest │  │ Raw TS source                │    │
-│   └──────────────┬───────────── ┘  │   → ts-jest / swc runs tsc   │    │
-│                  │                 │   → outputs clean CJS/JS      │    │
-│   Stage 2        ▼                 └──────────────┬───────────────┘    │
-│   Project transformer                             │  Stage 2            │
-│   (babel-jest strips TS types)                    ▼  our Babel AST     │
-│   ┌──────────────────────────────┐  ┌──────────────────────────────┐   │
-│   │ Pre-instrumented TS/JS       │  │ Clean JS output              │   │
-│   │   → babel strips types       │  │   → inject __strace.step()   │   │
-│   │   → outputs CJS              │  │   → inject __covF counters   │   │
-│   └──────────────┬───────────── ┘  │   → write coverage manifest   │   │
-│                  │                 └──────────────┬───────────────┘    │
-│                  └──────────────┬─────────────────┘                    │
-│                                 ▼                                       │
-│              prepend: require('sessionTraceRuntime.js')                 │
-│                                 │                                       │
-└─────────────────────────────────┼───────────────────────────────────────┘
-                                  ▼
-                      Jest executes instrumented CJS
+source file
+  → the project's transformer (babel-jest, ts-jest, @swc/jest, vue-jest, …)
+      'babel' provider: it instruments when it can (canInstrument), else we add
+      Jest's instrumentation the way ScriptTransformer._instrumentFile does
+      (babel-plugin-istanbul with the transformer's map as input)
+  → our Babel pass on its output: __strace.step(line, file) before each statement
+      (locations moved back to the file through the maps; no counters, no rewrites)
+  → generated with a source map back to the file (no retainLines: the map carries
+      the lines, and Jest's counters could leave a `return` alone on its line)
+  → Jest runs it; 'v8' provider: V8 measures this code, mapped back through our map
 ```
 
-**Why two orders?**
-- `babel-jest` (lenient) strips TypeScript types without type-checking, so it tolerates our injected `__strace`/`__covF` globals in the input.
-- `ts-jest` / `@swc/jest` (strict) run the real TypeScript compiler, which rejects unknown globals with type errors. They must receive clean source first; we then instrument the plain JS they produce.
-
-**`jest.mock` hoisting guard:** Babel's `jest-hoist` plugin automatically moves every `jest.mock()` call to the top of the file — before the `__covF` preamble that initialises the coverage counter variable. If a `jest.mock()` factory arrow function contains a counter increment (`__covF.f["f0"]++`), it will throw `ReferenceError: __covF is not defined` at runtime. `sessionTraceTransform.js` detects this pattern and skips counter injection for any arrow function that is the direct factory argument of `jest.mock()`.
+- `liveReporter.js` keeps each test file's coverage as Jest would report it (`jestCoverage.perTestFile`: istanbul data remapped through input maps, or `testResult.v8Coverage` through v8-to-istanbul, Jest's module wrapper left out as Jest's own map leaves it out), one line per test file, and empties the test result's copy so Jest's own coverage reporter has nothing to merge.
+- Files no test loads: `jestCoverageCount.js` (a child process, once per session when the batches are done, and for files created or edited later) runs Jest's own `generateEmptyCoverage` with the project's resolved config.
+- Test files are never instrumented (`jest.mock` factories hoisted above our code would break).
+- Without a coverage file (`LTR_JEST_COVERAGE_FILE` unset) the transform falls back to its own counters (`__covF`, manifests, `ltrCoverageSetup.js` flush).
 
 `--maxWorkers=1` keeps each Jest process single-threaded so batches can run in parallel without competing for CPU.
 
@@ -437,7 +410,7 @@ Entry lifecycle:
 3. `'measured-stale'` — set by `SessionManager` when the file is saved and a rerun is pending
 4. Back to `'measured'` — when the rerun completes and `_parseCoverage()` fires again
 
-**`CoverageReport`** (`src/coverage/CoverageReport.ts`): Stateless `calculate(manifest, counters): CoveragePct` function. Reads a coverage manifest (statement/branch/function IDs with location) and a live counter snapshot, and returns the four-metric `CoveragePct`. Called by `JestBatchRunner._parseCoverage()` — not a class; no side effects.
+**`CoverageReport`** (`src/coverage/CoverageReport.ts`): Stateless `calculate(manifest, counters): CoveragePct` function. Reads a coverage manifest (statement/branch/function IDs with location) and a live counter snapshot, and returns the four-metric `CoveragePct`. Called wherever an entry is built (the store, the batch runners) — not a class; no side effects. When test files measured one file with different maps (Vitest 3's v8 maps depend on what ran), `mergeIstanbul` (`coverageRules.ts`) merges them as istanbul-lib-coverage does, so the numbers equal the framework's merged report.
 
 **`CoverageDecorationManager`** (`src/editor/CoverageDecorationManager.ts`): Implements `IResultObserver`. Subscribes to `CoverageStore.onDidChange` and refreshes all visible editors on every change. For each editor it reads the `CoverageStore` entry and — for `measured` or `measured-stale` entries — loads the manifest from disk to classify every line into one of four states:
 

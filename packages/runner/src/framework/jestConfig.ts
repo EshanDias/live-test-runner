@@ -23,6 +23,8 @@ export const GLOBAL_KEYS_TO_KEEP = [
   'testTimeout',
   'testSequencer',
   'maxConcurrency',
+  // Which coverage Jest measures with ('v8' / 'babel'): the extension measures the same way.
+  'coverageProvider',
 ] as const;
 
 /**
