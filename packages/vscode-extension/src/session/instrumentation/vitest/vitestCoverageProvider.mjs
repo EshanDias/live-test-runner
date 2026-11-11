@@ -66,6 +66,31 @@ async function writeUntested(provider, generate, options) {
   }
 }
 
+/**
+ * Remembers which files the provider's filter includes, for one coverage pass.
+ * Run once per test file, the provider asks the same question for every script
+ * each test file loaded (Vitest 3: test-exclude, which compiles its globs on
+ * every call — 3 s of a 42-file batch; once merged, it asks once per script).
+ * The answer only depends on the file name; the counts are the same.
+ */
+function rememberIncluded(provider) {
+  const undo = [];
+  const remember = (owner, name) => {
+    const fn = owner && owner[name];
+    if (typeof fn !== 'function' || Object.prototype.hasOwnProperty.call(owner, name)) { return; }
+    const seen = new Map();
+    owner[name] = function (filename, ...rest) {
+      if (rest.length > 0 && rest[0] !== undefined) { return fn.call(this, filename, ...rest); }
+      if (!seen.has(filename)) { seen.set(filename, fn.call(this, filename)); }
+      return seen.get(filename);
+    };
+    undo.push(() => { delete owner[name]; });
+  };
+  remember(provider.testExclude, 'shouldInstrument'); // Vitest 3
+  remember(provider, 'isIncluded');                   // Vitest 4+
+  return () => { for (const u of undo) { u(); } };
+}
+
 export default {
   ...real,
   async getProvider() {
@@ -81,6 +106,7 @@ export default {
       }
       const started = Date.now();
       let n = 0;
+      const forget = rememberIncluded(this);
       try {
         if (Array.isArray(this.pendingPromises)) { await Promise.all(this.pendingPromises); this.pendingPromises = []; }
         fs.mkdirSync(outDir, { recursive: true });
@@ -106,8 +132,12 @@ export default {
         this.coverageFiles = all;
       }
       ltrLog('debug', `${n} test file(s) measured one by one in ${Date.now() - started} ms`);
-      await writeUntested(this, generate, options);
-      return generate(options);
+      try {
+        await writeUntested(this, generate, options);
+        return await generate(options);
+      } finally {
+        forget();
+      }
     };
     return provider;
   },

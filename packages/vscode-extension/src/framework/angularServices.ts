@@ -12,11 +12,19 @@ import { VitestBatchRunner } from '../session/VitestBatchRunner';
 import { AngularBatchRunner } from '../session/AngularBatchRunner';
 import { IProjectConfig } from '../session/IProjectConfig';
 import { CoverageStore } from '../coverage/CoverageStore';
+import { CoverageScope, defaultCoverageScope } from '../coverage/coverageScope';
 
 /** angular.json holds the test setup; no config file to resolve. */
 class AngularProjectConfig implements IProjectConfig {
   async get(): Promise<string | undefined> { return undefined; }
-  async coverageScope(): Promise<undefined> { return undefined; }
+  /**
+   * `ng test --coverage` lists only the files the tests load (Vitest 4+ adds
+   * files no test loads only for an include list: `coverageInclude`, which
+   * the provider's own untested pass then counts). So no source scan.
+   */
+  async coverageScope(projectRoot: string): Promise<CoverageScope> {
+    return { ...defaultCoverageScope(projectRoot), source: 'Angular (ng test --coverage)', includesUntouched: false, isDefault: false };
+  }
   /** Component templates (`templateUrl`): saving one reruns its component's tests. */
   async sourceExtensions(): Promise<string[]> { return ['html']; }
   reset(): void { /* nothing cached */ }

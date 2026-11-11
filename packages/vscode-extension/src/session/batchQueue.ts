@@ -67,3 +67,28 @@ export function promoteInQueue<S>(queue: QueuedBatch<S>[], filePath: string): bo
   queue.unshift({ batch: [fp], services: q.services });
   return true;
 }
+
+/**
+ * Process slots shared by runs that go on at the same time and must stay
+ * within one budget together (at Start: the test files on screen, started
+ * while the framework lists its files, and then the rest of the run).
+ */
+export class BatchSlots {
+  private _free: number;
+  private readonly _waiting: (() => void)[] = [];
+
+  constructor(size: number) {
+    this._free = Math.max(1, Math.floor(size));
+  }
+
+  /** Resolves once a slot is free (and taken); give it back with release(). */
+  acquire(): Promise<void> {
+    if (this._free > 0) { this._free--; return Promise.resolve(); }
+    return new Promise((resolve) => this._waiting.push(resolve));
+  }
+
+  release(): void {
+    const next = this._waiting.shift();
+    if (next) { next(); } else { this._free++; }
+  }
+}

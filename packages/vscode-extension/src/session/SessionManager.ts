@@ -15,7 +15,7 @@ import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import type { IBatchRunner } from './IBatchRunner';
 import { RunnableFilesCache, runnableCacheKey, runnableKey } from './RunnableFiles';
-import { batchSize, buildBatchQueue, promoteInQueue } from './batchQueue';
+import { BatchSlots, batchSize, buildBatchQueue, promoteInQueue } from './batchQueue';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
 import { coverageScopeOf } from '../coverage/coverageScope';
@@ -269,11 +269,13 @@ export class SessionManager {
         ? this._onScreenTestFiles(discovered) : [];
       let run: ReturnType<SessionManager['_beginRun']> | undefined;
       let earlyRun: Promise<void> | undefined;
+      // The early run and the rest share one budget: the rest starts no more processes than the slots left.
+      const slots = new BatchSlots(parallelBatches());
       if (early.length > 0) {
         this._startSessionState(projectRoot, services, discovered);
         run = this._beginRun('full suite', { fullSuite: true });
         log.debug(`Running the ${early.length} test file(s) open in the editor while ${this._terms(projectRoot).name} lists the files it runs`);
-        earlyRun = this._runFiles(early, projectRoot, token, { openFirst: true });
+        earlyRun = this._runFiles(early, projectRoot, token, { openFirst: true, slots });
       }
       const runnableList = await this._runnableFiles(projectRoot, discovered);
       if (token !== this._token) {
@@ -334,7 +336,7 @@ export class SessionManager {
       const rest = testFiles.filter((fp) => !startedEarly.has(runnableKey(fp)));
       run ??= this._beginRun('full suite', { fullSuite: true });
       try {
-        await Promise.all([earlyRun, this._runFiles(rest, projectRoot, token, { openFirst: true })]);
+        await Promise.all([earlyRun, this._runFiles(rest, projectRoot, token, { openFirst: true, slots })]);
       } finally {
         this._endRun(run, testFiles);
       }
@@ -1223,7 +1225,7 @@ export class SessionManager {
     projectRoot: string,
     token: number,
     /** openFirst (the full run): the test files on screen run first, in batches of their own. */
-    opts: { openFirst?: boolean; cancelled?: () => boolean } = {},
+    opts: { openFirst?: boolean; cancelled?: () => boolean; slots?: BatchSlots } = {},
   ): Promise<void> {
     const CONCURRENCY = parallelBatches();
     const totalFiles  = filePaths.length;
@@ -1412,8 +1414,12 @@ export class SessionManager {
         { length: Math.min(CONCURRENCY, batchQueue.length) },
         async () => {
           while (live() && batchQueue.length > 0) {
-            const next = nextBatch();
+            // A slot shared with a run going on at the same time (the budget is for both).
+            if (opts.slots) { await opts.slots.acquire(); }
+            const next = live() ? nextBatch() : undefined;
             if (!next) {
+              opts.slots?.release();
+              if (!live() || batchQueue.length === 0) { break; }
               // Every queued batch's framework is at its limit: wait for one of its batches to end.
               await new Promise<void>((resolve) => waiters.push(resolve));
               continue;
@@ -1423,6 +1429,7 @@ export class SessionManager {
               await runBatch(next.batch);
             } finally {
               runningOf.set(next.services, (runningOf.get(next.services) ?? 1) - 1);
+              opts.slots?.release();
               wakeAll();
             }
           }

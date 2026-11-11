@@ -1,4 +1,4 @@
-import { batchSize, buildBatchQueue, promoteInQueue } from '../src/session/batchQueue';
+import { BatchSlots, batchSize, buildBatchQueue, promoteInQueue } from '../src/session/batchQueue';
 
 const files = (n: number, dir = '/p') => Array.from({ length: n }, (_, i) => `${dir}/t${i + 1}.test.js`);
 const batches = (q: { batch: string[]; services: string }[]) => q.map((b) => `${b.services}:${b.batch.map((f) => f.replace(/^.*\//, '')).join(',')}`);
@@ -59,5 +59,45 @@ describe('batchSize', () => {
   it('one batch at a time (budget 1): plain chunks of the maximum', () => {
     expect(batchSize(500, 1)).toBe(50);
     expect(batchSize(0, 3)).toBe(5);
+  });
+});
+
+describe('BatchSlots', () => {
+  it('two runs sharing the slots never have more batches going than the budget', async () => {
+    const slots = new BatchSlots(3);
+    let running = 0;
+    let peak = 0;
+    const tick = () => new Promise<void>((r) => setImmediate(r));
+    const run = async (batches: number, workers: number) => {
+      let next = 0;
+      await Promise.all(Array.from({ length: workers }, async () => {
+        while (next < batches) {
+          await slots.acquire();
+          if (next >= batches) { slots.release(); break; }
+          next++;
+          running++; peak = Math.max(peak, running);
+          await tick(); await tick();
+          running--;
+          slots.release();
+        }
+      }));
+    };
+    // The early run (1 batch) and the rest (12 batches, 3 workers of its own), started together.
+    await Promise.all([run(1, 3), run(12, 3)]);
+    expect(peak).toBe(3);
+    expect(running).toBe(0);
+  });
+
+  it('a released slot goes to the longest waiter first', async () => {
+    const slots = new BatchSlots(1);
+    const order: string[] = [];
+    await slots.acquire();
+    const a = slots.acquire().then(() => order.push('a'));
+    const b = slots.acquire().then(() => order.push('b'));
+    slots.release();
+    await a;
+    slots.release();
+    await b;
+    expect(order).toEqual(['a', 'b']);
   });
 });

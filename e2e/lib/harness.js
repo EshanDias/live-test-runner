@@ -589,6 +589,29 @@ function plainCoverage(workspace, framework) {
       }
       return out;
     }
+    if (framework === 'angular') {
+      // `ng test <project> --coverage` for each project, in a copy (it writes coverage/ and .angular/ into the folder it runs in).
+      const copy = path.join(dir, 'ws');
+      fs.cpSync(root, copy, { recursive: true, filter: (src) => !/[\\/](node_modules|\.angular|coverage)$/.test(src) });
+      fs.symlinkSync(path.join(root, 'node_modules'), path.join(copy, 'node_modules'), 'junction');
+      const ng = require.resolve('@angular/cli/bin/ng.js', { paths: [root] });
+      const projects = Object.entries(JSON.parse(fs.readFileSync(path.join(root, 'angular.json'), 'utf8')).projects || {})
+        .filter(([, p]) => p.architect && p.architect.test).map(([name]) => name);
+      const copyRoot = real(copy);
+      // reportOnFailure: a project with failing tests still gets its report (as the extension's runs do; like the Vitest run below).
+      const runnerConfig = path.join(dir, 'runner.config.mjs');
+      fs.writeFileSync(runnerConfig, 'export default { test: { coverage: { reportOnFailure: true } } };\n');
+      for (const name of projects) {
+        const r = spawnSync(node, [ng, 'test', name, '--watch=false', '--coverage', '--coverage-reporters=json', '--runner-config', runnerConfig], { ...opts, cwd: copy });
+        const reports = fs.readdirSync(path.join(copy, 'coverage'), { recursive: true }).filter((f) => String(f).endsWith('coverage-final.json'));
+        if (reports.length === 0) { throw new Error(`plain ng test ${name} wrote no coverage (exit ${r.status}): ${(r.stderr || r.stdout || '').slice(-1500)}`); }
+        for (const f of reports) {
+          countIstanbul(JSON.parse(fs.readFileSync(path.join(copy, 'coverage', String(f)), 'utf8')), (abs) => path.relative(copyRoot, real(abs)).split(path.sep).join('/'), out);
+        }
+        fs.rmSync(path.join(copy, 'coverage'), { recursive: true, force: true });
+      }
+      return out;
+    }
     let args;
     if (framework === 'jest') {
       const { testScriptJestArgs, jestNodeEnv } = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'framework', 'jestConfig.js'));
@@ -605,25 +628,31 @@ function plainCoverage(workspace, framework) {
     const r = spawnSync(node, args, opts);
     const file = path.join(dir, 'coverage-final.json');
     if (!fs.existsSync(file)) { throw new Error(`plain ${framework} wrote no coverage (exit ${r.status}): ${(r.stderr || '').slice(-1500)}`); }
-    for (const [abs, fc] of Object.entries(JSON.parse(fs.readFileSync(file, 'utf8')))) {
-      const sIds = Object.keys(fc.statementMap);
-      const hit = sIds.filter((id) => fc.s[id] > 0);
-      let bTotal = 0;
-      let bCov = 0;
-      for (const [id, b] of Object.entries(fc.branchMap)) { bTotal += b.locations.length; bCov += (fc.b[id] || []).filter((n) => n > 0).length; }
-      const fIds = Object.keys(fc.fnMap);
-      const line = (id) => fc.statementMap[id].start.line;
-      out.set(rel(fc.path || abs), {
-        statements: { covered: hit.length, total: sIds.length },
-        branches: { covered: bCov, total: bTotal },
-        functions: { covered: fIds.filter((id) => fc.f[id] > 0).length, total: fIds.length },
-        lines: { covered: new Set(hit.map(line)).size, total: new Set(sIds.map(line)).size },
-      });
-    }
+    countIstanbul(JSON.parse(fs.readFileSync(file, 'utf8')), rel, out);
     return out;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** An istanbul coverage-final.json → the four metrics per file (relative path via `rel`), counted as `calculate` counts them. */
+function countIstanbul(json, rel, out) {
+  for (const [abs, fc] of Object.entries(json)) {
+    const sIds = Object.keys(fc.statementMap);
+    const hit = sIds.filter((id) => fc.s[id] > 0);
+    let bTotal = 0;
+    let bCov = 0;
+    for (const [id, b] of Object.entries(fc.branchMap)) { bTotal += b.locations.length; bCov += (fc.b[id] || []).filter((n) => n > 0).length; }
+    const fIds = Object.keys(fc.fnMap);
+    const line = (id) => fc.statementMap[id].start.line;
+    out.set(rel(fc.path || abs), {
+      statements: { covered: hit.length, total: sIds.length },
+      branches: { covered: bCov, total: bTotal },
+      functions: { covered: fIds.filter((id) => fc.f[id] > 0).length, total: fIds.length },
+      lines: { covered: new Set(hit.map(line)).size, total: new Set(sIds.map(line)).size },
+    });
+  }
+  return out;
 }
 
 module.exports = {
