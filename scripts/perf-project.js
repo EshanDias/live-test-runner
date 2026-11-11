@@ -5,29 +5,35 @@
  * (scripts/perf-measure.js). Deterministic: the same options always write the
  * same files, so numbers taken on different days compare.
  *
- *   node scripts/perf-project.js <out-dir> [--tests 2500] [--sources 600] [--install]
+ *   node scripts/perf-project.js <out-dir> [--framework jest|vitest|pytest]
+ *                                [--tests 2500] [--sources 600] [--install]
  *
  * Layout: src/lib/mNNN.js source modules (each imports up to two lower-numbered
  * modules, so the import graph has depth), and src/tests/<group>/tNNNN.test.js
  * test files, each importing two or three modules. Some files use nested
- * describes and `test.each`, like real suites. --install runs `npm install`
- * in <out-dir> (Jest only; nothing else is installed).
+ * describes and `test.each`, like real suites. The same project exists for
+ * each framework (pytest: src/lib/mNNN.py and tests/gNN/test_tNNNN.py, with
+ * classes and parametrize), so numbers compare across frameworks.
+ * --install installs the framework into <out-dir> only: `npm install`
+ * (Jest, or Vitest + @vitest/coverage-v8), or a `.venv` with pytest and
+ * coverage for pytest (Python 3.12 through uv when installed).
  */
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 function parseArgs(argv) {
-  const opts = { out: undefined, tests: 2500, sources: 600, install: false };
+  const opts = { out: undefined, framework: 'jest', tests: 2500, sources: 600, install: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--tests') { opts.tests = Number(argv[++i]); }
     else if (a === '--sources') { opts.sources = Number(argv[++i]); }
     else if (a === '--install') { opts.install = true; }
+    else if (a === '--framework') { opts.framework = argv[++i]; }
     else if (!a.startsWith('--')) { opts.out = path.resolve(a); }
   }
-  if (!opts.out || !(opts.tests > 0) || !(opts.sources > 2)) {
-    console.log('Usage: node scripts/perf-project.js <out-dir> [--tests N] [--sources N] [--install]');
+  if (!opts.out || !(opts.tests > 0) || !(opts.sources > 2) || !['jest', 'vitest', 'pytest'].includes(opts.framework)) {
+    console.log('Usage: node scripts/perf-project.js <out-dir> [--framework jest|vitest|pytest] [--tests N] [--sources N] [--install]');
     process.exit(2);
   }
   return opts;
@@ -47,10 +53,18 @@ function rng(seed) {
 
 const pad = (n, w) => String(n).padStart(w, '0');
 
-function sourceModule(i, rand) {
-  const deps = i < 2 ? [] : [...new Set([Math.floor(rand() * i), Math.floor(rand() * i)])];
-  const lines = ["'use strict';"];
-  for (const d of deps) { lines.push(`const m${d} = require('./m${pad(d, 3)}');`); }
+/** Which lower-numbered modules module i imports (the same for every framework). */
+function moduleDeps(i, rand) {
+  return i < 2 ? [] : [...new Set([Math.floor(rand() * i), Math.floor(rand() * i)])];
+}
+
+function sourceModule(i, deps, fw) {
+  if (fw === 'pytest') { return pySourceModule(i, deps); }
+  const esm = fw === 'vitest';
+  const lines = esm ? [] : ["'use strict';"];
+  for (const d of deps) {
+    lines.push(esm ? `import * as m${d} from './m${pad(d, 3)}.js';` : `const m${d} = require('./m${pad(d, 3)}');`);
+  }
   lines.push(
     '',
     `function add${i}(a, b) {`,
@@ -81,7 +95,43 @@ function sourceModule(i, rand) {
     '  return res;',
     '}',
     '',
-    `module.exports = { add${i}, base${i}, label${i}, pick${i} };`,
+    esm ? `export { add${i}, base${i}, label${i}, pick${i} };` : `module.exports = { add${i}, base${i}, label${i}, pick${i} };`,
+    '',
+  );
+  return lines.join('\n');
+}
+
+function pySourceModule(i, deps) {
+  const lines = [];
+  for (const d of deps) { lines.push(`from . import m${pad(d, 3)} as m${d}`); }
+  lines.push(
+    '',
+    '',
+    `def add${i}(a, b):`,
+    '    if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):',
+    "        raise TypeError('numbers only')",
+    `    return a + b${deps.length ? ` + m${deps[0]}.base${deps[0]}()` : ''}`,
+    '',
+    '',
+    `def base${i}():`,
+    `    return ${i % 7}`,
+    '',
+    '',
+    `def label${i}(items):`,
+    '    out = []',
+    '    for item in items:',
+    '        if item is None:',
+    '            continue',
+    `        out.append(str(item).strip()${deps.length > 1 ? ` + str(m${deps[1]}.base${deps[1]}())` : ''})`,
+    "    return ','.join(out)",
+    '',
+    '',
+    `def pick${i}(obj, keys):`,
+    '    res = {}',
+    '    for k in keys:',
+    '        if k in obj:',
+    '            res[k] = obj[k]',
+    '    return res',
     '',
   );
   return lines.join('\n');
@@ -89,11 +139,19 @@ function sourceModule(i, rand) {
 
 function expectedBase(i) { return i % 7; }
 
-function testFile(n, sources, rand) {
+/** Which modules test file n imports (the same for every framework). */
+function testMods(sources, rand) {
   const count = 2 + Math.floor(rand() * 2);
-  const mods = [...new Set(Array.from({ length: count }, () => Math.floor(rand() * sources)))];
-  const lines = ["'use strict';"];
-  for (const m of mods) { lines.push(`const m${m} = require('../../lib/m${pad(m, 3)}');`); }
+  return [...new Set(Array.from({ length: count }, () => Math.floor(rand() * sources)))];
+}
+
+function testFile(n, mods, fw) {
+  if (fw === 'pytest') { return pyTestFile(n, mods); }
+  const esm = fw === 'vitest';
+  const lines = esm ? ["import { describe, test, expect } from 'vitest';"] : ["'use strict';"];
+  for (const m of mods) {
+    lines.push(esm ? `import * as m${m} from '../../lib/m${pad(m, 3)}.js';` : `const m${m} = require('../../lib/m${pad(m, 3)}');`);
+  }
   lines.push('', `describe('suite ${n}', () => {`);
   for (const m of mods) {
     lines.push(
@@ -127,34 +185,107 @@ function testFile(n, sources, rand) {
   return lines.join('\n');
 }
 
+function pyTestFile(n, mods) {
+  const lines = ['import pytest', ''];
+  for (const m of mods) { lines.push(`from src.lib import m${pad(m, 3)} as m${m}`); }
+  for (const m of mods) {
+    lines.push(
+      '',
+      '',
+      `class TestM${m}:`,
+      '    def test_base(self):',
+      `        assert m${m}.base${m}() == ${expectedBase(m)}`,
+      '',
+      '    def test_add_returns_a_number(self):',
+      `        assert isinstance(m${m}.add${m}(1, 2), int)`,
+      '',
+      '    def test_add_rejects_strings(self):',
+      '        with pytest.raises(TypeError):',
+      `            m${m}.add${m}('1', 2)`,
+      '',
+      '    def test_label_skips_empty_items(self):',
+      `        assert m${m}.label${m}([None, ' a ']).startswith('a')`,
+      '',
+      '    def test_pick_keeps_listed_keys(self):',
+      `        assert m${m}.pick${m}({'a': 1, 'b': 2}, ['a']) == {'a': 1}`,
+    );
+  }
+  if (n % 5 === 0) {
+    lines.push('', '', "@pytest.mark.parametrize('a,b', [(1, 2), (3, 4), (5, 6)])", 'def test_pairs(a, b):', '    assert a + 1 == b');
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+function writeProjectFiles(opts) {
+  const write = (rel, text) => fs.writeFileSync(path.join(opts.out, rel), text);
+  write('.gitignore', 'node_modules/\n.venv/\n__pycache__/\n');
+  if (opts.framework === 'pytest') {
+    write('pyproject.toml', '[tool.pytest.ini_options]\ntestpaths = ["tests"]\npythonpath = ["."]\n');
+    for (const d of ['src', path.join('src', 'lib')]) { write(path.join(d, '__init__.py'), ''); }
+    return;
+  }
+  const vitest = opts.framework === 'vitest';
+  write('package.json', JSON.stringify({
+    name: `ltr-perf-large-${opts.framework}`,
+    private: true,
+    ...(vitest ? { type: 'module' } : {}),
+    scripts: { test: vitest ? 'vitest' : 'jest' },
+    devDependencies: vitest ? { vitest: '3.2.4', '@vitest/coverage-v8': '3.2.4' } : { jest: '29.7.0' },
+  }, null, 2) + '\n');
+  if (vitest) {
+    write('vitest.config.js', "import { defineConfig } from 'vitest/config';\n\nexport default defineConfig({ test: { environment: 'node' } });\n");
+  } else {
+    write('jest.config.js', "module.exports = { testEnvironment: 'node' };\n");
+  }
+}
+
+function install(opts) {
+  const run = (cmd, args) => {
+    const r = spawnSync(cmd, args, { cwd: opts.out, stdio: 'inherit', shell: process.platform === 'win32' });
+    if (r.status !== 0) { process.exit(r.status ?? 1); }
+  };
+  if (opts.framework === 'pytest') {
+    const py = path.join(opts.out, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
+    if (fs.existsSync(py)) { return; }
+    // The extension needs Python 3.12+: uv provides it when installed, else the PATH's python3 must be new enough.
+    if (spawnSync('uv', ['--version'], { stdio: 'ignore', shell: process.platform === 'win32' }).status === 0) {
+      run('uv', ['venv', '--quiet', '--python', '3.12', '.venv']);
+      run('uv', ['pip', 'install', '--quiet', '--python', py, 'pytest', 'coverage']);
+      return;
+    }
+    run(process.platform === 'win32' ? 'python' : 'python3', ['-m', 'venv', '.venv']);
+    run(py, ['-m', 'pip', 'install', '--quiet', 'pytest', 'coverage']);
+    return;
+  }
+  if (!fs.existsSync(path.join(opts.out, 'node_modules', opts.framework))) {
+    run('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error']);
+  }
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const rand = rng(20261110);
+  const py = opts.framework === 'pytest';
+  const ext = py ? '.py' : '.js';
   const lib = path.join(opts.out, 'src', 'lib');
-  const testsDir = path.join(opts.out, 'src', 'tests');
+  const testsDir = py ? path.join(opts.out, 'tests') : path.join(opts.out, 'src', 'tests');
   fs.rmSync(path.join(opts.out, 'src'), { recursive: true, force: true });
+  fs.rmSync(path.join(opts.out, 'tests'), { recursive: true, force: true });
   fs.mkdirSync(lib, { recursive: true });
 
-  for (let i = 0; i < opts.sources; i++) { fs.writeFileSync(path.join(lib, `m${pad(i, 3)}.js`), sourceModule(i, rand)); }
+  for (let i = 0; i < opts.sources; i++) {
+    fs.writeFileSync(path.join(lib, `m${pad(i, 3)}${ext}`), sourceModule(i, moduleDeps(i, rand), opts.framework));
+  }
   for (let n = 0; n < opts.tests; n++) {
     const dir = path.join(testsDir, `g${pad(Math.floor(n / 100), 2)}`);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `t${pad(n, 4)}.test.js`), testFile(n, opts.sources, rand));
+    const name = py ? `test_t${pad(n, 4)}.py` : `t${pad(n, 4)}.test.js`;
+    fs.writeFileSync(path.join(dir, name), testFile(n, testMods(opts.sources, rand), opts.framework));
   }
-  fs.writeFileSync(path.join(opts.out, 'package.json'), JSON.stringify({
-    name: 'ltr-perf-large',
-    private: true,
-    scripts: { test: 'jest' },
-    devDependencies: { jest: '29.7.0' },
-  }, null, 2) + '\n');
-  fs.writeFileSync(path.join(opts.out, 'jest.config.js'), "module.exports = { testEnvironment: 'node' };\n");
-  fs.writeFileSync(path.join(opts.out, '.gitignore'), 'node_modules/\n');
-  console.log(`[perf-project] ${opts.tests} test file(s), ${opts.sources} source module(s) in ${opts.out}`);
-
-  if (opts.install && !fs.existsSync(path.join(opts.out, 'node_modules', 'jest'))) {
-    const r = spawnSync('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: opts.out, stdio: 'inherit', shell: process.platform === 'win32' });
-    if (r.status !== 0) { process.exit(r.status ?? 1); }
-  }
+  writeProjectFiles(opts);
+  console.log(`[perf-project] ${opts.framework}: ${opts.tests} test file(s), ${opts.sources} source module(s) in ${opts.out}`);
+  if (opts.install) { install(opts); }
 }
 
 main();

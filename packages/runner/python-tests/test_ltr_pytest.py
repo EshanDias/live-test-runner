@@ -284,6 +284,45 @@ def test_coverage_is_written_per_test_file(pytester, run, tmp_path):
     assert sorted(a["b"][key]) == [0, 1] and b["b"][key] == [0, 0]
 
 
+@pytest.mark.parametrize("branch", [True, False])
+def test_per_test_file_hits_read_in_one_pass_match_the_queries(pytester, run, tmp_path, branch):
+    """The one-pass read of the coverage data file gives the same hits as a query per test file (the slow way)."""
+    pytester.makepyfile(
+        lib="""
+            def pick(x):
+                if x:
+                    return "yes"
+                return "no"
+
+            def other():
+                return 1
+        """,
+        test_a="from lib import pick\n\ndef test_yes():\n    assert pick(True) == 'yes'\n\nclass TestNo:\n    def test_no(self):\n        assert pick(False) == 'no'\n",
+        test_b="from lib import other\n\ndef test_other():\n    assert other() == 1\n",
+    )
+    pytester.path.joinpath(".coveragerc").write_text("[run]\nbranch = %s\n" % branch)
+    cov_dir = tmp_path / "cov"
+    run(env={"LTR_PYTEST_COVERAGE": str(cov_dir)})
+
+    import coverage
+    sys.path.insert(0, os.path.abspath(PLUGIN_DIR))
+    try:
+        import ltr_pytest
+    finally:
+        sys.path.pop(0)
+    data = coverage.CoverageData(basename=str(cov_dir / ".coverage"))
+    data.read()
+    assert data.has_arcs() == branch
+    measured = list(data.measured_files())
+    prefixes = {c.split("::", 1)[0]: c.split("::", 1)[0] for c in data.measured_contexts() if "::" in c}
+    assert sorted(os.path.basename(p) for p in prefixes) == ["test_a.py", "test_b.py"]
+    fast = ltr_pytest._hits_in_one_pass(data, measured)
+    slow = ltr_pytest._hits_per_query(data, measured, prefixes)
+    assert fast == slow
+    lib = next(p for p in fast[0][next(k for k in prefixes if k.endswith("test_a.py"))] if p.endswith("lib.py"))
+    assert lib  # test_a ran lines of lib.py
+
+
 def test_missing_coverage_package_is_reported_not_fatal(pytester, run, tmp_path):
     pytester.makepyfile(test_nc="def test_a():\n    pass\n")
     # A coverage module that fails to import stands in for "not installed".

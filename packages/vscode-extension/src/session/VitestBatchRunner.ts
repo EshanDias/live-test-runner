@@ -75,6 +75,8 @@ export class VitestBatchRunner implements IBatchRunner {
   private _killed = false;
   /** Roots that ran type-check files this session (typecheck.enabled): saves also type-check related files. */
   private readonly _typecheckRoots = new Set<string>();
+  /** Roots where Vitest ran nothing with the per-test-file provider outside the trace wrapper: merged coverage there (this session). */
+  private readonly _mergedCoverageRoots = new Set<string>();
   /** Bumped by kill(): events of batches started before it are dropped. */
   private _generation = 0;
 
@@ -115,6 +117,7 @@ export class VitestBatchRunner implements IBatchRunner {
     this._killed = false;
     this._trace?.trace.reset();
     this._typecheckRoots.clear();
+    this._mergedCoverageRoots.clear();
   }
 
   /** The root has type-check files (`*.test-d.ts`, typecheck.enabled) — they never get a trace. */
@@ -190,8 +193,11 @@ export class VitestBatchRunner implements IBatchRunner {
           };
         }
       }
-      // With the trace wrapper (it lets Vite load our folder): coverage per test file too.
-      live = await runner.liveCommand(filePaths, { coverageDir, related, config: trace?.config, typecheckOnly: options.typecheckOnly, perTestFileProvider: trace || this._coverage?.perTestFile === 'always' ? COVERAGE_PROVIDER_PATH : undefined });
+      // Coverage per test file, with or without the trace (a test file's coverage
+      // is replaced when it runs again; merged per batch, deleted tests stayed covered).
+      // Without the trace wrapper, unless Vitest could not run with it here.
+      const perTestFile = trace || this._coverage?.perTestFile === 'always' || !this._mergedCoverageRoots.has(projectRoot);
+      live = await runner.liveCommand(filePaths, { coverageDir, related, config: trace?.config, typecheckOnly: options.typecheckOnly, perTestFileProvider: perTestFile ? COVERAGE_PROVIDER_PATH : undefined });
       if (trace) {
         live.command.extraEnv = {
           ...live.command.extraEnv,
@@ -372,6 +378,18 @@ export class VitestBatchRunner implements IBatchRunner {
         return this._run(options, related, true);
       }
     }
+    if (!trace && live.perTestFileDir && this._coverage?.perTestFile !== 'always' && received.size === 0 && !related &&
+        !stopped && !timedOut && !stalled && !this._killed) {
+      // Nothing ran with our coverage provider (no trace wrapper to let Vite load it): the same batch with the project's own provider.
+      if (!this._mergedCoverageRoots.has(projectRoot)) {
+        this._mergedCoverageRoots.add(projectRoot);
+        // Parallel batches of the first round may all get here: one warning.
+        log.warn(`${batch}: Vitest ran nothing with the per-test-file coverage provider (the project's Vite settings refuse it without the execution trace) — ` +
+          `coverage is merged per batch for ${projectRoot} this session (a deleted test can stay covered until the next Start)`);
+      }
+      release();
+      return this._run(options, related, untraced);
+    }
     const missing = stopped ? [] : filePaths.filter((fp) => owns(fp) && !received.has(fp));
     const ran = filePaths.filter((fp) => received.has(fp));
     release();
@@ -418,6 +436,7 @@ export class VitestBatchRunner implements IBatchRunner {
       }
       // Whole-file runs: the test files that finished here replace their old entries (cut short: only those with records).
       const finished = ctx.cutShort ? [] : [...ctx.received].filter((fp) => !ctx.typecheckOnly.has(fp));
+      const traceStartedAt = Date.now();
       const summary = applyTraceRecords(readTraceLines(files), ctx.options.traceStore, ctx.toKey, finished);
       const graphFiles = applyDependencyFiles(depFiles, ctx.options.traceStore);
       if (graphFiles > 0) { log.debug(`${ctx.batch}: module graph — ${graphFiles} project file(s) and their importers`); }
@@ -428,7 +447,7 @@ export class VitestBatchRunner implements IBatchRunner {
           'a Vitest project the trace could not reach');
         return 'ok';
       }
-      log.debug(`${ctx.batch}: traced ${summary.tests} test(s) across ${summary.files} file(s) (${files.length} worker file(s))`);
+      log.debug(`${ctx.batch}: traced ${summary.tests} test(s) across ${summary.files} file(s) (${files.length} worker file(s), ${Date.now() - traceStartedAt} ms)`);
       return 'ok';
     } catch (err) {
       log.error(`${ctx.batch}: could not read the execution trace`, err);
@@ -456,12 +475,15 @@ export class VitestBatchRunner implements IBatchRunner {
     const store = this._coverage!.store;
     const manifestDir = path.join(this._coverage!.sessionDir, 'vitest-manifests');
     const counts = (fp: string) => scope.counts(fp);
+    const coverageStartedAt = Date.now();
     try {
       const perFile = perTestFileDir && fs.existsSync(perTestFileDir) ? fs.readdirSync(perTestFileDir).filter((f) => f.endsWith('.json')) : [];
       if (perTestFileDir && perFile.length === 0 && run.ran.size > 0 && fs.existsSync(coverageFile)) {
         log.debug(`${batch}: no per-test-file coverage written — merging the batch's coverage`);
       }
-      if (perFile.length > 0) {
+      // No test file ran (a related run nothing depends on): Vitest 4+ still writes the
+      // merged report. Nothing to add — only the files it lists, at zero, as below.
+      if (perFile.length > 0 || (perTestFileDir && run.ran.size === 0)) {
         // Vitest keys a coverage entry by its test files joined with ","; match the batch's own files (paths may hold commas).
         const byKey = new Map<string, string[]>();
         const known = run.batchFiles.map((fp) => ({ fp, real: fromRunnerPath(fp) }));
@@ -505,7 +527,7 @@ export class VitestBatchRunner implements IBatchRunner {
             if (store.contributorsOf(fp).length === 0) { untested++; }
           }
         }
-        log.debug(`${batch}: coverage — ${contributions.size} test file(s) → ${sources} file measurement(s)${untested ? `, ${untested} untested file(s)` : ''}`);
+        log.debug(`${batch}: coverage — ${contributions.size} test file(s) → ${sources} file measurement(s)${untested ? `, ${untested} untested file(s)` : ''} (${Date.now() - coverageStartedAt} ms)`);
         return;
       }
       if (!fs.existsSync(coverageFile)) {
@@ -514,7 +536,7 @@ export class VitestBatchRunner implements IBatchRunner {
       }
       const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
       const { measured, excluded } = applyIstanbulCoverage(coverage, store, manifestDir, projectRoot, counts);
-      log.debug(`${batch}: coverage — ${measured} file(s) measured, ${excluded} excluded`);
+      log.debug(`${batch}: coverage — ${measured} file(s) measured, ${excluded} excluded (${Date.now() - coverageStartedAt} ms)`);
     } catch (err) {
       log.warn(`${batch}: could not read Vitest's coverage (${coverageFile})`, err);
     } finally {

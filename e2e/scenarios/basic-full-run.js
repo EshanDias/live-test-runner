@@ -3,8 +3,31 @@
  * Full run on the basic fixture: everything that must be true once "Start
  * Testing" completes.
  */
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const h = require('../lib/harness');
+
+/**
+ * The extension's transform-cache folders whose generated Jest configs name
+ * this workspace: { dir, configs, caches } (caches = Jest's own
+ * jest-transform-cache-<id> folders inside), counting only what was written
+ * since `sinceMs` (earlier e2e runs may have left older ones).
+ */
+function transformCachesFor(workspace, sinceMs) {
+  const base = path.join(os.tmpdir(), 'com.eshLabs', 'live-test-runner');
+  const real = fs.realpathSync(workspace);
+  const out = [];
+  for (const d of fs.existsSync(base) ? fs.readdirSync(base).filter((n) => n.startsWith('transform-cache-')) : []) {
+    const dir = path.join(base, d);
+    const recent = (n) => fs.statSync(path.join(dir, n)).mtimeMs >= sinceMs - 1000;
+    const names = fs.readdirSync(dir);
+    const configs = names.filter((n) => /^ltr-jest-config-.*\.js$/.test(n))
+      .filter((n) => { const text = fs.readFileSync(path.join(dir, n), 'utf8'); return text.includes(JSON.stringify(workspace)) || text.includes(JSON.stringify(real)); });
+    if (configs.length > 0) { out.push({ dir, configs: configs.length, caches: names.filter((n) => n.startsWith('jest-transform-cache-') && recent(n)).length }); }
+  }
+  return out;
+}
 
 module.exports = {
   workspace: 'fixture:basic',
@@ -14,6 +37,7 @@ module.exports = {
     await h.waitForDiscovery(api);
     const rec = h.recordEvents(api);
     const since = h.isoNow();
+    const startedMs = Date.now();
 
     await vscode.commands.executeCommand('liveTestRunner.startTesting');
     await h.sleep(500); // let trailing observer notifications land
@@ -81,6 +105,15 @@ module.exports = {
     t.eq('no duplicate file entries', keys.length, new Set(keys).size);
     const missing = logs.filter((l) => /0\/\d+ file\(s\) reported|No result for/.test(l));
     t.check('every file in a batch reported a result', missing.length === 0, missing.join('\n'));
+
+    // Every batch shares one config file, so one Jest transform cache: a config
+    // path per batch made each batch compile every file again (and left one
+    // cache folder per batch on disk).
+    const batches = new Set(logs.map((l) => /\b(b\d+): running \d+ file/.exec(l)?.[1]).filter(Boolean));
+    const caches = transformCachesFor(workspace, startedMs);
+    t.check(`${batches.size} batches share one generated config and one transform cache`,
+      batches.size >= 2 && caches.length === 1 && caches[0].configs >= 1 && caches[0].caches <= 1,
+      `batches ${[...batches].join(', ')}; caches ${JSON.stringify(caches)}`);
 
     // Per-test trace recorded → source files map to the tests using them.
     const mathSrc = path.join(workspace, 'src', 'math.js');

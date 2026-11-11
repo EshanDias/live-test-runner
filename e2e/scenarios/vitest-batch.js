@@ -24,8 +24,13 @@ module.exports = {
 
     // While slow.test.js runs, the other files of its batch already have results.
     await h.waitFor(() => h.fileBySuffix(api, 'src/slow.test.js').status === 'running', { what: 'slow.test.js to start', timeout: 60_000 });
-    await h.waitFor(() => h.fileBySuffix(api, 'src/math.test.js').status === 'passed', { what: 'math.test.js to finish', timeout: 30_000 });
-    t.eq('math.test.js has its result while slow.test.js is still running', h.fileBySuffix(api, 'src/slow.test.js').status, 'running');
+    // Vitest orders a batch's files by the durations it cached from earlier runs, so which
+    // file shares slow.test.js's worker varies: any other file's result proves the streaming.
+    // slow.test.js's batch: the first five files by name (broken, hook, logs, math, slow).
+    const sameBatch = ['broken.test.js', 'hook.test.js', 'logs.test.js', 'math.test.js'];
+    const done = () => api.store.getAllFiles().filter((f) => sameBatch.includes(path.basename(f.filePath)) && (f.status === 'passed' || f.status === 'failed'));
+    await h.waitFor(() => done().length > 0, { what: 'another file to finish', timeout: 30_000 });
+    t.eq(`${done()[0]?.name} has its result while slow.test.js is still running`, h.fileBySuffix(api, 'src/slow.test.js').status, 'running');
     const progress = rec.of('run-progress');
     t.check('progress was reported per file during the run', progress.some((p) => p.completed > 0 && p.completed < p.total), JSON.stringify(progress.slice(0, 8)));
 

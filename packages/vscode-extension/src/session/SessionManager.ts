@@ -15,7 +15,7 @@ import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import type { IBatchRunner } from './IBatchRunner';
 import { RunnableFilesCache, runnableCacheKey, runnableKey } from './RunnableFiles';
-import { buildBatchQueue, promoteInQueue } from './batchQueue';
+import { batchSize, buildBatchQueue, promoteInQueue } from './batchQueue';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
 import { coverageScopeOf } from '../coverage/coverageScope';
@@ -1215,9 +1215,9 @@ export class SessionManager {
     const totalFiles  = filePaths.length;
     if (totalFiles === 0 || token !== this._token) { return; }
 
-    // Batch heuristic: amortise Jest startup across multiple files while keeping
-    // batches small enough that the UI stays responsive (results stream per file).
-    const BATCH_SIZE = Math.max(5, Math.min(50, Math.ceil(totalFiles / CONCURRENCY)));
+    // Share a process's startup across files, keep batches small enough that a
+    // crash or hang retries little, and fill whole rounds of parallel batches.
+    const BATCH_SIZE = batchSize(totalFiles, CONCURRENCY);
 
     // Files are NOT marked running here: in a batch Jest runs its files one
     // after another, so a queued file only shows ⟳ once Jest starts it.

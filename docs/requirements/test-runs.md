@@ -22,6 +22,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | T15 | Angular saves: rerun the test files that import the saved file (relative imports), a template's component tests, else every test of its project | `angular-full-run`; unit: `jsImporters` |
 | T13 | Without the framework installed, or with an environment that can't run it, run nothing, mark nothing failed, and say how to fix it | `pytest-no-pytest` |
 | T16 | Vitest batches together use at most half the cores: each gets `--maxWorkers` from the shared budget, a lower limit in the project's config is kept, and `--minWorkers=1` is added below Vitest 4 only | unit: `resources`, `vitestRunnerArgs`; e2e: `vitest-full-run`, `vitest-batch` (real Vitest accepts the flags) |
+| T17 | Compile a source file once, not once per batch: every batch and later session of a project reuses the framework's compiled files (Jest: one generated config per config text, so one transform cache and file map); a changed config or extension never reuses stale output | unit: `stableJestConfig`; e2e: `basic-full-run` (several batches, one cache) |
 
 ⚠️ marks a requirement no automated test checks yet.
 

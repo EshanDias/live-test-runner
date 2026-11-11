@@ -117,8 +117,8 @@ export class PytestBatchRunner implements IBatchRunner {
     const graph = this._graph(projectRoot);
     const tests = options.store.getAllFiles().filter((f) => !f.excluded).map((f) => f.filePath);
     const dependents = new Set<string>();
-    for (const src of options.sourceFiles) {
-      for (const t of graph.dependents(src, tests)) { dependents.add(t); }
+    for (const list of graph.dependentsOf(options.sourceFiles, tests).values()) {
+      for (const t of list) { dependents.add(t); }
     }
     if (dependents.size === 0) {
       log.debug(`No test file imports ${options.sourceFiles.map((f) => path.basename(f)).join(', ')}`);
@@ -314,9 +314,10 @@ export class PytestBatchRunner implements IBatchRunner {
       const traceFile = path.join(path.dirname(live.coverageFile), 'trace.jsonl');
       if (fs.existsSync(traceFile)) {
         try {
+          const traceStartedAt = Date.now();
           const lines = readTraceLines([traceFile]).map((l) => respellTrace(l, projectRoot));
           const summary = applyTraceRecords(lines, options.traceStore, toKey, measured);
-          log.debug(`${batch}: covering tests — ${summary.tests} test(s) across ${summary.files} file(s)`);
+          log.debug(`${batch}: covering tests — ${summary.tests} test(s) across ${summary.files} file(s) (${Date.now() - traceStartedAt} ms)`);
         } catch (err) {
           log.warn(`${batch}: could not read the covering tests`, err);
         }
@@ -390,6 +391,7 @@ export class PytestBatchRunner implements IBatchRunner {
     const store = this._coverage!.store;
     const manifestDir = path.join(this._coverage!.sessionDir, 'pytest-manifests');
     const respell = (raw: Record<string, { path?: string }>) => respelled(projectRoot, raw);
+    const coverageStartedAt = Date.now();
     try {
       if (!fs.existsSync(coverageFile)) {
         log.debug(`${batch}: no coverage written (nothing measured, or the run was stopped)`);
@@ -414,9 +416,10 @@ export class PytestBatchRunner implements IBatchRunner {
           add(run.toKey(toProjectSpelling(projectRoot, testFile)), measuredFiles(respell(cov), manifestDir, projectRoot, counts).files);
         }
         const ran = [...run.ran];
-        const graph = this._graph(projectRoot);
-        for (const [fp, mf] of measuredFiles(respell(doc.imports ?? {}), manifestDir, projectRoot, counts).files) {
-          const importers = graph.dependents(fp, ran);
+        const imported = measuredFiles(respell(doc.imports ?? {}), manifestDir, projectRoot, counts).files;
+        const importersOf = this._graph(projectRoot).dependentsOf([...imported.keys()], ran);
+        for (const [fp, mf] of imported) {
+          const importers = importersOf.get(path.normalize(fp)) ?? [];
           for (const t of importers.length > 0 ? importers : ran) { add(t, new Map([[fp, mf]])); }
         }
         let sources = 0;
@@ -429,13 +432,13 @@ export class PytestBatchRunner implements IBatchRunner {
           store.setMeasuredEntry(fp, { manifestPath: mf.manifestPath, counters: zero, pct: calculate(mf.manifest, zero) });
           if (store.contributorsOf(fp).length === 0) { untested++; }
         }
-        log.debug(`${batch}: coverage — ${contributions.size} test file(s) → ${sources} file measurement(s)${untested ? `, ${untested} untested file(s)` : ''}`);
+        log.debug(`${batch}: coverage — ${contributions.size} test file(s) → ${sources} file measurement(s)${untested ? `, ${untested} untested file(s)` : ''} (${Date.now() - coverageStartedAt} ms)`);
         return;
       }
       const { measured, excluded } = applyIstanbulCoverage(
         respell(JSON.parse(fs.readFileSync(coverageFile, 'utf8'))), store, manifestDir, projectRoot, counts,
       );
-      log.debug(`${batch}: coverage — ${measured} file(s) measured, ${excluded} excluded`);
+      log.debug(`${batch}: coverage — ${measured} file(s) measured, ${excluded} excluded (${Date.now() - coverageStartedAt} ms)`);
     } catch (err) {
       log.warn(`${batch}: could not read the coverage (${coverageFile})`, err);
     } finally {

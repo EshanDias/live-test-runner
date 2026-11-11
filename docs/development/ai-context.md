@@ -69,10 +69,10 @@ src/
 **Batch run command (JestBatchRunner — initial run and on-save file reruns):**
 ```sh
 node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
-     --config <ltr-temp-config.js> --cacheDirectory <per-project transform cache> \
+     --config <transform cache>/ltr-jest-config-<hash>.js --cacheDirectory <per-project transform cache> \
      --maxWorkers=1 --testLocationInResults --verbose=false
 ```
-The temp config starts from the project's config as Jest resolves it (`JestProjectConfig`: `jest --showConfig` / `react-scripts test --showConfig`, once per session, JSON in the session dir) plus:
+The generated config starts from the project's config as Jest resolves it (`JestProjectConfig`: `jest --showConfig` / `react-scripts test --showConfig`, once per session, JSON in the session dir, path passed as `LTR_JEST_RESOLVED_CONFIG`) plus the items below. Its text is the same for every batch and session (`writeStableConfig`, file named by content hash): Jest keys its transform cache and file map on the config path, so a per-batch path meant no reuse at all.
 - `sessionTraceTransform.js` at the front of the transform chain (light trace: line hit maps + coverage counters)
 - `ltrCoverageSetup.js` as the **first** `setupFilesAfterEnv` entry — coverage flush, per-test trace context (`beginTest` / `endTest`), test-start/end heartbeats for the hang watchdog
 - `liveReporter.js` as an extra reporter that appends a `start` record and one result record per file to a JSONL file

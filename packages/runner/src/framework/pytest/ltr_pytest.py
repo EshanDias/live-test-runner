@@ -306,34 +306,102 @@ def _write_per_test_file(report, target):
     started = time.time()
     try:
         data = _cov.get_data()
-        has_arcs = data.has_arcs()
         prefixes = {}  # node id file part -> test file
         for label in data.measured_contexts():
             node = _nodes.get(label) if label else None
             if node is not None:
                 prefixes[label.split("::", 1)[0]] = node["file"]
         measured = [m for m in data.measured_files() if _keep_coverage_file(os.path.normpath(m))]
-
-        def hits(pattern):
-            data.set_query_contexts([pattern])
-            out = {}
-            for m in measured:
-                lines = set(data.lines(m) or [])
-                arcs = set(data.arcs(m) or []) if has_arcs else set()
-                if lines or arcs:
-                    out[os.path.normpath(m)] = (lines, arcs)
-            return out
-
+        try:
+            by_prefix, imports_hits = _hits_in_one_pass(data, measured)
+            how = "one pass"
+        except Exception as err:  # an unexpected data file: the query per test file
+            _log("debug", "coverage per test file: one-pass read failed (%s), querying per test file" % err)
+            by_prefix, imports_hits = _hits_per_query(data, measured, prefixes)
+            how = "per query"
+        prepared = _prepare_istanbul(report)
         tests = {}
         for prefix, test_file in prefixes.items():
-            tests[test_file] = _istanbul(report, hits("^" + re.escape(prefix) + "::"))
-        imports = _istanbul(report, hits("^$"))
-        data.set_query_contexts(None)
+            tests[test_file] = _istanbul_from(prepared, by_prefix.get(prefix, {}))
+        imports = _istanbul_from(prepared, imports_hits)
         with open(target, "w", encoding="utf-8") as fh:
             json.dump({"tests": tests, "imports": imports}, fh)
-        _log("debug", "coverage per test file: %d test file(s), %d measured file(s) in %.1fs" % (len(tests), len(measured), time.time() - started))
+        _log("debug", "coverage per test file: %d test file(s), %d measured file(s) in %.1fs (%s)" % (len(tests), len(measured), time.time() - started, how))
     except Exception as err:  # the merged report still stands
         _log("warn", "could not write coverage per test file: %s" % err)
+
+
+def _add_hit(into, path, lines, arcs):
+    if lines or arcs:
+        own = into.setdefault(path, (set(), set()))
+        own[0].update(lines)
+        own[1].update(arcs)
+
+
+def _hits_per_query(data, measured, prefixes):
+    """{prefix: {source: (lines, arcs)}}, {source: (lines, arcs)} of the imports — one query per test file and source file (slow)."""
+    has_arcs = data.has_arcs()
+
+    def hits(pattern):
+        data.set_query_contexts([pattern])
+        out = {}
+        for m in measured:
+            _add_hit(out, os.path.normpath(m), set(data.lines(m) or []), set(data.arcs(m) or []) if has_arcs else set())
+        return out
+
+    try:
+        by_prefix = {prefix: hits("^" + re.escape(prefix) + "::") for prefix in prefixes}
+        return by_prefix, hits("^$")
+    finally:
+        data.set_query_contexts(None)
+
+
+def _hits_in_one_pass(data, measured):
+    """The same as ``_hits_per_query``, read from the coverage data file in one pass.
+
+    coverage.py's data file is SQLite (``file``, ``context``, ``line_bits``,
+    ``arc`` tables, the same since coverage 5). Asking it once per test file
+    and source file took most of a batch (15 s of 23 s for 50 test files).
+    As in ``CoverageData.lines()``, a file measured with branches has the
+    lines of its arcs.
+    """
+    import sqlite3
+    from coverage.numbits import numbits_to_nums
+
+    keep = {m: os.path.normpath(m) for m in measured}
+    has_arcs = data.has_arcs()
+    by_prefix, imports = {}, {}
+
+    def bucket(label):
+        if not label:
+            return imports
+        if "::" not in label:
+            return None
+        return by_prefix.setdefault(label.split("::", 1)[0], {})
+
+    con = sqlite3.connect(data.data_filename())
+    try:
+        if has_arcs:
+            rows = con.execute(
+                "select file.path, context.context, arc.fromno, arc.tono from arc"
+                " join file on file.id = arc.file_id join context on context.id = arc.context_id")
+            for path, label, fromno, tono in rows:
+                into = bucket(label)
+                if into is None or path not in keep:
+                    continue
+                _add_hit(into, keep[path], {n for n in (fromno, tono) if n > 0}, {(fromno, tono)})
+        else:
+            rows = con.execute(
+                "select file.path, context.context, line_bits.numbits from line_bits"
+                " join file on file.id = line_bits.file_id join context on context.id = line_bits.context_id")
+            for path, label, numbits in rows:
+                into = bucket(label)
+                if into is None or path not in keep:
+                    continue
+                _add_hit(into, keep[path], set(numbits_to_nums(numbits)), set())
+    finally:
+        con.close()
+    return by_prefix, imports
 
 
 def _keep_coverage_file(path):
@@ -367,39 +435,38 @@ def _istanbul(report, hits=None):
     report's, so every test file's map of a file is the same version. Files
     without hits are left out.
     """
-    out = {}
+    return _istanbul_from(_prepare_istanbul(report), hits)
+
+
+def _prepare_istanbul(report):
+    """What the istanbul maps of a report need, worked out once per report
+    (paths, source line widths, maps): per test file only the counters change."""
+    prepared = []
     for name, f in (report.get("files") or {}).items():
         path = os.path.normpath(os.path.join(_CWD, name))
         if not _keep_coverage_file(path):
             continue
-        own = None
-        if hits is not None:
-            own = hits.get(path)
-            if own is None:
-                continue
         try:
             with open(path, encoding="utf-8", errors="replace") as fh:
                 text = fh.read().split("\n")
         except OSError:
             text = []
 
-        def width(line):
+        def width(line, text=text):
             return len(text[line - 1]) if 0 < line <= len(text) else 0
 
         executed = set(f.get("executed_lines") or [])
         lines = sorted(executed | set(f.get("missing_lines") or []))
-        statement_map, s = {}, {}
+        statement_map = {}
         for i, line in enumerate(lines):
-            key = str(i)
-            statement_map[key] = {"start": {"line": line, "column": 0}, "end": {"line": line, "column": width(line)}}
-            s[key] = 1 if line in (own[0] if own else executed) else 0
+            statement_map[str(i)] = {"start": {"line": line, "column": 0}, "end": {"line": line, "column": width(line)}}
 
-        branch_map, b = {}, {}
         arcs = {}
         for arc in f.get("executed_branches") or []:
-            arcs.setdefault(arc[0], []).append((arc[1], 1 if own is None or (arc[0], arc[1]) in own[1] else 0))
+            arcs.setdefault(arc[0], []).append((arc[1], True))
         for arc in f.get("missing_branches") or []:
-            arcs.setdefault(arc[0], []).append((arc[1], 0))
+            arcs.setdefault(arc[0], []).append((arc[1], False))
+        branch_map, branches = {}, []
         for i, start in enumerate(sorted(a for a in arcs if a > 0)):
             arms = sorted(arcs[start], key=lambda arm: (arm[0] < 0, abs(arm[0])))
             branch_map[str(i)] = {
@@ -411,10 +478,10 @@ def _istanbul(report, hits=None):
                     for to, _ in arms
                 ],
             }
-            b[str(i)] = [hit for _, hit in arms]
+            branches.append((str(i), start, arms))
 
-        fn_map, fn = {}, {}
-        for i, (fname, region) in enumerate(sorted((f.get("functions") or {}).items())):
+        fn_map, functions = {}, []
+        for fname, region in sorted((f.get("functions") or {}).items()):
             if not fname:
                 continue  # the module itself
             region_lines = sorted(set(region.get("executed_lines") or []) | set(region.get("missing_lines") or []))
@@ -428,10 +495,33 @@ def _istanbul(report, hits=None):
                 "decl": {"start": {"line": first, "column": 0}, "end": {"line": first, "column": width(first)}},
                 "loc": {"start": {"line": first, "column": 0}, "end": {"line": region_lines[-1], "column": width(region_lines[-1])}},
             }
-            ran = set(region.get("executed_lines") or [])
-            fn[key] = 1 if (ran & own[0] if own else ran) else 0
+            functions.append((key, set(region.get("executed_lines") or [])))
 
-        out[path] = {"path": path, "statementMap": statement_map, "s": s, "branchMap": branch_map, "b": b, "fnMap": fn_map, "f": fn}
+        prepared.append({"path": path, "executed": executed, "lines": lines, "statementMap": statement_map,
+                         "branchMap": branch_map, "branches": branches, "fnMap": fn_map, "functions": functions})
+    return prepared
+
+
+def _istanbul_from(prepared, hits=None):
+    """``_istanbul`` over a prepared report (``_prepare_istanbul``)."""
+    out = {}
+    for p in prepared:
+        path = p["path"]
+        own = None
+        if hits is not None:
+            own = hits.get(path)
+            if own is None:
+                continue
+        ran_lines = own[0] if own else p["executed"]
+        s = {str(i): 1 if line in ran_lines else 0 for i, line in enumerate(p["lines"])}
+        b = {}
+        for key, start, arms in p["branches"]:
+            if own is None:
+                b[key] = [1 if executed else 0 for _, executed in arms]
+            else:
+                b[key] = [1 if executed and (start, to) in own[1] else 0 for to, executed in arms]
+        fn = {key: 1 if (ran & own[0] if own else ran) else 0 for key, ran in p["functions"]}
+        out[path] = {"path": path, "statementMap": p["statementMap"], "s": s, "branchMap": p["branchMap"], "b": b, "fnMap": p["fnMap"], "f": fn}
     return out
 
 

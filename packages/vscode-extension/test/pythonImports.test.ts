@@ -63,6 +63,48 @@ describe('python import graph', () => {
     expect(graph.dependents(path.join(root, 'tests', 'pkg', 'mod.py'), [test])).toEqual([test]);
   });
 
+  it('many source files at once: the same answers as one at a time, conftest.py and cycles included', () => {
+    const root = tree({
+      'src/shop/__init__.py': '',
+      'src/shop/cart.py': 'from shop.money import to_cents\nfrom shop import tax\n',
+      'src/shop/money.py': 'from shop import cart\n', // a cycle with cart.py
+      'src/shop/tax.py': '',
+      'src/shop/unused.py': '',
+      'tests/conftest.py': '',
+      'tests/test_cart.py': 'from shop.cart import Cart\n',
+      'tests/test_money.py': 'import shop.money\n',
+      'tests/test_other.py': 'import json\n',
+    });
+    const graph = new PythonImportGraph(pythonImportRoots(root));
+    const tests = ['tests/test_cart.py', 'tests/test_money.py', 'tests/test_other.py'].map((t) => path.join(root, t));
+    const sources = ['src/shop/__init__.py', 'src/shop/cart.py', 'src/shop/money.py', 'src/shop/tax.py', 'src/shop/unused.py', 'tests/conftest.py', 'tests/test_cart.py']
+      .map((f) => path.join(root, f));
+    const all = graph.dependentsOf(sources, tests);
+    expect([...all.keys()].sort()).toEqual(sources.map((f) => path.normalize(f)).sort());
+    // The walk per source file, as it was: does each test file reach it?
+    const reaches = (from: string, target: string) => {
+      const seen = new Set([from]);
+      const queue = [from];
+      while (queue.length > 0) {
+        for (const dep of graph.importsOf(queue.shift()!).map((d) => path.normalize(d))) {
+          if (dep === target) { return true; }
+          if (!seen.has(dep)) { seen.add(dep); queue.push(dep); }
+        }
+      }
+      return false;
+    };
+    const oneAtATime = (src: string) => path.basename(src) === 'conftest.py'
+      ? tests.filter((t) => t.startsWith(path.dirname(src) + path.sep))
+      : tests.filter((t) => path.normalize(t) !== path.normalize(src) && reaches(t, path.normalize(src)));
+    for (const src of sources) {
+      expect([...all.get(path.normalize(src))!].sort()).toEqual(oneAtATime(src).sort());
+    }
+    // Through the cycle, money.py's test reaches tax.py; a test file is not its own dependent.
+    expect(all.get(path.normalize(path.join(root, 'src/shop/tax.py')))!.map((f) => path.basename(f)).sort()).toEqual(['test_cart.py', 'test_money.py']);
+    expect(all.get(path.normalize(path.join(root, 'tests/test_cart.py')))).toEqual([]);
+    expect(all.get(path.normalize(path.join(root, 'tests/conftest.py')))!.length).toBe(3);
+  });
+
   it('a conftest.py is used by every test file under its folder', () => {
     const root = tree({ 'tests/conftest.py': '', 'tests/a/test_x.py': '', 'other/test_y.py': '' });
     const graph = new PythonImportGraph([root]);

@@ -14,6 +14,7 @@
  * One pass does both jobs — no second "trace" phase is needed.
  */
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Executor, BinaryResolver, FileRunResult, TestCaseRunResult, tail, toJestPathArg, registerProjectRoot, toRunnerPath, fromRunnerPath, mergeFileResults, jestNodeEnv, jestEsmHint } from '@live-test-runner/runner';
@@ -192,7 +193,6 @@ export class JestBatchRunner implements IBatchRunner {
     const reporterFile    = path.join(this._tmpDir, `ltr-reporter-${ts}-${rand}.jsonl`);
     const traceFile       = path.join(this._tmpDir, `ltr-trace-${ts}-${rand}.jsonl`);
     const covCountersFile = path.join(this._coverageDir, `ltr-cov-${ts}-${rand}.jsonl`);
-    const tempConfigPath  = path.join(this._tmpDir, `ltr-cfg-${ts}-${rand}.js`);
 
     for (const dir of [this._coverageDir, this._manifestDir(projectRoot)]) {
       try {
@@ -223,7 +223,7 @@ const _fs   = require('fs');
 let baseConfig = {};
 let _projects = null;
 let _baseConfigLoaded = false;
-const _resolvedPath = ${JSON.stringify(resolvedConfigPath ?? null)};
+const _resolvedPath = process.env.LTR_JEST_RESOLVED_CONFIG || null;
 if (_resolvedPath) {
   // Resolved by Jest itself (jest --showConfig): works for every config format.
   const r = require(_resolvedPath);
@@ -372,7 +372,7 @@ const _shared = {
   testTimeout: Math.max((baseConfig.testTimeout || 5000), 30000),
   reporters: [
     'default',
-    [${JSON.stringify(LIVE_REPORTER_PATH)}, { outputFile: ${JSON.stringify(reporterFile)} }],
+    ${JSON.stringify(LIVE_REPORTER_PATH)},
   ],
 };
 
@@ -398,7 +398,7 @@ module.exports = _projects
     };
 `;
 
-    fs.writeFileSync(tempConfigPath, configContent, 'utf8');
+    const tempConfigPath = writeStableConfig(this._transformCacheDir(projectRoot), configContent);
 
     // Track which files received reporter results for missing-file detection.
     const received = new Set<string>();
@@ -572,6 +572,8 @@ module.exports = _projects
             LTR_MANIFEST_DIR:     this._manifestDir(projectRoot),
             LTR_LOG_LEVEL:        logger.level,
             LTR_REPORTER_FILE:    reporterFile,
+            // Read by the generated config: kept out of its text so the text, and so Jest's cache id, stays the same.
+            ...(resolvedConfigPath ? { LTR_JEST_RESOLVED_CONFIG: resolvedConfigPath } : {}),
           },
         },
         reporterFile,
@@ -602,7 +604,6 @@ module.exports = _projects
     } finally {
       clearInterval(watchdog);
       this._running.delete(executor);
-      try { fs.unlinkSync(tempConfigPath); } catch {}
     }
 
     const stopped = generation !== this._generation;
@@ -836,4 +837,27 @@ export function vanishedFile(output: string): string | undefined {
     if (!fs.existsSync(m[1])) { return m[1]; }
   }
   return undefined;
+}
+
+/**
+ * Writes a generated Jest config where every batch and session of the project
+ * finds the same file. Jest names its transform cache and its file map after
+ * the config's path, so a new path per batch meant every batch compiled every
+ * file again and re-crawled the project (and left one cache folder per batch
+ * on disk). The name is the content's hash: a changed project config or
+ * extension gets a new file, never a stale one. The text must therefore hold
+ * nothing that changes per batch or session (those go in the environment).
+ * @returns the config's path
+ */
+export function writeStableConfig(dir: string, content: string): string {
+  fs.mkdirSync(dir, { recursive: true });
+  const hash = crypto.createHash('sha1').update(content).digest('hex').slice(0, 16);
+  const file = path.join(dir, `ltr-jest-config-${hash}.js`);
+  if (!fs.existsSync(file)) {
+    // Parallel batches may write it at once: write aside, then rename (atomic).
+    const tmp = `${file}.${process.pid}-${Math.random().toString(36).slice(2)}.tmp`;
+    fs.writeFileSync(tmp, content, 'utf8');
+    fs.renameSync(tmp, file);
+  }
+  return file;
 }

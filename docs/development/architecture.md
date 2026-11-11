@@ -125,10 +125,10 @@ Two different command shapes are used depending on context:
 **Batch run — `JestBatchRunner` (initial run + on-save file reruns):**
 ```sh
 node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
-     --config <ltr-temp-cfg.js> --cacheDirectory <per-project transform cache> \
+     --config <transform cache>/ltr-jest-config-<hash>.js --cacheDirectory <per-project transform cache> \
      --maxWorkers=1 --testLocationInResults --verbose=false
 ```
-The temp config starts from the project's config **as Jest resolves it** — `JestProjectConfig` runs `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session, so every config format, preset and multi-project setup works — and layers on `sessionTraceTransform.js` (light trace transform), `ltrCoverageSetup.js` (first `setupFilesAfterEnv` entry: coverage flush, per-test trace context, test heartbeats) and `liveReporter.js` (streaming reporter). Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
+The temp config starts from the project's config **as Jest resolves it** — `JestProjectConfig` runs `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session, so every config format, preset and multi-project setup works — and layers on `sessionTraceTransform.js` (light trace transform), `ltrCoverageSetup.js` (first `setupFilesAfterEnv` entry: coverage flush, per-test trace context, test heartbeats) and `liveReporter.js` (streaming reporter). The generated config is one file per content hash in the project's transform-cache folder (`writeStableConfig`), and its text holds nothing per batch or session (the reporter file and the resolved-config JSON come through `LTR_REPORTER_FILE` / `LTR_JEST_RESOLVED_CONFIG`): Jest names its transform cache and file map after the config's path, so every batch and later session reuses the compiled files instead of re-instrumenting the whole project. Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
 
 Reported paths are mapped back to the store's own keys. A file shows ⟳ only once Jest starts it (reporter `start` record). The newest run of a file owns it: an older batch still running the same file is not killed, its result for that file is ignored. A single test running longer than `hangTimeoutSeconds` (setup-file heartbeats) stops the batch; that file is failed and the rest retried.
 
