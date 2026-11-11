@@ -619,7 +619,7 @@ module.exports = _projects
 
     // Parse trace hits and update ExecutionTraceStore.
     try {
-      this._parseTrace(traceFile, traceStore, batch, toKey);
+      this._parseTrace(traceFile, traceStore, batch, toKey, measured);
     } catch (err) {
       log.error(`${batch}: could not parse the trace file`, err);
     } finally {
@@ -788,6 +788,8 @@ module.exports = _projects
     batch: string,
     /** Maps Jest's spelling of a test-file path to the store's key. */
     toKey: (p: string) => string,
+    /** Test files that finished: their old entries are replaced. */
+    ran: Set<string>,
   ): void {
     if (!fs.existsSync(traceFile)) {
       log.trace(`${batch}: no trace file written`);
@@ -804,7 +806,7 @@ module.exports = _projects
     }
 
     const lines = raw.split('\n').filter((l) => l.trim().length > 0);
-    const summary = applyTraceRecords(lines, traceStore, toKey);
+    const summary = applyTraceRecords(lines, traceStore, toKey, ran);
     log.debug(`${batch}: traced ${summary.tests} test(s) across ${summary.files} file(s) (${Math.round(raw.length / 1024)} KB, ${Date.now() - startedAt} ms)`);
   }
 }

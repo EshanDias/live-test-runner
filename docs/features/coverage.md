@@ -32,7 +32,18 @@ There's no extra command or extra run: the normal runs measure it.
 
 ### While you edit
 
-The bars move with their lines as you type. A line you change or add has no bar until you save and its tests rerun, because an old bar on new code would be wrong. Reformatting keeps the bars. After a save, a grey tint covers the file until its rerun finishes.
+The bars move with their lines as you type. A line you change or add has no bar until you save and its tests rerun, because an old bar on new code would be wrong. Reformatting keeps the bars. After a save, a grey tint covers the file until its tests have run again on the new code.
+
+### Always the current numbers
+
+Coverage always shows what a fresh full run would report now, not everything that ever ran this session:
+
+- Delete a test, or change it so it reaches less: those lines lose their coverage.
+- Delete a test file: its coverage goes with it.
+- Stop calling a function from another file: that file's coverage drops.
+- Add a source file: it shows as 0% right away (when your coverage settings list the files to cover). Delete or rename one: it leaves the totals.
+
+To keep this exact, a save that reran only single tests is followed, once nothing else is running, by a quiet rerun of those test files in full. While that happens the Coverage tab says **Updating coverage (N files)…** and the totals are greyed out. That rerun also confirms the test results: a test that only fails next to the other tests of its file turns red then.
 
 ### Example
 
@@ -53,6 +64,7 @@ You hover line 42 of `pricing.ts`, an `if (member)` line with an amber bar. The 
 - Nothing is written into your project: no `coverage/` folder, no `.coverage` file.
 - With Jest, coverage of a Vue component counts its `<script>` block only, as `jest --coverage` does. Its template lines still list the tests that rendered them.
 - In a project with both Jest and Vitest, a file tested by both shows the lines either one ran.
+- If a test file had to be rerun without coverage (a fallback after a crash), the Coverage tab says so; the totals leave it out until it runs again.
 
 ## Related
 

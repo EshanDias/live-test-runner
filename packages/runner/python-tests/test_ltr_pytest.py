@@ -247,6 +247,43 @@ def test_coverage_is_written_istanbul_shaped(pytester, run, tmp_path):
     assert not (pytester.path / ".coverage").exists()
 
 
+def test_coverage_is_written_per_test_file(pytester, run, tmp_path):
+    pytester.makepyfile(
+        lib="""
+            def pick(x):
+                if x:
+                    return "yes"
+                return "no"
+
+            def other():
+                return 1
+        """,
+        test_a="from lib import pick\n\ndef test_yes():\n    assert pick(True) == 'yes'\n",
+        test_b="from lib import other\n\ndef test_other():\n    assert other() == 1\n",
+    )
+    pytester.path.joinpath(".coveragerc").write_text("[run]\nbranch = True\n")
+    cov_dir = tmp_path / "cov"
+    run(env={"LTR_PYTEST_COVERAGE": str(cov_dir)})
+    data = json.loads((cov_dir / "coverage-per-test-file.json").read_text())
+    by_test = {os.path.basename(k): v for k, v in data["tests"].items()}
+    assert sorted(by_test) == ["test_a.py", "test_b.py"]
+
+    def ran(cov):
+        lib = next(v for k, v in cov.items() if k.endswith("lib.py"))
+        return sorted(lib["statementMap"][k]["start"]["line"] for k in lib["s"] if lib["s"][k])
+
+    # Each test file only the body lines its own test ran; the def lines ran at import (outside any test).
+    assert ran(by_test["test_a.py"]) == [2, 3]
+    assert ran(by_test["test_b.py"]) == [7]
+    assert 1 in ran(data["imports"]) and 6 in ran(data["imports"])
+    # The same maps in every test file's coverage (one version of lib.py).
+    a = next(v for k, v in by_test["test_a.py"].items() if k.endswith("lib.py"))
+    b = next(v for k, v in by_test["test_b.py"].items() if k.endswith("lib.py"))
+    assert a["statementMap"] == b["statementMap"] and a["branchMap"] == b["branchMap"]
+    key = next(k for k, br in a["branchMap"].items() if br["line"] == 2)
+    assert sorted(a["b"][key]) == [0, 1] and b["b"][key] == [0, 0]
+
+
 def test_missing_coverage_package_is_reported_not_fatal(pytester, run, tmp_path):
     pytester.makepyfile(test_nc="def test_a():\n    pass\n")
     # A coverage module that fails to import stands in for "not installed".

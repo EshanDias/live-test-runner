@@ -2,6 +2,22 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [3.4.1] - Unreleased
+
+### Fixed
+- **Coverage is truthful while the session runs** (Jest, Vitest, Angular, pytest). Before, numbers only went up: a deleted test, a deleted test file or code that no longer calls a file left lines covered.
+  - `CoverageStore`: each test file's latest run is one contribution (sparse counters per source version, on disk in the session folder `coverage-contrib/`), replaced when the file runs again; a version counts once measured after the file's last change. Unit `coverageContributions`.
+  - Jest: records carry their test file (`ltrCoverageSetup.js`). Vitest: wrapper provider `vitestCoverageProvider.mjs` (`coverage.provider=custom`, loads the project's v8 / istanbul) writes coverage per test file with the provider's own `generateCoverage`; Angular through its runner config. pytest: `coverage-per-test-file.json` from the per-test contexts; import-time lines credited to each importing test file (`PythonImportGraph`). Plugin test `test_coverage_is_written_per_test_file`.
+  - Background refresh (`SessionManager._scheduleCoverageRefresh`): once idle, test files measured before a change they cover rerun whole (single tests by name and `--findRelatedTests` measure nothing); results are replaced too. Once per change, session only, cancelled by Stop.
+  - New source files counted at once (`SourceCounter.countFile`), edited ones recounted, deleted files / folders leave the totals (`diskWatcher.onDidDelete` → `onFilesDeleted`).
+  - Coverage tab: **Updating coverage (N files)…** and greyed totals while not final; a note for test files that ran without coverage (plain fallback runs).
+  - Hover: covered / not covered from the counters; tests a rerun no longer reaches leave "covered by" (`ExecutionTraceStore.forgetTestFiles`); module-level lines say so.
+  - e2e `coverage-live` (fixture `coverage-live`); `basic-on-save` checks the refresh.
+- **Suites whose tests share a variable reran single tests** (S4): discovery's `isSharedVars` never reached the rerun choice. Now the whole file reruns (`TestDiscoveryService.sharedSuiteIds`); `const x = require(...)` no longer counts as shared state. Unit `testDiscovery`, e2e `coverage-live`.
+
+### Security / tooling
+- Performance measurement: `scripts/perf-project.js` (synthetic 2.5k-file Jest project), `scripts/perf-measure.js` + e2e `diag-perf` (discovery, first result, full run, trace / coverage parse, memory, save rerun; results in local `e2e/baselines/perf.json`). Trace and coverage parse time and size in the debug log.
+
 ## [3.4.0] - 2026-11-09
 
 ### Added

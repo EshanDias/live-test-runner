@@ -391,6 +391,15 @@ function _containsRef(node, name, depth) {
  *   const x = <primitive>  → safe (skip)
  *   const x = <anything else> → mutable (object/array/new/call can be mutated)
  */
+/** `require('x')`, `require('x').y`, `await import('x')`. */
+function _isRequire(node) {
+  let n = node;
+  while (n && (n.type === 'MemberExpression' || n.type === 'AwaitExpression')) { n = n.type === 'AwaitExpression' ? n.argument : n.object; }
+  if (!n) { return false; }
+  if (n.type === 'ImportExpression') { return true; }
+  return n.type === 'CallExpression' && ((n.callee.type === 'Identifier' && n.callee.name === 'require') || n.callee.type === 'Import');
+}
+
 function _collectDescribeScopeVars(bodyStatements) {
   const vars = new Set();
   for (const stmt of bodyStatements) {
@@ -400,8 +409,9 @@ function _collectDescribeScopeVars(bodyStatements) {
       if (stmt.kind === 'let' || stmt.kind === 'var') {
         vars.add(decl.id.name);
       } else if (stmt.kind === 'const') {
-        // const is safe only for primitive literals
-        if (!decl.init || !_isPrimitiveLiteral(decl.init)) {
+        // const is safe only for primitive literals — and modules
+        // (`const m = require('./m')`): tests share them like imports, not as state.
+        if (!decl.init || (!_isPrimitiveLiteral(decl.init) && !_isRequire(decl.init))) {
           vars.add(decl.id.name);
         }
       }

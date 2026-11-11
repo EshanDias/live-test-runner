@@ -53,6 +53,15 @@ export function cloneCounters(c: FileCov): FileCov {
   };
 }
 
+/** The same counters, all zero (the file's structure without hits). */
+export function zeroCounters(c: FileCov): FileCov {
+  return {
+    s: Object.fromEntries(Object.keys(c.s ?? {}).map((id) => [id, 0])),
+    f: Object.fromEntries(Object.keys(c.f ?? {}).map((id) => [id, 0])),
+    b: Object.fromEntries(Object.entries(c.b ?? {}).map(([id, arms]) => [id, (arms as number[]).map(() => 0)])),
+  };
+}
+
 /** Two counter sets of the same file version added up (two runs of it within one test file's coverage, e.g. two Jest projects). */
 export function sumCounters(a: FileCov, b: FileCov): FileCov {
   const out = cloneCounters(a);

@@ -124,12 +124,12 @@ src/
 │                                   onDiscoveryStarted/Progress/Complete (optional)
 ├── store/
 │   ├── ResultStore.ts              In-memory File→Node tree (recursive) + LineMap + ScopedOutput
-│   ├── ExecutionTraceStore.ts      Trace indexes: traceIndex, coverageIndex, sourceToTests
+│   ├── ExecutionTraceStore.ts      Trace indexes: traceIndex, coverageIndex, sourceToTests, lineToTests; forgetTestFiles() before a whole-file rerun's records
 │   └── SelectionState.ts           Tracks selected row; broadcasts scope-changed
 ├── coverage/
 │   ├── types.ts                    Manifest, FileCov, LiveCov, CoveragePct, CoverageTotals, CoverageEntry
-│   ├── CoverageStore.ts            In-memory store: 'counted' → 'measured' → 'measured-stale' lifecycle
-│   ├── SourceCounter.ts            Background scan at session start; populates CoverageStore with 'counted' entries
+│   ├── CoverageStore.ts            One contribution per test file (latest run, on disk in coverage-contrib/), summed per source version and replaced on rerun; 'counted' → 'measured' → 'measured-stale' (changed, its tests not rerun yet); outdatedContributors() drives SessionManager's coverage refresh
+│   ├── SourceCounter.ts            Background scan at session start; populates CoverageStore with 'counted' entries; countFile() for files created / edited later
 │   ├── coverageScope.ts            Which files count toward coverage, from the project's coverage config (IProjectConfig.coverageScope)
 │   └── CoverageReport.ts           Stateless metric calculation (statements/branches/functions/lines)
 ├── cache/
@@ -150,13 +150,14 @@ src/
 │   │   │   └── testDiscovery.js        Static AST test discovery (bundled; used by TestDiscoveryService)
 │   │   ├── jest/
 │   │   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest; components via the project's transformer + its map; processAsync (ESM)
-│   │   │   ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
+│   │   │   ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush per test file (tagged `tf`), heartbeats
 │   │   │   └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
 │   │   └── vitest/                    Vitest execution trace
 │   │       ├── vitestTraceConfig.js      wrapper-config helper: project config via its own Vite + plugin into every test.projects / Vitest 3 workspace entry
 │   │       ├── vitestTracePlugin.js      Vite plugin: setup file first, enforce:'post' transform of project sources (JS/TS + .vue/.svelte/.astro/.marko)
 │   │       ├── vitestTraceTransform.js   splices globalThis.__strace?.step(L,F) (lines via the incoming source map); withoutTrace()
-│   │       └── vitestTraceSetup.mjs      per-test context (beforeEach/afterEach), F record, Function.prototype.toString without the calls
+│   │       ├── vitestTraceSetup.mjs      per-test context (beforeEach/afterEach), F record, Function.prototype.toString without the calls
+│   │       └── vitestCoverageProvider.mjs coverage.provider=custom: the project's own v8 / istanbul provider, plus coverage per test file (its generateCoverage per coverageFiles entry); Vitest via the trace wrapper, Angular via its runner config
 │   ├── VitestBatchRunner.ts        IBatchRunner for Vitest: one process per batch, results streamed per file (reporter events), per-test hang limit, Vitest coverage → CoverageStore, execution trace (per-worker trace files → traceRecords)
 │   ├── VitestTrace.ts              Vitest trace on/off per root + the wrapper config (ltr.vitest.config.mjs → instrumentation/vitest/)
 │   ├── sourceFiles.ts              which files are source code: JS/TS + components (.vue/.svelte/.astro/.marko); scriptOf() for the coverage scan

@@ -63,6 +63,12 @@ export function applyTraceRecords(
   lines: string[],
   traceStore: ExecutionTraceStore,
   toKey: (p: string) => string,
+  /**
+   * The test files the batch finished (whole-file runs): their old entries
+   * are replaced by these records — a deleted test, or one that no longer
+   * reaches a line, leaves the index. Files with records are replaced too.
+   */
+  ran: Iterable<string> = [],
 ): TraceSummary {
   const testsByFile = new Map<string, TestHitRecord[]>();
   const hooksByFile = new Map<string, HookHitRecord[]>();
@@ -85,6 +91,8 @@ export function applyTraceRecords(
       seen.add(rec.tf);
     }
   }
+
+  traceStore.forgetTestFiles(new Set([...ran, ...testsByFile.keys(), ...hooksByFile.keys()]));
 
   // Coverage index — aggregate all hit lines across every test + hook.
   for (const recs of [...testsByFile.values(), ...hooksByFile.values()]) {

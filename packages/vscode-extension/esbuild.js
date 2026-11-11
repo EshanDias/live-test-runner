@@ -31,7 +31,7 @@ function copyInstrumentationFiles() {
   const sessionFiles = {
     shared: ['sessionTraceRuntime.js', 'sourceMapLookup.js'],
     jest: ['sessionTraceTransform.js', 'liveReporter.js', 'ltrCoverageSetup.js'],
-    vitest: ['vitestTraceConfig.js', 'vitestTracePlugin.js', 'vitestTraceTransform.js', 'vitestTraceSetup.mjs'],
+    vitest: ['vitestTraceConfig.js', 'vitestTracePlugin.js', 'vitestTraceTransform.js', 'vitestTraceSetup.mjs', 'vitestCoverageProvider.mjs'],
   };
   for (const [dir, files] of Object.entries(sessionFiles)) {
     fs.mkdirSync(path.join(dest, dir), { recursive: true });

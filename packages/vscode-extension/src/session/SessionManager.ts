@@ -51,6 +51,8 @@ interface RunHandle {
   id: number;
   label: string;
   startedAt: number;
+  /** The coverage refresh: not one of "our runs" for files changed on disk. */
+  background?: boolean;
   /** The session token at start — a run from before Stop never closes the current state. */
   token: number;
 }
@@ -115,6 +117,10 @@ export class SessionManager {
   /** When a source file last changed (save or disk), for the refresh guard. */
   private _lastSourceChangeAt = 0;
   private _coverageRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The coverage refresh in flight: a background run that steps aside for changes on disk. */
+  private _coverageRefresh: { cancelled: boolean } | undefined;
+  /** Runs other than the coverage refresh in flight (the ones whose writes are the tests' own, see _writtenDuringLastRuns). */
+  private _foregroundRuns = 0;
   /** When our last runs started and ended (see _writtenDuringLastRuns). */
   private _runsStartedAt = 0;
   private _runsEndedAt = 0;
@@ -193,6 +199,7 @@ export class SessionManager {
     }
     const token = ++this._token;
     this._activeRuns = 0;
+    this._foregroundRuns = 0;
     this._fullSuiteStartedAt = undefined;
     this._clearSaveTimers();
 
@@ -339,6 +346,7 @@ export class SessionManager {
     // Nothing may keep spinning after Stop.
     const touched = this._store.resetRunning();
     this._activeRuns = 0;
+    this._foregroundRuns = 0;
     this._fullSuiteStartedAt = undefined;
     this._store.clearAllLineMaps();
     this._coverageStore.clear();
@@ -518,7 +526,10 @@ export class SessionManager {
    */
   onFilesDeleted(filePaths: string[]): void {
     if (!this._session?.isTestingActive()) { return; }
-    for (const fp of filePaths) { this._coverageStore.removePath(fp); }
+    for (const fp of filePaths) {
+      this._coverageStore.removePath(fp);
+      this._traceStore.forgetTestFiles(this._traceStore.testFilesUnder(fp, path.sep));
+    }
   }
 
   onFilesChangedOnDisk(filePaths: string[]): void {
@@ -527,7 +538,9 @@ export class SessionManager {
     if (!root) { return; }
     let relevant = filePaths.filter((f) => this._isWatchedFile(f, root));
     if (relevant.length === 0) { return; }
-    if (this.isRunning()) {
+    // Only the coverage refresh runs: what it measures is outdated by this change — it steps aside.
+    if (this._coverageRefresh && this._foregroundRuns === 0) { this._cancelCoverageRefresh('files changed on disk'); }
+    if (this._foregroundRuns > 0) {
       // Rerun once the runs in flight finish (see _runQueuedDiskChanges).
       for (const f of relevant) { this._diskQueue.add(f); }
       log.info(`${describeFiles(relevant)} changed on disk during a run — queued, reruns when the run finishes`);
@@ -711,6 +724,7 @@ export class SessionManager {
           this._coverageStore.markFileStale(filePath);
           // Counted from its new content: a new file no test loads shows as 0%, an edited one keeps its totals right.
           void this._sourceCounter?.countFile(filePath);
+          void this._services.servicesFor(filePath).batchRunner.countSources?.([filePath], projectRoot);
           ran = await this._runAffectedBySourceFile(filePath, projectRoot, token);
         }
       } catch (error) {
@@ -736,6 +750,7 @@ export class SessionManager {
     if (this._session) {
       this._token++;
       this._activeRuns = 0;
+      this._foregroundRuns = 0;
       this._clearSaveTimers();
       this._killBatches();
       this._session.stop();
@@ -764,6 +779,7 @@ export class SessionManager {
     this._session?.stop();
     this._session = undefined;
     this._activeRuns = 0;
+    this._foregroundRuns = 0;
     this._fullSuiteStartedAt = undefined;
     this._store.clear();
   }
@@ -893,8 +909,16 @@ export class SessionManager {
         continue;
       }
 
+      // A test inside a suite whose tests share a variable (discovery): the whole file.
+      const shared = this._discovery.sharedSuiteIds(testFilePath);
+      const inSharedSuite = (fullName: string) => {
+        for (let n = this._store.findNodeByFullName(testFilePath, fullName); n; n = n.parentId ? this._store.getNode(n.parentId) : undefined) {
+          if (shared.has(n.id)) { return true; }
+        }
+        return false;
+      };
       for (const [suiteName, suite] of Object.entries(suiteInfo)) {
-        if (suite.isSharedVars) {
+        if (suite.isSharedVars || (shared.size > 0 && suite.testCases.some(inSharedSuite))) {
           // Shared state — must run the whole file to get correct results
           if (!filesToRunFull.includes(testFilePath)) {
             filesToRunFull.push(testFilePath);
@@ -1185,7 +1209,7 @@ export class SessionManager {
     projectRoot: string,
     token: number,
     /** openFirst (the full run): the test files on screen run first, in batches of their own. */
-    opts: { openFirst?: boolean } = {},
+    opts: { openFirst?: boolean; cancelled?: () => boolean } = {},
   ): Promise<void> {
     const CONCURRENCY = parallelBatches();
     const totalFiles  = filePaths.length;
@@ -1206,7 +1230,7 @@ export class SessionManager {
 
     const totalStart = Date.now();
     const rawLog = (msg: string) => this._outputChannel.appendLine(msg);
-    const live = () => token === this._token;
+    const live = () => token === this._token && !opts.cancelled?.();
     const hangTimeoutMs = 1000 * (vscode.workspace
       .getConfiguration('liveTestRunner')
       .get<number>('hangTimeoutSeconds') ?? 300);
@@ -1612,17 +1636,17 @@ export class SessionManager {
    * Opens a run: allocates "Run #N", writes a separator into the raw Jest
    * output and registers it as in flight. Every _beginRun needs an _endRun.
    */
-  private _beginRun(label: string, opts: { fullSuite?: boolean } = {}): RunHandle {
+  private _beginRun(label: string, opts: { fullSuite?: boolean; background?: boolean } = {}): RunHandle {
     const id = ++this._runSeq;
     this._outputChannel.appendLine('');
     this._outputChannel.appendLine(`──── Run #${id} · ${label} · ${new Date().toLocaleTimeString()} ────`);
     log.debug(`Run #${id} started: ${label}`);
     if (this._activeRuns++ === 0) {
-      this._runsStartedAt = Date.now();
       this._progress = { completed: 0, total: 0, failed: 0 };
     }
+    if (!opts.background && this._foregroundRuns++ === 0) { this._runsStartedAt = Date.now(); }
     if (opts.fullSuite) { this._fullSuiteStartedAt = Date.now(); }
-    return { id, label, startedAt: Date.now(), token: this._token };
+    return { id, label, startedAt: Date.now(), token: this._token, background: !!opts.background };
   }
 
   /**
@@ -1643,8 +1667,11 @@ export class SessionManager {
     }
     if (!quiet) { this._logRunSummary(run, fileIds, nodeId); }
     this._activeRuns = Math.max(0, this._activeRuns - 1);
+    if (!run.background) {
+      this._foregroundRuns = Math.max(0, this._foregroundRuns - 1);
+      if (this._foregroundRuns === 0) { this._runsEndedAt = Date.now(); }
+    }
     if (this._activeRuns === 0) {
-      this._runsEndedAt = Date.now();
       this._finishRuns();
       this._runQueuedDiskChanges();
       this._scheduleCoverageRefresh();
@@ -1658,10 +1685,20 @@ export class SessionManager {
    * again whole, so coverage — and their results — are current. Only in a
    * session; Stop cancels it (a new token).
    */
+  /** Stops the coverage refresh in flight (its batches are killed; runs are allowed again at once). */
+  private _cancelCoverageRefresh(why: string): void {
+    const refresh = this._coverageRefresh;
+    if (!refresh || refresh.cancelled) { return; }
+    refresh.cancelled = true;
+    log.debug(`Coverage refresh stopped: ${why}`);
+    for (const services of this._services.all()) { services.batchRunner.kill(); services.batchRunner.reset(); }
+  }
+
   private _clearCoverageRefresh(): void {
     if (this._coverageRefreshTimer) { clearTimeout(this._coverageRefreshTimer); this._coverageRefreshTimer = undefined; }
     this._coverageRefreshedAt.clear();
     this._lastSourceChangeAt = 0;
+    if (this._coverageRefresh) { this._coverageRefresh.cancelled = true; this._coverageRefresh = undefined; }
   }
 
   private _scheduleCoverageRefresh(): void {
@@ -1672,16 +1709,27 @@ export class SessionManager {
       if (token !== this._token || this._activeRuns > 0 || !this._session?.isTestingActive()) { return; }
       const projectRoot = this._getProjectRoot();
       if (!projectRoot) { return; }
-      const files = this._coverageStore.outdatedContributors().filter((fp) =>
+      // A contributor is a test file (or, Vitest with isolate: false, several joined by newlines).
+      const files = [...new Set(this._coverageStore.outdatedContributors().flatMap((c) => c.split('\n')))].filter((fp) =>
         (this._coverageRefreshedAt.get(fp) ?? 0) < this._lastSourceChangeAt && this._isRunnable(fp) && fs.existsSync(fp));
       if (files.length === 0) { return; }
       const at = Date.now();
       for (const fp of files) { this._coverageRefreshedAt.set(fp, at); }
       log.info(`Coverage refresh: ${files.length} test file(s) measured before a change run again whole`);
-      const run = this._beginRun(`coverage refresh (${files.length} file(s))`);
-      void this._runFiles(files, projectRoot, token)
+      const run = this._beginRun(`coverage refresh (${files.length} file(s))`, { background: true });
+      const refresh = { cancelled: false };
+      this._coverageRefresh = refresh;
+      void this._runFiles(files, projectRoot, token, { cancelled: () => refresh.cancelled })
         .catch((err) => log.error('Coverage refresh failed', err))
-        .finally(() => this._endRun(run, files));
+        .finally(() => {
+          if (this._coverageRefresh === refresh) { this._coverageRefresh = undefined; }
+          if (refresh.cancelled) {
+            // Its files may still show running; the next change refreshes them again.
+            for (const fp of files) { if (this._store.getFile(fp)?.status === 'running') { this._store.cleanupStaleNodes(fp, false); this._notify('onFileResult', fp); } }
+            for (const fp of files) { this._coverageRefreshedAt.delete(fp); }
+          }
+          this._endRun(run, files);
+        });
     }, COVERAGE_REFRESH_DELAY_MS);
   }
 

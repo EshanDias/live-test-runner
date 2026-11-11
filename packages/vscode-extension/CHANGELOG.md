@@ -2,6 +2,12 @@
 
 All notable changes to Live Test Runner are documented here.
 
+## [3.4.1] - Unreleased
+
+### Fixed
+- **Coverage stays true while you work** — delete a test or a test file, stop calling a function, add or delete a file: the numbers follow. While tests rerun in the background to update them, the Coverage tab says **Updating coverage…**.
+- Tests that share a variable in a `describe` now rerun together when you save, never one by one.
+
 ## [3.4.0] - 2026-11-09
 
 ### Added

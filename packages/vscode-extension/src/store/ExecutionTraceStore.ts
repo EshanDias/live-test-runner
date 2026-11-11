@@ -65,6 +65,9 @@ export class ExecutionTraceStore {
    */
   private readonly _importers = new Map<string, Set<string>>();
 
+  /** Test file → the source files its entries name (sourceToTests, lineToTests): what forgetTestFiles visits. */
+  private readonly _sourcesOfTestFile = new Map<string, Set<string>>();
+
   // ── Trace index ────────────────────────────────────────────────────────────
 
   setTraceFile(testId: string, filePath: string): void {
@@ -110,6 +113,7 @@ export class ExecutionTraceStore {
 
   setSourceMapping(sourceFilePath: string, mapping: SourceTestMapping): void {
     this._sourceToTests.set(sourceFilePath, mapping);
+    for (const tf of Object.keys(mapping)) { this._noteSource(tf, sourceFilePath); }
   }
 
   getSourceMapping(sourceFilePath: string): SourceTestMapping | undefined {
@@ -166,14 +170,15 @@ export class ExecutionTraceStore {
 
   /**
    * Merge a per-file line→test mapping into the index.
-   * Called by the batch runner (JestBatchRunner) after each trace parse.
-   * Accumulates across reruns — entries are added, never removed mid-session.
+   * Called by the batch runners after each trace parse; a rerun test file's
+   * old entries were removed first (forgetTestFiles).
    */
   mergeLineToTests(
     sourceFilePath: string,
     testFileId: string,
     lineMap: Map<number, string[]>,  // line → array of fullName strings
   ): void {
+    this._noteSource(testFileId, sourceFilePath);
     let fileMap = this._lineToTests.get(sourceFilePath);
     if (!fileMap) {
       fileMap = new Map();
@@ -235,6 +240,48 @@ export class ExecutionTraceStore {
     return lines.join('\n');
   }
 
+  // ── Replacing a test file's entries ────────────────────────────────────────
+
+  /**
+   * The test files ran again (whole): what they ran before no longer counts.
+   * Called with every test file a batch finished, before its trace records
+   * are applied — a test that was deleted or renamed, or no longer reaches a
+   * line, leaves the index; a deleted test file is forgotten the same way.
+   */
+  forgetTestFiles(testFiles: Iterable<string>): void {
+    for (const tf of testFiles) {
+      const sources = this._sourcesOfTestFile.get(tf);
+      if (!sources) { continue; }
+      this._sourcesOfTestFile.delete(tf);
+      for (const src of sources) {
+        const mapping = this._sourceToTests.get(src);
+        if (mapping && mapping[tf]) {
+          delete mapping[tf];
+          if (Object.keys(mapping).length === 0) { this._sourceToTests.delete(src); }
+        }
+        const lines = this._lineToTests.get(src);
+        if (!lines) { continue; }
+        for (const [line, entries] of lines) {
+          const kept = entries.filter((e) => e.testFileId !== tf);
+          if (kept.length === 0) { lines.delete(line); } else if (kept.length !== entries.length) { lines.set(line, kept); }
+        }
+        if (lines.size === 0) { this._lineToTests.delete(src); }
+      }
+    }
+  }
+
+  /** Test files whose entries are under `deleted` (a deleted test file or folder). */
+  testFilesUnder(deleted: string, sep: string): string[] {
+    const prefix = deleted.endsWith(sep) ? deleted : deleted + sep;
+    return [...this._sourcesOfTestFile.keys()].filter((tf) => tf === deleted || tf.startsWith(prefix));
+  }
+
+  private _noteSource(testFile: string, sourceFile: string): void {
+    let set = this._sourcesOfTestFile.get(testFile);
+    if (!set) { set = new Set(); this._sourcesOfTestFile.set(testFile, set); }
+    set.add(sourceFile);
+  }
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   /**
@@ -247,5 +294,6 @@ export class ExecutionTraceStore {
     this._coverageIndex.clear();
     this._sourceToTests.clear();
     this._lineToTests.clear();
+    this._sourcesOfTestFile.clear();
   }
 }

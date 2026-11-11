@@ -157,3 +157,27 @@ describe('parsing with an older or newer Babel than the plugin list expects', ()
     expect(() => _parseDroppingRemoved(babel8, 'let = ;', { sourceType: 'module', plugins: ['typescript'] })).toThrow();
   });
 });
+
+describe('suites whose tests share state (rerun whole on save)', () => {
+  const shared = (code: string) => {
+    const r = discoverTests(code, path.join(root, 'a.test.js'), root) as unknown as { suites: Array<{ name: string; isSharedVars: boolean; sharedVarNames: string[] }> };
+    return Object.fromEntries(r.suites.map((s) => [s.name, s.sharedVarNames]));
+  };
+
+  it('a `let` the tests use is shared; a primitive const is not', () => {
+    expect(shared("describe('s', () => {\n  let n = 0;\n  const LIMIT = 3;\n  test('a', () => { n++; expect(LIMIT).toBe(3); });\n});")).toEqual({ s: ['n'] });
+  });
+
+  it('a module from require() is not shared state; an object built at file scope is', () => {
+    const code = [
+      "const math = require('./math');",
+      "const { shout } = require('./strings');",
+      "const add = require('./math').add;",
+      'const cart = { items: [] };',
+      "describe('s', () => {",
+      "  test('a', () => { cart.items.push(math.add(1, add(1, 1))); expect(shout('x')).toBe('X'); });",
+      '});',
+    ].join('\n');
+    expect(shared(code)).toEqual({ s: ['cart'] });
+  });
+});

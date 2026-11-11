@@ -32,7 +32,7 @@ export function createAngularServices(options: {
   const projectConfig = new AngularProjectConfig();
   const newRunner = (logger: (msg: string) => void) =>
     runnerAdapter.createRunner({ logger, tmpDir: sessionDir }) as CommandRunner;
-  const batchRunner = new AngularBatchRunner(new VitestBatchRunner(newRunner, { store: coverageStore, sessionDir, projectConfig }));
+  const batchRunner = new AngularBatchRunner(new VitestBatchRunner(newRunner, { store: coverageStore, sessionDir, projectConfig, perTestFile: 'always' }));
   return {
     framework: FRAMEWORK_IDS.angular,
     displayName: 'Angular',

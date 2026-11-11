@@ -523,7 +523,29 @@ function checkMatchesPlainPytest(api, t, workspace, label = 'results match plain
   t.check(`${label} (${results.size} files)`, results.size > 0 && diffs.length === 0, diffs.slice(0, 25).join('\n') || 'no files');
 }
 
+/**
+ * Waits until the session is idle including the coverage refresh: the runs,
+ * the refresh delay (750 ms after the last run), then the refresh's own runs.
+ */
+async function settle(api, { timeout = 120_000 } = {}) {
+  await waitFor(() => api.session._activeRuns === 0, { what: 'runs to finish', timeout });
+  await sleep(1200);
+  await waitFor(() => api.session._activeRuns === 0, { what: 'the coverage refresh to finish', timeout });
+}
+
+/** The raw output since `mark` without the coverage refresh runs (the lines between their "──── Run #N · coverage refresh" header and the next header). */
+function rawSinceWithoutRefresh(api, mark) {
+  const out = [];
+  let inRefresh = false;
+  for (const l of rawSince(api, mark)) {
+    if (/^──── Run #\d+ · /.test(l)) { inRefresh = /· coverage refresh/.test(l); }
+    if (!inRefresh) { out.push(l); }
+  }
+  return out;
+}
+
 module.exports = {
+  settle, rawSinceWithoutRefresh,
   workspacePython, plainPytestResults, checkMatchesPlainPytest, sortedCounts, pytestProcesses,
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,

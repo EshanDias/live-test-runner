@@ -95,7 +95,6 @@ export class CoverageStore {
       addCounters(version.sum, sparse, 1);
       version.pct = calculate(mf.manifest, version.sum);
       ledger.entry = undefined;
-      this._batchEntries.delete(filePath);
     }
     this._writeContribution(contributor, stored);
     if (Object.keys(stored).length > 0) { this._contributors.add(contributor); } else { this._contributors.delete(contributor); }
@@ -119,7 +118,7 @@ export class CoverageStore {
    */
   removePath(deleted: string): void {
     const under = (p: string) => p === deleted || p.startsWith(deleted.endsWith(path.sep) ? deleted : deleted + path.sep);
-    for (const c of [...this._contributors]) { if (under(c)) { this.removeContribution(c); } }
+    for (const c of [...this._contributors]) { if (c.split('\n').some(under)) { this.removeContribution(c); } }
     for (const fp of this._files()) { if (under(fp)) { this.removeSource(fp); } }
   }
 
@@ -159,7 +158,10 @@ export class CoverageStore {
       log.trace(`Changed: ${filePath}`);
     }
     const batch = this._batchEntries.get(filePath);
-    if (batch?.state === 'measured') { this._batchEntries.set(filePath, { ...batch, state: 'measured-stale' }); }
+    if (batch?.state === 'measured') {
+      this._batchEntries.set(filePath, { ...batch, state: 'measured-stale' });
+      if (ledger) { ledger.entry = undefined; }
+    }
     this._changed();
   }
 
@@ -178,6 +180,8 @@ export class CoverageStore {
     data: { manifestPath: string; counters: LiveCov; pct: CoveragePct },
   ): void {
     this._batchEntries.set(filePath, { state: 'measured', ...data });
+    const ledger = this._ledgers.get(filePath);
+    if (ledger) { ledger.entry = undefined; }
     log.trace(
       `${filePath}: stmts ${data.pct.statements.covered}/${data.pct.statements.total}, ` +
       `branches ${data.pct.branches.covered}/${data.pct.branches.total}, ` +
@@ -201,6 +205,8 @@ export class CoverageStore {
     const entry = this._batchEntries.get(filePath);
     if (entry?.state === 'measured-stale') {
       this._batchEntries.set(filePath, { ...entry, state: 'measured' });
+      const ledger = this._ledgers.get(filePath);
+      if (ledger) { ledger.entry = undefined; }
       this._changed();
     }
   }
@@ -236,11 +242,17 @@ export class CoverageStore {
 
   getEntry(filePath: string): CoverageEntry | undefined {
     const ledger = this._ledgers.get(filePath);
+    const batch = this._batchEntries.get(filePath);
     if (ledger && ledger.versions.size > 0) {
-      if (!ledger.entry) { ledger.entry = entryOf(ledger); }
+      if (!ledger.entry) {
+        ledger.entry = entryOf(ledger);
+        // Another framework measured the file per batch (a mixed project): a line either one ran counts.
+        if (ledger.entry && ledger.entry.state !== 'counted' && batch && batch.state !== 'counted' && batch.manifestPath !== ledger.entry.manifestPath) {
+          ledger.entry = mergeEntries(batch, ledger.entry);
+        }
+      }
       if (ledger.entry) { return ledger.entry; }
     }
-    const batch = this._batchEntries.get(filePath);
     if (batch) { return batch; }
     const counted = this._counted.get(filePath);
     return counted ? { state: 'counted', ...counted } : undefined;
@@ -486,6 +498,18 @@ function entryOf(ledger: Ledger): CoverageEntry | undefined {
     manifestPath = v.manifestPath;
   }
   return { state, manifestPath, counters, pct: calculate(manifest, counters) };
+}
+
+type MeasuredEntry = Extract<CoverageEntry, { manifestPath: string }>;
+
+/** Two measurements of one file by different frameworks, merged by line; stale when either is. */
+function mergeEntries(a: MeasuredEntry, b: MeasuredEntry): CoverageEntry {
+  const ma = readManifest(a.manifestPath);
+  const mb = readManifest(b.manifestPath);
+  if (!ma || !mb) { return b; }
+  const counters = mergeByLine(ma, a.counters, mb, b.counters);
+  const state = a.state === 'measured-stale' || b.state === 'measured-stale' ? 'measured-stale' : 'measured';
+  return { state, manifestPath: b.manifestPath, counters, pct: calculate(mb, counters) };
 }
 
 function pctOf(v: Version): CoveragePct | undefined {

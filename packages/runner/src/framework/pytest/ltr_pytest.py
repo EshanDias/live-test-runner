@@ -17,7 +17,11 @@ What it does (every output goes to files in the extension's session folder):
   ``<dir>/coverage-final.json`` (data files stay in ``<dir>``). Each test is
   measured in its own coverage context (its node id), written as the
   extension's trace records to ``<dir>/trace.jsonl``: which lines each test
-  ran ("covering tests", precise reruns when a source file is saved).
+  ran ("covering tests", precise reruns when a source file is saved), and
+  each test file's own coverage to ``<dir>/coverage-per-test-file.json``
+  (``{"tests": {test file: map}, "imports": map}``; ``imports`` = lines run
+  outside any test: imports, collection, conftest). The extension keeps each
+  test file's latest coverage and replaces it when the file runs again.
 
 Result shapes mirror the runner's TypeScript types (FileRunResult,
 TestCaseRunResult, ConsoleEntry). Logs: ``[LTR:<level>] message`` on stderr.
@@ -28,6 +32,7 @@ Keep it compatible with every pytest >= 7.0 and plain Python syntax (no
 
 import json
 import os
+import re
 import sys
 import time
 
@@ -236,6 +241,7 @@ def _finish_coverage():
             json.dump(_istanbul(report), fh)
         if _contexts:
             _write_trace(os.path.join(directory, "trace.jsonl"))
+            _write_per_test_file(report, os.path.join(directory, "coverage-per-test-file.json"))
         return out
     except Exception as err:
         _log("warn", "could not write coverage: %s" % err)
@@ -289,6 +295,47 @@ def _write_trace(target):
                 break  # coverage only: one record is enough
 
 
+def _write_per_test_file(report, target):
+    """Each test file's coverage on its own, from the per-test contexts.
+
+    A test file's contexts are its tests' node ids (``<file>::...``); lines
+    run outside any test (context "") go to ``imports``: module-level code
+    runs once per process, so the extension credits it to every test file
+    that imports the module.
+    """
+    started = time.time()
+    try:
+        data = _cov.get_data()
+        has_arcs = data.has_arcs()
+        prefixes = {}  # node id file part -> test file
+        for label in data.measured_contexts():
+            node = _nodes.get(label) if label else None
+            if node is not None:
+                prefixes[label.split("::", 1)[0]] = node["file"]
+        measured = [m for m in data.measured_files() if _keep_coverage_file(os.path.normpath(m))]
+
+        def hits(pattern):
+            data.set_query_contexts([pattern])
+            out = {}
+            for m in measured:
+                lines = set(data.lines(m) or [])
+                arcs = set(data.arcs(m) or []) if has_arcs else set()
+                if lines or arcs:
+                    out[os.path.normpath(m)] = (lines, arcs)
+            return out
+
+        tests = {}
+        for prefix, test_file in prefixes.items():
+            tests[test_file] = _istanbul(report, hits("^" + re.escape(prefix) + "::"))
+        imports = _istanbul(report, hits("^$"))
+        data.set_query_contexts(None)
+        with open(target, "w", encoding="utf-8") as fh:
+            json.dump({"tests": tests, "imports": imports}, fh)
+        _log("debug", "coverage per test file: %d test file(s), %d measured file(s) in %.1fs" % (len(tests), len(measured), time.time() - started))
+    except Exception as err:  # the merged report still stands
+        _log("warn", "could not write coverage per test file: %s" % err)
+
+
 def _keep_coverage_file(path):
     """A measured file under the project (the rootdir or the cwd), never our plugin.
 
@@ -308,18 +355,28 @@ def _keep_coverage_file(path):
     return False
 
 
-def _istanbul(report):
+def _istanbul(report, hits=None):
     """coverage.py's JSON report -> an istanbul coverage map (0/1 counters).
 
     Statements: one per measured line. Branches: the arcs leaving a line,
     one arm per destination (negative = leaves the function). Functions:
     coverage >= 7.6 regions (skipped before).
+
+    ``hits`` ({file: (lines, arcs)}): counters from these instead of the
+    report's executed lines (one test file's contexts); the maps stay the
+    report's, so every test file's map of a file is the same version. Files
+    without hits are left out.
     """
     out = {}
     for name, f in (report.get("files") or {}).items():
         path = os.path.normpath(os.path.join(_CWD, name))
         if not _keep_coverage_file(path):
             continue
+        own = None
+        if hits is not None:
+            own = hits.get(path)
+            if own is None:
+                continue
         try:
             with open(path, encoding="utf-8", errors="replace") as fh:
                 text = fh.read().split("\n")
@@ -335,12 +392,12 @@ def _istanbul(report):
         for i, line in enumerate(lines):
             key = str(i)
             statement_map[key] = {"start": {"line": line, "column": 0}, "end": {"line": line, "column": width(line)}}
-            s[key] = 1 if line in executed else 0
+            s[key] = 1 if line in (own[0] if own else executed) else 0
 
         branch_map, b = {}, {}
         arcs = {}
         for arc in f.get("executed_branches") or []:
-            arcs.setdefault(arc[0], []).append((arc[1], 1))
+            arcs.setdefault(arc[0], []).append((arc[1], 1 if own is None or (arc[0], arc[1]) in own[1] else 0))
         for arc in f.get("missing_branches") or []:
             arcs.setdefault(arc[0], []).append((arc[1], 0))
         for i, start in enumerate(sorted(a for a in arcs if a > 0)):
@@ -371,10 +428,49 @@ def _istanbul(report):
                 "decl": {"start": {"line": first, "column": 0}, "end": {"line": first, "column": width(first)}},
                 "loc": {"start": {"line": first, "column": 0}, "end": {"line": region_lines[-1], "column": width(region_lines[-1])}},
             }
-            fn[key] = 1 if region.get("executed_lines") else 0
+            ran = set(region.get("executed_lines") or [])
+            fn[key] = 1 if (ran & own[0] if own else ran) else 0
 
         out[path] = {"path": path, "statementMap": statement_map, "s": s, "branchMap": branch_map, "b": b, "fnMap": fn_map, "f": fn}
     return out
+
+
+def count_files(paths, target):
+    """The coverage structure of source files no test has run, with zero counters.
+
+    Run by the extension (``python -c "import ltr_pytest; ltr_pytest.count_files([...], out)"``
+    in the project's folder) when a source file is created or edited and no
+    test loads it: coverage.py analyses it with the project's own settings
+    (statements, branches, functions) without running it, and the result is
+    written like ``coverage-final.json``. Files coverage.py would not report
+    (outside ``source``, omitted) are left out.
+    """
+    import coverage
+
+    cov = coverage.Coverage(data_file=None, config_file=True)
+    files = {}
+    for path in paths:
+        try:
+            analysis = cov._analyze(path)
+        except Exception:  # not Python, omitted, unreadable
+            continue
+        f = {"executed_lines": [], "missing_lines": sorted(analysis.statements), "executed_branches": [], "missing_branches": []}
+        if cov.get_option("run:branch"):
+            for start, ends in sorted(analysis.missing_branch_arcs().items()):
+                for end in ends:
+                    f["missing_branches"].append([start, end])
+        try:
+            functions = {}
+            for region in cov._get_file_reporter(path).code_regions():
+                if region.kind == "function":
+                    lines = sorted(set(region.lines) & set(analysis.statements))
+                    functions[region.name] = {"executed_lines": [], "missing_lines": lines, "start_line": region.start}
+            f["functions"] = functions
+        except Exception:  # coverage before 7.6: no regions
+            pass
+        files[os.path.relpath(os.path.abspath(path), _CWD)] = f
+    with open(target, "w", encoding="utf-8") as fh:
+        json.dump(_istanbul({"files": files}), fh)
 
 
 # -- collection ----------------------------------------------------------------------

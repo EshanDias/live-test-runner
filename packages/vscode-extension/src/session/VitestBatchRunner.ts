@@ -50,7 +50,10 @@ import {
 import { BatchRunOptions, IBatchRunner, RelatedRunOptions } from './IBatchRunner';
 import { runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
-import { applyIstanbulCoverage } from '../coverage/istanbulCoverage';
+import { applyIstanbulCoverage, IstanbulFileCoverage, measuredFiles } from '../coverage/istanbulCoverage';
+import { MeasuredFile } from '../coverage/CoverageStore';
+import { calculate } from '../coverage/CoverageReport';
+import { sumCounters, zeroCounters } from '../coverage/coverageRules';
 import { CoverageScope, coverageScopeOf, defaultCoverageScope } from '../coverage/coverageScope';
 import { IProjectConfig } from './IProjectConfig';
 import { PLAIN_RUN_HANG_FACTOR } from '../constants';
@@ -82,7 +85,15 @@ export class VitestBatchRunner implements IBatchRunner {
    */
   constructor(
     private readonly _createRunner: (rawLog: (msg: string) => void) => CommandRunner,
-    private readonly _coverage?: { store: CoverageStore; sessionDir: string; projectConfig?: IProjectConfig },
+    private readonly _coverage?: {
+      store: CoverageStore; sessionDir: string; projectConfig?: IProjectConfig;
+      /**
+       * When coverage is measured per test file: 'with-trace' (default; the
+       * trace wrapper lets Vite load the provider module), 'always' (the
+       * runner's own config allows it — Angular's runner config).
+       */
+      perTestFile?: 'with-trace' | 'always';
+    },
     /** The execution trace (none: batches run as configured). */
     private readonly _trace?: { trace: VitestTrace; sessionDir: string },
   ) {}
@@ -179,7 +190,8 @@ export class VitestBatchRunner implements IBatchRunner {
           };
         }
       }
-      live = await runner.liveCommand(filePaths, { coverageDir, related, config: trace?.config, typecheckOnly: options.typecheckOnly });
+      // With the trace wrapper (it lets Vite load our folder): coverage per test file too.
+      live = await runner.liveCommand(filePaths, { coverageDir, related, config: trace?.config, typecheckOnly: options.typecheckOnly, perTestFileProvider: trace || this._coverage?.perTestFile === 'always' ? COVERAGE_PROVIDER_PATH : undefined });
       if (trace) {
         live.command.extraEnv = {
           ...live.command.extraEnv,
@@ -329,7 +341,9 @@ export class VitestBatchRunner implements IBatchRunner {
       const scope = this._coverage.projectConfig
         ? await coverageScopeOf(this._coverage.projectConfig, projectRoot)
         : defaultCoverageScope(projectRoot);
-      if (generation === this._generation) { this._applyCoverage(live.coverageFile, projectRoot, batch, scope); }
+      // Only what finished here: not the file the hang limit stopped, not one a newer batch took over, not type-check-only files.
+      const measured = new Set([...received].filter((fp) => owns(fp) && fp !== timedOut?.file && !typecheckOnly.has(fp)));
+      if (generation === this._generation) { this._applyCoverage(live.coverageFile, live.perTestFileDir, projectRoot, batch, scope, { startedAt, ran: measured, toKey, batchFiles: filePaths }); }
     }
 
     const stopped = generation !== this._generation;
@@ -402,7 +416,9 @@ export class VitestBatchRunner implements IBatchRunner {
         vt.turnOff(ctx.projectRoot, marker.reason || 'the wrapper config could not add the trace', 'info');
         return 'ok';
       }
-      const summary = applyTraceRecords(readTraceLines(files), ctx.options.traceStore, ctx.toKey);
+      // Whole-file runs: the test files that finished here replace their old entries (cut short: only those with records).
+      const finished = ctx.cutShort ? [] : [...ctx.received].filter((fp) => !ctx.typecheckOnly.has(fp));
+      const summary = applyTraceRecords(readTraceLines(files), ctx.options.traceStore, ctx.toKey, finished);
       const graphFiles = applyDependencyFiles(depFiles, ctx.options.traceStore);
       if (graphFiles > 0) { log.debug(`${ctx.batch}: module graph — ${graphFiles} project file(s) and their importers`); }
       if (ctx.cutShort) { return 'ok'; }
@@ -422,18 +438,82 @@ export class VitestBatchRunner implements IBatchRunner {
     }
   }
 
-  private _applyCoverage(coverageFile: string, projectRoot: string, batch: string, scope: CoverageScope): void {
+  /**
+   * The batch's coverage into the store. With per-test-file coverage (the
+   * wrapper provider), each test file that finished replaces its
+   * contribution; the merged report then adds only files no test loaded
+   * (`coverage.include`: 0%). Without it, the merged report as before.
+   */
+  private _applyCoverage(
+    coverageFile: string,
+    perTestFileDir: string | undefined,
+    projectRoot: string,
+    batch: string,
+    scope: CoverageScope,
+    run: { startedAt: number; ran: Set<string>; toKey: (p: string) => string; batchFiles: string[] },
+  ): void {
     const dir = path.dirname(coverageFile);
+    const store = this._coverage!.store;
+    const manifestDir = path.join(this._coverage!.sessionDir, 'vitest-manifests');
+    const counts = (fp: string) => scope.counts(fp);
     try {
+      const perFile = perTestFileDir && fs.existsSync(perTestFileDir) ? fs.readdirSync(perTestFileDir).filter((f) => f.endsWith('.json')) : [];
+      if (perTestFileDir && perFile.length === 0 && run.ran.size > 0 && fs.existsSync(coverageFile)) {
+        log.debug(`${batch}: no per-test-file coverage written — merging the batch's coverage`);
+      }
+      if (perFile.length > 0) {
+        // Vitest keys a coverage entry by its test files joined with ","; match the batch's own files (paths may hold commas).
+        const byKey = new Map<string, string[]>();
+        const known = run.batchFiles.map((fp) => ({ fp, real: fromRunnerPath(fp) }));
+        const resolveKey = (doc: { key: string; files?: string[]; base?: string }): string[] => {
+          const base = doc.base ?? projectRoot;
+          const one = run.toKey(path.resolve(base, doc.key));
+          if (run.ran.has(one)) { return [one]; }
+          const parts = (doc.files ?? doc.key.split(',').map((p) => path.resolve(base, p))).map((p) => run.toKey(p));
+          if (parts.every((p) => run.ran.has(p))) { return parts; }
+          return known.filter((k) => doc.key.includes(k.real) || doc.key.includes(path.relative(base, k.real))).map((k) => k.fp);
+        };
+        const contributions = new Map<string, Map<string, MeasuredFile>>();
+        for (const f of perFile) {
+          const doc = JSON.parse(fs.readFileSync(path.join(perTestFileDir!, f), 'utf8')) as { key: string; files?: string[]; base?: string; coverage: Record<string, IstanbulFileCoverage> };
+          const testFiles = byKey.get(doc.key) ?? resolveKey(doc);
+          byKey.set(doc.key, testFiles);
+          if (testFiles.length === 0) { continue; }
+          // Several test files in one entry (isolate: false): one contributor for all of them.
+          const id = testFiles.join('\n');
+          const { files } = measuredFiles(doc.coverage, manifestDir, projectRoot, counts);
+          const into = contributions.get(id) ?? new Map<string, MeasuredFile>();
+          for (const [fp, mf] of files) {
+            const prev = into.get(fp);
+            into.set(fp, prev && prev.manifestPath === mf.manifestPath ? { ...prev, counters: sumCounters(prev.counters, mf.counters) } : mf);
+          }
+          contributions.set(id, into);
+        }
+        const covered = new Set([...contributions.keys()].flatMap((id) => id.split('\n')));
+        // A test file that finished but loaded no source file covers nothing now.
+        for (const fp of run.ran) { if (!covered.has(fp)) { contributions.set(fp, new Map()); } }
+        let sources = 0;
+        for (const [id, files] of contributions) { store.replaceContribution(id, files, run.startedAt); sources += files.size; }
+        // Files no test loaded (include): the merged report's zero entries.
+        let untested = 0;
+        if (fs.existsSync(coverageFile)) {
+          const merged = measuredFiles(JSON.parse(fs.readFileSync(coverageFile, 'utf8')), manifestDir, projectRoot, counts).files;
+          for (const [fp, mf] of merged) {
+            // Every file the report lists, zeroed: what it shows once no test reaches it (shown under its tests' coverage until then).
+            const zero = zeroCounters(mf.counters);
+            store.setMeasuredEntry(fp, { manifestPath: mf.manifestPath, counters: zero, pct: calculate(mf.manifest, zero) });
+            if (store.contributorsOf(fp).length === 0) { untested++; }
+          }
+        }
+        log.debug(`${batch}: coverage — ${contributions.size} test file(s) → ${sources} file measurement(s)${untested ? `, ${untested} untested file(s)` : ''}`);
+        return;
+      }
       if (!fs.existsSync(coverageFile)) {
         log.debug(`${batch}: Vitest wrote no coverage (no source file was loaded, or the run was stopped)`);
         return;
       }
       const coverage = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
-      const { measured, excluded } = applyIstanbulCoverage(
-        coverage, this._coverage!.store, path.join(this._coverage!.sessionDir, 'vitest-manifests'), projectRoot,
-        (fp) => scope.counts(fp),
-      );
+      const { measured, excluded } = applyIstanbulCoverage(coverage, store, manifestDir, projectRoot, counts);
       log.debug(`${batch}: coverage — ${measured} file(s) measured, ${excluded} excluded`);
     } catch (err) {
       log.warn(`${batch}: could not read Vitest's coverage (${coverageFile})`, err);
@@ -442,6 +522,9 @@ export class VitestBatchRunner implements IBatchRunner {
     }
   }
 }
+
+/** The wrapper coverage provider (see vitestCoverageProvider.mjs), as shipped in out/ (esbuild.js), next to the trace setup. */
+const COVERAGE_PROVIDER_PATH = path.join(__dirname, 'instrumentation', 'vitest', 'vitestCoverageProvider.mjs');
 
 function seconds(since: number): string {
   return `${((Date.now() - since) / 1000).toFixed(1)}s`;

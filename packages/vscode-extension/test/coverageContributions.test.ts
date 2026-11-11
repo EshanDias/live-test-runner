@@ -165,6 +165,16 @@ function suite(withDir: boolean) {
     expect(store.getTotals().unmeasuredTestFiles).toBeUndefined();
   });
 
+  it('a file another framework measured per batch (mixed project) shows the lines either one ran', () => {
+    store.replaceContribution('/p/a.test.js', measured([[SRC, cov([1, 0, 0, 0])]]), 1);
+    const vitest = version(SRC, 'vitest');
+    store.setMeasuredEntry(SRC, { manifestPath: vitest, counters: cov([0, 0, 1, 0]), pct: { statements: { covered: 1, total: 4, pct: 25 }, branches: { covered: 0, total: 2, pct: 0 }, functions: { covered: 0, total: 2, pct: 0 }, lines: { covered: 1, total: 4, pct: 25 } } });
+    expect(covered(SRC)).toBe(2);
+    // The Jest test file reran and reaches nothing now: only Vitest's line is left.
+    store.replaceContribution('/p/a.test.js', measured([[SRC, cov([0, 0, 0, 0])]]), 2);
+    expect(covered(SRC)).toBe(1);
+  });
+
   it('clear() forgets everything', () => {
     store.replaceContribution('/p/a.test.js', measured([[SRC, cov([1, 1, 0, 0])]]), 1);
     store.clear();

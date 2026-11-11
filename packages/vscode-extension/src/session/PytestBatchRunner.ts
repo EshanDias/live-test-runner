@@ -38,7 +38,10 @@ import { BatchRunOptions, IBatchRunner, RelatedRunOptions } from './IBatchRunner
 import { PythonImportGraph, pythonImportRoots } from './pythonImports';
 import { runnableKey } from './RunnableFiles';
 import { CoverageStore } from '../coverage/CoverageStore';
-import { applyIstanbulCoverage } from '../coverage/istanbulCoverage';
+import { applyIstanbulCoverage, IstanbulFileCoverage, measuredFiles } from '../coverage/istanbulCoverage';
+import { MeasuredFile } from '../coverage/CoverageStore';
+import { calculate } from '../coverage/CoverageReport';
+import { sumCounters, zeroCounters } from '../coverage/coverageRules';
 import { coverageScopeOf } from '../coverage/coverageScope';
 import { IProjectConfig } from './IProjectConfig';
 import { pythonInterpreters } from '../python/PythonInterpreters';
@@ -111,11 +114,7 @@ export class PytestBatchRunner implements IBatchRunner {
   async runRelated(options: RelatedRunOptions): Promise<{ ran: string[]; missing: string[] }> {
     if (options.sourceFiles.length === 0 || this._killed) { return { ran: [], missing: [] }; }
     const { projectRoot } = options;
-    let graph = this._graphs.get(projectRoot);
-    if (!graph) {
-      graph = new PythonImportGraph(pythonImportRoots(projectRoot, pytestSettings(projectRoot).pythonpath));
-      this._graphs.set(projectRoot, graph);
-    }
+    const graph = this._graph(projectRoot);
     const tests = options.store.getAllFiles().filter((f) => !f.excluded).map((f) => f.filePath);
     const dependents = new Set<string>();
     for (const src of options.sourceFiles) {
@@ -128,6 +127,37 @@ export class PytestBatchRunner implements IBatchRunner {
     log.debug(`Import graph: ${dependents.size} test file(s) import ${options.sourceFiles.map((f) => path.basename(f)).join(', ')}`);
     if (!(await this._ready(projectRoot))) { return { ran: [], missing: [] }; }
     return this._run({ ...options, filePaths: [...dependents] });
+  }
+
+  /**
+   * Python source files created or edited that no test has run: counted by
+   * the project's coverage.py (its settings; nothing is run), so a new file
+   * shows as 0% at once and an edited one keeps its totals right.
+   */
+  async countSources(files: string[], projectRoot: string): Promise<void> {
+    const py = files.filter((f) => f.endsWith('.py') && fs.existsSync(f));
+    if (!this._coverage || py.length === 0 || !(await this._ready(projectRoot))) { return; }
+    const generation = this._generation;
+    const runner = this._createRunner(() => {}) as PytestRunner;
+    runner.setProjectRoot(projectRoot);
+    const out = path.join(this._coverage.sessionDir, `ltr-pytest-count-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    try {
+      const r = await new Executor(() => {}).run({ ...runner.countFilesCommand(py, out), timeoutMs: 30_000 });
+      if (generation !== this._generation || !fs.existsSync(out)) {
+        if (!fs.existsSync(out)) { log.debug(`Could not count ${py.map((f) => path.basename(f)).join(', ')} for coverage: ${tail(r.stderr || r.stdout, 3)}`); }
+        return;
+      }
+      const scope = await coverageScopeOf(this._coverage.projectConfig ?? { coverageScope: async () => undefined }, projectRoot);
+      const { files: counted } = measuredFiles(respelled(projectRoot, JSON.parse(fs.readFileSync(out, 'utf8'))), path.join(this._coverage.sessionDir, 'pytest-manifests'), projectRoot, (fp) => scope.counts(fp));
+      for (const [fp, mf] of counted) {
+        this._coverage.store.setMeasuredEntry(fp, { manifestPath: mf.manifestPath, counters: mf.counters, pct: calculate(mf.manifest, mf.counters) });
+      }
+      log.debug(`Counted ${counted.size} Python source file(s) for coverage (no test runs them yet)`);
+    } catch (err) {
+      log.debug(`Could not count ${py.map((f) => path.basename(f)).join(', ')} for coverage: ${(err as Error).message}`);
+    } finally {
+      try { fs.rmSync(out, { force: true }); } catch { /* gone */ }
+    }
   }
 
   private async _ready(projectRoot: string): Promise<boolean> {
@@ -278,18 +308,20 @@ export class PytestBatchRunner implements IBatchRunner {
     }
 
     if (live.coverageFile && this._coverage && generation === this._generation) {
+      // Only what finished here: not the file the hang limit stopped, not one a newer batch took over.
+      const measured = new Set([...received].filter((fp) => owns(fp) && fp !== timedOut?.file));
       // Covering tests first (the coverage folder is removed with the coverage).
       const traceFile = path.join(path.dirname(live.coverageFile), 'trace.jsonl');
       if (fs.existsSync(traceFile)) {
         try {
           const lines = readTraceLines([traceFile]).map((l) => respellTrace(l, projectRoot));
-          const summary = applyTraceRecords(lines, options.traceStore, toKey);
+          const summary = applyTraceRecords(lines, options.traceStore, toKey, measured);
           log.debug(`${batch}: covering tests — ${summary.tests} test(s) across ${summary.files} file(s)`);
         } catch (err) {
           log.warn(`${batch}: could not read the covering tests`, err);
         }
       }
-      await this._applyCoverage(live.coverageFile, projectRoot, batch);
+      await this._applyCoverage(live.coverageFile, projectRoot, batch, { startedAt, ran: measured, toKey });
     } else if (coverageDir) {
       try { fs.rmSync(coverageDir, { recursive: true, force: true }); } catch { /* gone */ }
     }
@@ -330,23 +362,78 @@ export class PytestBatchRunner implements IBatchRunner {
     log[level](message);
   }
 
-  private async _applyCoverage(coverageFile: string, projectRoot: string, batch: string): Promise<void> {
+  private _graph(projectRoot: string): PythonImportGraph {
+    let graph = this._graphs.get(projectRoot);
+    if (!graph) {
+      graph = new PythonImportGraph(pythonImportRoots(projectRoot, pytestSettings(projectRoot).pythonpath));
+      this._graphs.set(projectRoot, graph);
+    }
+    return graph;
+  }
+
+  /**
+   * The batch's coverage into the store. With per-test-file coverage (the
+   * plugin's per-test contexts), each test file that finished replaces its
+   * contribution: its tests' lines, plus the import-time lines of every
+   * module it imports (module-level code runs once per process, so it is
+   * credited to each test file that imports the module — by the import
+   * graph; a module the graph cannot place counts for every file of the
+   * batch). Without it (no per-test contexts), the merged report as before.
+   */
+  private async _applyCoverage(
+    coverageFile: string,
+    projectRoot: string,
+    batch: string,
+    run: { startedAt: number; ran: Set<string>; toKey: (p: string) => string },
+  ): Promise<void> {
     const dir = path.dirname(coverageFile);
+    const store = this._coverage!.store;
+    const manifestDir = path.join(this._coverage!.sessionDir, 'pytest-manifests');
+    const respell = (raw: Record<string, { path?: string }>) => respelled(projectRoot, raw);
     try {
       if (!fs.existsSync(coverageFile)) {
         log.debug(`${batch}: no coverage written (nothing measured, or the run was stopped)`);
         return;
       }
       const scope = await coverageScopeOf(this._coverage!.projectConfig ?? { coverageScope: async () => undefined }, projectRoot);
-      const raw = JSON.parse(fs.readFileSync(coverageFile, 'utf8')) as Record<string, { path?: string }>;
-      const coverage: Record<string, unknown> = {};
-      for (const [key, fc] of Object.entries(raw)) {
-        const file = toProjectSpelling(projectRoot, fc.path || key);
-        coverage[file] = { ...fc, path: file };
+      const counts = (fp: string) => scope.counts(fp);
+      const perFileJson = path.join(dir, 'coverage-per-test-file.json');
+      if (fs.existsSync(perFileJson)) {
+        const doc = JSON.parse(fs.readFileSync(perFileJson, 'utf8')) as { tests: Record<string, Record<string, { path?: string }>>; imports: Record<string, { path?: string }> };
+        const contributions = new Map<string, Map<string, MeasuredFile>>();
+        for (const fp of run.ran) { contributions.set(fp, new Map()); }
+        const add = (testFile: string, files: Map<string, MeasuredFile>) => {
+          const into = contributions.get(testFile);
+          if (!into) { return; }
+          for (const [fp, mf] of files) {
+            const prev = into.get(fp);
+            into.set(fp, prev && prev.manifestPath === mf.manifestPath ? { ...prev, counters: sumCounters(prev.counters, mf.counters) } : mf);
+          }
+        };
+        for (const [testFile, cov] of Object.entries(doc.tests ?? {})) {
+          add(run.toKey(toProjectSpelling(projectRoot, testFile)), measuredFiles(respell(cov), manifestDir, projectRoot, counts).files);
+        }
+        const ran = [...run.ran];
+        const graph = this._graph(projectRoot);
+        for (const [fp, mf] of measuredFiles(respell(doc.imports ?? {}), manifestDir, projectRoot, counts).files) {
+          const importers = graph.dependents(fp, ran);
+          for (const t of importers.length > 0 ? importers : ran) { add(t, new Map([[fp, mf]])); }
+        }
+        let sources = 0;
+        for (const [id, files] of contributions) { store.replaceContribution(id, files, run.startedAt); sources += files.size; }
+        // Files no test loaded (coverage.py's `source`): the merged report's zero entries.
+        let untested = 0;
+        for (const [fp, mf] of measuredFiles(respell(JSON.parse(fs.readFileSync(coverageFile, 'utf8'))), manifestDir, projectRoot, counts).files) {
+          // Every file the report lists, zeroed: what it shows once no test reaches it (shown under its tests' coverage until then).
+          const zero = zeroCounters(mf.counters);
+          store.setMeasuredEntry(fp, { manifestPath: mf.manifestPath, counters: zero, pct: calculate(mf.manifest, zero) });
+          if (store.contributorsOf(fp).length === 0) { untested++; }
+        }
+        log.debug(`${batch}: coverage — ${contributions.size} test file(s) → ${sources} file measurement(s)${untested ? `, ${untested} untested file(s)` : ''}`);
+        return;
       }
       const { measured, excluded } = applyIstanbulCoverage(
-        coverage as Parameters<typeof applyIstanbulCoverage>[0], this._coverage!.store, path.join(this._coverage!.sessionDir, 'pytest-manifests'), projectRoot,
-        (fp) => scope.counts(fp),
+        respell(JSON.parse(fs.readFileSync(coverageFile, 'utf8'))), store, manifestDir, projectRoot, counts,
       );
       log.debug(`${batch}: coverage — ${measured} file(s) measured, ${excluded} excluded`);
     } catch (err) {
@@ -355,6 +442,16 @@ export class PytestBatchRunner implements IBatchRunner {
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ }
     }
   }
+}
+
+/** An istanbul map from Python with its paths in the project root's own spelling (see toProjectSpelling). */
+function respelled(projectRoot: string, raw: Record<string, { path?: string }>): Record<string, IstanbulFileCoverage> {
+  const out: Record<string, IstanbulFileCoverage> = {};
+  for (const [key, fc] of Object.entries(raw)) {
+    const file = toProjectSpelling(projectRoot, fc.path || key);
+    out[file] = { ...(fc as IstanbulFileCoverage), path: file };
+  }
+  return out;
 }
 
 /**

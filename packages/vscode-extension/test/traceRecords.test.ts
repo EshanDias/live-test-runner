@@ -98,3 +98,33 @@ describe('module graph (Vitest): any file a test loads', () => {
     }
   });
 });
+
+describe('a rerun replaces a test file\'s entries', () => {
+  const OTHER = path.resolve('/p/src/other.test.ts');
+  const rec = (tf: string, tn: string, fh: Record<string, number[]>) => JSON.stringify({ type: 'T', tf, tn, fh });
+
+  it('a test removed from the file leaves the index; other test files stay', () => {
+    const store = new ExecutionTraceStore();
+    applyTraceRecords([rec(TF, 'a', { [PRICE]: [2] }), rec(TF, 'b', { [PRICE]: [3] }), rec(OTHER, 'c', { [PRICE]: [3] })], store, id);
+    // TF reran with only "a".
+    applyTraceRecords([rec(TF, 'a', { [PRICE]: [2] })], store, id, [TF]);
+    expect(store.getTestsForLine(PRICE, 2).map((e) => e.fullName)).toEqual(['a']);
+    expect(store.getTestsForLine(PRICE, 3).map((e) => e.fullName)).toEqual(['c']);
+    expect(Object.values(store.getSuiteInfo(PRICE, TF)).flatMap((s) => s.testCases)).toEqual(['a']);
+  });
+
+  it('a test file that ran but reached nothing is forgotten', () => {
+    const store = new ExecutionTraceStore();
+    applyTraceRecords([rec(TF, 'a', { [PRICE]: [2] })], store, id);
+    applyTraceRecords([], store, id, [TF]);
+    expect(store.getTestsForLine(PRICE, 2)).toEqual([]);
+    expect(store.getAffectedTestFiles(PRICE)).toEqual([]);
+  });
+
+  it('a deleted folder forgets the test files under it', () => {
+    const store = new ExecutionTraceStore();
+    applyTraceRecords([rec(TF, 'a', { [PRICE]: [2] }), rec(OTHER, 'c', { [PRICE]: [3] })], store, id);
+    store.forgetTestFiles(store.testFilesUnder(path.dirname(TF), path.sep));
+    expect(store.getAffectedTestFiles(PRICE)).toEqual([]);
+  });
+});
