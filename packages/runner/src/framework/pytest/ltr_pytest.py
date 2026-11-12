@@ -331,6 +331,19 @@ def _write_per_test_file(report, target):
         _log("warn", "could not write coverage per test file: %s" % err)
 
 
+def _same_file(path):
+    """One spelling per file, for matching paths from different places: coverage.py
+    names files by their canonical path (Windows: long names, lower case), the
+    report by the folder pytest started in (8.3 short names on GitHub's Windows runners)."""
+    own = _SAME_FILE.get(path)
+    if own is None:
+        own = _SAME_FILE[path] = os.path.normcase(os.path.realpath(path))
+    return own
+
+
+_SAME_FILE = {}
+
+
 def _add_hit(into, path, lines, arcs):
     if lines or arcs:
         own = into.setdefault(path, (set(), set()))
@@ -346,7 +359,7 @@ def _hits_per_query(data, measured, prefixes):
         data.set_query_contexts([pattern])
         out = {}
         for m in measured:
-            _add_hit(out, os.path.normpath(m), set(data.lines(m) or []), set(data.arcs(m) or []) if has_arcs else set())
+            _add_hit(out, _same_file(m), set(data.lines(m) or []), set(data.arcs(m) or []) if has_arcs else set())
         return out
 
     try:
@@ -368,7 +381,7 @@ def _hits_in_one_pass(data, measured):
     import sqlite3
     from coverage.numbits import numbits_to_nums
 
-    keep = {m: os.path.normpath(m) for m in measured}
+    keep = {m: _same_file(m) for m in measured}
     has_arcs = data.has_arcs()
     by_prefix, imports = {}, {}
 
@@ -509,7 +522,7 @@ def _istanbul_from(prepared, hits=None):
         path = p["path"]
         own = None
         if hits is not None:
-            own = hits.get(path)
+            own = hits.get(_same_file(path))
             if own is None:
                 continue
         ran_lines = own[0] if own else p["executed"]

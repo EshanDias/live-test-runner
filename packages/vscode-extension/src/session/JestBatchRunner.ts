@@ -1018,7 +1018,7 @@ export function writeStableConfig(dir: string, content: string): string {
   if (!fs.existsSync(file)) {
     // Parallel batches may write it at once: write aside, then rename (atomic).
     const tmp = `${file}.${process.pid}-${Math.random().toString(36).slice(2)}.tmp`;
-    fs.writeFileSync(tmp, content, 'utf8');
+    fs.writeFileSync(tmp, content, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
     fs.renameSync(tmp, file);
   }
   return file;

@@ -22,8 +22,10 @@ module.exports = {
     const startPromise = vscode.commands.executeCommand('liveTestRunner.startTesting');
     await h.waitFor(() => api.rawOutput.some((l) => /slow\.test\.js/.test(l) && /RUNS|jest#/.test(l)) ||
       h.jestProcesses(workspace).length > 0, { what: 'Jest to start', timeout: 60_000 });
-    await h.waitFor(() => h.fileBySuffix(api, 'src/math.test.js').status === 'passed',
-      { what: 'the fast files to finish', timeout: 60_000 });
+    // One process at a time (a small machine) runs the slow file in the fast files' batch, maybe first.
+    await h.waitFor(() => h.fileBySuffix(api, 'src/math.test.js').status === 'passed' || h.fileBySuffix(api, 'src/slow.test.js').status === 'running',
+      { what: 'the fast files to finish (or the slow one to start)', timeout: 60_000 });
+    await h.waitFor(() => h.fileBySuffix(api, 'src/slow.test.js').status === 'running', { what: 'slow.test.js to start', timeout: 60_000 });
     t.check('a Jest process is running before Stop', h.jestProcesses(workspace).length > 0);
 
     const rec = h.recordEvents(api);

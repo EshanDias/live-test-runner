@@ -11,6 +11,8 @@ const fs = require('fs');
 const path = require('path');
 const h = require('../lib/harness');
 
+const runner = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'utils', 'resources.js'));
+
 const CONFTEST = [
   'import time',
   '',
@@ -54,12 +56,17 @@ module.exports = {
       const listed = logs.find((l) => /pytest --collect-only: \d+ file\(s\) in/.test(l));
       const listedAt = listed ? Date.parse(listed.slice(0, 24)) : NaN;
       const cartAt = rec.of('file-result').find((e) => e.file === 'test_cart.py')?.at;
-      t.check('the open test file has its result before pytest finished listing the files', !!cartAt && cartAt < listedAt,
-        `test_cart.py at ${cartAt && new Date(cartAt).toISOString()}, list at ${listed}`);
-      t.check('the early run is logged', logs.some((l) => /test file\(s\) open in the editor while pytest lists/.test(l)), logs.join('\n'));
-
-      t.check('the left-out file did run early (its results had to be dropped)',
-        h.rawSince(api, mark).some((l) => /^\[pytest#\d+\] > .* -m pytest /.test(l) && l.includes('test_ignored.py') && !l.includes('--collect-only')));
+      const earlyLogged = logs.some((l) => /test file\(s\) open in the editor while pytest lists/.test(l));
+      const ignoredRan = h.rawSince(api, mark).some((l) => /^\[pytest#\d+\] > .* -m pytest /.test(l) && l.includes('test_ignored.py') && !l.includes('--collect-only'));
+      if (runner.parallelBatches(runner.coreCount(), 'balanced') > 1) {
+        t.check('the open test file has its result before pytest finished listing the files', !!cartAt && cartAt < listedAt,
+          `test_cart.py at ${cartAt && new Date(cartAt).toISOString()}, list at ${listed}`);
+        t.check('the early run is logged', earlyLogged, logs.join('\n'));
+        t.check('the left-out file did run early (its results had to be dropped)', ignoredRan);
+      } else {
+        // Budget 1 (a small machine): the listing is the one process; nothing runs beside it.
+        t.check('one process at a time: no early run beside the listing', !earlyLogged && !ignoredRan && !!cartAt && cartAt > listedAt, logs.join('\n'));
+      }
       const ign = h.fileBySuffix(api, 'tests/test_ignored.py');
       t.check('the file pytest leaves out shows as not run', ign.status === 'skipped' && !!ign.excluded, JSON.stringify({ status: ign.status, excluded: ign.excluded }));
       const untested = path.join(workspace, 'src', 'shop', 'untested.py').replace(/^[A-Z]:/, (m) => m.toLowerCase());

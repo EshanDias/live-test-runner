@@ -323,6 +323,28 @@ def test_per_test_file_hits_read_in_one_pass_match_the_queries(pytester, run, tm
     assert lib  # test_a ran lines of lib.py
 
 
+def test_per_test_hits_match_a_differently_spelled_report_path(tmp_path):
+    """coverage.py names a file by its canonical path, the report by the folder pytest started in
+    (8.3 short names on GitHub's Windows runners; a symlink here): the hits must still find the file."""
+    sys.path.insert(0, os.path.abspath(PLUGIN_DIR))
+    try:
+        import ltr_pytest
+    finally:
+        sys.path.pop(0)
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "lib.py").write_text("x = 1\n")
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    prepared = [{"path": str(link / "lib.py"), "lines": [1], "executed": [1], "branches": [], "functions": [],
+                 "statementMap": {"0": {}}, "branchMap": {}, "fnMap": {}}]
+    hits = {}
+    ltr_pytest._add_hit(hits, ltr_pytest._same_file(str(real / "lib.py")), {1}, set())
+    out = ltr_pytest._istanbul_from(prepared, hits)
+    assert list(out) == [str(link / "lib.py")]
+    assert out[str(link / "lib.py")]["s"] == {"0": 1}
+
+
 def test_missing_coverage_package_is_reported_not_fatal(pytester, run, tmp_path):
     pytester.makepyfile(test_nc="def test_a():\n    pass\n")
     # A coverage module that fails to import stands in for "not installed".

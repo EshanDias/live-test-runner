@@ -35,7 +35,7 @@ module.exports = {
     // ── Panels and channels ──────────────────────────────────────────────
     const outputShown = (name) => vscode.window.visibleTextEditors.some((e) => e.document.uri.scheme === 'output' && e.document.uri.path.includes(name));
     await vscode.commands.executeCommand('liveTestRunner.showOutput');
-    await h.sleep(600);
+    await h.waitFor(() => outputShown('Test Output') || outputShown('Live Test Runner'), { what: 'the output channel', timeout: 5_000 }).catch(() => {});
     t.check('Show Test Output opens the test output channel', outputShown('Test Output') || outputShown('Live Test Runner'), vscode.window.visibleTextEditors.map((e) => e.document.uri.toString()).join(', '));
     await vscode.commands.executeCommand('liveTestRunner.showLogs');
     await h.sleep(600);

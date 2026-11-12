@@ -104,11 +104,12 @@ function plainRun(dir, framework) {
   }
   if (framework === 'angular') {
     // `ng test` (every project with a test target, the build included); Vitest's workers through a runner config.
-    const config = path.join(os.tmpdir(), `ltr-perf-runner-${process.pid}.mjs`);
-    fs.writeFileSync(config, `export default { test: { maxWorkers: ${workers} } };\n`);
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-perf-runner-'));
+    const config = path.join(configDir, 'runner.mjs');
+    fs.writeFileSync(config, `export default { test: { maxWorkers: ${workers} } };\n`, { mode: 0o600 });
     const ng = [path.join(dir, 'node_modules', '@angular', 'cli', 'bin', 'ng.js'), 'test', '--watch=false', '--reporters=json', `--output-file=${out}`, '--runner-config', config];
     const { r, seconds } = timed(() => spawnSync(process.execPath, ng, { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 1 << 30 }));
-    fs.rmSync(config, { force: true });
+    fs.rmSync(configDir, { recursive: true, force: true });
     fs.rmSync(path.join(dir, '.angular'), { recursive: true, force: true });
     let json;
     try { json = JSON.parse(fs.readFileSync(out, 'utf8')); } catch { json = undefined; }

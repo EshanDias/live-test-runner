@@ -236,9 +236,12 @@ function addNearestContainerHits<T, H extends Hits>(loc: IstanbulRange, hits: H,
 export function writeManifest(dir: string, manifest: Manifest): string {
   const json = JSON.stringify(manifest);
   const file = path.join(dir, `${crypto.createHash('sha1').update(json).digest('hex')}.json`);
-  if (!fs.existsSync(file)) {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, json);
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    fs.writeFileSync(file, json, { flag: 'wx', mode: 0o600 });
+  } catch (err) {
+    // Already written (same name = same content).
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') { throw err; }
   }
   return file;
 }

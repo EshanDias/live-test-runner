@@ -80,6 +80,15 @@ async function run({ api, t, vscode, workspace }, spec) {
   t.eq(`full run: ${name(spec.bSrc)} helper covered (one calls it)`, fns(spec.bSrc), '1/1');
   t.eq(`full run: ${name(spec.eSrc)} covered by ${name(spec.otherTest)}`, fns(spec.eSrc), '1/1');
   t.eq(`full run: untested ${name(spec.cSrc)} counts as 0%`, fns(spec.cSrc), '0/1');
+  // A file under two spellings (Windows 8.3 short names, symlinks) would show twice, one copy never updated.
+  const spellings = new Map();
+  for (const r of api.coverageStore.getFileRows()) {
+    const k = process.platform === 'win32' ? real(r.filePath).toLowerCase() : real(r.filePath);
+    spellings.set(k, [...(spellings.get(k) ?? []), r.filePath]);
+  }
+  const twice = [...spellings.values()].filter((v) => v.length > 1);
+  t.check('one coverage row per file', twice.length === 0,
+    `workspace ${workspace}\n` + twice.map((v) => v.map((fp) => `${fp} [${api.coverageStore.getEntry(fp)?.state ?? 'no entry'}; covered by ${JSON.stringify(api.coverageStore.contributorsOf(fp) || [])}]`).join('\n')).join('\n\n'));
   t.eq('the totals are final', api.coverageStore.getTotals().updating, undefined);
   matchesPlain('full run');
 

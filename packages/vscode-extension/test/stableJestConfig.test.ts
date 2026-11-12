@@ -11,11 +11,11 @@ describe('writeStableConfig', () => {
 
   it('the same text always gets the same file, written once', () => {
     const a = writeStableConfig(dir, 'module.exports = { a: 1 };');
+    expect(fs.readFileSync(a, 'utf8')).toBe('module.exports = { a: 1 };');
     const mtime = fs.statSync(a).mtimeMs;
     const b = writeStableConfig(dir, 'module.exports = { a: 1 };');
     expect(b).toBe(a);
     expect(fs.statSync(b).mtimeMs).toBe(mtime);
-    expect(fs.readFileSync(a, 'utf8')).toBe('module.exports = { a: 1 };');
   });
 
   it('a changed text gets a new file (never a stale config or cache)', () => {

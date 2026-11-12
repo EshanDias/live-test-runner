@@ -8,6 +8,8 @@ const os = require('os');
 const path = require('path');
 const h = require('../lib/harness');
 
+const runner = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'utils', 'resources.js'));
+
 /**
  * The extension's transform-cache folders whose generated Jest configs name
  * this workspace: { dir, configs, caches } (caches = Jest's own
@@ -112,8 +114,10 @@ module.exports = {
     // files no test loads (the project's config, once per session).
     const batches = new Set(logs.map((l) => /\b(b\d+): running \d+ file/.exec(l)?.[1]).filter(Boolean));
     const caches = transformCachesFor(workspace, startedMs);
+    // A small machine (budget 1 at the default speed) runs the fixture as one batch.
+    const minBatches = Math.min(2, runner.parallelBatches(runner.coreCount(), 'balanced'));
     t.check(`${batches.size} batches share one generated config and one transform cache`,
-      batches.size >= 2 && caches.length === 1 && caches[0].configs >= 1 && caches[0].caches <= 2,
+      batches.size >= minBatches && caches.length === 1 && caches[0].configs >= 1 && caches[0].caches <= 2,
       `batches ${[...batches].join(', ')}; caches ${JSON.stringify(caches)}`);
 
     // Per-test trace recorded → source files map to the tests using them.

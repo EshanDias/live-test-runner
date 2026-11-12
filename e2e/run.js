@@ -168,8 +168,8 @@ function prepareFixture(name) {
     fs.rmSync(path.join(dest, 'node_modules'), { recursive: true, force: true });
     console.log(`[e2e] npm install in ${dest}`);
     execSync('npm install --no-audit --no-fund --loglevel=error', { cwd: dest, stdio: 'inherit' });
-    fs.writeFileSync(stamp, pkgHash);
-    fs.writeFileSync(brokenAtInstall, JSON.stringify(brokenPackages(dest)));
+    fs.writeFileSync(stamp, pkgHash, { mode: 0o600 });
+    fs.writeFileSync(brokenAtInstall, JSON.stringify(brokenPackages(dest)), { mode: 0o600 });
   }
   return dest;
 }
