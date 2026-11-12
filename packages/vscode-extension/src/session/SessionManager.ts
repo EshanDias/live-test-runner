@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath, parallelBatches } from '@live-test-runner/runner';
+import { FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath, parallelBatches, memoryLow, availableMemory } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
@@ -103,6 +103,10 @@ export class SessionManager {
   private _activeRuns = 0;
   /** The queues of the runs in flight: each moves a waiting test file to its front. */
   private readonly _promoters = new Set<(filePath: string) => boolean>();
+  /** Test processes this window runs now, every run together (the memory check counts them). */
+  private _batchesRunning = 0;
+  /** When memory last held a batch back (logged once per stretch of waiting). */
+  private _memoryWaitSince = 0;
 
   /** Files changed on disk during a run: rerun when the runs finish. */
   private readonly _diskQueue = new Set<string>();
@@ -1185,6 +1189,7 @@ export class SessionManager {
             if (!run) {
               break;
             }
+            if (!(await this._memoryForAnotherBatch(() => queue.unshift(run)))) { continue; }
 
             const names = run.names;
 
@@ -1193,6 +1198,7 @@ export class SessionManager {
               /* pattern */ { fullNames: new Set(run.names) };
 
             let ok = false;
+            this._batchesRunning++;
             try {
               ok = await this._adapterFor(run.filePath).runTestCase(
                 this._store,
@@ -1204,6 +1210,8 @@ export class SessionManager {
               );
             } catch (err) {
               log.error(`Could not run ${names.length} test(s) in ${path.basename(run.filePath)} `, err);
+            } finally {
+              this._batchesRunning--;
             }
             if (token !== this._token) { break; }
             // No result: put the spinning tests back to pending.
@@ -1219,6 +1227,36 @@ export class SessionManager {
   }
 
   // ── Private: run execution ─────────────────────────────────────────────────
+
+  /**
+   * Whether another test process may start now. The first always may; another
+   * waits while memory is low (`memoryLow`), until a running one ends or 2 s
+   * pass, so a large project never pushes the machine into swap.
+   * @param putBack returns the batch to its queue (and its slot) when it has to wait
+   * @param waiters the run's wake-ups, called when one of its batches ends
+   * @returns false after waiting: the caller takes the next batch again
+   */
+  private async _memoryForAnotherBatch(putBack: () => void, waiters?: (() => void)[]): Promise<boolean> {
+    if (this._batchesRunning === 0 || !memoryLow()) {
+      if (this._memoryWaitSince > 0) {
+        log.debug(`Memory freed up after ${secondsSince(this._memoryWaitSince)}: starting the next batch`);
+        this._memoryWaitSince = 0;
+      }
+      return true;
+    }
+    if (this._memoryWaitSince === 0) {
+      this._memoryWaitSince = Date.now();
+      const free = availableMemory();
+      log.info(`Memory is low (${free !== undefined ? `${(free / 1024 ** 3).toFixed(1)} GB` : '?'} free): ` +
+        `${this._batchesRunning} test process(es) running, the next waits for memory`);
+    }
+    putBack();
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 2000);
+      waiters?.push(() => { clearTimeout(timer); resolve(); });
+    });
+    return false;
+  }
 
   private async _runFiles(
     filePaths: string[],
@@ -1425,10 +1463,13 @@ export class SessionManager {
               await new Promise<void>((resolve) => waiters.push(resolve));
               continue;
             }
+            if (!(await this._memoryForAnotherBatch(() => { batchQueue.unshift(next); opts.slots?.release(); }, waiters))) { continue; }
             runningOf.set(next.services, (runningOf.get(next.services) ?? 0) + 1);
+            this._batchesRunning++;
             try {
               await runBatch(next.batch);
             } finally {
+              this._batchesRunning--;
               runningOf.set(next.services, (runningOf.get(next.services) ?? 1) - 1);
               opts.slots?.release();
               wakeAll();

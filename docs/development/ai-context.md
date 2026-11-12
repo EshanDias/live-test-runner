@@ -56,7 +56,7 @@ src/
 │   ├── BinaryResolver.ts             Finds jest binary in project node_modules
 │   └── RunnerPaths.ts                Symlinked roots: editor path ↔ the test runner's realpath
 ├── execution/
-│   └── Executor.ts                   Spawns the runner, reads its result file (flag from adapter.outputFileArg) on exit
+│   └── Executor.ts                   Spawns the runner (below normal priority), reads its result file (flag from adapter.outputFileArg) on exit
 └── parsing/
     ├── ResultParser.ts               Parses Jest JSON output → RunResult (adapter.parseResult for Jest/CRA)
     ├── VitestResultParser.ts         parseVitestResult: Vitest 1–5 json reporter → RunResult (fixtures: test/fixtures/vitest)
@@ -136,7 +136,7 @@ src/
 ├── cache/
 │   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
 ├── session/
-│   ├── SessionManager.ts           Session lifecycle, batched run pool (parallelBatches(): cpus/4), on-save, rerun
+│   ├── SessionManager.ts           Session lifecycle, batched run pool (parallelBatches(): cpus/4; another batch waits while memoryLow()), on-save, rerun
 │   ├── batchQueue.ts               A run's batch queue: per framework, open test files first (full run), promote a file opened while it waits
 │   ├── ExternalChanges.ts          Files changed on disk outside the editor (git pull, branch switch): drops the editor's own saves, batches 500 ms → SessionManager.onFilesChangedOnDisk (>20 files restart, never for changes from our own runs; changes during our runs — by queue, or by modified time when reported late — rerun once when they end; files no test loaded and unrun test fixtures are dropped)
 │   (cache/Storage.ts)              Every cached path in one place: per-project clear (Stop and Clear Cache), Clear All Cached Data, 30-day pruning on activation

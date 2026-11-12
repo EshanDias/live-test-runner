@@ -1,4 +1,6 @@
-import { parallelBatches, workerCount, workersPerBatch } from '../src/utils/resources';
+import * as os from 'os';
+import { spawn } from 'child_process';
+import { availableMemory, lowerPriority, memoryLow, parallelBatches, workerCount, workersPerBatch } from '../src/utils/resources';
 import { readWorkerLimit } from '../src/framework/vitestProjects';
 
 describe('machine budget', () => {
@@ -49,5 +51,40 @@ describe("the Vitest probe's worker line", () => {
     expect(readWorkerLimit('LTR_WORKERS {"max":null,"pool":[]}', 10)).toBeUndefined();
     expect(readWorkerLimit(undefined)).toBeUndefined();
     expect(readWorkerLimit('LTR_WORKERS {nope')).toBeUndefined();
+  });
+});
+
+describe('memory check', () => {
+  const GB = 1024 ** 3;
+  it('is low under 2 GB free, or a fifth of the memory on a small machine', () => {
+    expect(memoryLow(1.9 * GB, 16 * GB)).toBe(true);
+    expect(memoryLow(2.1 * GB, 16 * GB)).toBe(false);
+    expect(memoryLow(1.7 * GB, 8 * GB)).toBe(false);
+    expect(memoryLow(1.5 * GB, 8 * GB)).toBe(true);
+    expect(memoryLow(1.5 * GB, 4 * GB)).toBe(false);
+    expect(memoryLow(0.7 * GB, 4 * GB)).toBe(true);
+  });
+
+  it('never holds a run back when free memory cannot be told', () => {
+    expect(memoryLow(undefined, 16 * GB)).toBe(false);
+  });
+
+  it('reads a positive amount, or nothing', () => {
+    const free = availableMemory();
+    expect(free === undefined || (free > 0 && free <= os.totalmem() * 1.01)).toBe(true);
+  });
+});
+
+describe('test process priority', () => {
+  it('lowers a started process below normal, and never throws', async () => {
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)']);
+    try {
+      lowerPriority(child.pid);
+      expect(os.getPriority(child.pid!)).toBe(os.constants.priority.PRIORITY_BELOW_NORMAL);
+    } finally {
+      child.kill();
+    }
+    expect(() => lowerPriority(undefined)).not.toThrow();
+    expect(() => lowerPriority(2 ** 30)).not.toThrow();
   });
 });

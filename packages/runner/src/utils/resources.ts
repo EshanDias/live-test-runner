@@ -39,3 +39,41 @@ export function workerCount(value: unknown, cores: number = coreCount()): number
   }
   return undefined;
 }
+
+const GB = 1024 ** 3;
+
+/**
+ * Memory the machine can still give without swapping, in bytes; undefined when
+ * it cannot be told. `process.availableMemory` (Node 22, VS Code 1.90+) counts
+ * free and reclaimable pages; older Node falls back to `os.freemem`, except on
+ * macOS, where that counts only wholly free pages (a few hundred MB on a
+ * machine with gigabytes to spare).
+ */
+export function availableMemory(): number | undefined {
+  const fn = (process as { availableMemory?: () => number }).availableMemory;
+  if (typeof fn === 'function') {
+    try { const v = fn.call(process); if (v > 0) { return v; } } catch { /* fall back */ }
+  }
+  return process.platform === 'darwin' ? undefined : os.freemem();
+}
+
+/**
+ * Too little memory left to start another test process beside the ones
+ * running: under 2 GB, or a fifth of the machine's memory when that is less.
+ * A run always starts its first process; the next waits until one ends or
+ * memory frees up, so a large project never pushes the machine into swap.
+ */
+export function memoryLow(available: number | undefined = availableMemory(), total: number = os.totalmem()): boolean {
+  return available !== undefined && available < Math.min(2 * GB, total * 0.2);
+}
+
+/**
+ * Gives a test process a lower priority than the user's own work (Unix nice
+ * 10, Windows below normal), so editing and other apps stay responsive while
+ * tests run; on an idle machine it runs as fast as before. The processes it
+ * starts (workers) inherit it. Best effort: nothing fails if the OS refuses.
+ */
+export function lowerPriority(pid: number | undefined): void {
+  if (pid === undefined) { return; }
+  try { os.setPriority(pid, os.constants.priority.PRIORITY_BELOW_NORMAL); } catch { /* keep the default */ }
+}

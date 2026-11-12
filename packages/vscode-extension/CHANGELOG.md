@@ -5,6 +5,7 @@ All notable changes to Live Test Runner are documented here.
 ## [3.4.1] - Unreleased
 
 ### Changed
+- **Your work comes first while tests run** — test processes run at a lower priority than your editor and other apps, and on a machine short of memory the next batch waits instead of pushing it into swap.
 - **First results sooner on big projects** — on the first Start, the test files open in your editor run while the framework is still listing its files.
 
 ### Fixed

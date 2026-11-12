@@ -132,7 +132,7 @@ export {
 export { BinaryResolver, nodeRuntime, nodeRuntimeVersion, NodeRuntime, resolvePackageDir } from './resolution/BinaryResolver';
 export { viteEntryFor, vitestDirFor } from './framework/vitestTrace';
 export { parseVersion, compareVersions, satisfies } from './utils/semver';
-export { coreCount, parallelBatches, workersPerBatch, workerCount } from './utils/resources';
+export { coreCount, parallelBatches, workersPerBatch, workerCount, availableMemory, memoryLow, lowerPriority } from './utils/resources';
 export { registerProjectRoot, toRunnerPath, fromRunnerPath, toSpawnPath, toJestPath, fromJestPath } from './resolution/RunnerPaths';
 export { Executor, tail } from './execution/Executor';
 

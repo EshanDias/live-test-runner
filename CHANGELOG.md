@@ -5,6 +5,8 @@ All notable changes to Live Test Runner are documented here.
 ## [3.4.1] - Unreleased
 
 ### Changed
+- **Test processes run below normal priority** (Unix nice 10, Windows below normal; workers inherit it): `lowerPriority` in `Executor` after spawn. Same speed on an idle machine; the editor and other apps get the CPU first. e2e `basic-hang`, `vitest-hang`, `pytest-hang` (a test reads its priority); T20.
+- **Another batch waits while memory is low** (under min(2 GB, total / 5) free; `process.availableMemory`, `os.freemem` off macOS): `SessionManager._memoryForAnotherBatch`, across every run in the window; the first batch always starts. Sentry (16 GB): 3 Jest processes reached 6.1 GB and the machine swapped 9 GB. Unit `resources`; T19, G4.
 - **First Start of a large project: the open test files run while the framework lists its files** (`jest --listTests`, `pytest --collect-only`: 29–36 s on 2,500 pytest files, nothing ran meanwhile). Only when the list is not remembered, single-framework projects, budget ≥ 2. A file the list leaves out loses its results, coverage and trace and is marked excluded. e2e `pytest-open-first-while-listing`; T18.
 
 ### Fixed
@@ -40,6 +42,9 @@ All notable changes to Live Test Runner are documented here.
 ### Security / tooling
 - `istanbul-lib-coverage` as a dev dependency of the extension (unit `istanbulMerge` checks the merge against it; nothing new ships).
 - Performance measurement: `scripts/perf-project.js` (synthetic 2.5k-file project for Jest, Vitest or pytest, `--framework`), `scripts/perf-measure.js` + e2e `diag-perf` (discovery, first result, full run vs the plain framework run at the same parallelism, trace / coverage parse, memory, extension-host CPU, save rerun; results in local `e2e/baselines/perf.json`). Trace and coverage parse times in the debug log for every framework.
+
+### Security & tooling
+- e2e: a fixture copy whose packages lost their files (macOS empties temp files untouched for 3 days and keeps the folders; npm then takes them as installed) is reinstalled (`missingPackages` in `e2e/run.js`).
 
 ## [3.4.0] - 2026-11-09
 
