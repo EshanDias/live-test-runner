@@ -48,6 +48,7 @@ All notable changes to Live Test Runner are documented here.
 - Performance measurement: `scripts/perf-project.js` (synthetic 2.5k-file project for Jest, Vitest or pytest, `--framework`), `scripts/perf-measure.js` + e2e `diag-perf` (discovery, first result, full run vs the plain framework run at the same parallelism, trace / coverage parse, memory, extension-host CPU, save rerun; results in local `e2e/baselines/perf.json`). Trace and coverage parse times in the debug log for every framework.
 
 ### Security & tooling
+- e2e: every live-coverage scenario also checks a test that fails before it reaches the code and is then fixed, ▶ Run on a test file and on one test, each against a plain run (3.4.0 kept the higher coverage); new `pytest-disk-changes` (files written closed / open, saved in the editor, written during a run).
 - e2e: a fixture copy whose packages lost their files (macOS empties temp files untouched for 3 days and keeps the folders; npm then takes them as installed) is reinstalled, a real-repo clone or perf copy copied again (`e2e/lib/emptied.js`: a package's `package.json`, `main` or `bin` gone, compared with right after the install or the original; used by `e2e/run.js`, `e2e/real-repos.js`, `scripts/perf-measure.js`).
 
 ## [3.4.0] - 2026-11-09

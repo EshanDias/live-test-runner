@@ -16,9 +16,9 @@ What the feature must do, and how we check it does. For the plain-language descr
 | S8 | When a test file created after Start is saved, ask the framework whether it runs that file, and rerun it if so | `basic-on-save` |
 | S9 | Wait `onSaveDebounceMs` (default 300 ms) after a save, and run once for several quick saves of the same file | ⚠️ no test yet |
 | S10 | In a mixed project, rerun each framework's own dependent tests with that framework only | `mixed-on-save`, `mixed-js-python` |
-| S11 | Treat files changed **outside the editor** (pull, branch switch, generator) like saves while testing is on | `disk-changes` |
+| S11 | Treat files changed **outside the editor** (pull, branch switch, generator, a coding assistant writing to disk, closed or open in the editor) like saves while testing is on | `disk-changes`, `pytest-disk-changes` |
 | S12 | Restart the session instead of rerunning file by file when more than 20 files change at once | `disk-changes` |
-| S13 | Queue files that change while tests run, and rerun them once the run ends | `disk-changes`, `basic-save-during-run` |
+| S13 | Queue files that change while tests run, and rerun them once the run ends | `disk-changes`, `pytest-disk-changes`, `basic-save-during-run` |
 | S14 | Never rerun forever because tests write files: a file that changes again during its own rerun, a written file no test uses, and many files written during a run start no further runs, and the log says so | `disk-changes` |
 | S15 | Announce "finished" once, after the last overlapping run, with progress never above 100% | `basic-save-during-run`, `vitest-save-during-run` |
 | S16 | Mark the saved file's coverage as stale until its tests have measured the new version (the rerun, or the coverage refresh after it) | `coverage-editing`, `coverage-live` |

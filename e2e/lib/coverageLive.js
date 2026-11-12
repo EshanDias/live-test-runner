@@ -3,6 +3,8 @@
  * The coverage-live checks, shared by the Jest, Vitest and pytest scenarios:
  * coverage stays truthful while the session runs — every number equals what
  * a fresh full run would report now.
+ *  - a test that fails before it reaches the code lowers coverage; fixed, it rises again
+ *  - ▶ Run on a test file, and on one test (by name: measures nothing), keep it equal
  *  - a test removed from a test file lowers its source's coverage
  *  - …also when another test file still covers that source (contributions summed)
  *  - code that stops calling another file lowers that file's coverage
@@ -80,6 +82,32 @@ async function run({ api, t, vscode, workspace }, spec) {
   t.eq(`full run: untested ${name(spec.cSrc)} counts as 0%`, fns(spec.cSrc), '0/1');
   t.eq('the totals are final', api.coverageStore.getTotals().updating, undefined);
   matchesPlain('full run');
+
+  // ── A test fails before it reaches two(), then is fixed ──
+  const aTestText = fs.readFileSync(abs(spec.aTest), 'utf8');
+  const broken = spec.framework === 'pytest'
+    ? aTestText.replace('    assert two(2) == 4', '    assert False, "broken"\n    assert two(2) == 4')
+    : aTestText.replace('  expect(two(2)).toBe(4);', "  throw new Error('broken');\n  expect(two(2)).toBe(4);");
+  t.check('the fixture has the line to break', broken !== aTestText);
+  await h.editAndSave(vscode, abs(spec.aTest), () => broken);
+  await settle(api);
+  t.eq(`a test failing before it calls two() lowers ${name(spec.aSrc)} to 1/2 functions`, fns(spec.aSrc), '1/2');
+  matchesPlain('a test fails before it reaches the code');
+  await h.editAndSave(vscode, abs(spec.aTest), () => aTestText);
+  await settle(api);
+  t.eq(`fixed, it covers two() again: ${name(spec.aSrc)} 2/2 functions`, fns(spec.aSrc), '2/2');
+  matchesPlain('the failing test fixed');
+
+  // ── ▶ Run on the test file, then on one test ──
+  const aFile = h.fileBySuffix(api, spec.aTest);
+  await vscode.commands.executeCommand('liveTestRunner.rerunScope', { scope: 'file', fileId: aFile.fileId });
+  await settle(api);
+  matchesPlain('▶ Run on a test file');
+  const oneTest = h.nodeByName(api, spec.aTest, spec.framework === 'pytest' ? 'test_one' : 'one');
+  await vscode.commands.executeCommand('liveTestRunner.rerunScope', { scope: 'test', fileId: oneTest.fileId, nodeId: oneTest.id, fullName: oneTest.fullName });
+  await settle(api);
+  t.eq(`after ▶ Run on one test, ${name(spec.aSrc)} still 2/2 functions`, fns(spec.aSrc), '2/2');
+  matchesPlain('▶ Run on one test');
 
   // ── A test removed ──
   await h.editAndSave(vscode, abs(spec.aTest), spec.removeTwo);
