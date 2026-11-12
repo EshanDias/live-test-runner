@@ -24,6 +24,7 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { brokenPackages, emptiedPackages, missingTopFiles } = require('../e2e/lib/emptied');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT_FILE = path.join(ROOT, 'e2e', 'baselines', 'perf.json');
@@ -49,7 +50,13 @@ function parseArgs(argv) {
 
 function workCopy(src, label) {
   const dest = path.join(os.tmpdir(), 'ltr perf', label);
-  if (fs.existsSync(dest)) { return dest; }
+  if (fs.existsSync(dest)) {
+    // macOS empties temp files untouched for 3 days (e2e/lib/emptied.js): copy again.
+    const gone = [...missingTopFiles(src, dest), ...emptiedPackages(dest, brokenPackages(src))];
+    if (gone.length === 0) { return dest; }
+    console.log(`[perf] ${dest} lost ${gone.length} file(s) or package(s) (${gone.slice(0, 3).join(', ')}…) — copying again`);
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   console.log(`[perf] copying ${src} → ${dest}`);
   const r = spawnSync('cp', process.platform === 'darwin' ? ['-cR', src, dest] : ['-a', src, dest], { stdio: 'inherit' });

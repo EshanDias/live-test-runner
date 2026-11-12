@@ -28,7 +28,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { missingPackages } = require('./lib/emptied');
+const { brokenPackages, emptiedPackages } = require('./lib/emptied');
 
 const ROOT = path.resolve(__dirname, '..');
 // LTR_E2E_EXTENSION_DIR: run against another copy of the extension, e.g. an
@@ -155,9 +155,11 @@ function prepareFixture(name) {
   const pkgHash = crypto.createHash('sha1').update(fs.readFileSync(path.join(src, 'package.json'))).digest('hex');
   const stamp = path.join(dest, 'node_modules', '.ltr-e2e-stamp');
   const current = fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8') : '';
-  // macOS empties temp files untouched for 3 days (lib/emptied.js): any package that lost its files, install afresh.
-  const gone = current === pkgHash ? missingPackages(dest) : [];
-  if (current === pkgHash && !fs.existsSync(path.join(dest, 'node_modules', '.package-lock.json'))) { gone.push('node_modules/.package-lock.json'); }
+  // macOS empties temp files untouched for 3 days (lib/emptied.js): any package that lost files since the install, install afresh.
+  const brokenAtInstall = path.join(dest, 'node_modules', '.ltr-e2e-broken.json');
+  let baseline = [];
+  try { baseline = JSON.parse(fs.readFileSync(brokenAtInstall, 'utf8')); } catch { /* none recorded */ }
+  const gone = current === pkgHash ? emptiedPackages(dest, baseline) : [];
   if (gone.length > 0) {
     console.log(`[e2e] ${gone.length} installed package(s) lost their files (${gone.slice(0, 3).join(', ')}…) — reinstalling`);
     fs.rmSync(path.join(dest, 'node_modules'), { recursive: true, force: true });
@@ -166,6 +168,7 @@ function prepareFixture(name) {
     console.log(`[e2e] npm install in ${dest}`);
     execSync('npm install --no-audit --no-fund --loglevel=error', { cwd: dest, stdio: 'inherit' });
     fs.writeFileSync(stamp, pkgHash);
+    fs.writeFileSync(brokenAtInstall, JSON.stringify(brokenPackages(dest)));
   }
   return dest;
 }
