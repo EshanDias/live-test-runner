@@ -147,7 +147,9 @@ function printNpmDebugLog() {
   try {
     const cache = execSync('npm config get cache', { encoding: 'utf8' }).trim();
     const dir = path.join(cache, '_logs');
-    const newest = fs.readdirSync(dir).filter((f) => f.endsWith('-debug-0.log')).sort().pop();
+    // The newest install log (`npm config get cache` just above wrote one of its own).
+    const newest = fs.readdirSync(dir).filter((f) => f.endsWith('-debug-0.log')).sort().reverse()
+      .find((f) => /verbose title npm install/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
     if (!newest) { return; }
     const lines = fs.readFileSync(path.join(dir, newest), 'utf8').split(/\r?\n/);
     console.log(`[e2e] npm debug log (${newest}, last 60 lines):\n` + lines.slice(-60).join('\n'));
