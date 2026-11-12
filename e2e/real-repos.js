@@ -45,6 +45,7 @@ const { spawnSync, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { missingPackages, missingTopFiles } = require('./lib/emptied');
 
 const ROOT = path.resolve(__dirname, '..');
 const CONFIG_FILE = path.resolve(process.env.LTR_E2E_REPOS_CONFIG || path.join(__dirname, 'real-repos.local.json'));
@@ -103,7 +104,13 @@ function fingerprint(dir) {
 
 function clone(src, dest, fresh) {
   if (fresh) { fs.rmSync(dest, { recursive: true, force: true }); }
-  if (fs.existsSync(dest)) { return; }
+  if (fs.existsSync(dest)) {
+    // A clone in the temp folder that macOS emptied (lib/emptied.js): clone it again.
+    const gone = [...missingTopFiles(src, dest), ...missingPackages(dest)];
+    if (gone.length === 0) { return; }
+    console.log(`[repos] ${dest} lost ${gone.length} file(s) or package(s) (${gone.slice(0, 3).join(', ')}…) — cloning again`);
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   console.log(`[repos] cloning ${src} → ${dest}`);
   const args = process.platform === 'darwin' ? ['-cR', src, dest] : ['-a', src, dest];

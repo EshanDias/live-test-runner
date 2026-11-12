@@ -28,6 +28,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { missingPackages } = require('./lib/emptied');
 
 const ROOT = path.resolve(__dirname, '..');
 // LTR_E2E_EXTENSION_DIR: run against another copy of the extension, e.g. an
@@ -141,15 +142,6 @@ function pythonEnvDirs(src, rel = '') {
   return out;
 }
 
-/** Packages npm's own record says are installed but whose package.json is gone. */
-function missingPackages(dest) {
-  let lock;
-  try { lock = JSON.parse(fs.readFileSync(path.join(dest, 'node_modules', '.package-lock.json'), 'utf8')); } catch { return ['node_modules/.package-lock.json']; }
-  return Object.entries(lock.packages || {})
-    .filter(([rel, info]) => rel.startsWith('node_modules/') && !info.link && !fs.existsSync(path.join(dest, rel, 'package.json')))
-    .map(([rel]) => rel.slice('node_modules/'.length));
-}
-
 /** Fresh copy of a fixture (node_modules and .venv kept between runs). */
 function prepareFixture(name) {
   const src = path.join(__dirname, 'fixtures', name);
@@ -163,9 +155,9 @@ function prepareFixture(name) {
   const pkgHash = crypto.createHash('sha1').update(fs.readFileSync(path.join(src, 'package.json'))).digest('hex');
   const stamp = path.join(dest, 'node_modules', '.ltr-e2e-stamp');
   const current = fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8') : '';
-  // macOS empties files in its temp folder untouched for 3 days and keeps the folders:
-  // npm then takes the packages as installed. Any package that lost its files: install afresh.
+  // macOS empties temp files untouched for 3 days (lib/emptied.js): any package that lost its files, install afresh.
   const gone = current === pkgHash ? missingPackages(dest) : [];
+  if (current === pkgHash && !fs.existsSync(path.join(dest, 'node_modules', '.package-lock.json'))) { gone.push('node_modules/.package-lock.json'); }
   if (gone.length > 0) {
     console.log(`[e2e] ${gone.length} installed package(s) lost their files (${gone.slice(0, 3).join(', ')}…) — reinstalling`);
     fs.rmSync(path.join(dest, 'node_modules'), { recursive: true, force: true });
