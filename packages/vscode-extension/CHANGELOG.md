@@ -17,7 +17,7 @@ All notable changes to Live Test Runner are documented here.
 - **Coverage numbers match your own coverage command** — every file shows what `jest --coverage`, `vitest run --coverage` or `coverage run` reports with your settings, including Jest's `coverageProvider: 'v8'`, Vitest 3's v8 provider and files no test loads.
 - Tests that share a variable in a `describe` now rerun together when you save, never one by one.
 - **Faster Jest runs on big projects** — compiled files are now reused across batches and sessions (a 2,500-file project: first run ~40% faster, the first result twice as fast), and the cache uses a tenth of the disk space.
-- **Jest no longer recompiles your whole project on every Start** — what the last session compiled is reused (on a large React project, test files run about a third faster).
+- **Jest no longer recompiles your whole project on every Start** — what the last session compiled is reused, so first results come sooner (a large React project: the open file's result in 17 s instead of 38 s).
 - Windows: pytest and Vitest coverage are right for projects under a short (8.3) folder name such as `C:\Users\RUNNER~1`.
 - **Much faster pytest runs on big projects** — coverage per test file no longer slows each batch down, and VS Code stays responsive while it is worked out.
 - Vitest with the execution trace turned off: coverage now follows deleted tests too.
