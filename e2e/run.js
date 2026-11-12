@@ -142,6 +142,18 @@ function pythonEnvDirs(src, rel = '') {
   return out;
 }
 
+/** The end of npm's newest debug log (why an install failed: npm prints only the error line). */
+function printNpmDebugLog() {
+  try {
+    const cache = execSync('npm config get cache', { encoding: 'utf8' }).trim();
+    const dir = path.join(cache, '_logs');
+    const newest = fs.readdirSync(dir).filter((f) => f.endsWith('-debug-0.log')).sort().pop();
+    if (!newest) { return; }
+    const lines = fs.readFileSync(path.join(dir, newest), 'utf8').split(/\r?\n/);
+    console.log(`[e2e] npm debug log (${newest}, last 60 lines):\n` + lines.slice(-60).join('\n'));
+  } catch { /* no log */ }
+}
+
 /** Fresh copy of a fixture (node_modules and .venv kept between runs). */
 function prepareFixture(name) {
   const src = path.join(__dirname, 'fixtures', name);
@@ -168,7 +180,12 @@ function prepareFixture(name) {
     // From scratch: npm does not repair a half-emptied node_modules (and the stamp itself may be what was emptied).
     fs.rmSync(path.join(dest, 'node_modules'), { recursive: true, force: true });
     console.log(`[e2e] npm install in ${dest}`);
-    execSync('npm install --no-audit --no-fund --loglevel=error', { cwd: dest, stdio: 'inherit' });
+    try {
+      execSync('npm install --no-audit --no-fund --loglevel=error', { cwd: dest, stdio: 'inherit' });
+    } catch (err) {
+      printNpmDebugLog();
+      throw err;
+    }
     fs.writeFileSync(stamp, pkgHash, { mode: 0o600 });
     fs.writeFileSync(brokenAtInstall, JSON.stringify(brokenPackages(dest)), { mode: 0o600 });
   }
@@ -327,7 +344,15 @@ async function main() {
   }
   const exe = await resolveVscode();
   const results = [];
-  for (const n of names) { results.push(await runScenario(n, exe)); }
+  for (const n of names) {
+    try {
+      results.push(await runScenario(n, exe));
+    } catch (err) {
+      // A fixture that cannot be prepared (an npm install that fails) fails its own scenario, not the rest of the run.
+      console.log(`[e2e] FAIL ${n}: could not prepare it — ${String(err && err.message).split('\n')[0]}`);
+      results.push({ name: n, passed: false });
+    }
+  }
   const failed = results.filter((r) => !r.skipped && !r.passed);
   console.log(`[e2e] ${results.length - failed.length}/${results.length} scenario(s) passed or skipped` +
     (failed.length ? ` — failed: ${failed.map((r) => r.name).join(', ')}` : ''));
