@@ -522,7 +522,7 @@ Everything cached lives outside the project: the user cache folder (`<folder>-<h
 
 After each file batch, `JestBatchRunner` parses the light-trace JSONL (updates `ExecutionTraceStore`) and then parses the coverage counters JSONL (promotes `CoverageStore` entries from `'counted'` to `'measured'`). Both happen in the same post-Jest-exit phase — no extra process or phase needed.
 
-Parallel batches are limited to a quarter of the CPU cores (`CONCURRENCY` in `SessionManager._runFiles`), Vitest's workers per batch so that all batches together use at most half the cores (`workersPerBatch`, runner `utils/resources.ts`), and per framework by its `batchPolicy` (pytest: one process). Another batch starts only while memory is not low (`memoryLow`, `SessionManager._memoryForAnotherBatch`), and every test process runs below normal priority (`lowerPriority` in `Executor`). See [test runs](design/test-runs.md).
+The budget is sized by `liveTestRunner.speed` (`setSpeedLevel` / `totalWorkers`, runner `utils/resources.ts`; balanced = half the cores): parallel batches one per two workers (`CONCURRENCY` in `SessionManager._runFiles`), Vitest's workers per batch so that all batches together stay within it (`workersPerBatch`), and per framework by its `batchPolicy` (pytest: one process). Another batch starts only while memory is not low (`memoryLow`, `SessionManager._memoryForAnotherBatch`), and every test process runs below normal priority (`lowerPriority` in `Executor`). See [test runs](design/test-runs.md).
 
 ### Framework adapter layer (extension side)
 

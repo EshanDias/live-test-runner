@@ -15,7 +15,7 @@ import { openGuide } from './views/GuidePanel';
 import * as fs from 'fs';
 import * as path from 'path';
 import { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
-import { rememberVitestConfigIn } from '@live-test-runner/runner';
+import { rememberVitestConfigIn, setSpeedLevel, totalWorkers, parallelBatches } from '@live-test-runner/runner';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
@@ -53,6 +53,13 @@ function isProcessAlive(pid: number): boolean {
   } catch (e: any) {
     return e.code === 'EPERM'; // Alive but no permission to signal
   }
+}
+
+/** `liveTestRunner.speed` → the shared budget (runner `utils/resources.ts`); read when a run starts. */
+function applySpeedSetting(changed: boolean): void {
+  const level = setSpeedLevel(vscode.workspace.getConfiguration('liveTestRunner').get('speed'));
+  const line = `Speed ${level}: up to ${parallelBatches()} test process(es) at once, ${totalWorkers()} worker(s) in total`;
+  if (changed) { log.info(`${line} — from the next run`); } else { log.debug(line); }
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -124,6 +131,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // What Vitest's config resolves to, remembered between sessions (Start no longer waits for the probe).
   rememberVitestConfigIn(LTR_BASE_TMP_DIR);
+  applySpeedSetting(false);
 
   // Create a unique isolated directory for THIS session.
   const sessionDirName = `session-${process.pid}-${Date.now()}`;
@@ -760,6 +768,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('liveTestRunner.projectRoot')) { projects.refresh(); }
       if (e.affectsConfiguration('liveTestRunner.pythonPath')) { pythons.invalidate(); }
+      if (e.affectsConfiguration('liveTestRunner.speed')) { applySpeedSetting(true); }
     }),
 
     outputChannel,

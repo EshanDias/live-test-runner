@@ -4,6 +4,9 @@ All notable changes to Live Test Runner are documented here.
 
 ## [3.4.1] - Unreleased
 
+### Added
+- **`liveTestRunner.speed`** (`full` / `balanced` / `light`, default `balanced` = the old budget): sizes the shared budget (`setSpeedLevel`, `totalWorkers` in runner `utils/resources.ts`): full 3/4 of the cores, light one process with at most 2 workers. Applies from the next run, logged once. Jest plain runs (`JestRunner.baseArgs`) now take `workersPerBatch()` instead of cores / 4 each. Unit `resources`, e2e `basic-speed`; T22.
+
 ### Changed
 - **Vitest Start no longer waits for the config probe** (~1 s, more on heavy configs): the last session's answer is kept in the temp folder (`vitest-config-<hash>.json`, `rememberVitestConfigIn`, cleared / pruned by `Storage.ts`) and used when config, package.json and installed Vitest are unchanged; a background probe replaces it when it differs (`sameConfigInfo`, coverage globs as a set: vueuse lists them in a different order each time). First batch 0.84 → 0.16 s after Start on 500 files. Unit `vitestConfigMemory`, `storage`; T21; `PRIVACY.md` row.
 - **Test processes run below normal priority** (Unix nice 10, Windows below normal; workers inherit it): `lowerPriority` in `Executor` after spawn. Same speed on an idle machine; the editor and other apps get the CPU first. e2e `basic-hang`, `vitest-hang`, `pytest-hang` (a test reads its priority); T20.

@@ -4,6 +4,9 @@ All notable changes to Live Test Runner are documented here.
 
 ## [3.4.1] - Unreleased
 
+### Added
+- **Speed setting** (`liveTestRunner.speed`): `full` for the fastest runs, `balanced` (the default, as before) or `light` to keep the machine cool and quiet.
+
 ### Changed
 - Vitest projects start their first tests sooner: what your Vitest config resolves to is remembered from the last session.
 - **Your work comes first while tests run** — test processes run at a lower priority than your editor and other apps, and on a machine short of memory the next batch waits instead of pushing it into swap.

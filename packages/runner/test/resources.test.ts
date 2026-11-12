@@ -1,6 +1,6 @@
 import * as os from 'os';
 import { spawn } from 'child_process';
-import { availableMemory, lowerPriority, memoryLow, parallelBatches, workerCount, workersPerBatch } from '../src/utils/resources';
+import { availableMemory, lowerPriority, memoryLow, parallelBatches, setSpeedLevel, speedLevel, totalWorkers, workerCount, workersPerBatch } from '../src/utils/resources';
 import { readWorkerLimit } from '../src/framework/vitestProjects';
 
 describe('machine budget', () => {
@@ -86,5 +86,43 @@ describe('test process priority', () => {
     }
     expect(() => lowerPriority(undefined)).not.toThrow();
     expect(() => lowerPriority(2 ** 30)).not.toThrow();
+  });
+});
+
+describe('speed levels', () => {
+  afterEach(() => { setSpeedLevel('balanced'); });
+
+  it.each([
+    // cores, level, batches, workers each
+    [12, 'full', 4, 2], [12, 'balanced', 3, 2], [12, 'light', 1, 2],
+    [8, 'full', 3, 2], [8, 'balanced', 2, 2], [8, 'light', 1, 2],
+    [4, 'full', 1, 3], [4, 'balanced', 1, 2], [4, 'light', 1, 1],
+    [2, 'full', 1, 1], [2, 'balanced', 1, 1], [2, 'light', 1, 1],
+    [32, 'full', 12, 2], [32, 'light', 1, 2],
+  ] as const)('%i cores, %s → %i batches × %i workers', (cores, level, batches, workers) => {
+    expect(parallelBatches(cores, level)).toBe(batches);
+    expect(workersPerBatch(cores, undefined, level)).toBe(workers);
+  });
+
+  it('every level stays within its budget; full ≥ balanced ≥ light', () => {
+    for (let cores = 1; cores <= 64; cores++) {
+      for (const level of ['full', 'balanced', 'light'] as const) {
+        expect(parallelBatches(cores, level) * workersPerBatch(cores, undefined, level)).toBeLessThanOrEqual(totalWorkers(cores, level));
+      }
+      expect(totalWorkers(cores, 'full')).toBeGreaterThanOrEqual(totalWorkers(cores, 'balanced'));
+      expect(totalWorkers(cores, 'balanced')).toBeGreaterThanOrEqual(totalWorkers(cores, 'light'));
+      expect(totalWorkers(cores, 'full')).toBeLessThan(Math.max(2, cores));
+    }
+  });
+
+  it('balanced is the default and what an unknown value means; the level set is used', () => {
+    expect(speedLevel()).toBe('balanced');
+    expect(setSpeedLevel('turbo')).toBe('balanced');
+    expect(setSpeedLevel(undefined)).toBe('balanced');
+    setSpeedLevel('light');
+    expect(parallelBatches(12)).toBe(1);
+    expect(workersPerBatch(12)).toBe(2);
+    setSpeedLevel('full');
+    expect(parallelBatches(12)).toBe(4);
   });
 });

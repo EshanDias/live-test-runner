@@ -310,6 +310,21 @@
           "default": 300,
           "description": "Debounce delay in milliseconds before running tests on save"
         },
+        "liveTestRunner.speed": {
+          "type": "string",
+          "enum": [
+            "full",
+            "balanced",
+            "light"
+          ],
+          "enumDescriptions": [
+            "Fastest: test runs may use about three quarters of the CPU cores. The fans may spin up.",
+            "Fast while the machine stays usable: about half the CPU cores (the default).",
+            "Cool and quiet: one test process with at most 2 workers. Runs take longer."
+          ],
+          "default": "balanced",
+          "markdownDescription": "How much of the machine test runs may use. A change applies from the next run. Whatever the level, tests run below the priority of your other apps, and a new batch waits while memory is low."
+        },
         "liveTestRunner.hangTimeoutSeconds": {
           "type": "number",
           "default": 300,

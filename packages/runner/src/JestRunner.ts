@@ -1,4 +1,4 @@
-import * as os from 'os';
+import { workersPerBatch } from './utils/resources';
 import * as path from 'path';
 import { CommandRunner, RunRequest } from './CommandRunner';
 import { ExecutionResult } from './execution/Executor';
@@ -131,11 +131,8 @@ export class JestRunner extends CommandRunner {
 
   /** Args that every Jest invocation needs regardless of framework or mode. */
   private baseArgs(): string[] {
-    // Cap Jest's internal worker count so multiple concurrent Jest processes
-    // (controlled by CONCURRENCY in SessionManager) don't saturate all CPUs.
-    // Formula: leave at least half the cores free for the OS + extension host.
-    const cpus = os.cpus().length;
-    const maxWorkers = Math.max(1, Math.floor(cpus / 4));
+    // Workers within the shared budget: several of these runs go on at once (SessionManager's batches).
+    const maxWorkers = workersPerBatch();
     return [
       '--watchAll=false', // prevent Jest from entering watch mode
       '--forceExit', // prevent Jest from hanging after completion
