@@ -162,9 +162,10 @@ function prepareFixture(name) {
   const gone = current === pkgHash ? emptiedPackages(dest, baseline) : [];
   if (gone.length > 0) {
     console.log(`[e2e] ${gone.length} installed package(s) lost their files (${gone.slice(0, 3).join(', ')}…) — reinstalling`);
-    fs.rmSync(path.join(dest, 'node_modules'), { recursive: true, force: true });
   }
   if (current !== pkgHash || gone.length > 0) {
+    // From scratch: npm does not repair a half-emptied node_modules (and the stamp itself may be what was emptied).
+    fs.rmSync(path.join(dest, 'node_modules'), { recursive: true, force: true });
     console.log(`[e2e] npm install in ${dest}`);
     execSync('npm install --no-audit --no-fund --loglevel=error', { cwd: dest, stdio: 'inherit' });
     fs.writeFileSync(stamp, pkgHash);
