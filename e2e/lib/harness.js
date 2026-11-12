@@ -631,6 +631,10 @@ function plainCoverage(workspace, framework) {
     countIstanbul(JSON.parse(fs.readFileSync(file, 'utf8')), rel, out);
     return out;
   } finally {
+    // The Angular copy's node_modules is a link to the workspace's: remove the link itself first
+    // (a recursive delete through a Windows junction empties the workspace's node_modules).
+    const link = path.join(dir, 'ws', 'node_modules');
+    try { fs.unlinkSync(link); } catch { try { fs.rmdirSync(link); } catch { /* none */ } }
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }

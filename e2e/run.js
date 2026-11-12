@@ -154,7 +154,8 @@ function prepareFixture(name) {
 
   const pkgHash = crypto.createHash('sha1').update(fs.readFileSync(path.join(src, 'package.json'))).digest('hex');
   const stamp = path.join(dest, 'node_modules', '.ltr-e2e-stamp');
-  const current = fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8') : '';
+  let current = '';
+  try { current = fs.readFileSync(stamp, 'utf8'); } catch { /* not installed yet */ }
   // macOS empties temp files untouched for 3 days (lib/emptied.js): any package that lost files since the install, install afresh.
   const brokenAtInstall = path.join(dest, 'node_modules', '.ltr-e2e-broken.json');
   let baseline = [];

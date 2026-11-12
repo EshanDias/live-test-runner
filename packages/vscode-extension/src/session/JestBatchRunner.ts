@@ -382,9 +382,12 @@ const _upperDrive = (p) => String(p).replace(/^([a-z]):/, (_, d) => d.toUpperCas
 // the project's rules and has Jest count the untested files once).
 const _covFile = process.env.LTR_JEST_COVERAGE_FILE;
 const _provider = baseConfig.coverageProvider === 'v8' ? 'v8' : 'babel';
+// coverageDirectory: Jest copies it into every project config, which is part of each file's transform
+// cache key — a folder per session recompiled the whole project on every Start. One fixed folder (Jest
+// writes nothing there with reporters 'none'), never the project's own coverage/.
 const _cov = _covFile
   ? { collectCoverage: true, coverageProvider: _provider, collectCoverageFrom: [], coverageReporters: ['none'], coverageThreshold: undefined,
-      coverageDirectory: _path.dirname(_covFile) }
+      coverageDirectory: ${JSON.stringify(path.join(this._transformCacheDir(projectRoot), 'jest-coverage'))} }
   : {};
 // Our transform adds only the trace on top of Jest's coverage (and maps its code back to the file).
 const _ours = _covFile ? [${JSON.stringify(SESSION_TRANSFORM_PATH)}, { coverage: _provider }] : ${JSON.stringify(SESSION_TRANSFORM_PATH)};

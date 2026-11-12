@@ -45,6 +45,12 @@ async function settle(api) {
 
 async function run({ api, t, vscode, workspace }, spec) {
   const abs = (f) => path.join(workspace, f);
+  /** Edit and save, then wait for the save's run to start: settle() alone can return before it does (slow file events on Windows). */
+  const edit = async (file, fn) => {
+    const since = h.isoNow();
+    await h.editAndSave(vscode, file, fn);
+    await h.waitFor(() => h.logsSince(api, since).some((l) => /Run #\d+ started/.test(l)), { what: 'the save to start a run', timeout: 15_000 }).catch(() => {});
+  };
   const key = (f) => abs(f).replace(/^[A-Z]:/, (m) => m.toLowerCase());
   const name = (f) => path.basename(f);
   const entry = (f) => api.coverageStore.getEntry(key(f));
@@ -98,11 +104,11 @@ async function run({ api, t, vscode, workspace }, spec) {
     ? aTestText.replace('    assert two(2) == 4', '    assert False, "broken"\n    assert two(2) == 4')
     : aTestText.replace('  expect(two(2)).toBe(4);', "  throw new Error('broken');\n  expect(two(2)).toBe(4);");
   t.check('the fixture has the line to break', broken !== aTestText);
-  await h.editAndSave(vscode, abs(spec.aTest), () => broken);
+  await edit(abs(spec.aTest), () => broken);
   await settle(api);
   t.eq(`a test failing before it calls two() lowers ${name(spec.aSrc)} to 1/2 functions`, fns(spec.aSrc), '1/2');
   matchesPlain('a test fails before it reaches the code');
-  await h.editAndSave(vscode, abs(spec.aTest), () => aTestText);
+  await edit(abs(spec.aTest), () => aTestText);
   await settle(api);
   t.eq(`fixed, it covers two() again: ${name(spec.aSrc)} 2/2 functions`, fns(spec.aSrc), '2/2');
   matchesPlain('the failing test fixed');
@@ -119,14 +125,14 @@ async function run({ api, t, vscode, workspace }, spec) {
   matchesPlain('▶ Run on one test');
 
   // ── A test removed ──
-  await h.editAndSave(vscode, abs(spec.aTest), spec.removeTwo);
+  await edit(abs(spec.aTest), spec.removeTwo);
   await settle(api);
   t.eq(`removing the only test of two() lowers ${name(spec.aSrc)} to 1/2 functions`, fns(spec.aSrc), '1/2');
   matchesPlain('a test removed');
 
   // ── A test removed from one of two test files that cover a source ──
   t.eq(`full run: ${name(spec.shared.src)} both functions covered (by two test files)`, fns(spec.shared.src), '2/2');
-  await h.editAndSave(vscode, abs(spec.shared.test), spec.shared.removeSecond);
+  await edit(abs(spec.shared.test), spec.shared.removeSecond);
   await settle(api);
   t.eq(`removing the only test of second() lowers ${name(spec.shared.src)} to 1/2 functions while the other test file still covers first()`, fns(spec.shared.src), '1/2');
   matchesPlain('a test removed from one of two covering test files');
@@ -134,7 +140,7 @@ async function run({ api, t, vscode, workspace }, spec) {
   // ── one() stops calling helper() ──
   const since = h.isoNow();
   const saveMark = h.rawMark(api);
-  await h.editAndSave(vscode, abs(spec.aSrc), spec.stopCallingHelper);
+  await edit(abs(spec.aSrc), spec.stopCallingHelper);
   await settle(api);
   t.eq(`${name(spec.bSrc)} helper is no longer covered once one() stops calling it`, fns(spec.bSrc), '0/1');
   if (spec.related) {
@@ -153,7 +159,7 @@ async function run({ api, t, vscode, workspace }, spec) {
   // ── A suite whose tests share a variable ──
   if (spec.counter) {
     const mark = h.rawMark(api);
-    await h.editAndSave(vscode, abs(spec.counter.src), (s) => s + '\n// touched\n');
+    await edit(abs(spec.counter.src), (s) => s + '\n// touched\n');
     await settle(api);
     // A related run names the source file, not the test file.
     const runs = h.rawSinceWithoutRefresh(api, mark).filter((l) => spec.process.test(l) && l.includes(name(spec.related ? spec.counter.src : spec.counter.test)));
@@ -172,7 +178,7 @@ async function run({ api, t, vscode, workspace }, spec) {
     t.eq('a new source file no test loads shows as 0% right away', fns(spec.newFile.path), '0/1');
     matchesPlain('new source file');
     const stmtsBefore = entry(spec.newFile.path)?.state === 'counted' ? entry(spec.newFile.path).statements : entry(spec.newFile.path)?.pct.statements.total;
-    await h.editAndSave(vscode, nf, (s) => s + spec.newFile.more);
+    await edit(nf, (s) => s + spec.newFile.more);
     await settle(api);
     // How many functions an untested file has is the provider's call (Vitest 3's v8: one per file); the plain-run check below has the numbers.
     const stmtsAfter = entry(spec.newFile.path)?.state === 'counted' ? entry(spec.newFile.path).statements : entry(spec.newFile.path)?.pct.statements.total;

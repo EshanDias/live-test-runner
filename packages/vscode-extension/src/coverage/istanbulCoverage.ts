@@ -85,7 +85,8 @@ export function measuredFiles(
   let excluded = 0;
   for (const [key, fc] of Object.entries(coverage)) {
     // The editor's spelling of the path (symlinks resolved back, lower-case drive) — like Jest's entries.
-    const filePath = fromRunnerPath(fc.path || key).replace(/^[A-Z]:/, (m) => m.toLowerCase());
+    // Normalized: Vitest's forward slashes kept after a swapped Windows root made a second key per file.
+    const filePath = path.normalize(fromRunnerPath(fc.path || key)).replace(/^[A-Z]:/, (m) => m.toLowerCase());
     if (!counts(filePath)) { excluded++; continue; }
 
     const manifest = toManifest(fc, filePath);
