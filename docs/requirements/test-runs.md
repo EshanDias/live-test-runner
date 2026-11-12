@@ -26,6 +26,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | T18 | When the framework's list of runnable files is not remembered from the last session, start the test files on screen while the list is made (single-framework projects, budget of two or more processes); the early batches and the rest of the run share one budget (`BatchSlots`); a file the list leaves out loses its results, coverage and trace and shows as not run | `pytest-open-first-while-listing`, `basic-open-first`; unit `batchQueue` |
 | T19 | Start a run's first test process always, and another (any run in the window) only while free memory is at least 2 GB, or a fifth of the machine's memory when that is less; otherwise wait until one ends or memory frees up, logging it once. Free memory that cannot be told (macOS before VS Code 1.90) holds nothing back | unit: `resources` ⚠️ no e2e (needs a machine short of memory) |
 | T20 | Run every test process (and the workers it starts) below normal priority: Unix nice 10, Windows below normal | `basic-hang`, `vitest-hang`, `pytest-hang`; unit: `resources` |
+| T21 | Start the first Vitest batch without waiting for the config probe when the config, package.json and installed Vitest are unchanged since the last session: use that session's answer, check it with a probe in the background, and use a different answer for the rest of the session and the next (coverage globs compared as a set) | unit: `vitestConfigMemory`, `storage`; `repo-vitest` (vueuse, second run) |
 
 ⚠️ marks a requirement no automated test checks yet.
 

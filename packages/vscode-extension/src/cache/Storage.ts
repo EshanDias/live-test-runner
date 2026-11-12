@@ -8,13 +8,14 @@
  *   <temp dir>/com.eshLabs/live-test-runner/
  *     session-<pid>-<time>/             one VS Code window's session (removed when the window is gone)
  *     runnable-files-<hash16>.json      the framework's list of runnable test files
+ *     vitest-config-<hash16>.json       what the Vitest config probe read (projects, coverage include, workers)
  *     transform-cache-<hash>/           Jest transform cache + coverage manifests
  *
  * The user's Python interpreter choice is kept in VS Code's workspace state, not here.
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { craConfigPath, LTR_BASE_CACHE_DIR, LTR_BASE_TMP_DIR } from '@live-test-runner/runner';
+import { craConfigPath, LTR_BASE_CACHE_DIR, LTR_BASE_TMP_DIR, vitestConfigCachePath } from '@live-test-runner/runner';
 import { runnableFilesPath as runnablePath } from '../session/RunnableFiles';
 
 /** Cached data not used for this long is deleted when VS Code starts. */
@@ -45,7 +46,7 @@ export function touch(p: string): void {
  */
 export function clearProjectCaches(projectRoot: string): number {
   let removed = 0;
-  for (const p of [runnableFilesPath(projectRoot), transformCacheDir(projectRoot), craConfigPath(projectRoot)]) {
+  for (const p of [runnableFilesPath(projectRoot), transformCacheDir(projectRoot), craConfigPath(projectRoot), vitestConfigCachePath(projectRoot, LTR_BASE_TMP_DIR)]) {
     if (fs.existsSync(p)) {
       try { fs.rmSync(p, { recursive: true, force: true }); removed++; } catch { /* in use — next time */ }
     }
@@ -118,7 +119,7 @@ export function pruneUnused(opts: PruneOptions): number {
   const rm = (p: string) => { try { fs.rmSync(p, { recursive: true, force: true }); removed++; } catch { /* in use */ } };
 
   for (const name of list(tmpDir)) {
-    if (/^(transform-cache-|runnable-files-)/.test(name) && old(path.join(tmpDir, name))) { rm(path.join(tmpDir, name)); }
+    if (/^(transform-cache-|runnable-files-|vitest-config-)/.test(name) && old(path.join(tmpDir, name))) { rm(path.join(tmpDir, name)); }
   }
   for (const name of list(cacheDir)) {
     const full = path.join(cacheDir, name);

@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Executor } from '../execution/Executor';
@@ -86,19 +87,102 @@ export async function vitestProjects(
   return (await vitestConfigInfo(projectRoot, configPath, tmpDir, logger))?.projects;
 }
 
-/** Projects and coverage provider of the resolved config (one probe, cached like vitestProjects). */
+/**
+ * Where a project's probe answer is remembered between sessions (off until
+ * the extension names a folder; unit tests leave it off).
+ */
+let storeDir: string | undefined;
+/** Remember probe answers in `dir` across sessions (undefined: in memory only). */
+export function rememberVitestConfigIn(dir: string | undefined): void {
+  storeDir = dir;
+}
+
+/** The file a project's remembered probe answer lives in (cleared and pruned with the other caches). */
+export function vitestConfigCachePath(projectRoot: string, dir: string): string {
+  const id = crypto.createHash('sha256').update(path.normalize(projectRoot)).digest('hex').slice(0, 16);
+  return path.join(dir, `vitest-config-${id}.json`);
+}
+
+function readStored(projectRoot: string, stamp: string): VitestConfigInfo | undefined {
+  if (!storeDir) { return undefined; }
+  try {
+    const file = vitestConfigCachePath(projectRoot, storeDir);
+    const data = JSON.parse(fs.readFileSync(file, 'utf8')) as { stamp?: string; info?: VitestConfigInfo };
+    if (data.stamp !== stamp || !data.info || !Array.isArray(data.info.projects)) { return undefined; }
+    const now = new Date();
+    try { fs.utimesSync(file, now, now); } catch { /* in use: kept by the 30-day pruning */ }
+    return data.info;
+  } catch {
+    return undefined;
+  }
+}
+
+function store(projectRoot: string, stamp: string, info: VitestConfigInfo | undefined): void {
+  if (!storeDir) { return; }
+  const file = vitestConfigCachePath(projectRoot, storeDir);
+  try {
+    if (!info) { fs.rmSync(file, { force: true }); return; }
+    fs.mkdirSync(storeDir, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ stamp, info }), { encoding: 'utf8', mode: 0o600 });
+  } catch (err) {
+    log.debug(`Could not remember the Vitest config of ${projectRoot}: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Projects and coverage provider of the resolved config (one probe, cached
+ * like vitestProjects). The last session's answer, when its config files are
+ * unchanged, is used at once and checked by a probe in the background: Start
+ * waited ~1.2 s for the probe before the first test ran. A config can import
+ * files the stamp does not see, so a different answer replaces it for the
+ * rest of the session.
+ */
 export function vitestConfigInfo(
   projectRoot: string,
   configPath: string | undefined,
   tmpDir: string,
   logger?: (msg: string) => void,
 ): Promise<VitestConfigInfo | undefined> {
-  const stamp = [configPath ?? '', mtime(configPath), mtime(path.join(projectRoot, 'package.json'))].join('|');
+  const stamp = [configPath ?? '', mtime(configPath), mtime(path.join(projectRoot, 'package.json')), vitestVersionStamp(projectRoot)].join('|');
   const hit = cache.get(projectRoot);
   if (hit && hit.stamp === stamp) { return hit.info; }
-  const info = probe(projectRoot, configPath, tmpDir, logger);
-  cache.set(projectRoot, { stamp, info });
-  return info;
+  const remembered = readStored(projectRoot, stamp);
+  const probed = runProbe(projectRoot, configPath, tmpDir, logger);
+  if (remembered) {
+    log.debug(`Vitest config of ${projectRoot}: the last session's answer (config unchanged), checking it in the background`);
+    cache.set(projectRoot, { stamp, info: Promise.resolve(remembered) });
+    void probed.then((fresh) => {
+      if (!fresh) { return; } // probe failed: keep what worked last time
+      store(projectRoot, stamp, fresh);
+      if (!sameConfigInfo(fresh, remembered)) {
+        log.info(`The Vitest config of ${projectRoot} changed since the last session (a file it imports?) — later runs use the new settings`);
+        const now = cache.get(projectRoot);
+        if (now && now.stamp === stamp) { cache.set(projectRoot, { stamp, info: Promise.resolve(fresh) }); }
+      }
+    });
+    return Promise.resolve(remembered);
+  }
+  void probed.then((fresh) => store(projectRoot, stamp, fresh));
+  cache.set(projectRoot, { stamp, info: probed });
+  return probed;
+}
+
+/**
+ * Whether two probe answers mean the same. The coverage globs are a set:
+ * a config with several projects lists them in a different order each time (vueuse).
+ */
+export function sameConfigInfo(a: VitestConfigInfo, b: VitestConfigInfo): boolean {
+  const canon = (i: VitestConfigInfo) => JSON.stringify({
+    ...i,
+    coverage: i.coverage && { ...i.coverage, include: i.coverage.include && [...i.coverage.include].sort(), exclude: i.coverage.exclude && [...i.coverage.exclude].sort() },
+  });
+  return canon(a) === canon(b);
+}
+
+/** The installed Vitest's package.json (an upgrade changes what the probe reports). */
+function vitestVersionStamp(projectRoot: string): string {
+  const dir = resolvePackageDir('vitest', projectRoot);
+  return dir ? mtime(path.join(dir, 'package.json')) : '-';
 }
 
 /**
@@ -114,6 +198,13 @@ export function vitestCoverageInstalled(projectRoot: string, provider: string): 
 /** For tests only. */
 export function _resetVitestProjects(): void {
   cache.clear();
+}
+
+/** How the config is probed; replaceable in unit tests. */
+let runProbe: typeof probe = (...args) => probe(...args);
+/** For tests only: replace (or with no argument, restore) the probe. */
+export function _setVitestProbe(fn?: typeof probe): void {
+  runProbe = fn ?? ((...args) => probe(...args));
 }
 
 async function probe(

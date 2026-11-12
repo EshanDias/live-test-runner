@@ -1,6 +1,6 @@
 # Privacy policy
 
-_Last updated: 2026-11-09 (Update snapshot added). Applies to Live Test Runner 3.4.0 and later._
+_Last updated: 2026-11-12 (the start cache also keeps what your Vitest config resolves to). Applies to Live Test Runner 3.4.0 and later._
 
 **In short:** Live Test Runner collects nothing and sends nothing. It runs your own test framework on your machine, and everything it keeps stays on your machine.
 
@@ -15,7 +15,7 @@ _Last updated: 2026-11-09 (Update snapshot added). Applies to Live Test Runner 3
 | What | Where | How to remove it |
 |---|---|---|
 | Test lists, test results, coverage and traces of the current session | Your system's temp folder, `com.eshLabs/live-test-runner/` | Removed once its VS Code window is closed (at the latest when VS Code next starts); **Clear All Cached Data** removes everything |
-| A cache that makes the next start faster (test lists, Jest's transform cache) | Your system's cache and temp folders, `com.eshLabs/live-test-runner/` | **Clear All Cached Data**; anything unused for 30 days is deleted automatically |
+| A cache that makes the next start faster (test lists, Jest's transform cache, what your Vitest config resolves to: project names, coverage include / exclude patterns, worker limit) | Your system's cache and temp folders, `com.eshLabs/live-test-runner/` | **Clear All Cached Data**; anything unused for 30 days is deleted automatically |
 | The Python interpreter you picked for a project | VS Code's workspace storage | **Select Python Interpreter** again, or remove the workspace's storage |
 
 Nothing is kept anywhere else.

@@ -15,6 +15,7 @@ import { openGuide } from './views/GuidePanel';
 import * as fs from 'fs';
 import * as path from 'path';
 import { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
+import { rememberVitestConfigIn } from '@live-test-runner/runner';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
@@ -120,6 +121,9 @@ export function activate(context: vscode.ExtensionContext) {
   } catch (err) {
     log.warn('Cache pruning failed — continuing', err);
   }
+
+  // What Vitest's config resolves to, remembered between sessions (Start no longer waits for the probe).
+  rememberVitestConfigIn(LTR_BASE_TMP_DIR);
 
   // Create a unique isolated directory for THIS session.
   const sessionDirName = `session-${process.pid}-${Date.now()}`;
