@@ -48,7 +48,13 @@ async function run({ api, t, vscode, workspace }, spec) {
   /** Edit and save, then wait for the save's run to start: settle() alone can return before it does (slow file events on Windows). */
   const edit = async (file, fn) => {
     const since = h.isoNow();
-    await h.editAndSave(vscode, file, fn);
+    // LF first: Windows checkouts have CRLF, and the specs' edits match \n (a removal that matched nothing left the test in).
+    await h.editAndSave(vscode, file, (text) => {
+      const lf = text.replace(/\r\n/g, '\n');
+      const next = fn(lf);
+      if (next === lf) { throw new Error(`the edit of ${path.basename(file)} changed nothing`); }
+      return next;
+    });
     await h.waitFor(() => h.logsSince(api, since).some((l) => /Run #\d+ started/.test(l)), { what: 'the save to start a run', timeout: 15_000 }).catch(() => {});
   };
   const key = (f) => abs(f).replace(/^[A-Z]:/, (m) => m.toLowerCase());

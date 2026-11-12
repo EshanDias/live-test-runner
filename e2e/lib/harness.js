@@ -559,8 +559,9 @@ function plainCoverage(workspace, framework) {
   const { spawnSync } = require('child_process');
   const fs = require('fs');
   const os = require('os');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-e2e-plaincov-'));
   const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
+  // The real spelling (Windows: long names, not RUNNER~1): Vitest started from an 8.3 path loads itself twice and finds no tests (RunnerPaths.toSpawnPath).
+  const dir = real(fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-e2e-plaincov-')));
   const root = real(workspace);
   const rel = (abs) => path.relative(root, real(abs)).split(path.sep).join('/');
   const env = { ...process.env, CI: 'true', PYTHONIOENCODING: 'utf-8' };
