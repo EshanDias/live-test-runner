@@ -52,10 +52,13 @@ export class ExecutionTraceStore {
 
   /**
    * Line → test reverse index.
-   * sourceFilePath → lineNumber (1-based) → array of { testFileId, fullName }
+   * sourceFilePath → lineNumber (1-based) → test file → full test names.
    * Used by CoverageHoverProvider to show "covered by N tests" on gutter hover.
+   * Kept per test file so adding or forgetting one costs only its own lines
+   * (a flat list per line made every batch scan every earlier test of a
+   * shared component: Sentry's 2,500 test files took 605 s on the extension host).
    */
-  private readonly _lineToTests = new Map<string, Map<number, LineTestEntry[]>>();
+  private readonly _lineToTests = new Map<string, Map<number, Map<string, string[]>>>();
 
   /**
    * Module graph (Vitest): file → the project files that import it, any
@@ -114,6 +117,14 @@ export class ExecutionTraceStore {
   setSourceMapping(sourceFilePath: string, mapping: SourceTestMapping): void {
     this._sourceToTests.set(sourceFilePath, mapping);
     for (const tf of Object.keys(mapping)) { this._noteSource(tf, sourceFilePath); }
+  }
+
+  /** One test file's suites for a source file (the other test files' entries untouched). */
+  setSourceTests(sourceFilePath: string, testFilePath: string, suites: { [suiteName: string]: SuiteTraceInfo }): void {
+    let mapping = this._sourceToTests.get(sourceFilePath);
+    if (!mapping) { mapping = {}; this._sourceToTests.set(sourceFilePath, mapping); }
+    mapping[testFilePath] = suites;
+    this._noteSource(testFilePath, sourceFilePath);
   }
 
   getSourceMapping(sourceFilePath: string): SourceTestMapping | undefined {
@@ -185,15 +196,14 @@ export class ExecutionTraceStore {
       this._lineToTests.set(sourceFilePath, fileMap);
     }
     for (const [line, names] of lineMap) {
-      const existing = fileMap.get(line) ?? [];
-      const existingNames = new Set(existing.map((e) => e.fullName));
+      let byFile = fileMap.get(line);
+      if (!byFile) { byFile = new Map(); fileMap.set(line, byFile); }
+      const existing = byFile.get(testFileId);
+      if (!existing) { byFile.set(testFileId, [...new Set(names)]); continue; }
+      const seen = new Set(existing);
       for (const fullName of names) {
-        if (!existingNames.has(fullName)) {
-          existing.push({ testFileId, fullName });
-          existingNames.add(fullName);
-        }
+        if (!seen.has(fullName)) { existing.push(fullName); seen.add(fullName); }
       }
-      fileMap.set(line, existing);
     }
   }
 
@@ -202,7 +212,13 @@ export class ExecutionTraceStore {
    * Returns an empty array if no data exists (line not covered or not yet traced).
    */
   getTestsForLine(sourceFilePath: string, line: number): LineTestEntry[] {
-    return this._lineToTests.get(sourceFilePath)?.get(line) ?? [];
+    const byFile = this._lineToTests.get(sourceFilePath)?.get(line);
+    if (!byFile) { return []; }
+    const out: LineTestEntry[] = [];
+    for (const [testFileId, names] of byFile) {
+      for (const fullName of names) { out.push({ testFileId, fullName }); }
+    }
+    return out;
   }
 
   // ── Debug ──────────────────────────────────────────────────────────────────
@@ -261,9 +277,8 @@ export class ExecutionTraceStore {
         }
         const lines = this._lineToTests.get(src);
         if (!lines) { continue; }
-        for (const [line, entries] of lines) {
-          const kept = entries.filter((e) => e.testFileId !== tf);
-          if (kept.length === 0) { lines.delete(line); } else if (kept.length !== entries.length) { lines.set(line, kept); }
+        for (const [line, byFile] of lines) {
+          if (byFile.delete(tf) && byFile.size === 0) { lines.delete(line); }
         }
         if (lines.size === 0) { this._lineToTests.delete(src); }
       }

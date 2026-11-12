@@ -116,9 +116,8 @@ export function applyTraceRecords(
           fileLineMap.set(normSrc, lineMap);
         }
         for (const line of linesArr) {
-          const names = lineMap.get(line) ?? [];
-          if (!names.includes(rec.tn)) { names.push(rec.tn); }
-          lineMap.set(line, names);
+          const names = lineMap.get(line);
+          if (!names) { lineMap.set(line, [rec.tn]); } else if (names[names.length - 1] !== rec.tn && !names.includes(rec.tn)) { names.push(rec.tn); }
         }
       }
     }
@@ -142,12 +141,12 @@ export function applyTraceRecords(
       }
     }
 
-    const perTestFiles = new Map<string, string[]>();
+    const perTestFiles = new Map<string, Set<string>>();
     for (const rec of testRecs) {
-      const files = perTestFiles.get(rec.tn) ?? [];
+      const files = perTestFiles.get(rec.tn) ?? new Set<string>();
       for (const srcFile of Object.keys(rec.fh)) {
         const n = normPath(srcFile);
-        if (n !== testFilePath && !files.includes(n)) { files.push(n); }
+        if (n !== testFilePath) { files.add(n); }
       }
       perTestFiles.set(rec.tn, files);
     }
@@ -157,48 +156,20 @@ export function applyTraceRecords(
       for (const f of files) { touchedSourceFiles.add(f); }
     }
 
+    const uniqueNames = [...new Set(testNames)];
     for (const sourceFile of touchedSourceFiles) {
-      const touchingTests: string[] = [];
-      for (const tn of testNames) {
-        const files = perTestFiles.get(tn) ?? [];
-        if ((files.includes(sourceFile) || hookFiles.has(sourceFile)) && !touchingTests.includes(tn)) {
-          touchingTests.push(tn);
-        }
-      }
+      const touchingTests = hookFiles.has(sourceFile)
+        ? uniqueNames
+        : uniqueNames.filter((tn) => perTestFiles.get(tn)?.has(sourceFile));
 
-      const sourceMap: {
-        [suite: string]: { isSharedVars: boolean; sharedVarNames: string[]; testCases: string[] };
-      } = {};
+      // This test file's entries were forgotten above: its suites are set afresh (other test files' kept as they are).
+      const suites: { [suite: string]: { isSharedVars: boolean; sharedVarNames: string[]; testCases: string[] } } = {};
       for (const tn of touchingTests) {
         const suiteName = extractSuiteName(tn);
-        if (!sourceMap[suiteName]) {
-          sourceMap[suiteName] = { isSharedVars: false, sharedVarNames: [], testCases: [] };
-        }
-        if (!sourceMap[suiteName].testCases.includes(tn)) {
-          sourceMap[suiteName].testCases.push(tn);
-        }
+        if (!suites[suiteName]) { suites[suiteName] = { isSharedVars: false, sharedVarNames: [], testCases: [] }; }
+        suites[suiteName].testCases.push(tn);
       }
-
-      const existing = traceStore.getSourceMapping(sourceFile) ?? {};
-      const existingForFile = existing[testFilePath] ?? {};
-      const mergedForFile = { ...existingForFile };
-      for (const [suiteName, suiteInfo] of Object.entries(sourceMap)) {
-        if (mergedForFile[suiteName]) {
-          const existingCases = mergedForFile[suiteName].testCases;
-          const newCases = suiteInfo.testCases.filter((t) => !existingCases.includes(t));
-          mergedForFile[suiteName] = {
-            ...mergedForFile[suiteName],
-            testCases: [...existingCases, ...newCases],
-          };
-        } else {
-          mergedForFile[suiteName] = suiteInfo;
-        }
-      }
-
-      traceStore.setSourceMapping(sourceFile, {
-        ...existing,
-        [testFilePath]: mergedForFile,
-      });
+      traceStore.setSourceTests(sourceFile, testFilePath, suites);
     }
   }
 

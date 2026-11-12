@@ -347,6 +347,11 @@ ExecutionTraceStore
   │     Every source line executed by any test in the session.
   │     Accumulates across runs — never resets mid-session.
   │
+  ├── lineToTests: Map<sourceFilePath, Map<line, Map<testFilePath, fullName[]>>>
+  │     The tests that ran each line (coverage hover). Per test file, so a
+  │     batch adds or forgets only its own files' entries: a flat list per
+  │     line made each batch scan every earlier test of a shared component.
+  │
   └── sourceToTests: Map<sourceFilePath, SourceTestMapping>
         {
           [testFilePath]: {
@@ -357,7 +362,7 @@ ExecutionTraceStore
             }
           }
         }
-        Populated by JestBatchRunner after each file run.
+        Populated after each batch (applyTraceRecords; setSourceTests updates one test file's entry in place).
         Used by SessionManager._runAffectedBySourceFile() for smart on-save reruns.
 ```
 

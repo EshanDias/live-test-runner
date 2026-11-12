@@ -128,3 +128,31 @@ describe('a rerun replaces a test file\'s entries', () => {
     expect(store.getAffectedTestFiles(PRICE)).toEqual([]);
   });
 });
+
+it('two test files with a test of the same name on the same line are both listed; forgetting one keeps the other', () => {
+  const store = new ExecutionTraceStore();
+  const OTHER = path.resolve('/p/src/other.test.ts');
+  const rec = (tf: string) => JSON.stringify({ type: 'T', tf, tn: 'renders', fh: { [PRICE]: [3] } });
+  applyTraceRecords([rec(TF)], store, id);
+  applyTraceRecords([rec(OTHER)], store, id);
+  expect(store.getTestsForLine(PRICE, 3).map((e) => e.testFileId).sort()).toEqual([OTHER, TF].sort());
+  expect(store.getAffectedTestFiles(PRICE).sort()).toEqual([OTHER, TF].sort());
+  // TF reruns and no longer reaches price.ts: only OTHER is left
+  applyTraceRecords([], store, id, [TF]);
+  expect(store.getTestsForLine(PRICE, 3)).toEqual([{ testFileId: OTHER, fullName: 'renders' }]);
+  expect(store.getAffectedTestFiles(PRICE)).toEqual([OTHER]);
+});
+
+it('a batch costs the same however many test files already cover a shared source file', () => {
+  // Learnt from Sentry (2,500 test files sharing components): each batch scanned every earlier entry of a shared file.
+  const store = new ExecutionTraceStore();
+  const shared = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [path.resolve(`/p/src/shared${i}.tsx`), Array.from({ length: 30 }, (_, l) => l + 1)]));
+  const batch = (b: number) => Array.from({ length: 49 * 5 }, (_, i) =>
+    JSON.stringify({ type: 'T', tf: path.resolve(`/p/src/t${b}-${Math.floor(i / 5)}.test.tsx`), tn: `s > t${i % 5}`, fh: shared }));
+  const time = (b: number) => { const t0 = process.hrtime.bigint(); applyTraceRecords(batch(b), store, id); return Number(process.hrtime.bigint() - t0) / 1e6; };
+  const first = Math.max(time(0), time(1));
+  for (let b = 2; b < 20; b++) { time(b); }
+  const late = Math.min(time(20), time(21));
+  expect(store.getTestsForLine(path.resolve('/p/src/shared0.tsx'), 1)).toHaveLength(22 * 49 * 5);
+  expect(late).toBeLessThan(first * 4);
+});
