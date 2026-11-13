@@ -19,7 +19,8 @@ What it does (every output goes to files in the extension's session folder):
   extension's trace records to ``<dir>/trace.jsonl``: which lines each test
   ran ("covering tests", precise reruns when a source file is saved), and
   each test file's own coverage to ``<dir>/coverage-per-test-file.json``
-  (``{"tests": {test file: map}, "imports": map}``; ``imports`` = lines run
+  (``{"maps": {file: maps}, "tests": {test file: {file: counters}}, "imports":
+  {file: counters}}``: each file's maps once; ``imports`` = lines run
   outside any test: imports, collection, conftest). The extension keeps each
   test file's latest coverage and replaces it when the file runs again.
 
@@ -166,7 +167,9 @@ def _start_coverage(config):
         return
     try:
         os.makedirs(directory, exist_ok=True)
-        kwargs = {"data_file": os.path.join(directory, ".coverage"), "config_file": True}
+        # Data in memory: per-test contexts flush the data at every switch, and a
+        # data file was opened and closed each time (a third of a 278-file batch).
+        kwargs = {"data_file": None, "config_file": True}
         # pytest-cov's --cov=<src> (from the project's addopts) names what to
         # measure; our command line adds --no-cov, so pytest-cov itself is idle.
         sources = _cov_sources(config)
@@ -301,7 +304,8 @@ def _write_per_test_file(report, target):
     A test file's contexts are its tests' node ids (``<file>::...``); lines
     run outside any test (context "") go to ``imports``: module-level code
     runs once per process, so the extension credits it to every test file
-    that imports the module.
+    that imports the module. ``maps``: each file's istanbul maps (path ->
+    statementMap, branchMap, fnMap); ``tests`` / ``imports``: path -> s, b, f.
     """
     started = time.time()
     try:
@@ -320,12 +324,24 @@ def _write_per_test_file(report, target):
             by_prefix, imports_hits = _hits_per_query(data, measured, prefixes)
             how = "per query"
         prepared = _prepare_istanbul(report)
+        # Each file's maps once ("maps"), then only counters per test file: every
+        # test file's copy of the maps was most of a 278-file batch's JSON time.
+        maps = {}
+
+        def counters(cov):
+            out = {}
+            for path, fc in cov.items():
+                if path not in maps:
+                    maps[path] = {"statementMap": fc["statementMap"], "branchMap": fc["branchMap"], "fnMap": fc["fnMap"]}
+                out[path] = {"s": fc["s"], "b": fc["b"], "f": fc["f"]}
+            return out
+
         tests = {}
         for prefix, test_file in prefixes.items():
-            tests[test_file] = _istanbul_from(prepared, by_prefix.get(prefix, {}))
-        imports = _istanbul_from(prepared, imports_hits)
+            tests[test_file] = counters(_istanbul_from(prepared, by_prefix.get(prefix, {})))
+        imports = counters(_istanbul_from(prepared, imports_hits))
         with open(target, "w", encoding="utf-8") as fh:
-            json.dump({"tests": tests, "imports": imports}, fh)
+            json.dump({"maps": maps, "tests": tests, "imports": imports}, fh, separators=(",", ":"))
         _log("debug", "coverage per test file: %d test file(s), %d measured file(s) in %.1fs (%s)" % (len(tests), len(measured), time.time() - started, how))
     except Exception as err:  # the merged report still stands
         _log("warn", "could not write coverage per test file: %s" % err)
@@ -392,7 +408,9 @@ def _hits_in_one_pass(data, measured):
             return None
         return by_prefix.setdefault(label.split("::", 1)[0], {})
 
-    con = sqlite3.connect(data.data_filename())
+    name = data.data_filename()
+    # In memory (data_file=None): a shared in-memory database, open while coverage holds it.
+    con = sqlite3.connect(name, uri=True) if name.startswith("file:") else sqlite3.connect(name)
     try:
         if has_arcs:
             rows = con.execute(

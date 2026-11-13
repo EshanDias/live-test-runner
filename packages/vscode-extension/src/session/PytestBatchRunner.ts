@@ -401,7 +401,15 @@ export class PytestBatchRunner implements IBatchRunner {
       const counts = (fp: string) => scope.counts(fp);
       const perFileJson = path.join(dir, 'coverage-per-test-file.json');
       if (fs.existsSync(perFileJson)) {
-        const doc = JSON.parse(fs.readFileSync(perFileJson, 'utf8')) as { tests: Record<string, Record<string, { path?: string }>>; imports: Record<string, { path?: string }> };
+        const doc = JSON.parse(fs.readFileSync(perFileJson, 'utf8')) as {
+          maps?: Record<string, object>;
+          tests: Record<string, Record<string, { path?: string }>>;
+          imports: Record<string, { path?: string }>;
+        };
+        // Each file's maps come once (`maps`), counters per test file: put them back together (one maps object per file).
+        const full = (cov: Record<string, { path?: string }>): Record<string, { path?: string }> => doc.maps
+          ? Object.fromEntries(Object.entries(cov).map(([p, c]) => [p, { path: p, ...doc.maps![p], ...c }]))
+          : cov;
         const contributions = new Map<string, Map<string, MeasuredFile>>();
         for (const fp of run.ran) { contributions.set(fp, new Map()); }
         const add = (testFile: string, files: Map<string, MeasuredFile>) => {
@@ -412,10 +420,10 @@ export class PytestBatchRunner implements IBatchRunner {
           }
         };
         for (const [testFile, cov] of Object.entries(doc.tests ?? {})) {
-          add(run.toKey(toProjectSpelling(projectRoot, testFile)), measuredFiles(respell(cov), manifestDir, projectRoot, counts).files);
+          add(run.toKey(toProjectSpelling(projectRoot, testFile)), measuredFiles(respell(full(cov)), manifestDir, projectRoot, counts).files);
         }
         const ran = [...run.ran];
-        const imported = measuredFiles(respell(doc.imports ?? {}), manifestDir, projectRoot, counts).files;
+        const imported = measuredFiles(respell(full(doc.imports ?? {})), manifestDir, projectRoot, counts).files;
         const importersOf = this._graph(projectRoot).dependentsOf([...imported.keys()], ran);
         for (const [fp, mf] of imported) {
           const importers = importersOf.get(path.normalize(fp)) ?? [];
@@ -465,6 +473,19 @@ function respelled(projectRoot: string, raw: Record<string, { path?: string }>):
  * fromRunnerPath unchanged.
  */
 export function toProjectSpelling(projectRoot: string, p: string, win = process.platform === 'win32'): string {
+  // The same paths come back for every test file of a batch (Windows: a folder walk each).
+  const key = `${win ? 1 : 0}\0${projectRoot}\0${p}`;
+  const known = _spellings.get(key);
+  if (known !== undefined) { return known; }
+  if (_spellings.size > 50_000) { _spellings.clear(); }
+  const spelled = spell(projectRoot, p, win);
+  _spellings.set(key, spelled);
+  return spelled;
+}
+
+const _spellings = new Map<string, string>();
+
+function spell(projectRoot: string, p: string, win: boolean): string {
   const cmp = (x: string) => (win ? x.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase() : x.replace(/\/+$/, ''));
   const sep = win ? '\\' : '/';
   const under = (file: string, root: string) => {

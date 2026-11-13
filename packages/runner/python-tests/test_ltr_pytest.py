@@ -265,8 +265,11 @@ def test_coverage_is_written_per_test_file(pytester, run, tmp_path):
     cov_dir = tmp_path / "cov"
     run(env={"LTR_PYTEST_COVERAGE": str(cov_dir)})
     data = json.loads((cov_dir / "coverage-per-test-file.json").read_text())
-    by_test = {os.path.basename(k): v for k, v in data["tests"].items()}
+    # Each file's maps once, counters per test file: put back together as the extension does.
+    full = lambda cov: {k: dict(data["maps"][k], path=k, **v) for k, v in cov.items()}
+    by_test = {os.path.basename(k): full(v) for k, v in data["tests"].items()}
     assert sorted(by_test) == ["test_a.py", "test_b.py"]
+    assert all(set(v) == {"s", "b", "f"} for cov in data["tests"].values() for v in cov.values())
 
     def ran(cov):
         lib = next(v for k, v in cov.items() if k.endswith("lib.py"))
@@ -275,7 +278,7 @@ def test_coverage_is_written_per_test_file(pytester, run, tmp_path):
     # Each test file only the body lines its own test ran; the def lines ran at import (outside any test).
     assert ran(by_test["test_a.py"]) == [2, 3]
     assert ran(by_test["test_b.py"]) == [7]
-    assert 1 in ran(data["imports"]) and 6 in ran(data["imports"])
+    assert 1 in ran(full(data["imports"])) and 6 in ran(full(data["imports"]))
     # The same maps in every test file's coverage (one version of lib.py).
     a = next(v for k, v in by_test["test_a.py"].items() if k.endswith("lib.py"))
     b = next(v for k, v in by_test["test_b.py"].items() if k.endswith("lib.py"))
@@ -285,42 +288,47 @@ def test_coverage_is_written_per_test_file(pytester, run, tmp_path):
 
 
 @pytest.mark.parametrize("branch", [True, False])
-def test_per_test_file_hits_read_in_one_pass_match_the_queries(pytester, run, tmp_path, branch):
-    """The one-pass read of the coverage data file gives the same hits as a query per test file (the slow way)."""
-    pytester.makepyfile(
-        lib="""
-            def pick(x):
-                if x:
-                    return "yes"
-                return "no"
-
-            def other():
-                return 1
-        """,
-        test_a="from lib import pick\n\ndef test_yes():\n    assert pick(True) == 'yes'\n\nclass TestNo:\n    def test_no(self):\n        assert pick(False) == 'no'\n",
-        test_b="from lib import other\n\ndef test_other():\n    assert other() == 1\n",
-    )
-    pytester.path.joinpath(".coveragerc").write_text("[run]\nbranch = %s\n" % branch)
-    cov_dir = tmp_path / "cov"
-    run(env={"LTR_PYTEST_COVERAGE": str(cov_dir)})
-
+def test_per_test_file_hits_read_in_one_pass_match_the_queries(tmp_path, monkeypatch, branch):
+    """The one-pass read of coverage's data, kept in memory as the plugin keeps it, gives the same hits as a query per test file (the slow way)."""
     import coverage
+    import importlib
+    try:
+        import coverage.tracer  # noqa: F401  the compiled tracer records contexts (as the plugin chooses it)
+        monkeypatch.setenv("COVERAGE_CORE", "ctrace")
+    except ImportError:
+        pass
+    lib = tmp_path / "ltr_onepass_lib.py"
+    lib.write_text('def pick(x):\n    if x:\n        return "yes"\n    return "no"\n\n\ndef other():\n    return 1\n')
+    sys.path.insert(0, str(tmp_path))
     sys.path.insert(0, os.path.abspath(PLUGIN_DIR))
     try:
         import ltr_pytest
+        cov = coverage.Coverage(data_file=None, branch=branch, config_file=False, include=[str(lib)])
+        cov.start()
+        try:
+            mod = importlib.import_module("ltr_onepass_lib")
+            cov.switch_context("tests/test_a.py::test_yes")
+            mod.pick(True)
+            cov.switch_context("tests/test_a.py::TestNo::test_no")
+            mod.pick(False)
+            cov.switch_context("tests/test_b.py::test_other")
+            mod.other()
+            cov.switch_context("")
+        finally:
+            cov.stop()
+        data = cov.get_data()
     finally:
-        sys.path.pop(0)
-    data = coverage.CoverageData(basename=str(cov_dir / ".coverage"))
-    data.read()
+        sys.path.remove(str(tmp_path))
+        sys.path.remove(os.path.abspath(PLUGIN_DIR))
+        sys.modules.pop("ltr_onepass_lib", None)
+    assert data.data_filename().startswith("file:")  # in memory, as in the plugin
     assert data.has_arcs() == branch
     measured = list(data.measured_files())
-    prefixes = {c.split("::", 1)[0]: c.split("::", 1)[0] for c in data.measured_contexts() if "::" in c}
-    assert sorted(os.path.basename(p) for p in prefixes) == ["test_a.py", "test_b.py"]
+    prefixes = {"tests/test_a.py": "tests/test_a.py", "tests/test_b.py": "tests/test_b.py"}
     fast = ltr_pytest._hits_in_one_pass(data, measured)
     slow = ltr_pytest._hits_per_query(data, measured, prefixes)
     assert fast == slow
-    lib = next(p for p in fast[0][next(k for k in prefixes if k.endswith("test_a.py"))] if p.endswith("lib.py"))
-    assert lib  # test_a ran lines of lib.py
+    assert fast[0]["tests/test_a.py"] and fast[0]["tests/test_b.py"]
 
 
 def test_per_test_hits_match_a_differently_spelled_report_path(tmp_path):

@@ -70,6 +70,35 @@ export function combineMeasured(prev: MeasuredFile | undefined, next: MeasuredFi
 }
 
 /**
+ * Manifests already worked out, by the maps object they came from: reports
+ * that send a file's maps once and reuse the object for every test file
+ * (pytest's coverage per test file, Jest's live reporter) hash and write
+ * them once, not once per test file (14,000 per 278-file pytest batch).
+ */
+const _manifests = new WeakMap<object, Map<string, { manifest: Manifest; manifestPath: string }>>();
+
+function manifestOf(fc: IstanbulFileCoverage, filePath: string, manifestDir: string): { manifest: Manifest; manifestPath: string } {
+  const byPath = fc.statementMap && typeof fc.statementMap === 'object' ? _manifests.get(fc.statementMap) : undefined;
+  const known = byPath?.get(`${manifestDir}\0${filePath}`);
+  if (known) { return known; }
+  const manifest = toManifest(fc, filePath);
+  const hash = crypto.createHash('sha1')
+    .update(filePath).update('\0')
+    .update(JSON.stringify([fc.statementMap, fc.branchMap, fc.fnMap]))
+    .digest('hex');
+  const manifestPath = path.join(manifestDir, `${hash}.json`);
+  if (!fs.existsSync(manifestPath)) {
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  }
+  if (fc.statementMap && typeof fc.statementMap === 'object') {
+    const map = byPath ?? new Map();
+    map.set(`${manifestDir}\0${filePath}`, { manifest, manifestPath });
+    if (!byPath) { _manifests.set(fc.statementMap, map); }
+  }
+  return { manifest, manifestPath };
+}
+
+/**
  * An istanbul coverage map as measured files: each file version gets one
  * manifest on disk (named by the file path and its maps).
  */
@@ -89,15 +118,7 @@ export function measuredFiles(
     const filePath = path.normalize(fromRunnerPath(fc.path || key)).replace(/^[A-Z]:/, (m) => m.toLowerCase());
     if (!counts(filePath)) { excluded++; continue; }
 
-    const manifest = toManifest(fc, filePath);
-    const hash = crypto.createHash('sha1')
-      .update(filePath).update('\0')
-      .update(JSON.stringify([fc.statementMap, fc.branchMap, fc.fnMap]))
-      .digest('hex');
-    const manifestPath = path.join(manifestDir, `${hash}.json`);
-    if (!fs.existsSync(manifestPath)) {
-      fs.writeFileSync(manifestPath, JSON.stringify(manifest));
-    }
+    const { manifest, manifestPath } = manifestOf(fc, filePath, manifestDir);
     const counters: FileCov = { s: { ...fc.s }, f: { ...fc.f }, b: Object.fromEntries(Object.entries(fc.b ?? {}).map(([id, arms]) => [id, [...arms]])) };
     files.set(filePath, { manifestPath, manifest, counters });
   }
