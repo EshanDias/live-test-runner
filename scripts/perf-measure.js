@@ -79,9 +79,9 @@ function frameworkOf(dir) {
  */
 function extensionWorkers(framework) {
   // Adaptive budget (the default): an idle machine lets the extension reach Full's workers; LTR_PERF_STRICT=1 compares at the level.
-  const { parallelBatches, workersPerBatch, totalWorkers } = require(path.join(ROOT, 'packages', 'runner', 'dist', 'utils', 'resources.js'));
+  const { parallelBatches, workersPerBatch, adaptiveCeiling } = require(path.join(ROOT, 'packages', 'runner', 'dist', 'utils', 'resources.js'));
   if (framework === 'pytest') { return 1; }
-  if (!process.env.LTR_PERF_STRICT) { return totalWorkers(undefined, 'full'); }
+  if (!process.env.LTR_PERF_STRICT) { return adaptiveCeiling(); }
   return framework === 'vitest' || framework === 'angular' ? parallelBatches() * workersPerBatch() : parallelBatches();
 }
 
