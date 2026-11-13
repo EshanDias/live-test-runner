@@ -87,8 +87,11 @@ function manifestOf(fc: IstanbulFileCoverage, filePath: string, manifestDir: str
     .update(JSON.stringify([fc.statementMap, fc.branchMap, fc.fnMap]))
     .digest('hex');
   const manifestPath = path.join(manifestDir, `${hash}.json`);
-  if (!fs.existsSync(manifestPath)) {
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  try {
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest), { flag: 'wx', mode: 0o600 });
+  } catch (err) {
+    // Already written (same name = same maps).
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') { throw err; }
   }
   if (fc.statementMap && typeof fc.statementMap === 'object') {
     const map = byPath ?? new Map();
