@@ -28,6 +28,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | T20 | Run every test process (and the workers it starts) below normal priority: Unix nice 10, Windows below normal | `basic-hang`, `vitest-hang`, `pytest-hang`; unit: `resources` |
 | T21 | Start the first Vitest batch without waiting for the config probe when the config, package.json and installed Vitest are unchanged since the last session: use that session's answer, check it with a probe in the background, and use a different answer for the rest of the session and the next (coverage globs compared as a set) | unit: `vitestConfigMemory`, `storage`; `repo-vitest` (vueuse, second run) |
 | T22 | Size the budget by `liveTestRunner.speed`: `full` 3/4 of the cores, `balanced` (default, unknown values too) half, `light` one test process with at most 2 workers; every level within its budget; a change applies from the next run and is logged once | `basic-speed`; unit: `resources` |
+| T23 | Never run more processes of a framework at once than its limit allows (pytest: one, as the user's own `pytest`: projects share ports, files and session fixtures), whatever else waits (memory, other runs) | ⚠️ no test yet (the scheduler takes a slot before any wait; `perf-measure.js` on 2,500 pytest files shows one process at a time) |
 
 ⚠️ marks a requirement no automated test checks yet.
 

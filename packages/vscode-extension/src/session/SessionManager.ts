@@ -1463,8 +1463,15 @@ export class SessionManager {
               await new Promise<void>((resolve) => waiters.push(resolve));
               continue;
             }
-            if (!(await this._memoryForAnotherBatch(() => { batchQueue.unshift(next); opts.slots?.release(); }, waiters))) { continue; }
+            // Counted before any await: the other slots' nextBatch() must see it (a framework's
+            // maxParallel was exceeded: pytest, one process at a time, ran three side by side).
             runningOf.set(next.services, (runningOf.get(next.services) ?? 0) + 1);
+            const putBack = () => {
+              runningOf.set(next.services, (runningOf.get(next.services) ?? 1) - 1);
+              batchQueue.unshift(next);
+              opts.slots?.release();
+            };
+            if (!(await this._memoryForAnotherBatch(putBack, waiters))) { continue; }
             this._batchesRunning++;
             try {
               await runBatch(next.batch);
@@ -1916,3 +1923,4 @@ function referencingSources(filePath: string): string[] {
   }
   return out;
 }
+

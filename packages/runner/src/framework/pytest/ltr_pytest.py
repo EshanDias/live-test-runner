@@ -713,7 +713,9 @@ def pytest_runtest_logreport(report):
 
 
 def pytest_runtest_logfinish(nodeid, location):
-    _switch_context("")
+    # No switch back to "" here: the test's teardown already ran inside its context and
+    # nothing of the project runs between two tests; one switch per test, not two
+    # (each switch walks every file the process has measured).
     node = _nodes.get(nodeid) or {"file": _file_of(nodeid), "titles": [], "name": nodeid.split("::")[-1], "line": None}
     reports = (_tests.pop(nodeid, None) or {"reports": {}})["reports"]
     case, output = _case(node, reports)
@@ -791,7 +793,9 @@ def _finish_file(st):
     _emit(ev="file-end", file=st.path, result=st.result)
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_sessionfinish(session, exitstatus):
+    _switch_context("")  # session-end code (the project's own sessionfinish hooks): outside any test
     if _option(session.config, "collectonly"):
         _finish_coverage()
         return
