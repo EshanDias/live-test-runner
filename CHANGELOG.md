@@ -16,14 +16,15 @@ Repo changelog: one line per change. What users see is in [the extension's chang
 - Vitest config probe result remembered between sessions.
 
 ### Fixed
-- Speed on large projects: Jest transform cache reused across batches and sessions; trace index per test file; panels redraw in place; pytest coverage kept in memory; Angular batches up to 1,000 files with capped workers.
+- Speed on large projects: Jest transform cache reuse, trace index per test file, panel redraws, Angular batch sizes, pytest plugin (`ltr_pytest.py`: coverage flushes, JSON, folder collection), Vitest coverage conversions, adaptive budget accounting (`oursInWindow`).
 - Jest tests using fake timers were stopped as hanging.
 - Tests sharing a `describe` variable reran one by one on save.
-- Windows: pytest / Vitest coverage under 8.3 short paths.
+- Windows: coverage under 8.3 short paths; the budget uses the physical core count.
 - Angular coverage lists the same files as `ng test --coverage`.
 
 ### Tooling
 - `scripts/perf-project.js`, `scripts/perf-measure.js`, e2e `diag-perf` for large-project measurements; every e2e coverage step compares with a plain framework run.
+- e2e: nothing a scenario starts outlives it (`e2e/lib/leftovers.js`).
 
 ## [3.4.0] - 2026-11-09
 

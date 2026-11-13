@@ -3,7 +3,7 @@
 ## [3.4.1] - Unreleased
 
 - New **Speed** setting (`liveTestRunner.speed`): tests use what your machine has free, and your editor stays responsive.
-- Much faster on big projects: Jest about 2×, Angular about 7×, pytest about 10×, Vitest about 20%.
+- Much faster on big projects: Jest about 2×, Vitest about 1.5×, Angular about 7×, pytest over 10×.
 - Coverage now matches your own coverage command, and stays right as you add, change or delete tests.
 - Jest tests that use fake timers are no longer stopped as hanging.
 
