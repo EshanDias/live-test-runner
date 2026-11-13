@@ -1,6 +1,6 @@
 # Changelog
 
-## [3.4.1] - Unreleased
+## [3.4.1] - 2026-11-13
 
 - New **Speed** setting (`liveTestRunner.speed`): tests use what your machine has free, and your editor stays responsive.
 - Much faster on big projects: Jest about 2×, Vitest about 1.5×, Angular about 7×, pytest over 10×.

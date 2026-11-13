@@ -241,7 +241,7 @@
 <!-- ───────────────────────── Coverage ───────────────────────── -->
 <section id="coverage">
   <h2>Code coverage</h2>
-  <p>Coverage is collected during normal runs. There's no extra pass or command.</p>
+  <p>Coverage is collected during normal runs. There's no extra pass or command. It is measured by your framework's own coverage provider (Jest's, Vitest's, coverage.py), so the numbers equal what your own coverage command reports.</p>
   <div class="table-wrap"><table>
     <tr><th>Bar</th><th>Meaning</th></tr>
     <tr><td><span style="color:var(--ok)">▌</span> green</td><td>Covered</td></tr>
@@ -258,6 +258,7 @@
     <li><b>Hover</b> a line to see the covering tests and which branch arms were missed (Jest, Vitest and pytest; Angular shows the coverage, its covering tests come later).</li>
     <li><b>Stale overlay</b>: a grey tint on a saved file until its rerun finishes.</li>
     <li>Files no test imports count as 0%, so totals cover the whole project.</li>
+    <li><b>Always current</b>: a test file's rerun replaces its coverage, so deleting a test, a test file or a source file lowers the numbers as a fresh run would. After a single test reruns, its whole file reruns in the background once nothing else runs (<b>Updating coverage (N files)…</b> in the Coverage tab meanwhile).</li>
   </ul>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/coverage-hover.png" alt="Coverage bars and a hover listing the four tests that ran the line, with status and duration" style="max-width:100%;border-radius:8px"></p>
 </section>
@@ -549,7 +550,8 @@
     <div class="box"><b>Observers</b>Explorer · Results · gutter · coverage</div>
   </div>
   <ul>
-    <li>Jest always runs in a <b>spawned child process</b>, never inside the extension host.</li>
+    <li>Every framework runs in a <b>spawned child process</b>, never inside the extension host, at below-normal priority, so your editor and other apps come first.</li>
+    <li><b>How many at once</b>: the <code>speed</code> setting is where runs start; they then use the cores your other apps leave free, and wait while memory is low (see <a href="#settings">Settings</a>).</li>
     <li>The live reporter appends one JSON line per finished file. The extension polls that file, so results stream in.</li>
     <li>One pass collects results, coverage counters and line hits together.</li>
     <li>Instrumentation messages reach the log through a small protocol: stderr lines <code>[LTR:&lt;level&gt;] msg</code>.</li>

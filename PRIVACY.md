@@ -1,6 +1,6 @@
 # Privacy policy
 
-_Last updated: 2026-11-12 (the start cache also keeps what your Vitest config resolves to). Applies to Live Test Runner 3.4.0 and later._
+_Last updated: 2026-11-13 (reads how busy your machine is to size test runs; the start cache also keeps what your Vitest config resolves to). Applies to Live Test Runner 3.4.0 and later._
 
 **In short:** Live Test Runner collects nothing and sends nothing. It runs your own test framework on your machine, and everything it keeps stays on your machine.
 
@@ -8,6 +8,7 @@ _Last updated: 2026-11-12 (the start cache also keeps what your Vitest config re
 
 - **Reads** your project's files to find tests, and the results your test framework (Jest, Vitest, Angular, pytest) reports.
 - **Runs** your own test framework, from your project, in child processes on your machine.
+- **Checks how busy your machine is** (CPU load, free memory, the CPU and memory of its own test processes, the number of CPU cores) to decide how many tests run at once. These numbers are used at that moment and are never stored.
 - **Never changes** your project: it installs nothing into it and edits none of its code, config or files. The one exception is **Update snapshot**, which you click on a failed snapshot test. A dialog first names the file that will change and asks you to confirm. Then your test framework (Jest or Vitest) rewrites that test's snapshot, as `jest -u` would for that one test. Like `jest -u`, it also removes snapshots in that file that no test uses any more.
 
 ## What it keeps, and where

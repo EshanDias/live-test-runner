@@ -574,7 +574,7 @@ A pytest project (`DetectedProject.framework === 'pytest'`) gets the same `Frame
 | `adapter` | `framework/PytestAdapter.ts` — `RunnerBackedAdapter` with `runNamed` → node ids, `buildDebugConfig` (`type: debugpy`, `module: pytest`, the project's interpreter; `getDebugConfig` adds the Python Debugger check) |
 | `projectConfig` | `session/PytestProjectConfig.ts` — the config file pytest uses; coverage scope = what coverage.py reports minus test files / `conftest.py`; `sourceExtensions` `py`, `pyi` |
 | `batchRunner` | `session/PytestBatchRunner.ts` — one pytest process per batch, the plugin's events polled (`file-start` / heartbeats / `file-end` with a ready `FileRunResult`), per-test hang limit, coverage → `applyIstanbulCoverage`, per-test contexts (`trace.jsonl`) → `applyTraceRecords`; `runRelated` = static import graph (`session/pythonImports.ts`) |
-| `batchPolicy` | `{ maxParallel: 1, maxFilesPerBatch: 300 }` — one pytest process at a time (`SessionManager._runFiles` scheduler); batches sized up to 300 files |
+| `batchPolicy` | `{ maxParallel, maxFilesPerBatch: 300, workersPerProcess: 1 }` — one pytest process at a time unless the project runs pytest-xdist itself (`-n` in its pytest config: then the budget's); batches sized up to 300 files |
 | `whyNotReady` | no usable interpreter → `SessionManager.start` runs nothing |
 | `configFileNames` | pytest config files + `conftest.py` pass the save filter → `isConfigFile` restarts the session |
 

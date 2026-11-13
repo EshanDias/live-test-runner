@@ -28,7 +28,7 @@ flowchart TD
 | `src/session/AngularBatchRunner.ts`, `jsImporters.ts` | Splits a batch by Angular project over `VitestBatchRunner`; saves rerun the importing test files (T15) |
 | `src/session/JestBatchRunner.ts`, `VitestBatchRunner.ts`, `PytestBatchRunner.ts` | One framework process per batch with our reporter / plugin, a temp config, streamed results, hang detection |
 | `src/session/IBatchRunner.ts` | The contract: `runFiles` returns `{ missing, retry? }` |
-| `src/framework/FrameworkServices.ts` → `batchPolicy` | Per framework: `maxParallel` (pytest: 1), `maxFilesPerBatch` |
+| `src/framework/FrameworkServices.ts` → `batchPolicy` | Per framework: `maxParallel` (pytest: 1 unless the project uses pytest-xdist `-n`), `maxFilesPerBatch`, `workersPerProcess` |
 | `packages/runner/src/execution/` | Spawning, killing the process tree, the result file |
 | `src/cache/Storage.ts` | Every cached path, Clear Cache, pruning after 30 days (T12) |
 
@@ -47,8 +47,10 @@ flowchart TD
 
 | Decision | Reason | Alternatives considered |
 |---|---|---|
-| A quarter of the cores | Leaves the machine responsive while tests run (G4) | All cores: fastest, but the editor stutters |
+| One budget from the speed level, adapting to free CPU and memory (G4) | Uses an idle machine fully and gives way when the user's other programs need it | A fixed share of the cores (a quarter until 3.4.0): an idle machine stays half used; all cores: the editor stutters |
 | Batches, not one process per file | Framework startup is the main cost; batching shares it | One process per file: simple, slow |
+| Jest batches stay at most 50 files | One long-lived Jest process slows as it ages on a large real project: Sentry with 167-file batches took 2,756–2,880 s against about 1,476 s with 50 (the 2,500-file synthetic project gained 13% from bigger batches, the real one lost) | 200-file batches |
+| One process per batch, not one wide process with every worker (Vitest, Angular) | Vitest computes per-test-file coverage serially on its main thread (~5.6 ms per test file): one wide process took 124 s against 70 s for batches; doing that work during the run slowed Vite's serving (154 s) | One process for the whole run |
 | Results streamed from a file we poll | Works the same for all three frameworks and survives a crashed process | Parse stdout: interleaved and truncated on Windows |
 | Open files start before the runnable list on the first Start (T18) | `pytest --collect-only` takes 29–36 s on 2,500 files and nothing ran meanwhile; the open file is almost always runnable, and the rare one that is not is taken back. Both runs take their processes from one `BatchSlots` (`batchQueue.ts`): with their own limit each, a Vitest Start ran four batches at once on a budget of three | Wait for the list (first result after half a minute); run every discovered file (runs files the config excludes) |
 | The Vitest config answer is used from the last session, then checked | Start waited for the probe (0.75–1.2 s on 500 files, 2.8–4.8 s on heavier configs) before the first batch; the stamp (config, package.json, installed Vitest) cannot see files a config imports, so a background probe corrects it for the rest of the session | Wait for the probe every Start; trust the stamp alone (a changed imported file would stay wrong) |
@@ -59,11 +61,18 @@ flowchart TD
 | Fall back to plain runs | A config we can't instrument still gives results (G9) | Fail the batch |
 | `spawn`, never `exec` | `exec` buffers output and truncates large runs | — |
 | pytest batches reuse a folder's collection (`_collect_folders_once` in the plugin) | pytest 8+ collects a file argument's folder again for every file argument: a batch of 2,500 files in folders of 100 made 250,000 nodes (52 s against 15 s); reused only when every argument is a different file, so a file named twice runs as in plain pytest | Folders as arguments plus a filter: different rules for files outside `python_files` |
-| pytest one process at a time | Session fixtures, test servers on fixed ports and shared files assume it, as in the terminal | Parallel pytest: breaks those projects |
+| pytest one process at a time, unless the project runs pytest-xdist itself (`-n` / `--numprocesses` in its pytest config) | Session fixtures, test servers on fixed ports and shared files assume it, as in the terminal; a project that already runs in parallel has shown it is safe (2,500 files: 173 s one at a time, plain `pytest --cov` 61 s) | Parallel pytest for every project: faster, but flaky for those projects |
 | Angular through the builder, not plain Vitest (T14) | Angular's tests need its compilation and TestBed setup; `vitest run` fails with `describe is not defined`. The builder takes our reporters and a runner config of our own | Generate a Vite config from angular.json: re-implements the builder |
-| Angular batches up to 200 files, Vitest workers capped in the runner config | Every `ng test` builds its files first (~7 s before a test runs), and left alone Vitest starts a worker per core in each batch. 2,500 test files: 52 batches of 49 with uncapped workers took 528 s; 16 batches with 2 workers each, 124 s (plain `ng test --coverage`: 49 s) | Vitest's default batch size; one `ng test` for the whole run (no results until the build is done, a crash reruns everything) |
+| Angular batches up to 1000 files, Vitest workers capped in the runner config | Every `ng test` builds its files first (~7 s before a test runs), and left alone Vitest starts a worker per core in each batch. 2,500 test files: 52 batches of 49 with uncapped workers took 528 s; 16 batches with 2 workers each 124 s; one batch per process 71.5 s (plain `ng test --coverage`: 56 s) | Vitest's default batch size; one `ng test` for the whole run (no results until the build is done, a crash reruns everything) |
+| No partial trace and no lighter discovery parser for large projects | Measured on 2,500-file projects: the trace costs almost nothing (Jest ~0%, Vitest ~3% of the run) and discovery takes 1–5 s; the time was in per-batch caches, coverage work and scheduling | Trace only open / recently changed files; a regex discovery pass before Babel |
 | One `ng test` per Angular project | `ng test` with no name runs each project in turn, all writing the same result file | One command for the workspace |
 | Coverage only with the project's provider | The builder prepares its build for the provider it finds in the project; a provider outside it measured nothing | Ship a provider (later research) |
+
+## Measuring large projects
+
+`scripts/perf-project.js --framework jest|vitest|pytest|angular` generates a synthetic project (2,500 test files, 600 sources, 32,800 tests by default); `scripts/perf-measure.js <project>` runs the e2e scenario `diag-perf` (discovery, first result, full run, parse times, memory, the window's CPU by process type, one save rerun) and times the plain framework run with and without coverage on the same project (details in the [developer guide](../developer-guide.md)). Compare the extension with the plain run *with coverage* measured at the same moment: timings in VS Code vary ±15% between runs.
+
+Same-moment numbers at 3.4.1 (6-core laptop): Jest ≈ plain (Sentry: 1,476 s against `jest --coverage` 1,460 s), Vitest 500 files 77 s against 56 s, Angular 2,500 files 70 s against 48 s, pytest 2,500 files one process at a time 173 s against 61 s. The remaining gaps are what the features cost: coverage per test file and the covering tests, batches that stream results and keep a crash small.
 
 ## Testing
 

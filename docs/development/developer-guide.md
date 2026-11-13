@@ -705,10 +705,11 @@ Next, in order (details and status in the GitHub Issues):
 3. Coverage: file detail page, function-level stale marking, sole-coverage warnings
 4. Mirroring results into VS Code's Testing view (optional); the Timeline debugger rewrite comes last
 
-Measured and not planned: tracing only some test files on large projects, and a lighter discovery parser. On 2,500-file projects the trace costs almost nothing (Jest ~0%, Vitest ~3%) and discovery takes 1–5 s; the time was elsewhere (fixed in 3.4.1, see the changelog).
+Measured and not planned: tracing only some test files on large projects, and a lighter discovery parser (reasons in [Test runs: design](design/test-runs.md#design-decisions)).
 
 Shipped:
 
+- **3.4.1** — large projects much faster for every framework, a `speed` setting with a budget that adapts to free CPU and memory, coverage equal to the project's own coverage command and correct after any test change
 - **3.4.0** — Angular (`ng test`), failures on the failing line with a diff, Update snapshot, Copy for AI, no network / privacy policy, minimum VS Code 1.82
 - **3.3.0** — Python monorepos (uv workspaces, one `.venv` per service), JS + Python in one folder, a framework router for any number of frameworks, open test files first, coverage-off notes
 - **3.2.x** — pytest support; coverage bars that stay out of the way while editing; files changed outside the editor rerun

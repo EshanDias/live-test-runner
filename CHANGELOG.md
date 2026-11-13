@@ -2,7 +2,7 @@
 
 Repo changelog: one line per change. What users see is in [the extension's changelog](packages/vscode-extension/CHANGELOG.md); the how and why in [docs/development/design](docs/development/design/).
 
-## [3.4.1] - Unreleased
+## [3.4.1] - 2026-11-13
 
 ### Added
 - `liveTestRunner.speed` (full / balanced / light) and `liveTestRunner.speedStrict`; the budget adapts to free CPU and memory (`resources.ts`).
@@ -14,6 +14,7 @@ Repo changelog: one line per change. What users see is in [the extension's chang
 - Coverage is measured by the framework itself (Jest's provider, Vitest's provider through `vitestCoverageProvider.mjs`, coverage.py), so numbers equal the plain coverage run.
 - pytest runs several processes only when the project uses pytest-xdist `-n`.
 - Vitest config probe result remembered between sessions.
+- `PRIVACY.md`: the extension reads machine load (CPU, memory, its own processes) to size runs; the start cache keeps the Vitest config answer.
 
 ### Fixed
 - Speed on large projects: Jest transform cache reuse, trace index per test file, panel redraws, Angular batch sizes, pytest plugin (`ltr_pytest.py`: coverage flushes, JSON, folder collection), Vitest coverage conversions, adaptive budget accounting (`oursInWindow`).

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Generates a large synthetic Jest project for performance measurements
+ * Generates a large synthetic project (Jest, Vitest, pytest or Angular) for performance measurements
  * (scripts/perf-measure.js). Deterministic: the same options always write the
  * same files, so numbers taken on different days compare.
  *
