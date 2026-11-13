@@ -114,6 +114,26 @@ export function pytestSettings(root: string): PytestSettings {
   };
 }
 
+/**
+ * Whether the project's own pytest runs its tests in parallel processes:
+ * pytest-xdist workers (`-n N`, `-n auto`, `--numprocesses …`, not 0) in its
+ * `addopts`, not switched off with `-p no:xdist`. Such a suite is built to run
+ * side by side, so several of our pytest processes may run at once; any other
+ * suite runs one process at a time (shared ports, files, session fixtures).
+ */
+export function addoptsRunInParallel(args: string[]): boolean {
+  let workers: string | undefined;
+  let disabled = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '-n' || a === '--numprocesses') { workers = args[i + 1]; i++; continue; }
+    const m = /^(?:-n|--numprocesses=)(.+)$/.exec(a);
+    if (m) { workers = m[1]; continue; }
+    if ((a === '-p' && args[i + 1] === 'no:xdist') || a === '-pno:xdist') { disabled = true; }
+  }
+  return !disabled && workers !== undefined && workers.trim() !== '' && workers.trim() !== '0';
+}
+
 /** Files that say "this project uses pytest" without configuring it. */
 const MENTION_FILES = ['pyproject.toml', 'setup.py', 'setup.cfg', 'tox.ini', 'Pipfile', 'requirements.txt', 'requirements-dev.txt', 'requirements_dev.txt', 'requirements-test.txt', 'dev-requirements.txt', 'test-requirements.txt'];
 

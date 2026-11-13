@@ -11,6 +11,7 @@ import {
   parseTomlTables,
   pytestSettings,
   splitArgs,
+  addoptsRunInParallel,
 } from '../src/framework/pytest/pytestConfig';
 import { describePython, setPythonFor, unsupportedReason, PythonInfo } from '../src/framework/pytest/python';
 import { PytestRunner, toPytestPathArg, pytestExitReason } from '../src/PytestRunner';
@@ -110,6 +111,22 @@ describe('pytest config', () => {
 
   it('splits addopts like a shell', () => {
     expect(splitArgs(`-m "not slow" --tb=short -k 'a and b' x\\ y`)).toEqual(['-m', 'not slow', '--tb=short', '-k', 'a and b', 'x y']);
+  });
+});
+
+describe('pytest suites that run in parallel themselves', () => {
+  it.each([
+    [['-n', '4'], true],
+    [['-n', 'auto'], true],
+    [['-nauto'], true],
+    [['--numprocesses=3'], true],
+    [['--numprocesses', 'logical'], true],
+    [['-n', '0'], false],
+    [['-n', '4', '-p', 'no:xdist'], false],
+    [['-ra', '--strict-markers'], false],
+    [[], false],
+  ])('addopts %j → %s', (args, parallel) => {
+    expect(addoptsRunInParallel(args as string[])).toBe(parallel);
   });
 });
 

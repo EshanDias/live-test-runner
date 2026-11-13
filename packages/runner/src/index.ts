@@ -61,6 +61,7 @@ export {
   parseIni,
   parseTomlTables,
   splitArgs,
+  addoptsRunInParallel,
 } from './framework/pytest/pytestConfig';
 export { nodeIdFor, nodeIdsFor, isTemplateName } from './framework/pytest/pytestNodeIds';
 export { LTR_PYTEST_SOURCE } from './framework/pytest/ltrPytestSource';

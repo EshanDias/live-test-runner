@@ -52,7 +52,7 @@ export interface FrameworkFeatures {
  */
 export interface BatchPolicy {
   /** Most processes of this framework at once (default: the machine's budget). */
-  maxParallel?: number;
+  maxParallel?: number | ((projectRoot: string) => number | undefined);
   /**
    * Largest batch (default MAX_BATCH_FILES, 50); batches are sized from the
    * run and the budget up to it. Higher where each process costs seconds before

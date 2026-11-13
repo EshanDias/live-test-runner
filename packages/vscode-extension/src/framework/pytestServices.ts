@@ -5,13 +5,32 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import { FRAMEWORK_IDS, PytestAdapter as PytestRunnerAdapter, CommandRunner, PYTEST_CONFIG_FILES, LTR_PYTEST_SOURCE, pythonFor } from '@live-test-runner/runner';
+import { FRAMEWORK_IDS, PytestAdapter as PytestRunnerAdapter, CommandRunner, PYTEST_CONFIG_FILES, LTR_PYTEST_SOURCE, pythonFor, pytestSettings, addoptsRunInParallel } from '@live-test-runner/runner';
 import { FrameworkServices } from './FrameworkServices';
 import { PytestAdapter, pytestArgsSetting } from './PytestAdapter';
 import { PytestProjectConfig } from '../session/PytestProjectConfig';
 import { PytestBatchRunner } from '../session/PytestBatchRunner';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { pythonInterpreters } from '../python/PythonInterpreters';
+import { logger } from '../utils/logger';
+
+const log = logger.scope('Pytest');
+
+/** Per project: whether its suite runs in parallel itself (read again after 10 s: the scheduler asks often). */
+const _parallel = new Map<string, { value: boolean; at: number }>();
+function runsInParallel(root: string): boolean {
+  const known = _parallel.get(root);
+  if (known && Date.now() - known.at < 10_000) { return known.value; }
+  let value = false;
+  try { value = !!pythonFor(root)?.xdist && addoptsRunInParallel(pytestSettings(root).addopts); } catch { /* unreadable config: one at a time */ }
+  if (known?.value !== value) {
+    log.debug(value
+      ? `${path.basename(root)}: the project runs pytest in parallel itself (pytest-xdist in addopts) — several pytest processes may run at once`
+      : `${path.basename(root)}: one pytest process at a time (the suite does not run in parallel itself)`);
+  }
+  _parallel.set(root, { value, at: Date.now() });
+  return value;
+}
 
 const PLUGIN_HASH = crypto.createHash('sha1').update(LTR_PYTEST_SOURCE).digest('hex').slice(0, 12);
 
@@ -31,12 +50,13 @@ export function createPytestServices(options: {
     framework: FRAMEWORK_IDS.pytest,
     language: 'python',
     displayName: 'pytest',
-    // One pytest process at a time, every file in it — as the user's own `pytest`:
-    // projects share session fixtures, ports and files between tests (httpx's
-    // test server binds a fixed port), so two processes side by side can deadlock.
-    // Results still stream per file; session fixtures are set up once per batch.
-    // 300 relative paths stay far below Windows' 32k command-line limit.
-    batchPolicy: { maxParallel: 1, maxFilesPerBatch: 300 },
+    // One pytest process at a time — as the user's own `pytest`: projects share
+    // session fixtures, ports and files between tests (httpx's test server binds
+    // a fixed port), so two processes side by side can deadlock. A suite the
+    // project itself runs in parallel (pytest-xdist workers in its addopts) is
+    // built for that: then as many as the budget allows. Results still stream
+    // per file. 300 relative paths stay far below Windows' 32k command-line limit.
+    batchPolicy: { maxParallel: (root) => (runsInParallel(root) ? undefined : 1), maxFilesPerBatch: 300 },
     terms: {
       name: 'pytest',
       config: 'pytest config',

@@ -1096,7 +1096,7 @@ export class SessionManager {
     // The budget, and no more than any involved framework runs at once (pytest: one process).
     const CONCURRENCY = Math.max(1, Math.min(
       parallelBatches(),
-      ...cases.map((c) => this._services.servicesFor(c.filePath).batchPolicy?.maxParallel ?? Number.MAX_SAFE_INTEGER),
+      ...cases.map((c) => maxParallelOf(this._services.servicesFor(c.filePath), projectRoot) ?? Number.MAX_SAFE_INTEGER),
     ));
 
     // Group by file — one Jest invocation per file with combined pattern
@@ -1388,7 +1388,7 @@ export class SessionManager {
           `(${terms.fallbackLoss}). Files: ${shortList(batch)}`,
         );
         const fallbackQueue = [...missing];
-        const fallbackParallel = Math.min(CONCURRENCY, this._services.servicesFor(batch[0]).batchPolicy?.maxParallel ?? CONCURRENCY);
+        const fallbackParallel = Math.min(CONCURRENCY, maxParallelOf(this._services.servicesFor(batch[0]), projectRoot) ?? CONCURRENCY);
         await Promise.all(
           Array.from({ length: Math.min(fallbackParallel, fallbackQueue.length) }, async () => {
             while (live()) {
@@ -1430,7 +1430,7 @@ export class SessionManager {
     // Share a process's startup across files, keep batches small enough that a
     // crash or hang retries little, and fill whole rounds of each framework's parallel batches.
     const sizeOf = new Map([...byFramework].map(([s, files]) => [s,
-      batchSize(files.length, Math.min(CONCURRENCY, s.batchPolicy?.maxParallel ?? CONCURRENCY), s.batchPolicy?.maxFilesPerBatch)]));
+      batchSize(files.length, Math.min(CONCURRENCY, maxParallelOf(s, projectRoot) ?? CONCURRENCY), s.batchPolicy?.maxFilesPerBatch)]));
     const batchQueue = buildBatchQueue(byFramework, (s) => sizeOf.get(s)!, onScreen);
     const first = batchQueue.filter((q) => q.batch.every((f) => onScreen.has(runnableKey(f))));
     if (first.length > 0) {
@@ -1444,7 +1444,7 @@ export class SessionManager {
     const wakeAll = () => { for (const w of waiters.splice(0)) { w(); } };
     /** The next batch whose framework is below its own limit (undefined: none can start now). */
     const nextBatch = () => {
-      const i = batchQueue.findIndex((q) => (runningOf.get(q.services) ?? 0) < (q.services.batchPolicy?.maxParallel ?? CONCURRENCY));
+      const i = batchQueue.findIndex((q) => (runningOf.get(q.services) ?? 0) < (maxParallelOf(q.services, projectRoot) ?? CONCURRENCY));
       return i < 0 ? undefined : batchQueue.splice(i, 1)[0];
     };
 
@@ -1924,3 +1924,8 @@ function referencingSources(filePath: string): string[] {
   return out;
 }
 
+/** How many of a framework's processes may run at once in this project (BatchPolicy.maxParallel); undefined: the budget's. */
+function maxParallelOf(s: FrameworkServices, projectRoot: string): number | undefined {
+  const max = s.batchPolicy?.maxParallel;
+  return typeof max === 'function' ? max(projectRoot) : max;
+}

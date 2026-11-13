@@ -20,6 +20,7 @@ All notable changes to Live Test Runner are documented here.
 - **Jest no longer recompiles your whole project on every Start** — what the last session compiled is reused, so first results come sooner (a large React project: the open file's result in 17 s instead of 38 s).
 - Windows: pytest and Vitest coverage are right for projects under a short (8.3) folder name such as `C:\Users\RUNNER~1`.
 - **The panels no longer slow down big runs** — the Test Explorer and Results panel used a whole CPU core while thousands of files ran; now a fraction of that, leaving it to your tests.
+- pytest suites you already run in parallel (pytest-xdist `-n` in your pytest options) now run in several processes; others still run one at a time, as in your terminal.
 - **Much faster pytest runs on big projects** — coverage per test file no longer slows each batch down, and VS Code stays responsive while it is worked out.
 - Vitest with the execution trace turned off: coverage now follows deleted tests too.
 - Angular coverage lists the same files as `ng test --coverage` (no extra files at 0%, and with `coverageInclude` the files no test loads, `app.config.ts` too).
