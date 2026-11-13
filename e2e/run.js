@@ -24,6 +24,7 @@
  */
 
 const { spawn, execSync } = require('child_process');
+const { killLeftovers } = require('./lib/leftovers');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -298,14 +299,21 @@ function runScenario(name, exe) {
     child.stderr.on('data', (d) => out.push(String(d)));
     const timer = setTimeout(() => {
       console.log(`[e2e] TIMEOUT ${name} after ${Math.round(timeoutMs / 1000)}s — killing VS Code`);
-      try {
-        if (process.platform === 'win32') { execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' }); }
-        else { child.kill('SIGKILL'); }
-      } catch { /* already gone */ }
+      killLeftovers(userData, [child.pid]);
     }, timeoutMs);
+    // Ctrl+C / kill of this runner: take the window and its test processes down too.
+    const onSignal = (sig) => { killLeftovers(userData, [child.pid]); process.exit(sig === 'SIGINT' ? 130 : 143); };
+    process.once('SIGINT', onSignal);
+    process.once('SIGTERM', onSignal);
 
     child.on('exit', (code) => {
       clearTimeout(timer);
+      process.removeListener('SIGINT', onSignal);
+      process.removeListener('SIGTERM', onSignal);
+      // The launched process can exit while the window it started keeps running (or leaves its
+      // test processes behind): nothing of this scenario may outlive it.
+      const killed = killLeftovers(userData);
+      if (killed) { console.log(`[e2e] ${name}: stopped ${killed} process(es) VS Code left running`); }
       const secs = ((Date.now() - started) / 1000).toFixed(0);
       let result;
       try { result = JSON.parse(fs.readFileSync(report, 'utf8')); } catch { result = undefined; }

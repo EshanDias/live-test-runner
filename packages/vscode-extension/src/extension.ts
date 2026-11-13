@@ -15,7 +15,7 @@ import { openGuide } from './views/GuidePanel';
 import * as fs from 'fs';
 import * as path from 'path';
 import { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
-import { rememberVitestConfigIn, setSpeedLevel, setSpeedStrict, totalWorkers, parallelBatches, coreCount, adaptiveCeiling } from '@live-test-runner/runner';
+import { rememberVitestConfigIn, setSpeedLevel, setSpeedStrict, totalWorkers, parallelBatches, coreCount, adaptiveCeiling, primePhysicalCores } from '@live-test-runner/runner';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
@@ -136,7 +136,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   // What Vitest's config resolves to, remembered between sessions (Start no longer waits for the probe).
   rememberVitestConfigIn(LTR_BASE_TMP_DIR);
-  applySpeedSetting(false);
+  // Windows asks for its physical cores in the background (the adaptive ceiling stays below them).
+  void primePhysicalCores().then(() => applySpeedSetting(false));
 
   // Create a unique isolated directory for THIS session.
   const sessionDirName = `session-${process.pid}-${Date.now()}`;

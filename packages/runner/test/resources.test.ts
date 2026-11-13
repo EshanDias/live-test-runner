@@ -1,6 +1,6 @@
 import * as os from 'os';
 import { spawn } from 'child_process';
-import { adaptiveWorkers, availableMemory, physicalCores, psSeconds, machineLoad, largestTestProcessMemory, lowerPriority, machineBusyCores, maxBatchSlots, memoryLow, parallelBatches, setSpeedLevel, setSpeedStrict, speedLevel, totalWorkers, workerCount, workersNow, workersPerBatch } from '../src/utils/resources';
+import { adaptiveWorkers, availableMemory, physicalCores, primePhysicalCores, psSeconds, machineLoad, largestTestProcessMemory, lowerPriority, machineBusyCores, maxBatchSlots, memoryLow, parallelBatches, setSpeedLevel, setSpeedStrict, speedLevel, totalWorkers, workerCount, workersNow, workersPerBatch } from '../src/utils/resources';
 import { readWorkerLimit } from '../src/framework/vitestProjects';
 
 describe('machine budget', () => {
@@ -165,12 +165,18 @@ describe('adaptive budget (the level is where it starts)', () => {
     await new Promise((r) => setTimeout(r, 1100));
     const busy = machineBusyCores(os.cpus().length);
     expect(busy).toBeGreaterThanOrEqual(0);
-    if (process.platform !== 'win32') { expect(physicalCores()).toBeGreaterThan(0); }
     expect(busy).toBeLessThanOrEqual(os.cpus().length);
     setSpeedStrict(true);
     expect(workersNow(0, 12)).toBe(totalWorkers(12, 'balanced'));
   });
 });
+
+it('knows the physical cores on every platform (Windows once primed), never more than the logical ones', async () => {
+  await primePhysicalCores();
+  const p = physicalCores();
+  expect(p).toBeGreaterThan(0);
+  expect(p!).toBeLessThanOrEqual(os.cpus().length);
+}, 20_000);
 
 describe('memory for another test process', () => {
   const GB = 1024 ** 3;

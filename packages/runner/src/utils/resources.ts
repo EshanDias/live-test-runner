@@ -1,4 +1,4 @@
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 
@@ -86,8 +86,45 @@ export function adaptiveCeiling(cores: number = coreCount(), physical?: number |
 }
 
 let physicalCount: number | null | undefined;
-/** Physical CPU cores (macOS: sysctl hw.physicalcpu; Linux: /proc/cpuinfo's cores), undefined where unknown (Windows). Read once. */
+let windowsQuery: Promise<void> | undefined;
+
+/** Windows' physical core count (Win32_Processor.NumberOfCores, summed over sockets); PowerShell takes ~1 s, so it is asked in the background. */
+function askWindowsCores(): Promise<void> {
+  windowsQuery ??= new Promise<void>((resolve) => {
+    let out = '';
+    try {
+      const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+        '(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum'], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+      const timer = setTimeout(() => child.kill(), 15_000);
+      child.stdout.on('data', (d) => { out += String(d); });
+      child.on('error', () => { clearTimeout(timer); resolve(); });
+      child.on('close', () => {
+        clearTimeout(timer);
+        const n = Number(out.trim());
+        if (Number.isInteger(n) && n > 0 && n <= os.cpus().length) { physicalCount = n; }
+        resolve();
+      });
+    } catch { resolve(); }
+  });
+  return windowsQuery;
+}
+
+/** Reads the physical core count ahead of the first run (Windows asks in the background; elsewhere it is immediate). */
+export function primePhysicalCores(): Promise<void> {
+  if (process.platform === 'win32') { return askWindowsCores(); }
+  physicalCores();
+  return Promise.resolve();
+}
+
+/**
+ * Physical CPU cores (macOS: sysctl hw.physicalcpu; Linux: /proc/cpuinfo's cores; Windows: from
+ * `primePhysicalCores`, undefined until it answers), undefined where unknown. Read once.
+ */
 export function physicalCores(): number | undefined {
+  if (process.platform === 'win32') {
+    if (physicalCount === undefined) { void askWindowsCores(); }
+    return physicalCount ?? undefined;
+  }
   if (physicalCount !== undefined) { return physicalCount ?? undefined; }
   physicalCount = null;
   try {
