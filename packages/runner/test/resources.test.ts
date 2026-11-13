@@ -1,6 +1,6 @@
 import * as os from 'os';
 import { spawn } from 'child_process';
-import { availableMemory, lowerPriority, memoryLow, parallelBatches, setSpeedLevel, speedLevel, totalWorkers, workerCount, workersPerBatch } from '../src/utils/resources';
+import { adaptiveWorkers, availableMemory, physicalCores, psSeconds, machineLoad, lowerPriority, machineBusyCores, maxBatchSlots, memoryLow, parallelBatches, setSpeedLevel, setSpeedStrict, speedLevel, totalWorkers, workerCount, workersNow, workersPerBatch } from '../src/utils/resources';
 import { readWorkerLimit } from '../src/framework/vitestProjects';
 
 describe('machine budget', () => {
@@ -126,3 +126,68 @@ describe('speed levels', () => {
     expect(parallelBatches(12)).toBe(4);
   });
 });
+
+describe('adaptive budget (the level is where it starts)', () => {
+  afterEach(() => { setSpeedStrict(false); setSpeedLevel('balanced'); });
+
+  it('an idle machine: every core but one, up to Full (physical cores unknown)', () => {
+    expect(adaptiveWorkers(12, 0, 'balanced', false, null)).toBe(totalWorkers(12, 'full'));   // 9 (11 free, Full caps)
+    expect(adaptiveWorkers(4, 0, 'light', false, null)).toBe(3);                                // 3 free = Full's 3
+  });
+
+  it('no more than the physical cores but one (hyperthreads are not cores)', () => {
+    expect(adaptiveWorkers(12, 0, 'light', false, 6)).toBe(5);
+    expect(adaptiveWorkers(12, 0, 'balanced', false, 6)).toBe(6);       // never below the level's own 6
+    expect(adaptiveWorkers(16, 0, 'balanced', false, 16)).toBe(12);     // Full's 3/4 is lower
+    expect(adaptiveWorkers(8, 0, 'light', false, 2)).toBe(2);           // never below Light
+  });
+
+  it('other programs busy: what they leave free, never below Light', () => {
+    expect(adaptiveWorkers(12, 4, 'balanced', false, null)).toBe(7);
+    expect(adaptiveWorkers(12, 10.5, 'full', false, null)).toBe(totalWorkers(12, 'light'));      // 2
+    expect(adaptiveWorkers(4, 3, 'balanced', false, null)).toBe(totalWorkers(4, 'light'));       // 1
+  });
+
+  it('nothing measured yet, or strict: the level as set', () => {
+    expect(adaptiveWorkers(12, undefined, 'balanced', false)).toBe(totalWorkers(12, 'balanced'));
+    expect(adaptiveWorkers(12, 0, 'balanced', true)).toBe(totalWorkers(12, 'balanced'));
+    expect(adaptiveWorkers(12, 11, 'full', true)).toBe(totalWorkers(12, 'full'));
+  });
+
+  it('slots: strict keeps the level\'s batches; adaptive allows up to Full\'s workers (each process is gated)', () => {
+    expect(maxBatchSlots(12, 'balanced', true)).toBe(parallelBatches(12, 'balanced'));
+    expect(maxBatchSlots(12, 'balanced', false)).toBeGreaterThanOrEqual(parallelBatches(12, 'balanced'));
+    expect(maxBatchSlots(12, 'light', true)).toBe(1);
+  });
+
+  it('measures the machine: no answer from one sample, a number of cores from two a second apart', async () => {
+    machineBusyCores(os.cpus().length);
+    await new Promise((r) => setTimeout(r, 1100));
+    const busy = machineBusyCores(os.cpus().length);
+    expect(busy).toBeGreaterThanOrEqual(0);
+    if (process.platform !== 'win32') { expect(physicalCores()).toBeGreaterThan(0); }
+    expect(busy).toBeLessThanOrEqual(os.cpus().length);
+    setSpeedStrict(true);
+    expect(workersNow(0, 12)).toBe(totalWorkers(12, 'balanced'));
+  });
+});
+
+describe('what our own test processes use', () => {
+  it('reads ps CPU times', () => {
+    expect(psSeconds('0:01.50')).toBeCloseTo(1.5);
+    expect(psSeconds('12:03.00')).toBe(723);
+    expect(psSeconds('1:02:03')).toBe(3723);
+    expect(psSeconds('2-01:00:00')).toBe(176400);
+  });
+
+  (process.platform === 'win32' ? it.skip : it)('counts a busy child process as ours, not as another program', async () => {
+    machineLoad(os.cpus().length);
+    const child = spawn(process.execPath, ['-e', 'const end = Date.now() + 1800; while (Date.now() < end) {}']);
+    await new Promise((r) => setTimeout(r, 1500));
+    const load = machineLoad(os.cpus().length);
+    child.kill();
+    expect(load).toBeDefined();
+    expect(load!.ours).toBeGreaterThan(0.5);
+  });
+});
+

@@ -35,10 +35,8 @@ module.exports = {
 
     // Each project's Jest CLI names its own folder (the test files, --config in its transform cache).
     const jestOf = (c) => h.jestProcesses(c.root + path.sep);
-    // Both at once where the budget allows two processes; with one (a small machine), app-b's waits for app-a's.
-    const together = runner.parallelBatches(runner.coreCount(), 'balanced') > 1;
-    await h.waitFor(() => (together ? jestOf(a).length > 0 && jestOf(b).length > 0 : jestOf(a).length + jestOf(b).length > 0),
-      { what: together ? 'both projects\' Jest to run' : 'a project\'s Jest to run', timeout: 90_000 });
+    // Both at once when the budget allows two processes now; otherwise (a small or busy machine) app-b's waits for app-a's.
+    await h.waitFor(() => reg.running().length === 2 && jestOf(a).length + jestOf(b).length > 0, { what: 'both sessions on, a project\'s Jest running', timeout: 90_000 });
     t.check('the session folders differ per project', a.sessionDir !== b.sessionDir && !b.sessionDir.startsWith(a.sessionDir + path.sep));
     t.eq('both run', reg.running().map((c) => c.name), ['app-a', 'app-b']);
 

@@ -111,7 +111,8 @@ All settings under `liveTestRunner.*`.
 | `pythonPath` | `""` | pytest: the Python that runs the tests; empty = automatic (selected interpreter, the project's venv, the Python extension's, PATH) |
 | `pytestArgs` | `[]` | pytest: extra arguments for every run, e.g. `["-m", "not slow"]` (your `addopts` already apply) |
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
-| `speed` | `balanced` | How much of your machine test runs may use: `full` (fastest), `balanced`, `light` (cool and quiet) |
+| `speed` | `balanced` | Where test runs start: `full`, `balanced`, `light` (cool and quiet); runs adapt to how busy your machine is |
+| `speedStrict` | `false` | Keep runs exactly at the `speed` level |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
 | `testFilePatterns` | `["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]` | Which files appear in the test tree. Jest's own config still decides what runs, and files it runs are added even when no pattern matches |
 | `showFailuresInEditor` | `true` | A failed test's message after the line where it failed, with Show diff in the hover |

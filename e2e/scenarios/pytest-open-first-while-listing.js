@@ -58,7 +58,7 @@ module.exports = {
       const cartAt = rec.of('file-result').find((e) => e.file === 'test_cart.py')?.at;
       const earlyLogged = logs.some((l) => /test file\(s\) open in the editor while pytest lists/.test(l));
       const ignoredRan = h.rawSince(api, mark).some((l) => /^\[pytest#\d+\] > .* -m pytest /.test(l) && l.includes('test_ignored.py') && !l.includes('--collect-only'));
-      if (runner.parallelBatches(runner.coreCount(), 'balanced') > 1) {
+      if (runner.maxBatchSlots(runner.coreCount(), 'balanced', false) > 1) {
         t.check('the open test file has its result before pytest finished listing the files', !!cartAt && cartAt < listedAt,
           `test_cart.py at ${cartAt && new Date(cartAt).toISOString()}, list at ${listed}`);
         t.check('the early run is logged', earlyLogged, logs.join('\n'));

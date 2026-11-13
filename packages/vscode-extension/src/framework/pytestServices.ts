@@ -56,7 +56,7 @@ export function createPytestServices(options: {
     // project itself runs in parallel (pytest-xdist workers in its addopts) is
     // built for that: then as many as the budget allows. Results still stream
     // per file. 300 relative paths stay far below Windows' 32k command-line limit.
-    batchPolicy: { maxParallel: (root) => (runsInParallel(root) ? undefined : 1), maxFilesPerBatch: 300 },
+    batchPolicy: { maxParallel: (root) => (runsInParallel(root) ? undefined : 1), maxFilesPerBatch: 300, workersPerProcess: 1 },
     terms: {
       name: 'pytest',
       config: 'pytest config',

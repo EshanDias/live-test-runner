@@ -1,6 +1,6 @@
 'use strict';
 /**
- * The speed setting (liveTestRunner.speed): Light runs one test process at a
+ * The speed setting (liveTestRunner.speed, strict): Light runs one test process at a
  * time, so the whole fixture is one batch; switching to Full while the
  * session is on applies to the next run, with the batches the budget allows
  * on this machine. Results are the same either way.
@@ -18,7 +18,8 @@ function batchCommands(api, mark) {
 module.exports = {
   workspace: 'fixture:basic',
   timeoutMs: 5 * 60_000,
-  settings: { 'liveTestRunner.speed': 'light' },
+  // Strict: the level exactly (adapting, an idle machine would run more than Light).
+  settings: { 'liveTestRunner.speed': 'light', 'liveTestRunner.speedStrict': true },
 
   async run({ api, t, vscode }) {
     await h.waitForDiscovery(api);
@@ -35,8 +36,8 @@ module.exports = {
     // Full, while the session is on: the next run uses it.
     const since = h.isoNow();
     await vscode.workspace.getConfiguration('liveTestRunner').update('speed', 'full', vscode.ConfigurationTarget.Workspace);
-    await h.waitFor(() => h.logsSince(api, since).some((l) => /Speed full: up to \d+ test process\(es\) at once/.test(l)), { what: 'the speed log line', timeout: 10_000 });
-    t.check('the change is logged once, with what it allows', h.logsSince(api, since).filter((l) => /Speed full:/.test(l)).length === 1, h.logsSince(api, since).join('\n'));
+    await h.waitFor(() => h.logsSince(api, since).some((l) => /Speed full \(strict\): up to \d+ test process\(es\) at once/.test(l)), { what: 'the speed log line', timeout: 10_000 });
+    t.check('the change is logged once, with what it allows', h.logsSince(api, since).filter((l) => /Speed full/.test(l)).length === 1, h.logsSince(api, since).join('\n'));
 
     const p = runner.parallelBatches(runner.coreCount(), 'full');
     const size = Math.max(5, Math.min(50, Math.ceil(files / p)));
@@ -47,6 +48,12 @@ module.exports = {
     await h.waitFor(() => api.session.isActive() && !api.session.isRunning(), { what: 'the run at Full', timeout: 180_000 });
     t.eq(`Full: ${expected} batch(es) of ${files} files (${p} at once on ${runner.coreCount()} cores)`, batchCommands(api, mark2).length, expected);
     t.eq('the same results', h.statusCounts(api, 'src/math.test.js'), light);
+    // Not strict (the default): the level is where runs start, the budget follows the machine.
+    const since2 = h.isoNow();
+    await vscode.workspace.getConfiguration('liveTestRunner').update('speedStrict', false, vscode.ConfigurationTarget.Workspace);
+    await h.waitFor(() => h.logsSince(api, since2).some((l) => /Speed full, adapting: from \d+ to \d+ worker\(s\)/.test(l)), { what: 'the adaptive speed line', timeout: 10_000 });
+    t.check('without strict, runs adapt between Light and Full', true);
     await vscode.workspace.getConfiguration('liveTestRunner').update('speed', undefined, vscode.ConfigurationTarget.Workspace);
+    await vscode.workspace.getConfiguration('liveTestRunner').update('speedStrict', undefined, vscode.ConfigurationTarget.Workspace);
   },
 };

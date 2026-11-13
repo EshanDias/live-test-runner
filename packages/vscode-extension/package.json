@@ -323,7 +323,12 @@
             "Cool and quiet: one test process with at most 2 workers. Runs take longer."
           ],
           "default": "balanced",
-          "markdownDescription": "How much of the machine test runs may use. A change applies from the next run. Whatever the level, tests run below the priority of your other apps, and a new batch waits while memory is low."
+          "markdownDescription": "Where test runs start. Unless `#liveTestRunner.speedStrict#` is on, runs then adapt: up to the Full level when your other apps leave the cores free, down to Light when they need them. A change applies from the next run. Whatever the level, tests run below the priority of your other apps, and a new batch waits while memory is low."
+        },
+        "liveTestRunner.speedStrict": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Keep test runs at the `#liveTestRunner.speed#` level exactly. Off (default): runs adapt to how busy the machine is, faster when it is idle and lighter when your other apps need the cores."
         },
         "liveTestRunner.hangTimeoutSeconds": {
           "type": "number",

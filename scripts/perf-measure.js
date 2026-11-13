@@ -78,8 +78,10 @@ function frameworkOf(dir) {
  * workersPerBatch workers each, pytest runs one process at a time.
  */
 function extensionWorkers(framework) {
-  const { parallelBatches, workersPerBatch } = require(path.join(ROOT, 'packages', 'runner', 'dist', 'utils', 'resources.js'));
+  // Adaptive budget (the default): an idle machine lets the extension reach Full's workers; LTR_PERF_STRICT=1 compares at the level.
+  const { parallelBatches, workersPerBatch, totalWorkers } = require(path.join(ROOT, 'packages', 'runner', 'dist', 'utils', 'resources.js'));
   if (framework === 'pytest') { return 1; }
+  if (!process.env.LTR_PERF_STRICT) { return totalWorkers(undefined, 'full'); }
   return framework === 'vitest' || framework === 'angular' ? parallelBatches() * workersPerBatch() : parallelBatches();
 }
 

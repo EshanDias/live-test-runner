@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath, parallelBatches, memoryLow, availableMemory } from '@live-test-runner/runner';
+import { FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath, memoryLow, availableMemory, maxBatchSlots, workersNow, workersPerBatch, machineBusyCores } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
@@ -85,6 +85,9 @@ function describeFiles(files: string[]): string {
   return `${names[0]} and ${names.length - 1} more`;
 }
 
+/** How long the open files' batches run alone at the start of a full run before the rest start. */
+const OPEN_FILES_HEAD_START_MS = 1500;
+
 export class SessionManager {
   private _session: TestSession | undefined;
   private readonly _saveTimers = new Map<string, NodeJS.Timeout>();
@@ -105,6 +108,10 @@ export class SessionManager {
   private readonly _promoters = new Set<(filePath: string) => boolean>();
   /** Test processes this window runs now, every run together (the memory check counts them). */
   private _batchesRunning = 0;
+  /** Workers the running batches keep busy (BatchPolicy.workersPerProcess each): what the adaptive budget counts as ours. */
+  private _workersRunning = 0;
+  /** When the machine was first too busy for another batch (0: not waiting). */
+  private _busyWaitSince = 0;
   /** When memory last held a batch back (logged once per stretch of waiting). */
   private _memoryWaitSince = 0;
 
@@ -269,12 +276,12 @@ export class SessionManager {
       // now; a file the list then leaves out loses its results again. Not in a
       // mixed project (the lists also say which framework runs a file), and only
       // when the budget allows two processes at once (the list is one of them).
-      const early = !this._services.isMixed() && parallelBatches() > 1 && !this._runnableIsRemembered(projectRoot, discovered)
+      const early = !this._services.isMixed() && maxBatchSlots() > 1 && !this._runnableIsRemembered(projectRoot, discovered)
         ? this._onScreenTestFiles(discovered) : [];
       let run: ReturnType<SessionManager['_beginRun']> | undefined;
       let earlyRun: Promise<void> | undefined;
       // The early run and the rest share one budget: the rest starts no more processes than the slots left.
-      const slots = new BatchSlots(parallelBatches());
+      const slots = new BatchSlots(maxBatchSlots());
       if (early.length > 0) {
         this._startSessionState(projectRoot, services, discovered);
         run = this._beginRun('full suite', { fullSuite: true });
@@ -1095,7 +1102,7 @@ export class SessionManager {
   ): Promise<void> {
     // The budget, and no more than any involved framework runs at once (pytest: one process).
     const CONCURRENCY = Math.max(1, Math.min(
-      parallelBatches(),
+      maxBatchSlots(),
       ...cases.map((c) => maxParallelOf(this._services.servicesFor(c.filePath), projectRoot) ?? Number.MAX_SAFE_INTEGER),
     ));
 
@@ -1189,7 +1196,8 @@ export class SessionManager {
             if (!run) {
               break;
             }
-            if (!(await this._memoryForAnotherBatch(() => queue.unshift(run)))) { continue; }
+            const workers = this._workersOf(this._services.servicesFor(run.filePath));
+            if (!(await this._memoryForAnotherBatch(() => queue.unshift(run), undefined, workers))) { continue; }
 
             const names = run.names;
 
@@ -1198,7 +1206,6 @@ export class SessionManager {
               /* pattern */ { fullNames: new Set(run.names) };
 
             let ok = false;
-            this._batchesRunning++;
             try {
               ok = await this._adapterFor(run.filePath).runTestCase(
                 this._store,
@@ -1212,6 +1219,7 @@ export class SessionManager {
               log.error(`Could not run ${names.length} test(s) in ${path.basename(run.filePath)} `, err);
             } finally {
               this._batchesRunning--;
+              this._workersRunning -= workers;
             }
             if (token !== this._token) { break; }
             // No result: put the spinning tests back to pending.
@@ -1230,25 +1238,47 @@ export class SessionManager {
 
   /**
    * Whether another test process may start now. The first always may; another
-   * waits while memory is low (`memoryLow`), until a running one ends or 2 s
-   * pass, so a large project never pushes the machine into swap.
+   * waits while memory is low (`memoryLow`), so a large project never pushes
+   * the machine into swap, or while its `workers` do not fit what the budget
+   * allows now (`workersNow`: by default what the machine's other programs
+   * leave free, between Light's and Full's budget; strict: the speed level),
+   * until a running one ends or 2 s pass.
    * @param putBack returns the batch to its queue (and its slot) when it has to wait
    * @param waiters the run's wake-ups, called when one of its batches ends
-   * @returns false after waiting: the caller takes the next batch again
+   * @returns true: the process and its workers are counted as running (the
+   *   caller takes them off when it ends); false after waiting: the caller
+   *   takes the next batch again
    */
-  private async _memoryForAnotherBatch(putBack: () => void, waiters?: (() => void)[]): Promise<boolean> {
-    if (this._batchesRunning === 0 || !memoryLow()) {
+  private async _memoryForAnotherBatch(putBack: () => void, waiters?: (() => void)[], workers = 1): Promise<boolean> {
+    const lowMemory = this._batchesRunning > 0 && memoryLow();
+    // The adaptive budget (liveTestRunner.speed + speedStrict): what other programs leave free now.
+    const allowed = workersNow(this._workersRunning);
+    const busy = this._batchesRunning > 0 && !lowMemory && this._workersRunning + workers > allowed;
+    if (!lowMemory && !busy) {
       if (this._memoryWaitSince > 0) {
         log.debug(`Memory freed up after ${secondsSince(this._memoryWaitSince)}: starting the next batch`);
         this._memoryWaitSince = 0;
       }
+      if (this._busyWaitSince > 0) {
+        log.debug(`Cores freed up after ${secondsSince(this._busyWaitSince)}: starting the next batch (${allowed} worker(s) now)`);
+        this._busyWaitSince = 0;
+      }
+      // Reserved here, in the same step as the check: the run's other slots ask before this caller resumes.
+      this._batchesRunning++;
+      this._workersRunning += workers;
       return true;
     }
-    if (this._memoryWaitSince === 0) {
+    if (lowMemory && this._memoryWaitSince === 0) {
       this._memoryWaitSince = Date.now();
       const free = availableMemory();
       log.info(`Memory is low (${free !== undefined ? `${(free / 1024 ** 3).toFixed(1)} GB` : '?'} free): ` +
         `${this._batchesRunning} test process(es) running, the next waits for memory`);
+    }
+    if (busy && this._busyWaitSince === 0) {
+      this._busyWaitSince = Date.now();
+      const others = Math.max(0, (machineBusyCores() ?? 0) - this._workersRunning);
+      log.debug(`The machine is busy (other programs use about ${others.toFixed(1)} core(s)): ` +
+        `${this._workersRunning} test worker(s) running of ${allowed} allowed now, the next batch waits`);
     }
     putBack();
     await new Promise<void>((resolve) => {
@@ -1258,6 +1288,16 @@ export class SessionManager {
     return false;
   }
 
+  /** Workers one batch of this framework keeps busy (BatchPolicy.workersPerProcess; default the budget's per batch). */
+  private _workersOf(s: FrameworkServices): number {
+    return s.batchPolicy?.workersPerProcess ?? workersPerBatch();
+  }
+
+  /** How many of this framework's batches the budget allows side by side now (for batch sizes). */
+  private _processesThatFit(s: FrameworkServices): number {
+    return Math.max(1, Math.floor(workersNow(this._workersRunning) / this._workersOf(s)));
+  }
+
   private async _runFiles(
     filePaths: string[],
     projectRoot: string,
@@ -1265,7 +1305,7 @@ export class SessionManager {
     /** openFirst (the full run): the test files on screen run first, in batches of their own. */
     opts: { openFirst?: boolean; cancelled?: () => boolean; slots?: BatchSlots } = {},
   ): Promise<void> {
-    const CONCURRENCY = parallelBatches();
+    const CONCURRENCY = maxBatchSlots();
     const totalFiles  = filePaths.length;
     if (totalFiles === 0 || token !== this._token) { return; }
 
@@ -1430,12 +1470,18 @@ export class SessionManager {
     // Share a process's startup across files, keep batches small enough that a
     // crash or hang retries little, and fill whole rounds of each framework's parallel batches.
     const sizeOf = new Map([...byFramework].map(([s, files]) => [s,
-      batchSize(files.length, Math.min(CONCURRENCY, maxParallelOf(s, projectRoot) ?? CONCURRENCY), s.batchPolicy?.maxFilesPerBatch)]));
+      batchSize(files.length, Math.min(CONCURRENCY, maxParallelOf(s, projectRoot) ?? CONCURRENCY, this._processesThatFit(s)), s.batchPolicy?.maxFilesPerBatch)]));
     const batchQueue = buildBatchQueue(byFramework, (s) => sizeOf.get(s)!, onScreen);
     const first = batchQueue.filter((q) => q.batch.every((f) => onScreen.has(runnableKey(f))));
     if (first.length > 0) {
       log.debug(`Running the ${first.reduce((n, q) => n + q.batch.length, 0)} test file(s) open in the editor first`);
     }
+    // The open files' batches get a head start: started together with every other
+    // process (the adaptive budget allows more on an idle machine), the open file's
+    // first result came later (Jest: 2.5 s → 4.5 s).
+    const headStart = first.length > 0 && batchQueue.length > first.length
+      ? new Promise<void>((resolve) => setTimeout(resolve, OPEN_FILES_HEAD_START_MS))
+      : undefined;
     const promote = (filePath: string) => promoteInQueue(batchQueue, filePath);
     this._promoters.add(promote);
     const batchCount = batchQueue.length;
@@ -1451,7 +1497,9 @@ export class SessionManager {
     await Promise.all(
       Array.from(
         { length: Math.min(CONCURRENCY, batchQueue.length) },
-        async () => {
+        async (_, slot) => {
+          // Slots beyond the open files' batches start after their head start.
+          if (headStart && slot >= first.length) { await headStart; }
           while (live() && batchQueue.length > 0) {
             // A slot shared with a run going on at the same time (the budget is for both).
             if (opts.slots) { await opts.slots.acquire(); }
@@ -1471,12 +1519,13 @@ export class SessionManager {
               batchQueue.unshift(next);
               opts.slots?.release();
             };
-            if (!(await this._memoryForAnotherBatch(putBack, waiters))) { continue; }
-            this._batchesRunning++;
+            const workers = this._workersOf(next.services);
+            if (!(await this._memoryForAnotherBatch(putBack, waiters, workers))) { continue; }
             try {
               await runBatch(next.batch);
             } finally {
               this._batchesRunning--;
+              this._workersRunning -= workers;
               runningOf.set(next.services, (runningOf.get(next.services) ?? 1) - 1);
               opts.slots?.release();
               wakeAll();

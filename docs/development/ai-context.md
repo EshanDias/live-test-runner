@@ -564,7 +564,8 @@ All in `packages/vscode-extension/package.json`:
 | `liveTestRunner.runMode` | `"auto"` | `"auto"`: extension calls Jest directly (full structured output). `"npm"`: delegates to `npm test --` from your package.json scripts (limited structured output — see below). |
 | `liveTestRunner.jestCommand` | `""` | Override Jest binary/command. Only used when `runMode` is `"auto"`. |
 | `liveTestRunner.onSaveDebounceMs` | `300` | Debounce delay (ms) |
-| `liveTestRunner.speed` | `balanced` | Budget size: `full` 3/4 of the cores, `balanced` half, `light` one process ≤ 2 workers (`setSpeedLevel`) |
+| `liveTestRunner.speed` | `balanced` | Where the budget starts: `full` 3/4 of the cores, `balanced` half, `light` one process ≤ 2 workers (`setSpeedLevel`); adapts per process (`workersNow`) unless `speedStrict` |
+| `liveTestRunner.speedStrict` | `false` | Keep the budget at the level (`setSpeedStrict`) |
 | `liveTestRunner.durationThresholds.testAmberMs` | `100` | Test amber threshold |
 | `liveTestRunner.durationThresholds.testRedMs` | `500` | Test red threshold |
 | `liveTestRunner.durationThresholds.suiteAmberMs` | `500` | Suite amber threshold |

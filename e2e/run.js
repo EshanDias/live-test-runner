@@ -254,6 +254,8 @@ function runScenario(name, exe) {
     'git.enabled': false,
     'files.autoSave': 'off',
     ...(scenario.settings || {}),
+    // LTR_E2E_SETTINGS='{"liveTestRunner.speedStrict":true}': settings for this run (perf A/B comparisons).
+    ...(process.env.LTR_E2E_SETTINGS ? JSON.parse(process.env.LTR_E2E_SETTINGS) : {}),
   }, null, 2));
 
   const report = path.join(runDir, 'report.json');

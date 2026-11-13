@@ -134,8 +134,8 @@ module.exports = {
     // files no test loads (the project's config, once per session).
     const batches = new Set(logs.map((l) => /\b(b\d+): running \d+ file/.exec(l)?.[1]).filter(Boolean));
     const caches = transformCachesFor(workspace, startedMs);
-    // A small machine (budget 1 at the default speed) runs the fixture as one batch.
-    const minBatches = Math.min(2, runner.parallelBatches(runner.coreCount(), 'balanced'));
+    // A small or busy machine (the adaptive budget allows one process) runs the fixture as one batch.
+    const minBatches = 1;
     t.check(`${batches.size} batches share one generated config and one transform cache`,
       batches.size >= minBatches && caches.length === 1 && caches[0].configs >= 1 && caches[0].caches <= 2,
       `batches ${[...batches].join(', ')}; caches ${JSON.stringify(caches)}`);
