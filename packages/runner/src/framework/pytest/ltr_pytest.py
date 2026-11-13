@@ -32,6 +32,7 @@ Keep it compatible with every pytest >= 7.0 and plain Python syntax (no
 """
 
 import json
+import operator
 import os
 import re
 import sys
@@ -44,6 +45,12 @@ LIST_ENV = "LTR_PYTEST_LIST"
 COVERAGE_ENV = "LTR_PYTEST_COVERAGE"
 
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _dump(obj, fh, **kwargs):
+    """``json.dump`` with the C encoder: ``json.dump`` encodes in pure Python
+    (a quarter of a 600-file batch went to writing its JSON files)."""
+    fh.write(json.dumps(obj, **kwargs))
 _CWD = os.getcwd()
 
 # One pytest session per process (inner sessions of pytester never load this
@@ -179,6 +186,8 @@ def _start_coverage(config):
         _choose_core(_cov)
         _cov.start()
         _check_contexts(_cov)
+        if _contexts:
+            _flush_active_files_only(_cov)
     except Exception as err:  # a broken coverage config must not stop the tests
         _cov = None
         _cov_error = "coverage could not start: %s" % err
@@ -231,17 +240,14 @@ def _finish_coverage():
     try:
         _cov.stop()
         _cov.save()
-        raw = os.path.join(directory, "coverage.json")
         try:
-            _cov.json_report(outfile=raw)
+            report = _json_report_data(directory)
         except Exception as err:  # NoDataError: nothing under the project ran
             _log("debug", "no coverage data: %s" % err)
             return None
-        with open(raw, encoding="utf-8") as fh:
-            report = json.load(fh)
         out = os.path.join(directory, "coverage-final.json")
         with open(out, "w", encoding="utf-8") as fh:
-            json.dump(_istanbul(report), fh)
+            _dump(_istanbul(report), fh)
         if _contexts:
             _write_trace(os.path.join(directory, "trace.jsonl"))
             _write_per_test_file(report, os.path.join(directory, "coverage-per-test-file.json"))
@@ -249,6 +255,67 @@ def _finish_coverage():
     except Exception as err:
         _log("warn", "could not write coverage: %s" % err)
         return None
+
+
+def _json_report_data(directory):
+    """coverage.py's JSON report as data. Its ``json_report`` encodes it with
+    the pure-Python ``json.dump`` (seconds on a large batch) only for us to read
+    it back: the report module's ``json.dump`` is swapped for one that keeps the
+    data, for this call only. Any other coverage.py: the file, as before."""
+    try:
+        from coverage import jsonreport
+        real = jsonreport.json
+        captured = []
+
+        class _Keep(object):
+            def __getattr__(self, name):
+                return getattr(real, name)
+
+            @staticmethod
+            def dump(obj, fp, **kwargs):
+                captured.append(obj)
+
+        jsonreport.json = _Keep()
+        try:
+            _cov.json_report(outfile=os.devnull)
+        finally:
+            jsonreport.json = real
+        if len(captured) == 1 and isinstance(captured[0], dict) and "files" in captured[0]:
+            return captured[0]
+    except ImportError:
+        pass
+    raw = os.path.join(directory, "coverage.json")
+    _cov.json_report(outfile=raw)
+    with open(raw, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+_has_lines = operator.itemgetter(1)  # (file, lines) -> lines: truthy when the file has new data
+
+
+def _flush_active_files_only(cov):
+    """Each per-test context switch flushes coverage's collected data, and
+    coverage.py walks every file measured so far (copy, hash, clear), not only
+    the ones the last test ran: the cost grows with the run (2,500 test files in
+    one process: 250 s against 50 s for ``coverage run``). During the flush the
+    collector sees only the files with new data, the same set objects; the
+    tracers keep writing into the full dict. Data, contexts and output are the
+    same."""
+    collector = getattr(cov, "_collector", None)
+    data = getattr(collector, "data", None)
+    original = getattr(collector, "flush_data", None)
+    if not isinstance(data, dict) or original is None:
+        return
+
+    def flush_data():
+        full = collector.data
+        try:
+            collector.data = dict(filter(_has_lines, full.items()))
+            return original()
+        finally:
+            collector.data = full
+
+    collector.flush_data = flush_data
 
 
 def _write_trace(target):
@@ -341,7 +408,7 @@ def _write_per_test_file(report, target):
             tests[test_file] = counters(_istanbul_from(prepared, by_prefix.get(prefix, {})))
         imports = counters(_istanbul_from(prepared, imports_hits))
         with open(target, "w", encoding="utf-8") as fh:
-            json.dump({"maps": maps, "tests": tests, "imports": imports}, fh, separators=(",", ":"))
+            _dump({"maps": maps, "tests": tests, "imports": imports}, fh, separators=(",", ":"))
         _log("debug", "coverage per test file: %d test file(s), %d measured file(s) in %.1fs (%s)" % (len(tests), len(measured), time.time() - started, how))
     except Exception as err:  # the merged report still stands
         _log("warn", "could not write coverage per test file: %s" % err)
@@ -443,12 +510,11 @@ def _keep_coverage_file(path):
     keeps the spelling it was started with (8.3 short names, as on GitHub's
     Windows runners).
     """
-    norm = lambda p: os.path.normcase(os.path.realpath(p))
-    target = norm(path)
-    if target.startswith(norm(_PLUGIN_DIR) + os.sep):
+    target = _same_file(path)
+    if target.startswith(_same_file(_PLUGIN_DIR) + os.sep):
         return False
     root = str(_config.rootpath) if _config else _CWD
-    for base in {norm(root), norm(_CWD)}:
+    for base in {_same_file(root), _same_file(_CWD)}:
         if target.startswith(base.rstrip(os.sep) + os.sep):
             return True
     return False
@@ -472,7 +538,7 @@ def _istanbul(report, hits=None):
 def _prepare_istanbul(report):
     """What the istanbul maps of a report need, worked out once per report
     (paths, source line widths, maps): per test file only the counters change."""
-    prepared = []
+    prepared = _Prepared()
     for name, f in (report.get("files") or {}).items():
         path = os.path.normpath(os.path.join(_CWD, name))
         if not _keep_coverage_file(path):
@@ -533,16 +599,35 @@ def _prepare_istanbul(report):
     return prepared
 
 
+def _prepared_index(prepared):
+    """Prepared files by ``_same_file`` spelling (a list: two report paths can be one
+    real file), worked out once per prepared report."""
+    index = prepared.by_file if isinstance(prepared, _Prepared) else None
+    if index is None:
+        index = {}
+        for p in prepared:
+            index.setdefault(_same_file(p["path"]), []).append(p)
+        if isinstance(prepared, _Prepared):
+            prepared.by_file = index
+    return index
+
+
+class _Prepared(list):
+    """``_prepare_istanbul``'s list, with its index by file once asked for."""
+    by_file = None
+
+
 def _istanbul_from(prepared, hits=None):
     """``_istanbul`` over a prepared report (``_prepare_istanbul``)."""
     out = {}
-    for p in prepared:
+    if hits is None:
+        chosen = ((p, None) for p in prepared)
+    else:
+        # Only the files these hits name (a test file runs a few of thousands).
+        index = _prepared_index(prepared)
+        chosen = ((p, own) for name, own in hits.items() for p in index.get(name, ()))
+    for p, own in chosen:
         path = p["path"]
-        own = None
-        if hits is not None:
-            own = hits.get(_same_file(path))
-            if own is None:
-                continue
         ran_lines = own[0] if own else p["executed"]
         s = {str(i): 1 if line in ran_lines else 0 for i, line in enumerate(p["lines"])}
         b = {}
@@ -591,7 +676,7 @@ def count_files(paths, target):
             pass
         files[os.path.relpath(os.path.abspath(path), _CWD)] = f
     with open(target, "w", encoding="utf-8") as fh:
-        json.dump(_istanbul({"files": files}), fh)
+        _dump(_istanbul({"files": files}), fh)
 
 
 # -- collection ----------------------------------------------------------------------
@@ -608,6 +693,54 @@ def _state(path):
     if st is None:
         st = _files[path] = _FileState(path)
     return st
+
+
+_file_args_only = None  # every argument is a distinct test file (or a node id in one); worked out once
+
+
+def _only_distinct_files_given(config):
+    global _file_args_only
+    if _file_args_only is None:
+        params = getattr(config, "invocation_params", None)
+        base = str(getattr(params, "dir", None) or _CWD)
+        args = [str(a) for a in (getattr(config, "args", None) or [])]
+        try:
+            files = [os.path.normcase(os.path.abspath(os.path.join(base, a))) for a in args]
+            _file_args_only = bool(files) and len(set(files)) == len(files) and all(os.path.isfile(f) for f in files)
+        except Exception:
+            _file_args_only = False
+    return _file_args_only
+
+
+def pytest_sessionstart(session):
+    _collect_folders_once(session)
+
+
+def _collect_folders_once(session):
+    """A batch's folders collected once, not once per test file in them.
+
+    pytest 8+ reaches a file argument by collecting its folder, and collects the
+    folder afresh for every file argument (so that a file given twice runs
+    twice): 2,500 files in folders of 100 made 250,000 nodes (collection 52 s
+    against 15 s without arguments). When every argument is a different file,
+    a folder's first collection is reused, as pytest does for every other
+    level; the same nodes come out. Older pytest (no ``handle_dupes``): as is.
+    """
+    original = getattr(session, "_collect_one_node", None)
+    if original is None or not _only_distinct_files_given(session.config):
+        return
+    try:
+        import inspect
+        if "handle_dupes" not in inspect.signature(original).parameters:
+            return
+        from _pytest.nodes import Directory
+    except Exception:
+        return
+
+    def collect_one_node(node, handle_dupes=True):
+        return original(node, True if isinstance(node, Directory) else handle_dupes)
+
+    session._collect_one_node = collect_one_node
 
 
 def pytest_collectreport(report):
@@ -631,6 +764,7 @@ def pytest_collectreport(report):
 
 
 def pytest_collection_finish(session):
+    seen = set(_collected_files)
     for item in session.items:
         path = os.path.normpath(str(item.path))
         titles = [n.name for n in item.listchain() if isinstance(n, pytest.Class)]
@@ -640,14 +774,15 @@ def pytest_collection_finish(session):
             line = _def_line(path, line, getattr(item, "originalname", None) or item.name.split("[", 1)[0])
         _nodes[item.nodeid] = {"file": path, "titles": titles, "name": item.name, "line": line}
         _state(path).remaining.add(item.nodeid)
-        if path not in _collected_files:
+        if path not in seen:
+            seen.add(path)
             _collected_files.append(path)
 
     listing = os.environ.get(LIST_ENV)
     if listing:
         try:
             with open(listing, "w", encoding="utf-8") as fh:
-                json.dump({
+                _dump({
                     "files": _collected_files,
                     "errors": _collect_errors,
                     "rootdir": str(session.config.rootpath),
@@ -831,7 +966,7 @@ def _write_result(config, status):
     }
     try:
         with open(target, "w", encoding="utf-8") as fh:
-            json.dump(run, fh, default=str)
+            _dump(run, fh, default=str)
     except Exception as err:
         _log("error", "could not write the result file: %s" % err)
 

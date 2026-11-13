@@ -411,3 +411,33 @@ def test_a_core_without_contexts_turns_covering_tests_off_not_the_run(pytester, 
     assert "covering tests are off" in outcome.stderr.str()
     trace = cov_dir / "trace.jsonl"
     assert not trace.exists() or not any(json.loads(l)["type"] == "T" for l in trace.read_text().splitlines())
+
+
+def test_a_batch_of_files_collects_their_folder_once(pytester, run):
+    """pytest 8+ collects a file argument's folder again for every file argument;
+    a batch (distinct files only) reuses the first collection: same tests, once each."""
+    pytester.makeconftest("""
+        import collections
+        SEEN = collections.Counter()
+
+        def pytest_collect_file(file_path, parent):
+            SEEN[file_path.name] += 1
+
+        def pytest_collection_finish(session):
+            print("MOST_OFFERS %d" % max(n for name, n in SEEN.items() if name.startswith("test_m")))
+    """)
+    for i in range(4):
+        pytester.makepyfile(**{"test_m%d" % i: "def test_one():\n    pass\n\ndef test_two():\n    pass\n"})
+    _, result, outcome = run("-s", *["test_m%d.py" % i for i in range(4)])
+    assert result["numPassedTests"] == 8 and result["numFailedTests"] == 0
+    offers = [line for line in outcome.outlines if line.startswith("MOST_OFFERS")]
+    if int(pytest.__version__.split(".")[0]) >= 8:
+        assert offers == ["MOST_OFFERS 1"]  # was 4: the folder collected once per argument
+
+
+def test_a_file_given_twice_runs_as_plain_pytest_runs_it(pytester, run):
+    """The batch shortcut is only for distinct files: a file named twice behaves as in plain pytest."""
+    pytester.makepyfile(test_twice="def test_once():\n    pass\n")
+    plain = pytester.runpytest_subprocess("-p", "no:cacheprovider", "test_twice.py", "test_twice.py").parseoutcomes()
+    _, _, outcome = run("test_twice.py", "test_twice.py")
+    assert outcome.parseoutcomes().get("passed") == plain.get("passed")
