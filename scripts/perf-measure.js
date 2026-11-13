@@ -89,15 +89,32 @@ function timed(fn) {
   return { r, seconds: Math.round((Date.now() - t0) / 100) / 10 };
 }
 
-function plainRun(dir, framework) {
+/**
+ * The plain framework run, optionally with coverage as the project measures it
+ * (the extension always measures coverage): reports go to a temp folder, never
+ * into the project (Angular: its own coverage/ folder, removed afterwards).
+ */
+function plainRun(dir, framework, coverage = false) {
   const workers = extensionWorkers(framework);
   const out = path.join(os.tmpdir(), `ltr-perf-plain-${process.pid}.json`);
   fs.rmSync(out, { force: true });
-  console.log(`[perf] plain ${framework}, ${workers} worker(s)…`);
+  const covDir = coverage ? fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-perf-cov-')) : undefined;
+  console.log(`[perf] plain ${framework}${coverage ? ' with coverage' : ''}, ${workers} worker(s)…`);
+  try {
+    return plainRunIn(dir, framework, workers, out, covDir);
+  } finally {
+    if (covDir) { fs.rmSync(covDir, { recursive: true, force: true }); }
+  }
+}
+
+function plainRunIn(dir, framework, workers, out, covDir) {
   if (framework === 'pytest') {
     const py = path.join(dir, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
-    const { r, seconds } = timed(() => spawnSync(fs.existsSync(py) ? py : 'python3', ['-m', 'pytest', '-q', '-p', 'no:cacheprovider'],
-      { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 30 }));
+    // With coverage: coverage.py as the project configures it (its .coveragerc / pyproject), data file in the temp folder.
+    const args = covDir ? ['-m', 'coverage', 'run', '-m', 'pytest', '-q', '-p', 'no:cacheprovider'] : ['-m', 'pytest', '-q', '-p', 'no:cacheprovider'];
+    const env = covDir ? { ...process.env, COVERAGE_FILE: path.join(covDir, '.coverage') } : process.env;
+    const { r, seconds } = timed(() => spawnSync(fs.existsSync(py) ? py : 'python3', args,
+      { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 30 }));
     const tail = String(r.stdout).trim().split('\n').pop() || '';
     const n = (k) => Number((new RegExp(`(\\d+) ${k}`).exec(tail) || [])[1] || 0);
     return { seconds, workers, passed: n('passed'), failed: n('failed'), skipped: n('skipped') };
@@ -107,10 +124,13 @@ function plainRun(dir, framework) {
     const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-perf-runner-'));
     const config = path.join(configDir, 'runner.mjs');
     fs.writeFileSync(config, `export default { test: { maxWorkers: ${workers} } };\n`, { mode: 0o600 });
-    const ng = [path.join(dir, 'node_modules', '@angular', 'cli', 'bin', 'ng.js'), 'test', '--watch=false', '--reporters=json', `--output-file=${out}`, '--runner-config', config];
+    const hadCoverageDir = fs.existsSync(path.join(dir, 'coverage'));
+    const ng = [path.join(dir, 'node_modules', '@angular', 'cli', 'bin', 'ng.js'), 'test', '--watch=false', '--reporters=json', `--output-file=${out}`, '--runner-config', config,
+      ...(covDir ? ['--coverage', '--coverage-reporters=json'] : [])];
     const { r, seconds } = timed(() => spawnSync(process.execPath, ng, { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 1 << 30 }));
     fs.rmSync(configDir, { recursive: true, force: true });
     fs.rmSync(path.join(dir, '.angular'), { recursive: true, force: true });
+    if (covDir && !hadCoverageDir) { fs.rmSync(path.join(dir, 'coverage'), { recursive: true, force: true }); }
     let json;
     try { json = JSON.parse(fs.readFileSync(out, 'utf8')); } catch { json = undefined; }
     fs.rmSync(out, { force: true });
@@ -118,8 +138,10 @@ function plainRun(dir, framework) {
     return { seconds, workers, files: json.numTotalTestSuites, passed: json.numPassedTests, failed: json.numFailedTests, skipped: json.numPendingTests + (json.numTodoTests || 0) };
   }
   const args = framework === 'vitest'
-    ? [path.join(dir, 'node_modules', 'vitest', 'vitest.mjs'), 'run', `--maxWorkers=${workers}`, '--reporter=json', `--outputFile=${out}`]
-    : [path.join(dir, 'node_modules', 'jest', 'bin', 'jest.js'), `--maxWorkers=${workers}`, '--json', '--outputFile', out];
+    ? [path.join(dir, 'node_modules', 'vitest', 'vitest.mjs'), 'run', `--maxWorkers=${workers}`, '--reporter=json', `--outputFile=${out}`,
+      ...(covDir ? ['--coverage.enabled', '--coverage.reporter=json', `--coverage.reportsDirectory=${covDir}`] : [])]
+    : [path.join(dir, 'node_modules', 'jest', 'bin', 'jest.js'), `--maxWorkers=${workers}`, '--json', '--outputFile', out,
+      ...(covDir ? ['--coverage', '--coverageReporters=json', `--coverageDirectory=${covDir}`] : [])];
   const { r, seconds } = timed(() => spawnSync(process.execPath, args, { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 1 << 30 }));
   let json;
   try { json = JSON.parse(fs.readFileSync(out, 'utf8')); } catch { json = undefined; }
@@ -141,7 +163,7 @@ function extensionRun(dir, opts) {
   return { ok: r.status === 0, ...(json || {}) };
 }
 
-function printTable(label, plain, ext) {
+function printTable(label, plain, ext, plainCov) {
   const row = (k, v) => console.log(`  ${k.padEnd(34)} ${v ?? '—'}`);
   console.log(`\n[perf] ── ${label} ──`);
   row('test files', ext.testFiles);
@@ -149,13 +171,14 @@ function printTable(label, plain, ext) {
   row('first result, open file (s)', ext.firstResultOpenFileS);
   row('full run, extension (s)', ext.fullRunS);
   row(`full run, plain ${plain?.framework ?? 'run'} (s)`, plain && `${plain.seconds} (${plain.workers} worker(s))`);
+  row(`… with coverage (s)`, plainCov && `${plainCov.seconds}${ext.fullRunS && plainCov.seconds ? ` (extension ${(ext.fullRunS / plainCov.seconds).toFixed(2)}×)` : ''}`);
   row('trace parse: total ms / KB / max ms', ext.trace && `${ext.trace.ms} / ${ext.trace.kb} / ${ext.trace.maxMs}`);
   row('coverage parse: total ms / KB / max', ext.coverage && `${ext.coverage.ms} / ${ext.coverage.kb} / ${ext.coverage.maxMs}`);
   row('batches: count / max s', ext.batches && `${ext.batches.count} / ${ext.batches.maxS}`);
   row('test processes peak RSS (MB)', ext.testProcessesPeakRssMb);
   row('extension host RSS / heap (MB)', ext.extensionHost && `${ext.extensionHost.rssMb} / ${ext.extensionHost.heapUsedMb} (+${ext.extensionHost.heapGrowthMb})`);
   row('extension host CPU (s)', ext.extensionHost?.cpuS);
-  row('VS Code processes avg CPU (%)', ext.vscodeAvgCpuPct);
+  row('VS Code processes CPU (s, by type)', ext.vscodeCpuS && Object.entries(ext.vscodeCpuS).map(([k, v]) => `${k} ${v}`).join(', '));
   row('trace store: source files / KB', ext.traceStore && `${ext.traceStore.sourceFiles} / ${ext.traceStore.dumpKb}`);
   row('save rerun (s, path, test files)', ext.save && `${ext.save.seconds} (${ext.save.path}, ${ext.save.testFiles})`);
   row('results ext / plain (pass, fail)', `${ext.summary?.passed}, ${ext.summary?.failed} / ${plain ? `${plain.passed}, ${plain.failed}` : '—'}`);
@@ -167,13 +190,14 @@ function main() {
   const dir = opts.inPlace ? opts.project : workCopy(opts.project, opts.label);
   const framework = frameworkOf(dir);
   const plain = opts.plain ? { framework, ...plainRun(dir, framework) } : undefined;
+  const plainCov = opts.plain ? { framework, ...plainRun(dir, framework, true) } : undefined;
   const ext = extensionRun(dir, opts);
   let all = {};
   try { all = JSON.parse(fs.readFileSync(OUT_FILE, 'utf8')); } catch { /* first run */ }
-  (all[opts.label] = all[opts.label] || []).push({ plain, extension: ext });
+  (all[opts.label] = all[opts.label] || []).push({ plain, plainCoverage: plainCov, extension: ext });
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
   fs.writeFileSync(OUT_FILE, JSON.stringify(all, null, 2) + '\n');
-  printTable(opts.label, plain, ext);
+  printTable(opts.label, plain, ext, plainCov);
   process.exit(ext.ok ? 0 : 1);
 }
 

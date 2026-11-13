@@ -966,7 +966,7 @@
           // Progress is NOT counted here: the extension sends 'run-progress'
           // with totals across every run in flight (a save during the full
           // suite used to push this past 100%, e.g. "61 / 58").
-          for (const file of msg.files ?? []) { _list.updateFile(file); }
+          _list.updateFiles(msg.files ?? []);
           updateSummary(msg.total, msg.passed, msg.failed, null);
           _setRunningCount(msg.runningTests);
           break;

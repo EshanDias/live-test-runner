@@ -67,20 +67,40 @@ function cpuProfiler(file) {
 }
 
 /** Average summed CPU % of the test VS Code's own processes (renderer, extension host, …), sampled every 2 s. */
+/**
+ * CPU seconds this test window's own VS Code processes used during the run, by
+ * process type (renderer = the window and its panels, gpu, …; the extension
+ * host is measured on its own): ps' cumulative CPU time at start and stop.
+ * The window's processes carry its user-data folder (the e2e runner's `ud`).
+ */
 function cpuSampler() {
-  let sum = 0;
-  let n = 0;
-  const sample = () => execFile('ps', ['-A', '-ww', '-o', '%cpu=,args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }, (err, out) => {
-    if (err) { return; }
-    let pct = 0;
-    for (const l of out.split('\n')) {
-      if (/\.vscode-test[\\/]/.test(l) && !/node_modules/.test(l)) { pct += Number(l.trim().split(/\s+/)[0]) || 0; }
-    }
-    sum += pct;
-    n++;
-  });
-  const timer = setInterval(sample, 2000);
-  return { stop() { clearInterval(timer); return n ? Math.round(sum / n) : null; } };
+  const ud = process.env.VSCODE_IPC_HOOK ? path.dirname(process.env.VSCODE_IPC_HOOK) : undefined;
+  const read = () => {
+    const out = new Map();
+    if (!ud || process.platform === 'win32') { return out; }
+    try {
+      const text = require('child_process').execFileSync('ps', ['-A', '-ww', '-o', 'pid=,time=,args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+      for (const l of text.split('\n')) {
+        const m = /^\s*(\d+)\s+(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)\s+(.*)$/.exec(l);
+        if (!m || !m[6].includes(ud)) { continue; }
+        const secs = (Number(m[2] || 0) * 86400) + (Number(m[3] || 0) * 3600) + Number(m[4]) * 60 + Number(m[5]);
+        const type = (/--type=([\w-]+)/.exec(m[6]) || [, 'main'])[1];
+        out.set(m[1], { type, secs });
+      }
+    } catch { /* no ps */ }
+    return out;
+  };
+  const before = read();
+  return {
+    stop() {
+      const byType = {};
+      for (const [pid, p] of read()) {
+        const used = p.secs - (before.get(pid)?.secs ?? 0);
+        byType[p.type] = Math.round(((byType[p.type] ?? 0) + used) * 10) / 10;
+      }
+      return Object.keys(byType).length ? byType : null;
+    },
+  };
 }
 
 const secs = (ms) => Math.round(ms / 100) / 10;
@@ -144,7 +164,7 @@ module.exports = {
     await h.waitFor(() => api.session._activeRuns === 0, { what: 'full run', timeout: 110 * 60_000 });
     const fullMs = Date.now() - startedAt;
     result.testProcessesPeakRssMb = rss.stop();
-    result.vscodeAvgCpuPct = cpu.stop();
+    result.vscodeCpuS = cpu.stop();
     await profiler.stop();
     const cpuUsed = process.cpuUsage(cpuBefore);
     const heapAfter = process.memoryUsage();
