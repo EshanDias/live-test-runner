@@ -124,30 +124,56 @@ export function psSeconds(t: string): number {
   return m ? Number(m[1] || 0) * 86400 + Number(m[2] || 0) * 3600 + Number(m[3]) * 60 + Number(m[4]) : 0;
 }
 
-/** CPU seconds used so far by every process below this one (the test processes and their workers); undefined where `ps` is not there (Windows). */
+/** Memory of the largest test process with its workers (bytes), from the last sample; undefined where unknown. */
+let largestTree: number | undefined;
+
+/**
+ * CPU seconds used so far by every process below this one (the test processes
+ * and their workers), and the memory of the largest test process tree;
+ * undefined where `ps` is not there (Windows).
+ */
 function descendantsCpu(root: number = process.pid): Map<number, number> | undefined {
   if (process.platform === 'win32') { return undefined; }
   try {
-    const out = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,time='], { encoding: 'utf8', timeout: 2000, maxBuffer: 16 * 1024 * 1024 });
+    const out = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,time=,rss='], { encoding: 'utf8', timeout: 2000, maxBuffer: 16 * 1024 * 1024 });
     const children = new Map<number, number[]>();
     const cpu = new Map<number, number>();
+    const rss = new Map<number, number>();
     for (const line of out.split('\n')) {
-      const m = /^\s*(\d+)\s+(\d+)\s+(\S+)/.exec(line);
+      const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\d+)/.exec(line);
       if (!m) { continue; }
       const pid = Number(m[1]);
       const ppid = Number(m[2]);
       cpu.set(pid, psSeconds(m[3]));
+      rss.set(pid, Number(m[4]) * 1024);
       (children.get(ppid) ?? children.set(ppid, []).get(ppid)!).push(pid);
     }
     const ours = new Map<number, number>();
-    const stack = [...(children.get(root) ?? [])];
-    while (stack.length > 0) {
-      const pid = stack.pop()!;
-      ours.set(pid, cpu.get(pid) ?? 0);
-      stack.push(...(children.get(pid) ?? []));
+    let largest: number | undefined;
+    // Each child of ours is one test process (a batch); its subtree is it and its workers.
+    for (const top of children.get(root) ?? []) {
+      let tree = 0;
+      const stack = [top];
+      while (stack.length > 0) {
+        const pid = stack.pop()!;
+        ours.set(pid, cpu.get(pid) ?? 0);
+        tree += rss.get(pid) ?? 0;
+        stack.push(...(children.get(pid) ?? []));
+      }
+      largest = Math.max(largest ?? 0, tree);
     }
+    largestTree = largest;
     return ours;
   } catch { return undefined; }
+}
+
+/**
+ * Memory one more test process would take: the largest running one with its
+ * workers (measured at the last load sample), undefined before any runs or
+ * where it cannot be told.
+ */
+export function largestTestProcessMemory(): number | undefined {
+  return largestTree;
 }
 
 function cpuSample(withOurs: boolean): CpuSample {
@@ -251,12 +277,14 @@ export function availableMemory(): number | undefined {
 
 /**
  * Too little memory left to start another test process beside the ones
- * running: under 2 GB, or a fifth of the machine's memory when that is less.
- * A run always starts its first process; the next waits until one ends or
- * memory frees up, so a large project never pushes the machine into swap.
+ * running: under 2 GB, or a fifth of the machine's memory when that is less,
+ * once `another` (what the new process will take: the largest running one) is
+ * taken off. A run always starts its first process; the next waits until one
+ * ends or memory frees up, so test runs leave the user's other programs room
+ * and a large project never pushes the machine into swap.
  */
-export function memoryLow(available: number | undefined = availableMemory(), total: number = os.totalmem()): boolean {
-  return available !== undefined && available < Math.min(2 * GB, total * 0.2);
+export function memoryLow(available: number | undefined = availableMemory(), total: number = os.totalmem(), another: number = 0): boolean {
+  return available !== undefined && available - another < Math.min(2 * GB, total * 0.2);
 }
 
 /**

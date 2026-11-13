@@ -1,6 +1,6 @@
 import * as os from 'os';
 import { spawn } from 'child_process';
-import { adaptiveWorkers, availableMemory, physicalCores, psSeconds, machineLoad, lowerPriority, machineBusyCores, maxBatchSlots, memoryLow, parallelBatches, setSpeedLevel, setSpeedStrict, speedLevel, totalWorkers, workerCount, workersNow, workersPerBatch } from '../src/utils/resources';
+import { adaptiveWorkers, availableMemory, physicalCores, psSeconds, machineLoad, largestTestProcessMemory, lowerPriority, machineBusyCores, maxBatchSlots, memoryLow, parallelBatches, setSpeedLevel, setSpeedStrict, speedLevel, totalWorkers, workerCount, workersNow, workersPerBatch } from '../src/utils/resources';
 import { readWorkerLimit } from '../src/framework/vitestProjects';
 
 describe('machine budget', () => {
@@ -172,6 +172,15 @@ describe('adaptive budget (the level is where it starts)', () => {
   });
 });
 
+describe('memory for another test process', () => {
+  const GB = 1024 ** 3;
+  it('leaves the reserve free once the new process is counted', () => {
+    expect(memoryLow(5 * GB, 16 * GB, 0)).toBe(false);
+    expect(memoryLow(5 * GB, 16 * GB, 2 * GB)).toBe(false);   // 3 GB left ≥ 2 GB
+    expect(memoryLow(5 * GB, 16 * GB, 3.5 * GB)).toBe(true);  // 1.5 GB left
+  });
+});
+
 describe('what our own test processes use', () => {
   it('reads ps CPU times', () => {
     expect(psSeconds('0:01.50')).toBeCloseTo(1.5);
@@ -188,6 +197,7 @@ describe('what our own test processes use', () => {
     child.kill();
     expect(load).toBeDefined();
     expect(load!.ours).toBeGreaterThan(0.5);
+    expect(largestTestProcessMemory()).toBeGreaterThan(1024 * 1024);
   });
 });
 

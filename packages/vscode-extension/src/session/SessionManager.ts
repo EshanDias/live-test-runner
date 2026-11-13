@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { totalmem } from 'os';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath, memoryLow, availableMemory, maxBatchSlots, workersNow, workersPerBatch, machineBusyCores } from '@live-test-runner/runner';
+import { FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath, memoryLow, availableMemory, maxBatchSlots, workersNow, workersPerBatch, machineBusyCores, machineLoad, largestTestProcessMemory } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
@@ -1250,7 +1251,10 @@ export class SessionManager {
    *   takes the next batch again
    */
   private async _memoryForAnotherBatch(putBack: () => void, waiters?: (() => void)[], workers = 1): Promise<boolean> {
-    const lowMemory = this._batchesRunning > 0 && memoryLow();
+    // What another process will take: the largest running one with its workers (measured with the load).
+    machineLoad();
+    const another = this._batchesRunning > 0 ? largestTestProcessMemory() ?? 0 : 0;
+    const lowMemory = this._batchesRunning > 0 && memoryLow(availableMemory(), totalmem(), another);
     // The adaptive budget (liveTestRunner.speed + speedStrict): what other programs leave free now.
     const allowed = workersNow(this._workersRunning);
     const busy = this._batchesRunning > 0 && !lowMemory && this._workersRunning + workers > allowed;
@@ -1271,7 +1275,8 @@ export class SessionManager {
     if (lowMemory && this._memoryWaitSince === 0) {
       this._memoryWaitSince = Date.now();
       const free = availableMemory();
-      log.info(`Memory is low (${free !== undefined ? `${(free / 1024 ** 3).toFixed(1)} GB` : '?'} free): ` +
+      log.info(`Memory is low (${free !== undefined ? `${(free / 1024 ** 3).toFixed(1)} GB` : '?'} free` +
+        `${another > 0 ? `, another test process takes about ${(another / 1024 ** 3).toFixed(1)} GB` : ''}): ` +
         `${this._batchesRunning} test process(es) running, the next waits for memory`);
     }
     if (busy && this._busyWaitSince === 0) {

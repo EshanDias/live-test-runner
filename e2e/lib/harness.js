@@ -118,6 +118,9 @@ function logsSince(api, sinceIso) {
  * check that Stop really killed everything.
  */
 function jestProcesses(marker) {
+  // Jest is started with the real path (Windows: long names, not RUNNER~1): match that spelling too.
+  let real = marker;
+  try { real = require('fs').realpathSync.native(marker.replace(/[\\/]+$/, '')) + marker.slice(marker.replace(/[\\/]+$/, '').length); } catch { /* keep marker */ }
   try {
     if (process.platform === 'win32') {
       const out = execFileSync('powershell', [
@@ -127,11 +130,12 @@ function jestProcesses(marker) {
       // Paths may differ in drive-letter case and separators — compare loosely.
       const norm = (s) => s.toLowerCase().replace(/\\\\/g, '\\').replace(/\//g, '\\');
       const m = norm(marker);
-      return out.split(/\r?\n/).filter((l) => norm(l).includes(m) && isJest(l));
+      const r = norm(real);
+      return out.split(/\r?\n/).filter((l) => (norm(l).includes(m) || norm(l).includes(r)) && isJest(l));
     }
     // -A / -o args= work with both BSD (macOS) and procps (Linux) ps.
     const out = execFileSync('ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-    return out.split('\n').filter((l) => l.includes(marker) && isJest(l));
+    return out.split('\n').filter((l) => (l.includes(marker) || l.includes(real)) && isJest(l));
   } catch {
     return [];
   }
