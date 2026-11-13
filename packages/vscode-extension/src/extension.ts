@@ -136,8 +136,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   // What Vitest's config resolves to, remembered between sessions (Start no longer waits for the probe).
   rememberVitestConfigIn(LTR_BASE_TMP_DIR);
-  // Windows asks for its physical cores in the background (the adaptive ceiling stays below them).
-  void primePhysicalCores().then(() => applySpeedSetting(false));
+  applySpeedSetting(false);
+  // Windows asks for its physical cores in the background (the adaptive ceiling stays below them, once known).
+  void primePhysicalCores().then(() => { if (process.platform === 'win32') { applySpeedSetting(false); } });
 
   // Create a unique isolated directory for THIS session.
   const sessionDirName = `session-${process.pid}-${Date.now()}`;
