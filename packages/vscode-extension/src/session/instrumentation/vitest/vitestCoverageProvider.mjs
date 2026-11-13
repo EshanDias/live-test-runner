@@ -91,6 +91,40 @@ function rememberIncluded(provider) {
   return () => { for (const u of undo) { u(); } };
 }
 
+/**
+ * Remembers the v8 provider's conversion of one script's raw coverage to
+ * istanbul (source maps applied), for one per-test-file pass. Test files load
+ * the same modules and often run the same parts of them: the conversion is
+ * the same for the same script, offset and V8 ranges, and it was most of the
+ * pass (2,500 test files: 19,471 conversions, 14 s on one thread after the
+ * last test). Each caller gets its own copy. Vitest 3: `v8ToIstanbul`, 4+:
+ * `remapCoverage`; istanbul's provider converts nothing.
+ */
+function rememberConversions(provider) {
+  const undo = [];
+  const stats = { calls: 0, reused: 0 };
+  for (const name of ['remapCoverage', 'v8ToIstanbul']) {
+    const fn = provider && provider[name];
+    if (typeof fn !== 'function' || Object.prototype.hasOwnProperty.call(provider, name)) { continue; }
+    const seen = new Map();
+    provider[name] = async function (url, startOffset, sources, functions, ...rest) {
+      stats.calls++;
+      let key;
+      try {
+        key = rest.length === 0 ? `${url}\0${startOffset}\0${sources?.code?.length}\0${JSON.stringify(functions)}` : undefined;
+      } catch { key = undefined; }
+      if (key === undefined) { return fn.call(this, url, startOffset, sources, functions, ...rest); }
+      const known = seen.get(key);
+      if (known !== undefined) { stats.reused++; return JSON.parse(known); }
+      const result = await fn.call(this, url, startOffset, sources, functions);
+      try { seen.set(key, JSON.stringify(result)); } catch { /* not kept */ }
+      return result;
+    };
+    undo.push(() => { delete provider[name]; });
+  }
+  return { stats, forget: () => { for (const u of undo) { u(); } } };
+}
+
 export default {
   ...real,
   async getProvider() {
@@ -107,6 +141,7 @@ export default {
       const started = Date.now();
       let n = 0;
       const forget = rememberIncluded(this);
+      const conversions = rememberConversions(this);
       try {
         if (Array.isArray(this.pendingPromises)) { await Promise.all(this.pendingPromises); this.pendingPromises = []; }
         fs.mkdirSync(outDir, { recursive: true });
@@ -130,8 +165,10 @@ export default {
         try { fs.rmSync(outDir, { recursive: true, force: true }); } catch { /* gone */ }
       } finally {
         this.coverageFiles = all;
+        conversions.forget();
       }
-      ltrLog('debug', `${n} test file(s) measured one by one in ${Date.now() - started} ms`);
+      ltrLog('debug', `${n} test file(s) measured one by one in ${Date.now() - started} ms ` +
+        `(${conversions.stats.reused} of ${conversions.stats.calls} conversions reused)`);
       try {
         await writeUntested(this, generate, options);
         return await generate(options);

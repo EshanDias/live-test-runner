@@ -154,6 +154,8 @@ interface CpuSample { at: number; idle: number; total: number; ours?: Map<number
 let lastSample: CpuSample | undefined;
 let lastBusy: number | undefined;
 let lastOurs: number | undefined;
+/** Other programs' busy cores in the last window (busy less ours). */
+let lastOthers: number | undefined;
 
 /** `ps` CPU time ("[[dd-]hh:]mm:ss[.ss]") in seconds. */
 export function psSeconds(t: string): number {
@@ -225,25 +227,52 @@ function cpuSample(withOurs: boolean): CpuSample {
 }
 
 /**
+ * Cores our test processes used in a window, from their CPU times (pid ->
+ * seconds) at its start and end. One of them ended in the window: its last
+ * CPU time is gone with it, so what it used would count as other programs'
+ * (a batch's end looked like 2–3 busy cores, just when the next batch asks);
+ * then other programs keep their share of the window before (`othersBefore`)
+ * and the rest of `busy` is ours.
+ */
+export function oursInWindow(
+  before: ReadonlyMap<number, number>,
+  after: ReadonlyMap<number, number>,
+  seconds: number,
+  cores: number,
+  busy: number | undefined,
+  othersBefore: number | undefined,
+): number {
+  let used = 0;
+  for (const [pid, t] of after) { used += Math.max(0, t - (before.get(pid) ?? 0)); }
+  let ours = Math.min(cores, used / seconds);
+  const ended = [...before.keys()].some((pid) => !after.has(pid));
+  if (ended && othersBefore !== undefined && busy !== undefined) {
+    ours = Math.min(cores, Math.max(ours, busy - othersBefore));
+  }
+  return ours;
+}
+
+/**
  * Cores the whole machine kept busy since the last sample (at least a second
  * apart; sooner, the last answer), and how many of them our own test
  * processes used (`ours`; undefined where it cannot be told). Undefined until
  * two samples exist.
  */
 export function machineLoad(cores: number = coreCount()): { busy: number; ours?: number } | undefined {
+  // Under a second since the last sample: its answer (no `ps` run for nothing).
+  if (lastSample && Date.now() - lastSample.at < 1000) { return lastBusy === undefined ? undefined : { busy: lastBusy, ours: lastOurs }; }
   const now = cpuSample(true);
   if (!lastSample) { lastSample = now; return undefined; }
   const seconds = (now.at - lastSample.at) / 1000;
-  if (seconds < 1) { return lastBusy === undefined ? undefined : { busy: lastBusy, ours: lastOurs }; }
   const total = now.total - lastSample.total;
   const idle = now.idle - lastSample.idle;
   if (total > 0) { lastBusy = Math.max(0, Math.min(cores, (1 - idle / total) * cores)); }
   if (now.ours && lastSample.ours) {
-    let used = 0;
-    for (const [pid, t] of now.ours) { used += Math.max(0, t - (lastSample.ours.get(pid) ?? 0)); }
-    lastOurs = Math.min(cores, used / seconds);
+    lastOurs = oursInWindow(lastSample.ours, now.ours, seconds, cores, lastBusy, lastOthers);
+    lastOthers = lastBusy === undefined ? undefined : Math.max(0, lastBusy - lastOurs);
   } else {
     lastOurs = undefined;
+    lastOthers = undefined;
   }
   lastSample = now;
   return lastBusy === undefined ? undefined : { busy: lastBusy, ours: lastOurs };

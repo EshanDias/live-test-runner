@@ -1284,6 +1284,8 @@ export class SessionManager {
       const others = Math.max(0, (machineBusyCores() ?? 0) - this._workersRunning);
       log.debug(`The machine is busy (other programs use about ${others.toFixed(1)} core(s)): ` +
         `${this._workersRunning} test worker(s) running of ${allowed} allowed now, the next batch waits`);
+    } else if (busy) {
+      log.trace(`Still waiting for cores: ${this._workersRunning} + ${workers} worker(s) of ${allowed} allowed now`);
     }
     putBack();
     await new Promise<void>((resolve) => {

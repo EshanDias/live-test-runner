@@ -133,7 +133,7 @@ export {
 export { BinaryResolver, nodeRuntime, nodeRuntimeVersion, NodeRuntime, resolvePackageDir } from './resolution/BinaryResolver';
 export { viteEntryFor, vitestDirFor } from './framework/vitestTrace';
 export { parseVersion, compareVersions, satisfies } from './utils/semver';
-export { coreCount, parallelBatches, workersPerBatch, workerCount, availableMemory, memoryLow, lowerPriority, setSpeedLevel, speedLevel, totalWorkers, SpeedLevel, SPEED_LEVELS, setSpeedStrict, speedStrict, adaptiveWorkers, adaptiveCeiling, physicalCores, primePhysicalCores, maxBatchSlots, workersNow, machineBusyCores, machineLoad, psSeconds, largestTestProcessMemory } from './utils/resources';
+export { coreCount, parallelBatches, workersPerBatch, workerCount, availableMemory, memoryLow, lowerPriority, setSpeedLevel, speedLevel, totalWorkers, SpeedLevel, SPEED_LEVELS, setSpeedStrict, speedStrict, adaptiveWorkers, adaptiveCeiling, physicalCores, primePhysicalCores, maxBatchSlots, workersNow, machineBusyCores, machineLoad, oursInWindow, psSeconds, largestTestProcessMemory } from './utils/resources';
 export { registerProjectRoot, toRunnerPath, fromRunnerPath, toSpawnPath, toJestPath, fromJestPath } from './resolution/RunnerPaths';
 export { Executor, tail } from './execution/Executor';
 

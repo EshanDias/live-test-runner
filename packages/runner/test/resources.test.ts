@@ -1,6 +1,6 @@
 import * as os from 'os';
 import { spawn } from 'child_process';
-import { adaptiveWorkers, availableMemory, physicalCores, primePhysicalCores, psSeconds, machineLoad, largestTestProcessMemory, lowerPriority, machineBusyCores, maxBatchSlots, memoryLow, parallelBatches, setSpeedLevel, setSpeedStrict, speedLevel, totalWorkers, workerCount, workersNow, workersPerBatch } from '../src/utils/resources';
+import { adaptiveWorkers, availableMemory, physicalCores, primePhysicalCores, psSeconds, machineLoad, oursInWindow, largestTestProcessMemory, lowerPriority, machineBusyCores, maxBatchSlots, memoryLow, parallelBatches, setSpeedLevel, setSpeedStrict, speedLevel, totalWorkers, workerCount, workersNow, workersPerBatch } from '../src/utils/resources';
 import { readWorkerLimit } from '../src/framework/vitestProjects';
 
 describe('machine budget', () => {
@@ -177,6 +177,19 @@ it('knows the physical cores on every platform (Windows once primed), never more
   expect(p).toBeGreaterThan(0);
   expect(p!).toBeLessThanOrEqual(os.cpus().length);
 }, 20_000);
+
+describe('our share of a window', () => {
+  it('is what our processes used, from their CPU times', () => {
+    expect(oursInWindow(new Map([[1, 10], [2, 5]]), new Map([[1, 12], [2, 6], [3, 1]]), 2, 12, 5, 1)).toBeCloseTo(2);
+  });
+
+  it('when one of them ended, the busy cores other programs did not use before are ours', () => {
+    // pid 2 ended: its CPU in the window is lost; 5 cores busy, other programs used 1 before.
+    expect(oursInWindow(new Map([[1, 10], [2, 5]]), new Map([[1, 12]]), 2, 12, 5, 1)).toBe(4);
+    // without an earlier window: only what can be measured
+    expect(oursInWindow(new Map([[1, 10], [2, 5]]), new Map([[1, 12]]), 2, 12, 5, undefined)).toBe(1);
+  });
+});
 
 describe('memory for another test process', () => {
   const GB = 1024 ** 3;
