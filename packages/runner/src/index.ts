@@ -61,6 +61,7 @@ export {
   parseIni,
   parseTomlTables,
   splitArgs,
+  addoptsRunInParallel,
 } from './framework/pytest/pytestConfig';
 export { nodeIdFor, nodeIdsFor, isTemplateName } from './framework/pytest/pytestNodeIds';
 export { LTR_PYTEST_SOURCE } from './framework/pytest/ltrPytestSource';
@@ -82,7 +83,7 @@ export {
 export { UnsupportedFrameworkError } from './framework/UnsupportedFrameworkError';
 export { toInputConfig, pickGlobalConfig, testScriptJestArgs, testScriptNodeOptions, jestNodeEnv, npmrcNodeOptions, jestEsmHint } from './framework/jestConfig';
 export { testScriptVitestArgs, VitestScriptArgs } from './framework/vitestConfig';
-export { vitestProjects, vitestConfigInfo, vitestCoverageInstalled, VitestProjectInfo, VitestConfigInfo } from './framework/vitestProjects';
+export { vitestProjects, vitestConfigInfo, vitestCoverageInstalled, rememberVitestConfigIn, vitestConfigCachePath, VitestProjectInfo, VitestConfigInfo } from './framework/vitestProjects';
 export {
   VITEST_EVENTS_ENV,
   VitestEvent,
@@ -132,7 +133,7 @@ export {
 export { BinaryResolver, nodeRuntime, nodeRuntimeVersion, NodeRuntime, resolvePackageDir } from './resolution/BinaryResolver';
 export { viteEntryFor, vitestDirFor } from './framework/vitestTrace';
 export { parseVersion, compareVersions, satisfies } from './utils/semver';
-export { coreCount, parallelBatches, workersPerBatch, workerCount } from './utils/resources';
+export { coreCount, parallelBatches, workersPerBatch, workerCount, availableMemory, memoryLow, lowerPriority, setSpeedLevel, speedLevel, totalWorkers, SpeedLevel, SPEED_LEVELS, setSpeedStrict, speedStrict, adaptiveWorkers, adaptiveCeiling, physicalCores, primePhysicalCores, maxBatchSlots, workersNow, machineBusyCores, machineLoad, oursInWindow, psSeconds, largestTestProcessMemory } from './utils/resources';
 export { registerProjectRoot, toRunnerPath, fromRunnerPath, toSpawnPath, toJestPath, fromJestPath } from './resolution/RunnerPaths';
 export { Executor, tail } from './execution/Executor';
 

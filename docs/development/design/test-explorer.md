@@ -57,6 +57,7 @@ flowchart LR
 | Failure lines from the failure text, not from structured errors | One parser for Jest's messages, our Vitest error text and pytest's report; the Results panel shows the same text | Per-framework structured errors (Jest `failureDetails`, Vitest `errors`): three code paths |
 | Mark the innermost project frame and the test's own frame | The line that threw and the line of the test that led there are the two a reader looks for | Only the test line: an error thrown in the code under test would point at the call |
 | An edited line shows no message (the line's text is remembered when first shown) | A message on the wrong line is worse than none, as with coverage bars | Move messages with edits |
+| During a run, rows are redrawn in place: file starts batched with results (50 ms), rows and data found through indexes, `content-visibility: auto` on file rows (E16) | A full redraw per started file, an attribute query and a linear search per update kept the panel's renderer at a full CPU core through a 2,500-file run (171 s of CPU in 164 s; now ~60 s), which slowed the tests themselves (~30% on a 6-core laptop) | A virtualised list: more code, and the tree's expand / scroll / selection behaviour would have to be rebuilt |
 
 ## Testing
 

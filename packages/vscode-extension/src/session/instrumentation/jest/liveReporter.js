@@ -10,6 +10,7 @@
  */
 
 const fs = require('fs');
+const path = require('path');
 
 class LiveReporter {
   constructor(globalConfig, reporterOptions) {
@@ -20,6 +21,14 @@ class LiveReporter {
     // and onTestFileResult fire (Jest 27 calls both; we define both for compat).
     this._reported = new Set();
     this._started = new Set();
+    // Jest's own coverage (collectCoverage, see the generated config): each test
+    // file's, converted as Jest converts it, one line per test file. The file exists
+    // from the start, so the extension knows coverage came this way.
+    this._covFile = globalConfig && globalConfig.collectCoverage ? process.env.LTR_JEST_COVERAGE_FILE : undefined;
+    this._rootDir = (globalConfig && globalConfig.rootDir) || process.cwd();
+    if (this._covFile) {
+      try { fs.mkdirSync(path.dirname(this._covFile), { recursive: true }); fs.writeFileSync(this._covFile, ''); } catch (_) { this._covFile = undefined; }
+    }
   }
 
   // Jest 28+ calls onTestFileStart; older versions call onTestStart.
@@ -39,8 +48,46 @@ class LiveReporter {
 
   // Jest 27+ calls onTestFileResult; Jest ≤26 calls onTestResult.
   // Both are defined here so the reporter works with any Jest version.
-  onTestFileResult(test, testResult) { this._handleResult(testResult); }
-  onTestResult(test, testResult) { this._handleResult(testResult); }
+  onTestFileResult(test, testResult) { return this._withCoverage(testResult); }
+  onTestResult(test, testResult) { return this._withCoverage(testResult); }
+
+  /**
+   * A file's maps (statements, functions, branches) are the same in every test
+   * file of the batch: sent once (`maps`, by key), then only its hit counts.
+   * Hundreds of MB of repeated maps on a large project otherwise.
+   */
+  _compact(tf, coverage) {
+    if (!this._sentMaps) { this._sentMaps = new Map(); }
+    const files = {};
+    const maps = {};
+    for (const [file, fc] of Object.entries(coverage)) {
+      if (!fc) { continue; }
+      const shape = JSON.stringify([fc.statementMap, fc.fnMap, fc.branchMap]);
+      let key = this._sentMaps.get(shape);
+      if (!key) {
+        key = String(this._sentMaps.size);
+        this._sentMaps.set(shape, key);
+        maps[key] = { path: fc.path || file, statementMap: fc.statementMap, fnMap: fc.fnMap, branchMap: fc.branchMap };
+      }
+      files[file] = { k: key, s: fc.s, f: fc.f, b: fc.b };
+    }
+    return { tf, files, maps };
+  }
+
+  async _withCoverage(testResult) {
+    if (this._covFile && testResult && !this._reported.has(testResult.testFilePath)) {
+      try {
+        const measured = await require('./jestCoverage.js').perTestFile(this._rootDir, testResult);
+        fs.appendFileSync(this._covFile, JSON.stringify(this._compact(testResult.testFilePath, measured ? measured.coverage : {})) + '\n', 'utf8');
+      } catch (e) {
+        process.stderr.write(`[LTR:warn] could not read the coverage of ${testResult.testFilePath}: ${String(e && e.message).replace(/\s*\r?\n\s*/g, ' ↵ ')}\n`);
+      }
+      // Measured here, per test file: Jest's own coverage reporter (which reports nothing in these runs) need not merge it again.
+      if (Array.isArray(testResult.v8Coverage)) { testResult.v8Coverage.length = 0; }
+      if (testResult.coverage) { testResult.coverage = undefined; }
+    }
+    this._handleResult(testResult);
+  }
 
   _handleResult(testResult) {
     if (!this._outputFile) { return; }

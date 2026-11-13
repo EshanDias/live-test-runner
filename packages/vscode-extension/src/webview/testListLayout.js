@@ -89,13 +89,11 @@ class TestListLayout {
 
   /** Remove a file by ID and re-render. */
   removeFile(fileId) {
-    const idx = this.data.findIndex((f) => f.fileId === fileId);
+    const idx = this._indexOf(fileId);
     if (idx < 0) { return; }
     this.data.splice(idx, 1);
     this.expanded.delete(fileId);
-    const wrapper = this.container.querySelector(
-      `[data-file-wrapper="${CSS.escape(fileId)}"]`,
-    );
+    const wrapper = this._wrapperOf(fileId);
     if (wrapper) {
       wrapper.remove();
     } else {
@@ -103,36 +101,62 @@ class TestListLayout {
     }
   }
 
+  /** Position of a file in `data`: a Map kept in step, rebuilt when it disagrees (a linear search per update was a third of the panel's time on 2,500 files). */
+  _indexOf(fileId) {
+    let i = this._idx && this._idx.get(fileId);
+    if (i === undefined || !this.data[i] || this.data[i].fileId !== fileId) {
+      this._idx = new Map(this.data.map((f, n) => [f.fileId, n]));
+      i = this._idx.get(fileId);
+    }
+    return i === undefined ? -1 : i;
+  }
+
+  _fileById(fileId) {
+    const i = this._indexOf(fileId);
+    return i >= 0 ? this.data[i] : undefined;
+  }
+
+  /** A file's row in the list, or null: the rows by file, collected in one pass when one is missing or was replaced (an attribute query per update scanned the whole list). */
+  _wrapperOf(fileId) {
+    let w = this._wrappers && this._wrappers.get(fileId);
+    if (!w || !w.isConnected) {
+      this._wrappers = new Map();
+      for (const el of this.container.querySelectorAll('[data-file-wrapper]')) { this._wrappers.set(el.getAttribute('data-file-wrapper'), el); }
+      w = this._wrappers.get(fileId);
+    }
+    return w || null;
+  }
+
   /** Update a single file's data in-place and re-render. */
   updateFile(fileData) {
-    const idx = this.data.findIndex((f) => f.fileId === fileData.fileId);
-    if (idx >= 0) {
-      this.data[idx] = fileData;
-    } else {
-      this.data.push(fileData);
-    }
-    // Auto-expand the file and its root nodes whenever it's updated
-    this.expanded.add(fileData.fileId);
-    const nodeMap = this._buildNodeMap(fileData);
-    this._expandAllNodeIds(fileData, nodeMap);
-    this._expandFolderPaths(fileData.name);
+    this.updateFiles([fileData]);
+  }
 
-    // Targeted DOM update: only replace the wrapper for this one file instead
-    // of re-rendering the entire list. Falls back to a full render when the
-    // file isn't in the DOM yet or when folder-view is active.
-    if (!this.folderView && !this.query && !this.failuresOnly && !(fileData.group && !this.container.querySelector(`[data-group-children="${CSS.escape('group:' + fileData.group)}"]`))) {
-      const wrapper = this.container.querySelector(
-        `[data-file-wrapper="${CSS.escape(fileData.fileId)}"]`,
-      );
-      if (wrapper) {
-        const savedScroll = this.container.scrollTop;
-        wrapper.innerHTML = this._renderFile(fileData);
-        this._attachListenersIn(wrapper);
-        this.container.scrollTop = savedScroll;
-        return;
+  /**
+   * Update several files (a batch of results): their rows are redrawn in
+   * place with one layout for the batch. Per file, the scroll position read
+   * between row rewrites made the browser lay out the whole list each time.
+   */
+  updateFiles(filesData) {
+    if (!filesData || filesData.length === 0) { return; }
+    for (const fileData of filesData) {
+      const idx = this._indexOf(fileData.fileId);
+      if (idx >= 0) {
+        this.data[idx] = fileData;
+      } else {
+        this.data.push(fileData);
       }
+      // Auto-expand the file and its root nodes whenever it's updated
+      this.expanded.add(fileData.fileId);
+      const nodeMap = this._buildNodeMap(fileData);
+      this._expandAllNodeIds(fileData, nodeMap);
+      this._expandFolderPaths(fileData.name);
     }
-    this._render();
+    // Targeted DOM update: only these files' rows; a full render when one
+    // is not in the list yet, or in folder view / a search / a filter.
+    if (!this._redrawFilesInPlace(filesData)) {
+      this._render();
+    }
   }
 
   /**
@@ -146,7 +170,7 @@ class TestListLayout {
     // Folder-view / search / failures-only / grouped modes need structural re-render
     if (this.folderView || this.query || this.failuresOnly || this._isGrouped() || filesData.some((f) => f.group)) {
       for (const fileData of filesData) {
-        const idx = this.data.findIndex((f) => f.fileId === fileData.fileId);
+        const idx = this._indexOf(fileData.fileId);
         if (idx >= 0) { this.data[idx] = fileData; } else { this.data.push(fileData); }
         this.expanded.add(fileData.fileId);
         const nodeMap = this._buildNodeMap(fileData);
@@ -161,16 +185,14 @@ class TestListLayout {
     const fragment    = document.createDocumentFragment();
 
     for (const fileData of filesData) {
-      const idx = this.data.findIndex((f) => f.fileId === fileData.fileId);
+      const idx = this._indexOf(fileData.fileId);
       if (idx >= 0) { this.data[idx] = fileData; } else { this.data.push(fileData); }
       this.expanded.add(fileData.fileId);
       const nodeMap = this._buildNodeMap(fileData);
       this._expandAllNodeIds(fileData, nodeMap);
       this._expandFolderPaths(fileData.name);
 
-      const existing = this.container.querySelector(
-        `[data-file-wrapper="${CSS.escape(fileData.fileId)}"]`,
-      );
+      const existing = this._wrapperOf(fileData.fileId);
       if (existing) {
         existing.innerHTML = this._renderFile(fileData);
         this._attachListenersIn(existing);
@@ -245,7 +267,7 @@ class TestListLayout {
 
   /** Mark a single file as running (partial rerun) without wiping other files. */
   markFileRunning(fileId, nodeId = null) {
-    const file = this.data.find((f) => f.fileId === fileId);
+    const file = this._fileById(fileId);
     if (!file) {
       return;
     }
@@ -271,7 +293,7 @@ class TestListLayout {
   /** Mark multiple files as running in one pass, then render once. */
   markFilesRunning(fileIds, nodeId = null) {
     for (const fileId of (fileIds ?? [])) {
-      const file = this.data.find((f) => f.fileId === fileId);
+      const file = this._fileById(fileId);
       if (!file) { continue; }
       file.status = 'running';
       const nodeMap = this._buildNodeMap(file);
@@ -288,7 +310,33 @@ class TestListLayout {
         }
       }
     }
-    this._render();
+    // Only these files' rows: a full render per started file redrew the whole list (2,500 files: the renderer at a core all run).
+    if (!this._redrawFilesInPlace((fileIds ?? []).map((id) => this._fileById(id)).filter(Boolean))) {
+      this._render();
+    }
+  }
+
+  /**
+   * Redraws these files' rows where they are in the list, the scroll position
+   * read and restored once. False when a full render is needed instead
+   * (folder view, a filter, a file not shown yet).
+   */
+  _redrawFilesInPlace(files) {
+    if (this.folderView || this.query || this.failuresOnly || (this.statusFilter && this.statusFilter !== 'all')) { return false; }
+    const wrappers = [];
+    for (const f of files) {
+      if (f.group && !this.container.querySelector(`[data-group-children="${CSS.escape('group:' + f.group)}"]`)) { return false; }
+      const w = this._wrapperOf(f.fileId);
+      if (!w) { return false; }
+      wrappers.push([w, f]);
+    }
+    const savedScroll = this.container.scrollTop;
+    for (const [w, f] of wrappers) {
+      w.innerHTML = this._renderFile(f);
+      this._attachListenersIn(w);
+    }
+    this.container.scrollTop = savedScroll;
+    return true;
   }
 
   _markNodeRunning(nodeMap, nodeId) {
@@ -344,7 +392,7 @@ class TestListLayout {
   /** Expand all ancestors (folders, file, and parent suites) of a given node/file. */
   _expandAncestors(fileId, nodeId) {
     if (!fileId) return;
-    const file = this.data.find((f) => f.fileId === fileId);
+    const file = this._fileById(fileId);
     if (!file) return;
 
     // Expand the file and its folder path

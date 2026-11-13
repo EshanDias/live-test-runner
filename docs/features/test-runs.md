@@ -17,9 +17,10 @@ A full test run can take minutes, use every core, and give you nothing until it 
 
 ## What Live Test Runner does
 
-- **Your files first.** The test files open in your editor run first. A test file you open while the run is going moves to the front of the queue.
+- **Your files first.** The test files open in your editor run first. A test file you open while the run is going moves to the front of the queue. On the first Start of a large project, your open files start while the framework is still listing which files it runs (that can take half a minute); if the list then leaves one of them out, its results are taken back and it shows as not run.
 - **Results stream in.** Each file's result appears when that file finishes, not when the run ends. A file only shows ⟳ once the framework actually starts it.
-- **Batches that fit your machine.** Files are grouped into batches that run in parallel, sized to leave the machine responsive: a quarter of the CPU cores, and all of them together use at most half the cores (Vitest's workers are capped to fit; a lower `maxWorkers` in your config is kept). pytest runs one process at a time, as in your terminal, so session fixtures and fixed ports keep working.
+- **Batches that fit your machine.** Files are grouped into batches that run in parallel. The `speed` setting is where runs start: **Balanced** (the default) about half the CPU cores, **Full** about three quarters, **Light** one test process with at most 2 workers. Runs then adapt: when your other apps leave the cores free they use more (up to Full, and no more than your physical cores), when your apps need them they back off (down to Light). Turn on `speedStrict` to keep runs exactly at the level. Vitest's workers are capped to fit; a lower `maxWorkers` in your config is kept. pytest runs one process at a time, as in your terminal, so session fixtures and fixed ports keep working; a suite your project already runs in parallel (pytest-xdist's `-n` in its own pytest options) runs in several processes.
+- **Your work comes first.** Test processes run at a lower priority than your editor and other apps: on an idle machine they run as fast as before, and when you type or use another app, it gets the CPU first. When the machine runs short of memory, the next batch waits for one to finish rather than pushing the machine into swap.
 - **Hanging tests are stopped.** A test that runs longer than `hangTimeoutSeconds` (5 minutes by default), such as an infinite loop, is stopped and its file marked failed. The rest of the run carries on.
 - **Crashes are contained.** If a batch dies, the files that got no result are retried in smaller batches, then on their own with a plain framework run. The log says so.
 - **Stop means stop.** Every framework process and its children end. Nothing retries, and nothing spins.
@@ -37,6 +38,8 @@ You click Start on a project with 200 test files on an 8-core machine. Two batch
 
 | Setting | Default | What it does |
 |---|---|---|
+| `liveTestRunner.speed` | `balanced` | Where runs start: `full`, `balanced` or `light`. Applies from the next run |
+| `liveTestRunner.speedStrict` | `false` | Keep runs at the `speed` level exactly instead of adapting to how busy the machine is |
 | `liveTestRunner.hangTimeoutSeconds` | `300` | Stop a single test that runs longer than this. `0` turns the limit off |
 | `liveTestRunner.jestCommand` / `vitestCommand` | `""` | Use another command instead of the project's own Jest or Vitest |
 | `liveTestRunner.runMode` | `auto` | `npm`: run Jest through `npm test --` |

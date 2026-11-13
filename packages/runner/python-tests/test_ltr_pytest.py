@@ -247,6 +247,112 @@ def test_coverage_is_written_istanbul_shaped(pytester, run, tmp_path):
     assert not (pytester.path / ".coverage").exists()
 
 
+def test_coverage_is_written_per_test_file(pytester, run, tmp_path):
+    pytester.makepyfile(
+        lib="""
+            def pick(x):
+                if x:
+                    return "yes"
+                return "no"
+
+            def other():
+                return 1
+        """,
+        test_a="from lib import pick\n\ndef test_yes():\n    assert pick(True) == 'yes'\n",
+        test_b="from lib import other\n\ndef test_other():\n    assert other() == 1\n",
+    )
+    pytester.path.joinpath(".coveragerc").write_text("[run]\nbranch = True\n")
+    cov_dir = tmp_path / "cov"
+    run(env={"LTR_PYTEST_COVERAGE": str(cov_dir)})
+    data = json.loads((cov_dir / "coverage-per-test-file.json").read_text())
+    # Each file's maps once, counters per test file: put back together as the extension does.
+    full = lambda cov: {k: dict(data["maps"][k], path=k, **v) for k, v in cov.items()}
+    by_test = {os.path.basename(k): full(v) for k, v in data["tests"].items()}
+    assert sorted(by_test) == ["test_a.py", "test_b.py"]
+    assert all(set(v) == {"s", "b", "f"} for cov in data["tests"].values() for v in cov.values())
+
+    def ran(cov):
+        lib = next(v for k, v in cov.items() if k.endswith("lib.py"))
+        return sorted(lib["statementMap"][k]["start"]["line"] for k in lib["s"] if lib["s"][k])
+
+    # Each test file only the body lines its own test ran; the def lines ran at import (outside any test).
+    assert ran(by_test["test_a.py"]) == [2, 3]
+    assert ran(by_test["test_b.py"]) == [7]
+    assert 1 in ran(full(data["imports"])) and 6 in ran(full(data["imports"]))
+    # The same maps in every test file's coverage (one version of lib.py).
+    a = next(v for k, v in by_test["test_a.py"].items() if k.endswith("lib.py"))
+    b = next(v for k, v in by_test["test_b.py"].items() if k.endswith("lib.py"))
+    assert a["statementMap"] == b["statementMap"] and a["branchMap"] == b["branchMap"]
+    key = next(k for k, br in a["branchMap"].items() if br["line"] == 2)
+    assert sorted(a["b"][key]) == [0, 1] and b["b"][key] == [0, 0]
+
+
+@pytest.mark.parametrize("branch", [True, False])
+def test_per_test_file_hits_read_in_one_pass_match_the_queries(tmp_path, monkeypatch, branch):
+    """The one-pass read of coverage's data, kept in memory as the plugin keeps it, gives the same hits as a query per test file (the slow way)."""
+    import coverage
+    import importlib
+    try:
+        import coverage.tracer  # noqa: F401  the compiled tracer records contexts (as the plugin chooses it)
+        monkeypatch.setenv("COVERAGE_CORE", "ctrace")
+    except ImportError:
+        pass
+    lib = tmp_path / "ltr_onepass_lib.py"
+    lib.write_text('def pick(x):\n    if x:\n        return "yes"\n    return "no"\n\n\ndef other():\n    return 1\n')
+    sys.path.insert(0, str(tmp_path))
+    sys.path.insert(0, os.path.abspath(PLUGIN_DIR))
+    try:
+        import ltr_pytest
+        cov = coverage.Coverage(data_file=None, branch=branch, config_file=False, include=[str(lib)])
+        cov.start()
+        try:
+            mod = importlib.import_module("ltr_onepass_lib")
+            cov.switch_context("tests/test_a.py::test_yes")
+            mod.pick(True)
+            cov.switch_context("tests/test_a.py::TestNo::test_no")
+            mod.pick(False)
+            cov.switch_context("tests/test_b.py::test_other")
+            mod.other()
+            cov.switch_context("")
+        finally:
+            cov.stop()
+        data = cov.get_data()
+    finally:
+        sys.path.remove(str(tmp_path))
+        sys.path.remove(os.path.abspath(PLUGIN_DIR))
+        sys.modules.pop("ltr_onepass_lib", None)
+    assert data.data_filename().startswith("file:")  # in memory, as in the plugin
+    assert data.has_arcs() == branch
+    measured = list(data.measured_files())
+    prefixes = {"tests/test_a.py": "tests/test_a.py", "tests/test_b.py": "tests/test_b.py"}
+    fast = ltr_pytest._hits_in_one_pass(data, measured)
+    slow = ltr_pytest._hits_per_query(data, measured, prefixes)
+    assert fast == slow
+    assert fast[0]["tests/test_a.py"] and fast[0]["tests/test_b.py"]
+
+
+def test_per_test_hits_match_a_differently_spelled_report_path(tmp_path):
+    """coverage.py names a file by its canonical path, the report by the folder pytest started in
+    (8.3 short names on GitHub's Windows runners; a symlink here): the hits must still find the file."""
+    sys.path.insert(0, os.path.abspath(PLUGIN_DIR))
+    try:
+        import ltr_pytest
+    finally:
+        sys.path.pop(0)
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "lib.py").write_text("x = 1\n")
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    prepared = [{"path": str(link / "lib.py"), "lines": [1], "executed": [1], "branches": [], "functions": [],
+                 "statementMap": {"0": {}}, "branchMap": {}, "fnMap": {}}]
+    hits = {}
+    ltr_pytest._add_hit(hits, ltr_pytest._same_file(str(real / "lib.py")), {1}, set())
+    out = ltr_pytest._istanbul_from(prepared, hits)
+    assert list(out) == [str(link / "lib.py")]
+    assert out[str(link / "lib.py")]["s"] == {"0": 1}
+
+
 def test_missing_coverage_package_is_reported_not_fatal(pytester, run, tmp_path):
     pytester.makepyfile(test_nc="def test_a():\n    pass\n")
     # A coverage module that fails to import stands in for "not installed".
@@ -305,3 +411,33 @@ def test_a_core_without_contexts_turns_covering_tests_off_not_the_run(pytester, 
     assert "covering tests are off" in outcome.stderr.str()
     trace = cov_dir / "trace.jsonl"
     assert not trace.exists() or not any(json.loads(l)["type"] == "T" for l in trace.read_text().splitlines())
+
+
+def test_a_batch_of_files_collects_their_folder_once(pytester, run):
+    """pytest 8+ collects a file argument's folder again for every file argument;
+    a batch (distinct files only) reuses the first collection: same tests, once each."""
+    pytester.makeconftest("""
+        import collections
+        SEEN = collections.Counter()
+
+        def pytest_collect_file(file_path, parent):
+            SEEN[file_path.name] += 1
+
+        def pytest_collection_finish(session):
+            print("MOST_OFFERS %d" % max(n for name, n in SEEN.items() if name.startswith("test_m")))
+    """)
+    for i in range(4):
+        pytester.makepyfile(**{"test_m%d" % i: "def test_one():\n    pass\n\ndef test_two():\n    pass\n"})
+    _, result, outcome = run("-s", *["test_m%d.py" % i for i in range(4)])
+    assert result["numPassedTests"] == 8 and result["numFailedTests"] == 0
+    offers = [line for line in outcome.outlines if line.startswith("MOST_OFFERS")]
+    if int(pytest.__version__.split(".")[0]) >= 8:
+        assert offers == ["MOST_OFFERS 1"]  # was 4: the folder collected once per argument
+
+
+def test_a_file_given_twice_runs_as_plain_pytest_runs_it(pytester, run):
+    """The batch shortcut is only for distinct files: a file named twice behaves as in plain pytest."""
+    pytester.makepyfile(test_twice="def test_once():\n    pass\n")
+    plain = pytester.runpytest_subprocess("-p", "no:cacheprovider", "test_twice.py", "test_twice.py").parseoutcomes()
+    _, _, outcome = run("test_twice.py", "test_twice.py")
+    assert outcome.parseoutcomes().get("passed") == plain.get("passed")

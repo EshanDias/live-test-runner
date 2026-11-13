@@ -17,19 +17,24 @@ const h = require('../lib/harness');
 
 async function idle(api) {
   await h.sleep(1500);
-  await h.waitFor(() => api.session._activeRuns === 0, { what: 'runs to finish', timeout: 120_000 });
+  await h.settle(api);
 }
 
 async function saveTouch(api, vscode, file) {
   const original = fs.readFileSync(file);
   const mark = h.rawMark(api);
+  let cmds;
   try {
     await h.editAndSave(vscode, file, (text) => text + '\n');
     await idle(api);
+    // The save's own runs; the coverage refresh after a scoped rerun is checked elsewhere.
+    cmds = h.rawSinceWithoutRefresh(api, mark).filter((l) => /^\[pytest#\d+\] > .* -m pytest /.test(l));
   } finally {
     fs.writeFileSync(file, original);
   }
-  return h.rawSince(api, mark).filter((l) => /^\[pytest#\d+\] > .* -m pytest /.test(l));
+  // The restore is a change on disk: its reruns end before the next step.
+  await idle(api);
+  return cmds;
 }
 
 module.exports = {

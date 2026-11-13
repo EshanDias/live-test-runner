@@ -9,19 +9,19 @@ What the feature must do, and how we check it does. For the plain-language descr
 | S1 | Rerun nothing on save until the user clicks Start, and nothing after Stop | `vitest-session`, `basic-stop` |
 | S2 | When a **test file** is saved, rerun that file and show its new or removed tests | `basic-on-save`, `pytest-on-save` |
 | S3 | When a **source file** is saved, rerun only the tests that executed a line of it during their last run | `basic-on-save`, `vitest-trace`, `pytest-related` |
-| S4 | Rerun a whole group (`describe` block) instead of single tests when its tests share variables, because single tests could then give a different result | ⚠️ no test yet |
+| S4 | Rerun the whole test file instead of single tests when a `describe` block's tests share a variable (declared in the block or at file scope; not a `require`d module), because single tests could then give a different result | `coverage-live`; unit: `testDiscovery` |
 | S5 | When no test has executed the saved source file yet, rerun the test files that import it (the framework's related search) | `vitest-related`, `pytest-related` |
 | S6 | When a non-code file is used by code (an Angular `templateUrl`, a `?raw` import, a CSS module), rerun the tests of the code that uses it | `repo-components`, `vitest-components` |
 | S7 | When a framework **config** is saved, restart the session: re-read the config, the list of test files and every result | `basic-config-save` |
 | S8 | When a test file created after Start is saved, ask the framework whether it runs that file, and rerun it if so | `basic-on-save` |
 | S9 | Wait `onSaveDebounceMs` (default 300 ms) after a save, and run once for several quick saves of the same file | ⚠️ no test yet |
 | S10 | In a mixed project, rerun each framework's own dependent tests with that framework only | `mixed-on-save`, `mixed-js-python` |
-| S11 | Treat files changed **outside the editor** (pull, branch switch, generator) like saves while testing is on | `disk-changes` |
+| S11 | Treat files changed **outside the editor** (pull, branch switch, generator, a coding assistant writing to disk, closed or open in the editor) like saves while testing is on | `disk-changes`, `pytest-disk-changes` |
 | S12 | Restart the session instead of rerunning file by file when more than 20 files change at once | `disk-changes` |
-| S13 | Queue files that change while tests run, and rerun them once the run ends | `disk-changes`, `basic-save-during-run` |
+| S13 | Queue files that change while tests run, and rerun them once the run ends | `disk-changes`, `pytest-disk-changes`, `basic-save-during-run` |
 | S14 | Never rerun forever because tests write files: a file that changes again during its own rerun, a written file no test uses, and many files written during a run start no further runs, and the log says so | `disk-changes` |
 | S15 | Announce "finished" once, after the last overlapping run, with progress never above 100% | `basic-save-during-run`, `vitest-save-during-run` |
-| S16 | Mark the saved file's coverage as stale until its rerun ends, then clear the mark whatever the outcome | `coverage-editing` |
+| S16 | Mark the saved file's coverage as stale until its tests have measured the new version (the rerun, or the coverage refresh after it) | `coverage-editing`, `coverage-live` |
 
 ⚠️ marks a requirement no automated test checks yet. Those are the first places to add one.
 

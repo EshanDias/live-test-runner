@@ -4,6 +4,7 @@ import * as path from 'path';
 import { BinaryResolver, nodeRuntime } from '../resolution/BinaryResolver';
 import { createLogger, LogLevel, stripAnsi } from '../utils/logger';
 import { privateTempDir } from '../utils/tempDir';
+import { lowerPriority } from '../utils/resources';
 
 const log = createLogger('Executor');
 /** Structured logs from instrumentation inside the child, per process label ('jest' → scope "Jest"). */
@@ -316,6 +317,8 @@ export class Executor {
         ? spawn([inv.file, ...inv.args].map(shellQuote).join(' '), { cwd, env, shell: true, windowsHide: true, detached: !IS_WIN })
         : spawn(inv.file, inv.args, { cwd, env, windowsHide: true, detached: !IS_WIN });
 
+      // Below the user's own work: the editor stays responsive while tests run.
+      lowerPriority(child.pid);
       this.child = child;
       child.stdin?.end();
 

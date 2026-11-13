@@ -1,5 +1,25 @@
 import { runnableKey } from './RunnableFiles';
 
+/** Largest batch by default: results stream per file, but a crash or hang retries the batch's unfinished files. */
+export const MAX_BATCH_FILES = 50;
+/** Smallest batch: below this a process's startup outweighs the files it runs. */
+export const MIN_BATCH_FILES = 5;
+
+/**
+ * Files per batch for a run of `total` files with `parallel` batches at once.
+ * At most MAX_BATCH_FILES, and as many batches as fill whole rounds: 10
+ * batches with 3 at a time left a last round of one batch, with the rest of
+ * the budget idle until it ended (12 smaller batches finish together).
+ * `max`: a framework's own largest batch (BatchPolicy.maxFilesPerBatch).
+ */
+export function batchSize(total: number, parallel: number, max: number = MAX_BATCH_FILES): number {
+  const p = Math.max(1, Math.floor(parallel));
+  const most = Math.max(MIN_BATCH_FILES, Math.floor(max));
+  if (total <= 0) { return MIN_BATCH_FILES; }
+  const rounds = Math.ceil(total / (most * p));
+  return Math.max(MIN_BATCH_FILES, Math.min(most, Math.ceil(total / (rounds * p))));
+}
+
 /** One batch of a run: files of one framework, run by one process. */
 export interface QueuedBatch<S> { batch: string[]; services: S }
 
@@ -48,4 +68,29 @@ export function promoteInQueue<S>(queue: QueuedBatch<S>[], filePath: string): bo
   q.batch = q.batch.filter((f) => f !== fp);
   queue.unshift({ batch: [fp], services: q.services });
   return true;
+}
+
+/**
+ * Process slots shared by runs that go on at the same time and must stay
+ * within one budget together (at Start: the test files on screen, started
+ * while the framework lists its files, and then the rest of the run).
+ */
+export class BatchSlots {
+  private _free: number;
+  private readonly _waiting: (() => void)[] = [];
+
+  constructor(size: number) {
+    this._free = Math.max(1, Math.floor(size));
+  }
+
+  /** Resolves once a slot is free (and taken); give it back with release(). */
+  acquire(): Promise<void> {
+    if (this._free > 0) { this._free--; return Promise.resolve(); }
+    return new Promise((resolve) => this._waiting.push(resolve));
+  }
+
+  release(): void {
+    const next = this._waiting.shift();
+    if (next) { next(); } else { this._free++; }
+  }
 }

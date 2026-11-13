@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Who it is for** | Anyone who wants to know what their tests reach, and which test to look at when a line breaks |
-| **Frameworks** | Jest (including Create React App), Vitest (needs `@vitest/coverage-v8` or `-istanbul`), Angular (needs `@vitest/coverage-v8`; no covering tests yet), pytest (needs `coverage`) |
+| **Frameworks** | Jest (including Create React App; Babel or `coverageProvider: 'v8'`), Vitest (needs `@vitest/coverage-v8` or `-istanbul`), Angular (needs `@vitest/coverage-v8`; no covering tests yet), pytest (needs `coverage`) |
 | **Requirements** | [Coverage: requirements](../requirements/coverage.md) |
 | **How it is built** | [Coverage: design](../development/design/coverage.md) |
 
@@ -28,11 +28,23 @@ There's no extra command or extra run: the normal runs measure it.
 - **Hover a line** to see which tests ran it, whether they passed, and which branches were missed. **Show All Covering Tests** lists every one.
 - **The Coverage tab** in the sidebar has project totals (statements, branches, functions, lines) and a row per file. Click a row to open the file.
 - **Files no test imports count as 0%**, so the totals cover the whole project, as your framework's own coverage report does.
-- **Your coverage settings apply:** Jest's `collectCoverageFrom`, Vitest's `coverage.include` / `exclude`, coverage.py's `[tool.coverage.run]`.
+- **Your coverage settings apply:** Jest's `collectCoverageFrom` and `coverageProvider`, Vitest's `coverage.provider` and `coverage.include` / `exclude`, coverage.py's `[tool.coverage.run]`.
+- **The same numbers as your own coverage command.** Your framework measures, with your settings: every file shows the statements, branches, functions and lines that `jest --coverage`, `vitest run --coverage` or `coverage run -m pytest` would report, so they agree with your CI. Providers count differently (Vitest 3's v8 counts every line of a file no test loads, for example); you see what yours counts.
 
 ### While you edit
 
-The bars move with their lines as you type. A line you change or add has no bar until you save and its tests rerun, because an old bar on new code would be wrong. Reformatting keeps the bars. After a save, a grey tint covers the file until its rerun finishes.
+The bars move with their lines as you type. A line you change or add has no bar until you save and its tests rerun, because an old bar on new code would be wrong. Reformatting keeps the bars. After a save, a grey tint covers the file until its tests have run again on the new code.
+
+### Always the current numbers
+
+Coverage always shows what a fresh full run would report now, not everything that ever ran this session:
+
+- Delete a test, or change it so it reaches less: those lines lose their coverage.
+- Delete a test file: its coverage goes with it.
+- Stop calling a function from another file: that file's coverage drops.
+- Add a source file: it shows as 0% right away (when your coverage settings list the files to cover). Delete or rename one: it leaves the totals.
+
+To keep this exact, a save that reran only single tests is followed, once nothing else is running, by a quiet rerun of those test files in full. While that happens the Coverage tab says **Updating coverage (N files)…** and the totals are greyed out. That rerun also confirms the test results: a test that only fails next to the other tests of its file turns red then.
 
 ### Example
 
@@ -53,6 +65,7 @@ You hover line 42 of `pricing.ts`, an `if (member)` line with an amber bar. The 
 - Nothing is written into your project: no `coverage/` folder, no `.coverage` file.
 - With Jest, coverage of a Vue component counts its `<script>` block only, as `jest --coverage` does. Its template lines still list the tests that rendered them.
 - In a project with both Jest and Vitest, a file tested by both shows the lines either one ran.
+- If a test file had to be rerun without coverage (a fallback after a crash), the Coverage tab says so; the totals leave it out until it runs again.
 
 ## Related
 

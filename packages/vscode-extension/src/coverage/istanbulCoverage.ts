@@ -8,10 +8,10 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fromRunnerPath } from '@live-test-runner/runner';
-import { CoverageStore } from './CoverageStore';
+import { CoverageStore, MeasuredFile } from './CoverageStore';
 import { calculate } from './CoverageReport';
-import { combineWithEntry, isExcludedFromCoverage } from './coverageRules';
-import { FileCov, LiveCov, Manifest } from './types';
+import { combineWithEntry, isExcludedFromCoverage, mergeIstanbul, sumCounters, writeManifest } from './coverageRules';
+import { FileCov, IstanbulRange, LiveCov, Manifest } from './types';
 import { logger } from '../utils/logger';
 
 const log = logger.scope('Coverage');
@@ -44,13 +44,95 @@ export function toManifest(fc: IstanbulFileCoverage, filePath: string): Manifest
   for (const [id, f] of Object.entries(fc.fnMap ?? {})) {
     functions[id] = { name: f.name, start: { line: (f.decl ?? f.loc).start.line }, end: { line: f.loc.end.line } };
   }
-  return { filePath, statements, branches, functions };
+  const range = (r: Range | undefined): IstanbulRange => ({
+    start: { line: r?.start.line ?? 0, column: r?.start.column ?? 0 },
+    end: { line: r?.end.line ?? 0, column: r?.end.column ?? 0 },
+  });
+  const locs: NonNullable<Manifest['locs']> = { s: {}, f: {}, b: {} };
+  for (const [id, r] of Object.entries(fc.statementMap ?? {})) { locs.s[id] = range(r); }
+  for (const [id, f] of Object.entries(fc.fnMap ?? {})) { locs.f[id] = range(f.loc); }
+  for (const [id, b] of Object.entries(fc.branchMap ?? {})) { locs.b[id] = range(b.locations[0]); }
+  return { filePath, statements, branches, functions, locs };
 }
 
 /**
- * Adds a coverage map to the store. Each file version gets one manifest
- * (named by the file path and its maps), so runs of the same version merge
- * their counters (the higher count wins) and a changed file starts over.
+ * Two measurements of one source file in one run (a test file in several
+ * Vitest projects or environments): summed when their maps are the same,
+ * else merged as istanbul merges them (`mergeIstanbul`; the merged manifest
+ * is written next to the others).
+ */
+export function combineMeasured(prev: MeasuredFile | undefined, next: MeasuredFile): MeasuredFile {
+  if (!prev) { return next; }
+  if (prev.manifestPath === next.manifestPath) { return { ...prev, counters: sumCounters(prev.counters, next.counters) }; }
+  const merged = mergeIstanbul(prev.manifest, prev.counters, next.manifest, next.counters);
+  if (!merged) { return next; }
+  return { manifestPath: writeManifest(path.dirname(next.manifestPath), merged.manifest), manifest: merged.manifest, counters: merged.counters };
+}
+
+/**
+ * Manifests already worked out, by the maps object they came from: reports
+ * that send a file's maps once and reuse the object for every test file
+ * (pytest's coverage per test file, Jest's live reporter) hash and write
+ * them once, not once per test file (14,000 per 278-file pytest batch).
+ */
+const _manifests = new WeakMap<object, Map<string, { manifest: Manifest; manifestPath: string }>>();
+
+function manifestOf(fc: IstanbulFileCoverage, filePath: string, manifestDir: string): { manifest: Manifest; manifestPath: string } {
+  const byPath = fc.statementMap && typeof fc.statementMap === 'object' ? _manifests.get(fc.statementMap) : undefined;
+  const known = byPath?.get(`${manifestDir}\0${filePath}`);
+  if (known) { return known; }
+  const manifest = toManifest(fc, filePath);
+  const hash = crypto.createHash('sha1')
+    .update(filePath).update('\0')
+    .update(JSON.stringify([fc.statementMap, fc.branchMap, fc.fnMap]))
+    .digest('hex');
+  const manifestPath = path.join(manifestDir, `${hash}.json`);
+  try {
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest), { flag: 'wx', mode: 0o600 });
+  } catch (err) {
+    // Already written (same name = same maps).
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') { throw err; }
+  }
+  if (fc.statementMap && typeof fc.statementMap === 'object') {
+    const map = byPath ?? new Map();
+    map.set(`${manifestDir}\0${filePath}`, { manifest, manifestPath });
+    if (!byPath) { _manifests.set(fc.statementMap, map); }
+  }
+  return { manifest, manifestPath };
+}
+
+/**
+ * An istanbul coverage map as measured files: each file version gets one
+ * manifest on disk (named by the file path and its maps).
+ */
+export function measuredFiles(
+  coverage: Record<string, IstanbulFileCoverage>,
+  manifestDir: string,
+  projectRoot: string,
+  /** Whether a file counts toward coverage (the project's coverage settings); default: the built-in rules. */
+  counts: (filePath: string) => boolean = (fp) => !isExcludedFromCoverage(path.relative(projectRoot, fp)),
+): { files: Map<string, MeasuredFile>; excluded: number } {
+  fs.mkdirSync(manifestDir, { recursive: true });
+  const files = new Map<string, MeasuredFile>();
+  let excluded = 0;
+  for (const [key, fc] of Object.entries(coverage)) {
+    // The editor's spelling of the path (symlinks resolved back, lower-case drive) — like Jest's entries.
+    // Normalized: Vitest's forward slashes kept after a swapped Windows root made a second key per file.
+    const filePath = path.normalize(fromRunnerPath(fc.path || key)).replace(/^[A-Z]:/, (m) => m.toLowerCase());
+    if (!counts(filePath)) { excluded++; continue; }
+
+    const { manifest, manifestPath } = manifestOf(fc, filePath, manifestDir);
+    const counters: FileCov = { s: { ...fc.s }, f: { ...fc.f }, b: Object.fromEntries(Object.entries(fc.b ?? {}).map(([id, arms]) => [id, [...arms]])) };
+    files.set(filePath, { manifestPath, manifest, counters });
+  }
+  return { files, excluded };
+}
+
+/**
+ * Adds a merged coverage map (one per batch) to the store: runs of the same
+ * file version merge their counters (the higher count wins) and a changed
+ * file starts over. Frameworks that report per test file use
+ * CoverageStore.replaceContribution instead.
  *
  * @returns how many files were measured / left out
  */
@@ -59,33 +141,14 @@ export function applyIstanbulCoverage(
   store: CoverageStore,
   manifestDir: string,
   projectRoot: string,
-  /** Whether a file counts toward coverage (the project's coverage settings); default: the built-in rules. */
-  counts: (filePath: string) => boolean = (fp) => !isExcludedFromCoverage(path.relative(projectRoot, fp)),
+  counts?: (filePath: string) => boolean,
 ): { measured: number; excluded: number } {
-  fs.mkdirSync(manifestDir, { recursive: true });
-  let measured = 0;
-  let excluded = 0;
-  for (const [key, fc] of Object.entries(coverage)) {
-    // The editor's spelling of the path (symlinks resolved back, lower-case drive) — like Jest's entries.
-    const filePath = fromRunnerPath(fc.path || key).replace(/^[A-Z]:/, (m) => m.toLowerCase());
-    if (!counts(filePath)) { excluded++; continue; }
-
-    const manifest = toManifest(fc, filePath);
-    const hash = crypto.createHash('sha1')
-      .update(filePath).update('\0')
-      .update(JSON.stringify([fc.statementMap, fc.branchMap, fc.fnMap]))
-      .digest('hex');
-    const manifestPath = path.join(manifestDir, `${hash}.json`);
-    if (!fs.existsSync(manifestPath)) {
-      fs.writeFileSync(manifestPath, JSON.stringify(manifest));
-    }
-
-    const counters: FileCov = { s: { ...fc.s }, f: { ...fc.f }, b: Object.fromEntries(Object.entries(fc.b ?? {}).map(([id, arms]) => [id, [...arms]])) };
+  const { files, excluded } = measuredFiles(coverage, manifestDir, projectRoot, counts);
+  for (const [filePath, mf] of files) {
     // Same version → counters merged; a Jest-measured entry (mixed project) → merged by line.
-    const merged: LiveCov = combineWithEntry(store.getEntry(filePath), manifestPath, manifest, counters);
-    store.setMeasuredEntry(filePath, { manifestPath, counters: merged, pct: calculate(manifest, merged) });
-    measured++;
+    const merged: LiveCov = combineWithEntry(store.getEntry(filePath), mf.manifestPath, mf.manifest, mf.counters);
+    store.setMeasuredEntry(filePath, { manifestPath: mf.manifestPath, counters: merged, pct: calculate(mf.manifest, merged) });
   }
-  log.debug(`${measured} file(s) measured from Vitest coverage, ${excluded} excluded`);
-  return { measured, excluded };
+  log.debug(`${files.size} file(s) measured from Vitest coverage, ${excluded} excluded`);
+  return { measured: files.size, excluded };
 }

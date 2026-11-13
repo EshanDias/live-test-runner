@@ -99,4 +99,8 @@ if (strace && strace.beginTest) {
   afterAll(() => {
     strace.finish();
   });
+} else if (typeof globalThis.__strace === 'undefined') {
+  // No trace here: the calls in instrumented modules (a plain call, no `?.`: V8 counts
+  // an optional call as a branch of the file) must still work.
+  globalThis.__strace = { step() {} };
 }

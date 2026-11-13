@@ -25,7 +25,7 @@
  * The inserted texts are recognisable, so the setup file's
  * Function.prototype.toString can remove them and a function serialised with
  * toString() (page.evaluate, workers, sandboxes) is its original source:
- *   step:        /* istanbul ignore next *\/globalThis.__strace?.step(L,"file");
+ *   step:        /* istanbul ignore next *\/globalThis.__strace.step(L,"file");
  *   wrapper:     {<step>/*ltr{*\/  …  /*ltr}*\/}
  *   arrow body:  {<step>return /*ltr{*\/ expr /*ltr}*\/}
  * (VLQ-mapped so that coverage still finds every original node; see buildMap.)
@@ -37,18 +37,22 @@
 const { sourceMapLookup } = require('../shared/sourceMapLookup.js');
 
 const IGNORE = '/* istanbul ignore next */';
-const STEP = 'globalThis.__strace?.step';
+// A plain call: V8's coverage (Vitest 3's v8-to-istanbul, which reads no ignore
+// comments) counts an optional call `?.` as a branch of the file. __strace is
+// always defined where instrumented code runs (setup file, plugin: main process).
+const STEP = 'globalThis.__strace.step';
 const OPEN_MARK = '/*ltr{*/';
 const CLOSE_MARK = '/*ltr}*/';
 
-const STEP_CALL = String.raw`\/\* istanbul ignore next \*\/globalThis\.__strace\?\.step\(\d+,"(?:[^"\\]|\\.)*"\);`;
+// `?.` too: code instrumented by an earlier version (Vite's cache) is still recognised.
+const STEP_CALL = String.raw`\/\* istanbul ignore next \*\/globalThis\.__strace\??\.step\(\d+,"(?:[^"\\]|\\.)*"\);`;
 const OPENERS = new RegExp(String.raw`\{${STEP_CALL}(?:return )?\/\*ltr\{\*\/`, 'g');
 const CLOSERS = /\/\*ltr\}\*\/\}/g;
 const STEPS = new RegExp(STEP_CALL, 'g');
 
 /** Instrumented source with the insertions removed (they are pure insertions): the original text. */
 function withoutTrace(source) {
-  if (typeof source !== 'string' || !source.includes('__strace?.step')) { return source; }
+  if (typeof source !== 'string' || !source.includes('__strace')) { return source; }
   return source.replace(OPENERS, '').replace(CLOSERS, '').replace(STEPS, '');
 }
 

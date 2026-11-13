@@ -42,7 +42,8 @@ flowchart TD
    2. **Loaded but not run:** the module graph says a test loads the file (a `?raw` import, CSS module): those test files run whole.
    3. **Used by name, not import (S6):** an asset nothing imports (Angular `templateUrl`) is replaced by the source files next to it that name it, each handled like a save, one level deep.
    4. **Related run (S5):** no trace data, or the framework's trace is off for this root (`traceOffReason`). Vitest uses a live `vitest related` batch; Jest uses `--findRelatedTests`; pytest finds the test files that import the module.
-7. **End of run.** The stale mark is cleared whatever happened (S16). An empty result logs "no tests depend on this file" (Q3). `_endRun` announces "finished" only when no other run is in flight (S15).
+   Per suite, a test inside a `describe` whose tests share a variable (`TestDiscoveryService.sharedSuiteIds`, from discovery's `isSharedVars`) makes the whole file rerun (S4).
+7. **End of run.** An empty result logs "no tests depend on this file" (Q3). `_endRun` announces "finished" only when no other run is in flight (S15), then schedules the coverage refresh: test files whose coverage predates the change rerun in full once idle (S16, coverage C16), which also replaces their quick single-test results.
 
 ## Changes on disk
 
@@ -72,7 +73,8 @@ flowchart TD
 
 - e2e: `basic-on-save`, `basic-config-save`, `basic-save-during-run`, `disk-changes`, `vitest-session`, `vitest-related`, `vitest-trace`, `pytest-on-save`, `pytest-related`, `mixed-on-save`, `coverage-editing`. The table in [the requirements](../../requirements/on-save-reruns.md) maps each requirement to its scenarios.
 - Unit: the batch queue, `vanishedFile`, the trace store.
-- Gaps: shared-variable suites (S4) and the debounce (S9) have no automated test yet.
+- Shared-variable suites (S4): `coverage-live`, unit `testDiscovery`.
+- Gaps: the debounce (S9) has no automated test yet.
 
 ## Known limits
 

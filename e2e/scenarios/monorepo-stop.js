@@ -8,6 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const h = require('../lib/harness');
 
+const runner = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'utils', 'resources.js'));
+
 const SLOW = (secs) => `test('takes a while', () => new Promise((r) => setTimeout(r, ${secs * 1000})), ${(secs + 30) * 1000});\n`;
 
 module.exports = {
@@ -31,9 +33,10 @@ module.exports = {
     await h.waitFor(() => b.store.getAllFiles().some((f) => f.filePath.endsWith('slow.test.js')), { what: 'app-b slow.test.js', timeout: 30_000 });
     const bStart = vscode.commands.executeCommand('liveTestRunner.startTesting');
 
-    // Each project's Jest CLI carries its own session folder (--config <dir>/ltr-cfg-…).
-    await h.waitFor(() => h.jestProcesses(a.sessionDir).length > 0 && h.jestProcesses(b.sessionDir).length > 0,
-      { what: 'both projects\' Jest to run', timeout: 90_000 });
+    // Each project's Jest CLI names its own folder (the test files, --config in its transform cache).
+    const jestOf = (c) => h.jestProcesses(c.root + path.sep);
+    // Both at once when the budget allows two processes now; otherwise (a small or busy machine) app-b's waits for app-a's.
+    await h.waitFor(() => reg.running().length === 2 && jestOf(a).length + jestOf(b).length > 0, { what: 'both sessions on, a project\'s Jest running', timeout: 90_000 });
     t.check('the session folders differ per project', a.sessionDir !== b.sessionDir && !b.sessionDir.startsWith(a.sessionDir + path.sep));
     t.eq('both run', reg.running().map((c) => c.name), ['app-a', 'app-b']);
 
@@ -41,7 +44,7 @@ module.exports = {
     await vscode.commands.executeCommand('liveTestRunner.stopTesting', a.id);
     await h.sleep(3000);
     t.check('app-a stopped', !a.session.isActive() && !a.session.isRunning());
-    const aLeft = h.jestProcesses(a.sessionDir);
+    const aLeft = jestOf(a);
     t.check('no app-a Jest process left', aLeft.length === 0, aLeft.join('\n'));
     t.eq('nothing of app-a keeps spinning', a.store.getAllFiles().filter((f) => f.status === 'running').map((f) => f.filePath), []);
     t.check('app-b keeps running', b.session.isActive() && (b.session.isRunning() || b.store.getSummary().passed > 0));
@@ -56,7 +59,7 @@ module.exports = {
     await vscode.commands.executeCommand('liveTestRunner.stopTesting');
     await h.sleep(3000);
     t.eq('both stopped', reg.contexts.map((c) => c.session.isActive()), [false, false]);
-    const left = h.jestProcesses(workspace).concat(h.jestProcesses(a.sessionDir), h.jestProcesses(b.sessionDir));
+    const left = h.jestProcesses(workspace).concat(jestOf(a), jestOf(b));
     t.check('no Jest process left after stopping both', left.length === 0, left.join('\n'));
     t.check('status bar shows no running project', /^Live Tests: app-b · Off$/.test(api.statusBar.text), api.statusBar.text);
   },

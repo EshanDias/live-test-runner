@@ -24,10 +24,12 @@
  */
 
 const { spawn, execSync } = require('child_process');
+const { killLeftovers } = require('./lib/leftovers');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { brokenPackages, emptiedPackages } = require('./lib/emptied');
 
 const ROOT = path.resolve(__dirname, '..');
 // LTR_E2E_EXTENSION_DIR: run against another copy of the extension, e.g. an
@@ -141,6 +143,20 @@ function pythonEnvDirs(src, rel = '') {
   return out;
 }
 
+/** The end of npm's newest debug log (why an install failed: npm prints only the error line). */
+function printNpmDebugLog() {
+  try {
+    const cache = execSync('npm config get cache', { encoding: 'utf8' }).trim();
+    const dir = path.join(cache, '_logs');
+    // The newest install log (`npm config get cache` just above wrote one of its own).
+    const newest = fs.readdirSync(dir).filter((f) => f.endsWith('-debug-0.log')).sort().reverse()
+      .find((f) => /verbose title npm install/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
+    if (!newest) { return; }
+    const lines = fs.readFileSync(path.join(dir, newest), 'utf8').split(/\r?\n/);
+    console.log(`[e2e] npm debug log (${newest}, last 60 lines):\n` + lines.slice(-60).join('\n'));
+  } catch { /* no log */ }
+}
+
 /** Fresh copy of a fixture (node_modules and .venv kept between runs). */
 function prepareFixture(name) {
   const src = path.join(__dirname, 'fixtures', name);
@@ -153,11 +169,28 @@ function prepareFixture(name) {
 
   const pkgHash = crypto.createHash('sha1').update(fs.readFileSync(path.join(src, 'package.json'))).digest('hex');
   const stamp = path.join(dest, 'node_modules', '.ltr-e2e-stamp');
-  const current = fs.existsSync(stamp) ? fs.readFileSync(stamp, 'utf8') : '';
-  if (current !== pkgHash) {
+  let current = '';
+  try { current = fs.readFileSync(stamp, 'utf8'); } catch { /* not installed yet */ }
+  // macOS empties temp files untouched for 3 days (lib/emptied.js): any package that lost files since the install, install afresh.
+  const brokenAtInstall = path.join(dest, 'node_modules', '.ltr-e2e-broken.json');
+  let baseline = [];
+  try { baseline = JSON.parse(fs.readFileSync(brokenAtInstall, 'utf8')); } catch { /* none recorded */ }
+  const gone = current === pkgHash ? emptiedPackages(dest, baseline) : [];
+  if (gone.length > 0) {
+    console.log(`[e2e] ${gone.length} installed package(s) lost their files (${gone.slice(0, 3).join(', ')}…) — reinstalling`);
+  }
+  if (current !== pkgHash || gone.length > 0) {
+    // From scratch: npm does not repair a half-emptied node_modules (and the stamp itself may be what was emptied).
+    fs.rmSync(path.join(dest, 'node_modules'), { recursive: true, force: true });
     console.log(`[e2e] npm install in ${dest}`);
-    execSync('npm install --no-audit --no-fund --loglevel=error', { cwd: dest, stdio: 'inherit' });
-    fs.writeFileSync(stamp, pkgHash);
+    try {
+      execSync('npm install --no-audit --no-fund --loglevel=error', { cwd: dest, stdio: 'inherit' });
+    } catch (err) {
+      printNpmDebugLog();
+      throw err;
+    }
+    fs.writeFileSync(stamp, pkgHash, { mode: 0o600 });
+    fs.writeFileSync(brokenAtInstall, JSON.stringify(brokenPackages(dest)), { mode: 0o600 });
   }
   return dest;
 }
@@ -201,6 +234,8 @@ function runScenario(name, exe) {
     return Promise.resolve({ name, skipped: true });
   }
   const workspace = folders[0];
+  // A variant of a fixture: the scenario adjusts its fresh copy before the window opens.
+  if (typeof scenario.prepare === 'function') { scenario.prepare(folders); }
 
   const runDir = path.join(RUNS_ROOT, name);
   fs.rmSync(runDir, { recursive: true, force: true });
@@ -220,6 +255,8 @@ function runScenario(name, exe) {
     'git.enabled': false,
     'files.autoSave': 'off',
     ...(scenario.settings || {}),
+    // LTR_E2E_SETTINGS='{"liveTestRunner.speedStrict":true}': settings for this run (perf A/B comparisons).
+    ...(process.env.LTR_E2E_SETTINGS ? JSON.parse(process.env.LTR_E2E_SETTINGS) : {}),
   }, null, 2));
 
   const report = path.join(runDir, 'report.json');
@@ -262,14 +299,21 @@ function runScenario(name, exe) {
     child.stderr.on('data', (d) => out.push(String(d)));
     const timer = setTimeout(() => {
       console.log(`[e2e] TIMEOUT ${name} after ${Math.round(timeoutMs / 1000)}s — killing VS Code`);
-      try {
-        if (process.platform === 'win32') { execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' }); }
-        else { child.kill('SIGKILL'); }
-      } catch { /* already gone */ }
+      killLeftovers(userData, [child.pid]);
     }, timeoutMs);
+    // Ctrl+C / kill of this runner: take the window and its test processes down too.
+    const onSignal = (sig) => { killLeftovers(userData, [child.pid]); process.exit(sig === 'SIGINT' ? 130 : 143); };
+    process.once('SIGINT', onSignal);
+    process.once('SIGTERM', onSignal);
 
     child.on('exit', (code) => {
       clearTimeout(timer);
+      process.removeListener('SIGINT', onSignal);
+      process.removeListener('SIGTERM', onSignal);
+      // The launched process can exit while the window it started keeps running (or leaves its
+      // test processes behind): nothing of this scenario may outlive it.
+      const killed = killLeftovers(userData);
+      if (killed) { console.log(`[e2e] ${name}: stopped ${killed} process(es) VS Code left running`); }
       const secs = ((Date.now() - started) / 1000).toFixed(0);
       let result;
       try { result = JSON.parse(fs.readFileSync(report, 'utf8')); } catch { result = undefined; }
@@ -312,7 +356,15 @@ async function main() {
   }
   const exe = await resolveVscode();
   const results = [];
-  for (const n of names) { results.push(await runScenario(n, exe)); }
+  for (const n of names) {
+    try {
+      results.push(await runScenario(n, exe));
+    } catch (err) {
+      // A fixture that cannot be prepared (an npm install that fails) fails its own scenario, not the rest of the run.
+      console.log(`[e2e] FAIL ${n}: could not prepare it — ${String(err && err.message).split('\n')[0]}`);
+      results.push({ name: n, passed: false });
+    }
+  }
   const failed = results.filter((r) => !r.skipped && !r.passed);
   console.log(`[e2e] ${results.length - failed.length}/${results.length} scenario(s) passed or skipped` +
     (failed.length ? ` — failed: ${failed.map((r) => r.name).join(', ')}` : ''));

@@ -5,7 +5,8 @@
  * test heartbeats) — or, when the blocked worker never reported the test
  * start, after hangTimeoutSeconds × 3 without progress — and only the
  * hanging file is failed; the batch's other unfinished files are retried. A never-resolving promise fails on Vitest's
- * own test timeout. Every other file gets its result.
+ * own test timeout. Every other file gets its result. Test processes run
+ * below normal priority.
  */
 const fs = require('fs');
 const path = require('path');
@@ -21,8 +22,10 @@ module.exports = {
       "import { test } from 'vitest';\ntest('spins forever', () => { while (true) { /* hang */ } });\n");
     fs.writeFileSync(path.join(workspace, 'src', 'never.test.js'),
       "import { test } from 'vitest';\ntest('never resolves', () => new Promise(() => {}));\n");
+    fs.writeFileSync(path.join(workspace, 'src', 'priority.test.js'),
+      "import { test, expect } from 'vitest';\nimport os from 'node:os';\ntest('runs below normal priority', () => { expect(os.getPriority()).toBe(os.constants.priority.PRIORITY_BELOW_NORMAL); });\n");
     await h.waitForDiscovery(api);
-    await h.waitFor(() => ['loop.test.js', 'never.test.js'].every((n) => api.store.getAllFiles().some((f) => f.filePath.endsWith(n))),
+    await h.waitFor(() => ['loop.test.js', 'never.test.js', 'priority.test.js'].every((n) => api.store.getAllFiles().some((f) => f.filePath.endsWith(n))),
       { what: 'the new test files to be discovered', timeout: 30_000 });
 
     const since = h.isoNow();
@@ -44,6 +47,7 @@ module.exports = {
 
     const never = h.nodeByName(api, 'src/never.test.js', 'never resolves');
     t.eq('never-resolving promise fails on the test timeout', never?.status, 'failed');
+    t.eq('the test process (and its workers) runs below normal priority', h.statusCounts(api, 'src/priority.test.js'), { passed: 1 });
     t.eq('other files still ran: math', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });
     t.eq('other files still ran: strings', h.statusCounts(api, 'src/strings.test.ts'), { passed: 1, failed: 1 });
     t.eq('nothing left running', h.nodesWithStatus(api, 'running').map((n) => n.id), []);

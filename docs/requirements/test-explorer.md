@@ -21,6 +21,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | E13 | Show a failed test's message after the line where it failed (in the test, and the source line it was thrown from), for Jest, Vitest and pytest; the hover has the whole message, Show diff (when both values are known), Open in Results and Dismiss | `failure-on-line`, `vitest-full-run`, `pytest-full-run`; unit: `failureInfo` |
 | E15 | Update snapshot (Jest, Vitest): offer it on a snapshot failure; ask in a modal dialog naming the file before anything is written, and write nothing on no; then rerun only that test with the framework's update flag, so only its snapshot changes (other tests' snapshots stay; ones no test uses any more are removed, as `-u` does, and the dialog says so); detect inline snapshots for Vitest too (from the failing line); refuse while that file has unsaved changes | `snapshot-update`, `vitest-snapshot-update`; unit: `failureInfo` |
 | E14 | Hide a failure message on a line edited since the run, and a dismissed one until its test runs again; `showFailuresInEditor` turns them off | `failure-on-line` |
+| E16 | Keep the test lists light during a large run: a file that starts or finishes redraws only its own row (found by an index, not a search of the list), starts are sent with results at most every 50 ms (a single test's rerun at once; none after Stop), and rows off screen are not laid out | unit: `webviewBatching`; measured by `scripts/perf-measure.js` (VS Code renderer CPU) |
 
 ⚠️ marks a requirement no automated test checks yet.
 

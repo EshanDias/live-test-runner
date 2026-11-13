@@ -17,7 +17,12 @@ What it does (every output goes to files in the extension's session folder):
   ``<dir>/coverage-final.json`` (data files stay in ``<dir>``). Each test is
   measured in its own coverage context (its node id), written as the
   extension's trace records to ``<dir>/trace.jsonl``: which lines each test
-  ran ("covering tests", precise reruns when a source file is saved).
+  ran ("covering tests", precise reruns when a source file is saved), and
+  each test file's own coverage to ``<dir>/coverage-per-test-file.json``
+  (``{"maps": {file: maps}, "tests": {test file: {file: counters}}, "imports":
+  {file: counters}}``: each file's maps once; ``imports`` = lines run
+  outside any test: imports, collection, conftest). The extension keeps each
+  test file's latest coverage and replaces it when the file runs again.
 
 Result shapes mirror the runner's TypeScript types (FileRunResult,
 TestCaseRunResult, ConsoleEntry). Logs: ``[LTR:<level>] message`` on stderr.
@@ -27,7 +32,9 @@ Keep it compatible with every pytest >= 7.0 and plain Python syntax (no
 """
 
 import json
+import operator
 import os
+import re
 import sys
 import time
 
@@ -38,6 +45,12 @@ LIST_ENV = "LTR_PYTEST_LIST"
 COVERAGE_ENV = "LTR_PYTEST_COVERAGE"
 
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _dump(obj, fh, **kwargs):
+    """``json.dump`` with the C encoder: ``json.dump`` encodes in pure Python
+    (a quarter of a 600-file batch went to writing its JSON files)."""
+    fh.write(json.dumps(obj, **kwargs))
 _CWD = os.getcwd()
 
 # One pytest session per process (inner sessions of pytester never load this
@@ -161,7 +174,9 @@ def _start_coverage(config):
         return
     try:
         os.makedirs(directory, exist_ok=True)
-        kwargs = {"data_file": os.path.join(directory, ".coverage"), "config_file": True}
+        # Data in memory: per-test contexts flush the data at every switch, and a
+        # data file was opened and closed each time (a third of a 278-file batch).
+        kwargs = {"data_file": None, "config_file": True}
         # pytest-cov's --cov=<src> (from the project's addopts) names what to
         # measure; our command line adds --no-cov, so pytest-cov itself is idle.
         sources = _cov_sources(config)
@@ -171,6 +186,8 @@ def _start_coverage(config):
         _choose_core(_cov)
         _cov.start()
         _check_contexts(_cov)
+        if _contexts:
+            _flush_active_files_only(_cov)
     except Exception as err:  # a broken coverage config must not stop the tests
         _cov = None
         _cov_error = "coverage could not start: %s" % err
@@ -223,23 +240,82 @@ def _finish_coverage():
     try:
         _cov.stop()
         _cov.save()
-        raw = os.path.join(directory, "coverage.json")
         try:
-            _cov.json_report(outfile=raw)
+            report = _json_report_data(directory)
         except Exception as err:  # NoDataError: nothing under the project ran
             _log("debug", "no coverage data: %s" % err)
             return None
-        with open(raw, encoding="utf-8") as fh:
-            report = json.load(fh)
         out = os.path.join(directory, "coverage-final.json")
         with open(out, "w", encoding="utf-8") as fh:
-            json.dump(_istanbul(report), fh)
+            _dump(_istanbul(report), fh)
         if _contexts:
             _write_trace(os.path.join(directory, "trace.jsonl"))
+            _write_per_test_file(report, os.path.join(directory, "coverage-per-test-file.json"))
         return out
     except Exception as err:
         _log("warn", "could not write coverage: %s" % err)
         return None
+
+
+def _json_report_data(directory):
+    """coverage.py's JSON report as data. Its ``json_report`` encodes it with
+    the pure-Python ``json.dump`` (seconds on a large batch) only for us to read
+    it back: the report module's ``json.dump`` is swapped for one that keeps the
+    data, for this call only. Any other coverage.py: the file, as before."""
+    try:
+        from coverage import jsonreport
+        real = jsonreport.json
+        captured = []
+
+        class _Keep(object):
+            def __getattr__(self, name):
+                return getattr(real, name)
+
+            @staticmethod
+            def dump(obj, fp, **kwargs):
+                captured.append(obj)
+
+        jsonreport.json = _Keep()
+        try:
+            _cov.json_report(outfile=os.devnull)
+        finally:
+            jsonreport.json = real
+        if len(captured) == 1 and isinstance(captured[0], dict) and "files" in captured[0]:
+            return captured[0]
+    except ImportError:
+        pass
+    raw = os.path.join(directory, "coverage.json")
+    _cov.json_report(outfile=raw)
+    with open(raw, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+_has_lines = operator.itemgetter(1)  # (file, lines) -> lines: truthy when the file has new data
+
+
+def _flush_active_files_only(cov):
+    """Each per-test context switch flushes coverage's collected data, and
+    coverage.py walks every file measured so far (copy, hash, clear), not only
+    the ones the last test ran: the cost grows with the run (2,500 test files in
+    one process: 250 s against 50 s for ``coverage run``). During the flush the
+    collector sees only the files with new data, the same set objects; the
+    tracers keep writing into the full dict. Data, contexts and output are the
+    same."""
+    collector = getattr(cov, "_collector", None)
+    data = getattr(collector, "data", None)
+    original = getattr(collector, "flush_data", None)
+    if not isinstance(data, dict) or original is None:
+        return
+
+    def flush_data():
+        full = collector.data
+        try:
+            collector.data = dict(filter(_has_lines, full.items()))
+            return original()
+        finally:
+            collector.data = full
+
+    collector.flush_data = flush_data
 
 
 def _write_trace(target):
@@ -289,6 +365,143 @@ def _write_trace(target):
                 break  # coverage only: one record is enough
 
 
+def _write_per_test_file(report, target):
+    """Each test file's coverage on its own, from the per-test contexts.
+
+    A test file's contexts are its tests' node ids (``<file>::...``); lines
+    run outside any test (context "") go to ``imports``: module-level code
+    runs once per process, so the extension credits it to every test file
+    that imports the module. ``maps``: each file's istanbul maps (path ->
+    statementMap, branchMap, fnMap); ``tests`` / ``imports``: path -> s, b, f.
+    """
+    started = time.time()
+    try:
+        data = _cov.get_data()
+        prefixes = {}  # node id file part -> test file
+        for label in data.measured_contexts():
+            node = _nodes.get(label) if label else None
+            if node is not None:
+                prefixes[label.split("::", 1)[0]] = node["file"]
+        measured = [m for m in data.measured_files() if _keep_coverage_file(os.path.normpath(m))]
+        try:
+            by_prefix, imports_hits = _hits_in_one_pass(data, measured)
+            how = "one pass"
+        except Exception as err:  # an unexpected data file: the query per test file
+            _log("debug", "coverage per test file: one-pass read failed (%s), querying per test file" % err)
+            by_prefix, imports_hits = _hits_per_query(data, measured, prefixes)
+            how = "per query"
+        prepared = _prepare_istanbul(report)
+        # Each file's maps once ("maps"), then only counters per test file: every
+        # test file's copy of the maps was most of a 278-file batch's JSON time.
+        maps = {}
+
+        def counters(cov):
+            out = {}
+            for path, fc in cov.items():
+                if path not in maps:
+                    maps[path] = {"statementMap": fc["statementMap"], "branchMap": fc["branchMap"], "fnMap": fc["fnMap"]}
+                out[path] = {"s": fc["s"], "b": fc["b"], "f": fc["f"]}
+            return out
+
+        tests = {}
+        for prefix, test_file in prefixes.items():
+            tests[test_file] = counters(_istanbul_from(prepared, by_prefix.get(prefix, {})))
+        imports = counters(_istanbul_from(prepared, imports_hits))
+        with open(target, "w", encoding="utf-8") as fh:
+            _dump({"maps": maps, "tests": tests, "imports": imports}, fh, separators=(",", ":"))
+        _log("debug", "coverage per test file: %d test file(s), %d measured file(s) in %.1fs (%s)" % (len(tests), len(measured), time.time() - started, how))
+    except Exception as err:  # the merged report still stands
+        _log("warn", "could not write coverage per test file: %s" % err)
+
+
+def _same_file(path):
+    """One spelling per file, for matching paths from different places: coverage.py
+    names files by their canonical path (Windows: long names, lower case), the
+    report by the folder pytest started in (8.3 short names on GitHub's Windows runners)."""
+    own = _SAME_FILE.get(path)
+    if own is None:
+        own = _SAME_FILE[path] = os.path.normcase(os.path.realpath(path))
+    return own
+
+
+_SAME_FILE = {}
+
+
+def _add_hit(into, path, lines, arcs):
+    if lines or arcs:
+        own = into.setdefault(path, (set(), set()))
+        own[0].update(lines)
+        own[1].update(arcs)
+
+
+def _hits_per_query(data, measured, prefixes):
+    """{prefix: {source: (lines, arcs)}}, {source: (lines, arcs)} of the imports — one query per test file and source file (slow)."""
+    has_arcs = data.has_arcs()
+
+    def hits(pattern):
+        data.set_query_contexts([pattern])
+        out = {}
+        for m in measured:
+            _add_hit(out, _same_file(m), set(data.lines(m) or []), set(data.arcs(m) or []) if has_arcs else set())
+        return out
+
+    try:
+        by_prefix = {prefix: hits("^" + re.escape(prefix) + "::") for prefix in prefixes}
+        return by_prefix, hits("^$")
+    finally:
+        data.set_query_contexts(None)
+
+
+def _hits_in_one_pass(data, measured):
+    """The same as ``_hits_per_query``, read from the coverage data file in one pass.
+
+    coverage.py's data file is SQLite (``file``, ``context``, ``line_bits``,
+    ``arc`` tables, the same since coverage 5). Asking it once per test file
+    and source file took most of a batch (15 s of 23 s for 50 test files).
+    As in ``CoverageData.lines()``, a file measured with branches has the
+    lines of its arcs.
+    """
+    import sqlite3
+    from coverage.numbits import numbits_to_nums
+
+    keep = {m: _same_file(m) for m in measured}
+    has_arcs = data.has_arcs()
+    by_prefix, imports = {}, {}
+
+    def bucket(label):
+        if not label:
+            return imports
+        if "::" not in label:
+            return None
+        return by_prefix.setdefault(label.split("::", 1)[0], {})
+
+    name = data.data_filename()
+    # In memory (data_file=None): a shared in-memory database, open while coverage holds it.
+    con = sqlite3.connect(name, uri=True) if name.startswith("file:") else sqlite3.connect(name)
+    try:
+        if has_arcs:
+            rows = con.execute(
+                "select file.path, context.context, arc.fromno, arc.tono from arc"
+                " join file on file.id = arc.file_id join context on context.id = arc.context_id")
+            for path, label, fromno, tono in rows:
+                into = bucket(label)
+                if into is None or path not in keep:
+                    continue
+                _add_hit(into, keep[path], {n for n in (fromno, tono) if n > 0}, {(fromno, tono)})
+        else:
+            rows = con.execute(
+                "select file.path, context.context, line_bits.numbits from line_bits"
+                " join file on file.id = line_bits.file_id join context on context.id = line_bits.context_id")
+            for path, label, numbits in rows:
+                into = bucket(label)
+                if into is None or path not in keep:
+                    continue
+                _add_hit(into, keep[path], set(numbits_to_nums(numbits)), set())
+    finally:
+        con.close()
+    return by_prefix, imports
+
+
 def _keep_coverage_file(path):
     """A measured file under the project (the rootdir or the cwd), never our plugin.
 
@@ -297,25 +510,35 @@ def _keep_coverage_file(path):
     keeps the spelling it was started with (8.3 short names, as on GitHub's
     Windows runners).
     """
-    norm = lambda p: os.path.normcase(os.path.realpath(p))
-    target = norm(path)
-    if target.startswith(norm(_PLUGIN_DIR) + os.sep):
+    target = _same_file(path)
+    if target.startswith(_same_file(_PLUGIN_DIR) + os.sep):
         return False
     root = str(_config.rootpath) if _config else _CWD
-    for base in {norm(root), norm(_CWD)}:
+    for base in {_same_file(root), _same_file(_CWD)}:
         if target.startswith(base.rstrip(os.sep) + os.sep):
             return True
     return False
 
 
-def _istanbul(report):
+def _istanbul(report, hits=None):
     """coverage.py's JSON report -> an istanbul coverage map (0/1 counters).
 
     Statements: one per measured line. Branches: the arcs leaving a line,
     one arm per destination (negative = leaves the function). Functions:
     coverage >= 7.6 regions (skipped before).
+
+    ``hits`` ({file: (lines, arcs)}): counters from these instead of the
+    report's executed lines (one test file's contexts); the maps stay the
+    report's, so every test file's map of a file is the same version. Files
+    without hits are left out.
     """
-    out = {}
+    return _istanbul_from(_prepare_istanbul(report), hits)
+
+
+def _prepare_istanbul(report):
+    """What the istanbul maps of a report need, worked out once per report
+    (paths, source line widths, maps): per test file only the counters change."""
+    prepared = _Prepared()
     for name, f in (report.get("files") or {}).items():
         path = os.path.normpath(os.path.join(_CWD, name))
         if not _keep_coverage_file(path):
@@ -326,23 +549,21 @@ def _istanbul(report):
         except OSError:
             text = []
 
-        def width(line):
+        def width(line, text=text):
             return len(text[line - 1]) if 0 < line <= len(text) else 0
 
         executed = set(f.get("executed_lines") or [])
         lines = sorted(executed | set(f.get("missing_lines") or []))
-        statement_map, s = {}, {}
+        statement_map = {}
         for i, line in enumerate(lines):
-            key = str(i)
-            statement_map[key] = {"start": {"line": line, "column": 0}, "end": {"line": line, "column": width(line)}}
-            s[key] = 1 if line in executed else 0
+            statement_map[str(i)] = {"start": {"line": line, "column": 0}, "end": {"line": line, "column": width(line)}}
 
-        branch_map, b = {}, {}
         arcs = {}
         for arc in f.get("executed_branches") or []:
-            arcs.setdefault(arc[0], []).append((arc[1], 1))
+            arcs.setdefault(arc[0], []).append((arc[1], True))
         for arc in f.get("missing_branches") or []:
-            arcs.setdefault(arc[0], []).append((arc[1], 0))
+            arcs.setdefault(arc[0], []).append((arc[1], False))
+        branch_map, branches = {}, []
         for i, start in enumerate(sorted(a for a in arcs if a > 0)):
             arms = sorted(arcs[start], key=lambda arm: (arm[0] < 0, abs(arm[0])))
             branch_map[str(i)] = {
@@ -354,10 +575,10 @@ def _istanbul(report):
                     for to, _ in arms
                 ],
             }
-            b[str(i)] = [hit for _, hit in arms]
+            branches.append((str(i), start, arms))
 
-        fn_map, fn = {}, {}
-        for i, (fname, region) in enumerate(sorted((f.get("functions") or {}).items())):
+        fn_map, functions = {}, []
+        for fname, region in sorted((f.get("functions") or {}).items()):
             if not fname:
                 continue  # the module itself
             region_lines = sorted(set(region.get("executed_lines") or []) | set(region.get("missing_lines") or []))
@@ -371,10 +592,91 @@ def _istanbul(report):
                 "decl": {"start": {"line": first, "column": 0}, "end": {"line": first, "column": width(first)}},
                 "loc": {"start": {"line": first, "column": 0}, "end": {"line": region_lines[-1], "column": width(region_lines[-1])}},
             }
-            fn[key] = 1 if region.get("executed_lines") else 0
+            functions.append((key, set(region.get("executed_lines") or [])))
 
-        out[path] = {"path": path, "statementMap": statement_map, "s": s, "branchMap": branch_map, "b": b, "fnMap": fn_map, "f": fn}
+        prepared.append({"path": path, "executed": executed, "lines": lines, "statementMap": statement_map,
+                         "branchMap": branch_map, "branches": branches, "fnMap": fn_map, "functions": functions})
+    return prepared
+
+
+def _prepared_index(prepared):
+    """Prepared files by ``_same_file`` spelling (a list: two report paths can be one
+    real file), worked out once per prepared report."""
+    index = prepared.by_file if isinstance(prepared, _Prepared) else None
+    if index is None:
+        index = {}
+        for p in prepared:
+            index.setdefault(_same_file(p["path"]), []).append(p)
+        if isinstance(prepared, _Prepared):
+            prepared.by_file = index
+    return index
+
+
+class _Prepared(list):
+    """``_prepare_istanbul``'s list, with its index by file once asked for."""
+    by_file = None
+
+
+def _istanbul_from(prepared, hits=None):
+    """``_istanbul`` over a prepared report (``_prepare_istanbul``)."""
+    out = {}
+    if hits is None:
+        chosen = ((p, None) for p in prepared)
+    else:
+        # Only the files these hits name (a test file runs a few of thousands).
+        index = _prepared_index(prepared)
+        chosen = ((p, own) for name, own in hits.items() for p in index.get(name, ()))
+    for p, own in chosen:
+        path = p["path"]
+        ran_lines = own[0] if own else p["executed"]
+        s = {str(i): 1 if line in ran_lines else 0 for i, line in enumerate(p["lines"])}
+        b = {}
+        for key, start, arms in p["branches"]:
+            if own is None:
+                b[key] = [1 if executed else 0 for _, executed in arms]
+            else:
+                b[key] = [1 if executed and (start, to) in own[1] else 0 for to, executed in arms]
+        fn = {key: 1 if (ran & own[0] if own else ran) else 0 for key, ran in p["functions"]}
+        out[path] = {"path": path, "statementMap": p["statementMap"], "s": s, "branchMap": p["branchMap"], "b": b, "fnMap": p["fnMap"], "f": fn}
     return out
+
+
+def count_files(paths, target):
+    """The coverage structure of source files no test has run, with zero counters.
+
+    Run by the extension (``python -c "import ltr_pytest; ltr_pytest.count_files([...], out)"``
+    in the project's folder) when a source file is created or edited and no
+    test loads it: coverage.py analyses it with the project's own settings
+    (statements, branches, functions) without running it, and the result is
+    written like ``coverage-final.json``. Files coverage.py would not report
+    (outside ``source``, omitted) are left out.
+    """
+    import coverage
+
+    cov = coverage.Coverage(data_file=None, config_file=True)
+    files = {}
+    for path in paths:
+        try:
+            analysis = cov._analyze(path)
+        except Exception:  # not Python, omitted, unreadable
+            continue
+        f = {"executed_lines": [], "missing_lines": sorted(analysis.statements), "executed_branches": [], "missing_branches": []}
+        if cov.get_option("run:branch"):
+            for start, ends in sorted(analysis.missing_branch_arcs().items()):
+                for end in ends:
+                    f["missing_branches"].append([start, end])
+        try:
+            functions = {}
+            for region in cov._get_file_reporter(path).code_regions():
+                if region.kind == "function":
+                    lines = sorted(set(region.lines) & set(analysis.statements))
+                    functions[region.name] = {"executed_lines": [], "missing_lines": lines, "start_line": region.start}
+            f["functions"] = functions
+        except Exception:  # coverage before 7.6: no regions
+            pass
+        files[os.path.relpath(os.path.abspath(path), _CWD)] = f
+    with open(target, "w", encoding="utf-8") as fh:
+        _dump(_istanbul({"files": files}), fh)
 
 
 # -- collection ----------------------------------------------------------------------
@@ -391,6 +693,54 @@ def _state(path):
     if st is None:
         st = _files[path] = _FileState(path)
     return st
+
+
+_file_args_only = None  # every argument is a distinct test file (or a node id in one); worked out once
+
+
+def _only_distinct_files_given(config):
+    global _file_args_only
+    if _file_args_only is None:
+        params = getattr(config, "invocation_params", None)
+        base = str(getattr(params, "dir", None) or _CWD)
+        args = [str(a) for a in (getattr(config, "args", None) or [])]
+        try:
+            files = [os.path.normcase(os.path.abspath(os.path.join(base, a))) for a in args]
+            _file_args_only = bool(files) and len(set(files)) == len(files) and all(os.path.isfile(f) for f in files)
+        except Exception:
+            _file_args_only = False
+    return _file_args_only
+
+
+def pytest_sessionstart(session):
+    _collect_folders_once(session)
+
+
+def _collect_folders_once(session):
+    """A batch's folders collected once, not once per test file in them.
+
+    pytest 8+ reaches a file argument by collecting its folder, and collects the
+    folder afresh for every file argument (so that a file given twice runs
+    twice): 2,500 files in folders of 100 made 250,000 nodes (collection 52 s
+    against 15 s without arguments). When every argument is a different file,
+    a folder's first collection is reused, as pytest does for every other
+    level; the same nodes come out. Older pytest (no ``handle_dupes``): as is.
+    """
+    original = getattr(session, "_collect_one_node", None)
+    if original is None or not _only_distinct_files_given(session.config):
+        return
+    try:
+        import inspect
+        if "handle_dupes" not in inspect.signature(original).parameters:
+            return
+        from _pytest.nodes import Directory
+    except Exception:
+        return
+
+    def collect_one_node(node, handle_dupes=True):
+        return original(node, True if isinstance(node, Directory) else handle_dupes)
+
+    session._collect_one_node = collect_one_node
 
 
 def pytest_collectreport(report):
@@ -414,6 +764,7 @@ def pytest_collectreport(report):
 
 
 def pytest_collection_finish(session):
+    seen = set(_collected_files)
     for item in session.items:
         path = os.path.normpath(str(item.path))
         titles = [n.name for n in item.listchain() if isinstance(n, pytest.Class)]
@@ -423,14 +774,15 @@ def pytest_collection_finish(session):
             line = _def_line(path, line, getattr(item, "originalname", None) or item.name.split("[", 1)[0])
         _nodes[item.nodeid] = {"file": path, "titles": titles, "name": item.name, "line": line}
         _state(path).remaining.add(item.nodeid)
-        if path not in _collected_files:
+        if path not in seen:
+            seen.add(path)
             _collected_files.append(path)
 
     listing = os.environ.get(LIST_ENV)
     if listing:
         try:
             with open(listing, "w", encoding="utf-8") as fh:
-                json.dump({
+                _dump({
                     "files": _collected_files,
                     "errors": _collect_errors,
                     "rootdir": str(session.config.rootpath),
@@ -496,7 +848,9 @@ def pytest_runtest_logreport(report):
 
 
 def pytest_runtest_logfinish(nodeid, location):
-    _switch_context("")
+    # No switch back to "" here: the test's teardown already ran inside its context and
+    # nothing of the project runs between two tests; one switch per test, not two
+    # (each switch walks every file the process has measured).
     node = _nodes.get(nodeid) or {"file": _file_of(nodeid), "titles": [], "name": nodeid.split("::")[-1], "line": None}
     reports = (_tests.pop(nodeid, None) or {"reports": {}})["reports"]
     case, output = _case(node, reports)
@@ -574,7 +928,9 @@ def _finish_file(st):
     _emit(ev="file-end", file=st.path, result=st.result)
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_sessionfinish(session, exitstatus):
+    _switch_context("")  # session-end code (the project's own sessionfinish hooks): outside any test
     if _option(session.config, "collectonly"):
         _finish_coverage()
         return
@@ -610,7 +966,7 @@ def _write_result(config, status):
     }
     try:
         with open(target, "w", encoding="utf-8") as fh:
-            json.dump(run, fh, default=str)
+            _dump(run, fh, default=str)
     except Exception as err:
         _log("error", "could not write the result file: %s" % err)
 

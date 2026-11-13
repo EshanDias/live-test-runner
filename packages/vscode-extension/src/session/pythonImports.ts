@@ -96,31 +96,46 @@ export class PythonImportGraph {
    * project modules. A conftest.py is used by every test file under its folder.
    */
   dependents(sourceFile: string, testFiles: string[]): string[] {
-    const target = path.normalize(sourceFile);
-    if (path.basename(target) === 'conftest.py') {
-      const dir = path.dirname(target);
-      return testFiles.filter((t) => t.startsWith(dir + path.sep));
-    }
-    const out: string[] = [];
-    for (const test of testFiles) {
-      if (path.normalize(test) === target) { continue; }
-      if (this._reaches(test, target)) { out.push(test); }
-    }
-    return out;
+    return this.dependentsOf([sourceFile], testFiles).get(path.normalize(sourceFile)) ?? [];
   }
 
-  private _reaches(from: string, target: string): boolean {
-    const seen = new Set<string>([from]);
-    const queue = [from];
-    while (queue.length > 0) {
-      const f = queue.shift()!;
-      for (const dep of this.importsOf(f)) {
-        const n = path.normalize(dep);
-        if (n === target) { return true; }
-        if (!seen.has(n)) { seen.add(n); queue.push(n); }
+  /**
+   * {@link dependents} of several source files at once (keys: normalised
+   * paths). Each test file's imports are walked once and each file's imports
+   * read once per call: asking per source file walked every test file's
+   * imports again, with a stat per step (millions of calls per batch on a
+   * large project, all on the extension host).
+   */
+  dependentsOf(sourceFiles: string[], testFiles: string[]): Map<string, string[]> {
+    const imports = new Map<string, string[]>();
+    const importsOf = (f: string) => {
+      let list = imports.get(f);
+      if (!list) { list = this.importsOf(f).map((d) => path.normalize(d)); imports.set(f, list); }
+      return list;
+    };
+    const targets = new Set(sourceFiles.map((f) => path.normalize(f)));
+    const out = new Map<string, string[]>([...targets].map((t) => [t, []]));
+    const plain = [...targets].filter((t) => path.basename(t) !== 'conftest.py');
+    for (const t of targets) {
+      if (path.basename(t) !== 'conftest.py') { continue; }
+      const dir = path.dirname(t);
+      out.set(t, testFiles.filter((f) => f.startsWith(dir + path.sep)));
+    }
+    if (plain.length === 0) { return out; }
+    for (const test of testFiles) {
+      const from = path.normalize(test);
+      const seen = new Set<string>([from]);
+      const queue = [from];
+      for (let i = 0; i < queue.length; i++) {
+        for (const dep of importsOf(queue[i])) {
+          if (!seen.has(dep)) { seen.add(dep); queue.push(dep); }
+        }
+      }
+      for (const t of plain) {
+        if (t !== from && seen.has(t)) { out.get(t)!.push(test); }
       }
     }
-    return false;
+    return out;
   }
 
   /** `a.b.c` → the files that importing it runs: each package's __init__.py on the way and the module itself. */

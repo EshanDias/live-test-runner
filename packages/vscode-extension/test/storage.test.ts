@@ -47,6 +47,8 @@ describe('Storage — prune unused', () => {
     const oldTransform = mk(path.join(tmpDir, 'transform-cache-old'));
     const newTransform = mk(path.join(tmpDir, 'transform-cache-new'));
     const oldRunnable = mk(path.join(tmpDir, 'runnable-files-old.json'), '{}');
+    const oldVitestConfig = mk(path.join(tmpDir, 'vitest-config-old.json'), '{}');
+    const newVitestConfig = mk(path.join(tmpDir, 'vitest-config-new.json'), '{}');
     const session = mk(path.join(tmpDir, 'session-1-1'));
     const oldCra = mk(path.join(cacheDir, 'ltr-cra-config-old.json'), '{}');
     const oldProject = mk(path.join(cacheDir, 'p-old'));
@@ -56,11 +58,11 @@ describe('Storage — prune unused', () => {
     const openOldProject = mk(path.join(cacheDir, 'p-open'));
     mk(path.join(openOldProject, 'discovery-cache.json'), JSON.stringify({ lastUsedAt: Date.now() - 90 * 86_400_000 }));
     mk(path.join(openOldProject, 'session.lock'), '42');
-    for (const p of [oldTransform, oldRunnable, oldCra, session]) { old(p, 45); }
+    for (const p of [oldTransform, oldRunnable, oldVitestConfig, oldCra, session]) { old(p, 45); }
 
     pruneUnused({ isProcessAlive: alive([42]), cacheDir, tmpDir });
 
-    for (const gone of [oldTransform, oldRunnable, oldCra, oldProject]) { expect(fs.existsSync(gone)).toBe(false); }
-    for (const kept of [newTransform, recentProject, openOldProject, session]) { expect(fs.existsSync(kept)).toBe(true); }
+    for (const gone of [oldTransform, oldRunnable, oldVitestConfig, oldCra, oldProject]) { expect(fs.existsSync(gone)).toBe(false); }
+    for (const kept of [newTransform, newVitestConfig, recentProject, openOldProject, session]) { expect(fs.existsSync(kept)).toBe(true); }
   });
 });

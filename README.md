@@ -17,7 +17,8 @@ A VS Code extension for **Jest** (including Create React App), **Vitest** and **
 - **Test tree before you run anything** — every file, suite and test, with `▶ Run` / `▷ Debug` above each one.
 - **Failures on the failing line** — the reason after the line, the full message and a side-by-side diff in the hover; **Update snapshot** for a changed snapshot (Jest, Vitest, Angular; asks first).
 - **Results panel** — test list, per-test console output, failures with the diff and location, and **Copy for AI** (the failure plus the test's code, clipboard only).
-- **Coverage in the editor** — green / amber / red bars per line; hover a line to see the tests that ran it.
+- **Coverage in the editor** — green / amber / red bars per line, the same numbers as your own coverage command; hover a line to see the tests that ran it.
+- **Fast on big projects** — runs use what your machine has free and give way to your other apps (`speed`: Full / Balanced / Light).
 - **Angular 21+** — runs through Angular's own `ng test` builder: apps and libraries, coverage, debugging.
 - **Monorepos, multi-root workspaces, mixed projects** — one project per package or Python service; Jest and Vitest, or JS and pytest, side by side in one folder.
 - **Nothing written into your project** — no installs, no config changes, no cache or coverage files. (Update snapshot rewrites a snapshot only when you confirm it.)

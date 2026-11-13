@@ -3,7 +3,8 @@
  * A hanging pytest test (an endless sleep): the batch is stopped once that
  * test has run for hangTimeoutSeconds (the plugin's per-test heartbeats), only
  * that file is failed, and the batch's other unfinished files are retried and
- * get their results. No pytest process is left behind.
+ * get their results. No pytest process is left behind; pytest runs below
+ * normal priority.
  */
 const fs = require('fs');
 const path = require('path');
@@ -17,6 +18,10 @@ module.exports = {
   async run({ api, t, vscode, workspace }) {
     fs.writeFileSync(path.join(workspace, 'tests', 'test_hang.py'),
       'import time\n\n\ndef test_sleeps_forever():\n    while True:\n        time.sleep(1)\n');
+    // Test processes run below the user's own work (Windows: checked by the Jest and Vitest scenarios).
+    fs.writeFileSync(path.join(workspace, 'tests', 'test_priority.py'),
+      'import os\nimport sys\n\nimport pytest\n\n\n@pytest.mark.skipif(sys.platform == "win32", reason="Unix nice")\n' +
+      'def test_runs_below_normal_priority():\n    assert os.getpriority(os.PRIO_PROCESS, 0) == 10\n');
     await h.waitForDiscovery(api);
     await h.waitFor(() => api.store.getAllFiles().some((f) => f.filePath.endsWith('test_hang.py')),
       { what: 'test_hang.py to be discovered', timeout: 30_000 });
@@ -33,6 +38,7 @@ module.exports = {
     t.check('the log names the test that hung', logs.some((l) => /test_hang\.py has run for \d+s without finishing \(test "test_sleeps_forever"\)/.test(l)),
       logs.filter((l) => /warn/.test(l)).join('\n'));
     t.check('the wording names pytest, not Jest', !logs.some((l) => /plain Jest|instrumented run/.test(l)), logs.filter((l) => /Jest/.test(l)).join('\n'));
+    t.eq('pytest runs below normal priority', h.sortedCounts(api, 'tests/test_priority.py'), process.platform === 'win32' ? { skipped: 1 } : { passed: 1 });
     t.eq('the files after it still ran', h.sortedCounts(api, 'tests/test_unittest_style.py'), { passed: 2 });
     t.eq('…and before it', h.sortedCounts(api, 'tests/test_cart.py'), { failed: 2, passed: 9, skipped: 2 });
     t.eq('nothing left running', h.nodesWithStatus(api, 'running').map((n) => n.id), []);

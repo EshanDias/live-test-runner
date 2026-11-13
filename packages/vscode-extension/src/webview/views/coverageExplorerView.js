@@ -83,11 +83,25 @@
     const off = (totals && totals.off) || [];
     el.classList.toggle('hidden', off.length === 0);
     el.textContent = '';
+    const unmeasured = (totals && totals.unmeasuredTestFiles) || 0;
+    el.classList.toggle('hidden', off.length === 0 && unmeasured === 0);
     for (const reason of off) {
       const line = document.createElement('div');
       line.textContent = 'Coverage is off — ' + reason + '. Tests still run.';
       el.appendChild(line);
     }
+    if (unmeasured > 0) {
+      const line = document.createElement('div');
+      line.textContent = unmeasured + ' test file' + (unmeasured === 1 ? '' : 's') + ' ran without coverage (a plain retry) and ' + (unmeasured === 1 ? 'is' : 'are') + ' left out of the totals until ' + (unmeasured === 1 ? 'it runs' : 'they run') + ' again.';
+      el.appendChild(line);
+    }
+  }
+
+  /** Status next to the totals: not final while the source scan runs or files wait for their tests to rerun. */
+  function _covStatusText(totals) {
+    if (!totals) { return ''; }
+    if (totals.updating) { return 'Updating coverage (' + totals.updating + ' file' + (totals.updating === 1 ? '' : 's') + ')…'; }
+    return totals.scanComplete ? '' : 'Updating…';
   }
 
   function _renderTotals(totals) {
@@ -98,10 +112,12 @@
       });
       return;
     }
-    _setCovCell('covTotalStmts',  totals.statements.pct, false);
-    _setCovCell('covTotalBranch', totals.branches.pct,   false);
-    _setCovCell('covTotalFns',    totals.functions.pct,  false);
-    _setCovCell('covTotalLines',  totals.lines.pct,      false);
+    _setCovCell('covTotalStmts', totals.statements.pct, !!totals.updating);
+    _setCovCell('covTotalBranch', totals.branches.pct,   !!totals.updating);
+    _setCovCell('covTotalFns', totals.functions.pct,  !!totals.updating);
+    _setCovCell('covTotalLines', totals.lines.pct,      !!totals.updating);
+    const status = _covStatusText(totals);
+    ['covTotalStmts','covTotalBranch','covTotalFns','covTotalLines'].forEach((id) => { const el = _q(id); if (el) { el.title = status; } });
   }
 
   function _basename(filePath) {

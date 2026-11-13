@@ -9,6 +9,15 @@ import { isFrameworkAllowedAt } from './framework/allowedFrameworks';
 import type { VitestAdapter } from './framework/adapters/VitestAdapter';
 import { VitestConfigInfo, vitestConfigInfo, vitestCoverageInstalled, vitestProjects } from './framework/vitestProjects';
 import { VITEST_EVENTS_ENV, applyVitestEvents, readVitestEvents, vitestReporterFile } from './framework/vitestReporter';
+
+/** The project's own coverage provider (v8 / istanbul) the wrapper provider loads. */
+export const VITEST_COVERAGE_REAL_ENV = 'LTR_VITEST_COVERAGE_REAL';
+/** Where the wrapper provider writes each test file's coverage. */
+export const VITEST_COVERAGE_PER_FILE_ENV = 'LTR_VITEST_COVERAGE_PER_FILE';
+/** Where the wrapper provider writes the project's provider's own coverage of the files no test loaded (asked for once per session, and for new / edited files). */
+export const VITEST_COVERAGE_UNTESTED_ENV = 'LTR_VITEST_COVERAGE_UNTESTED';
+/** The wrapper provider module (for configs that name it themselves: Angular's runner config). */
+export const VITEST_COVERAGE_MODULE_ENV = 'LTR_VITEST_COVERAGE_MODULE';
 import { RunResult } from './types';
 import { FRAMEWORK_IDS } from './types';
 import { createLogger } from './utils/logger';
@@ -134,8 +143,19 @@ export class VitestRunner extends CommandRunner {
       typecheckOnly?: boolean;
       /** `--config` for this run instead of the project's (the execution trace wrapper). */
       config?: string;
+      /**
+       * Coverage per test file too: the extension's wrapper provider module
+       * (loads the project's own provider; Vite must be allowed to load it —
+       * the trace wrapper does that). Written to `<coverageDir>/per-test-file`.
+       */
+      perTestFileProvider?: string;
+      /**
+       * With the wrapper provider: also write the provider's own coverage of
+       * the files no test loaded (what a full run adds) to this file.
+       */
+      untestedFile?: string;
     } = {},
-  ): Promise<{ command: ExecutorCommand; eventsFile: string; resultFile: string; coverageFile?: string }> {
+  ): Promise<{ command: ExecutorCommand; eventsFile: string; resultFile: string; coverageFile?: string; perTestFileDir?: string }> {
     // `related`: Vitest finds the test files that import this source file (`vitest related <src> --run`); `files` is ignored.
     const request: RunRequest = options.related ? { kind: 'related', file: options.related } : { kind: 'files', files };
     const root = this.requireProjectRoot();
@@ -144,12 +164,25 @@ export class VitestRunner extends CommandRunner {
     const args = [...await this.commandArgs(request, options.config), ...this.requireAdapter().outputFileArg(resultFile)];
     if (options.typecheckOnly) { args.push('--typecheck.only'); }
     const coverage = options.coverageDir ? await this.coverageArgs(root, options.coverageDir) : undefined;
-    if (coverage) { args.push(...coverage); }
+    let perTestFileDir: string | undefined;
+    if (coverage) {
+      args.push(...coverage.args);
+      if (options.perTestFileProvider) {
+        perTestFileDir = path.join(options.coverageDir!, 'per-test-file');
+        args.push(...this.perTestFileProviderArgs(options.perTestFileProvider));
+        env[VITEST_COVERAGE_MODULE_ENV] = options.perTestFileProvider;
+        env[VITEST_COVERAGE_REAL_ENV] = coverage.provider;
+        env[VITEST_COVERAGE_PER_FILE_ENV] = perTestFileDir;
+        env.LTR_VITEST_ROOT = root;
+        if (options.untestedFile) { env[VITEST_COVERAGE_UNTESTED_ENV] = options.untestedFile; }
+      }
+    }
     return {
       command: { binary: this.spawnPath(this.resolveBinary()), args, cwd: this.spawnPath(root), extraEnv: env, label: this.processLabel, forwardStdout: true },
       eventsFile: env[VITEST_EVENTS_ENV],
       resultFile,
       coverageFile: coverage ? path.join(options.coverageDir!, 'coverage-final.json') : undefined,
+      perTestFileDir,
     };
   }
 
@@ -164,7 +197,12 @@ export class VitestRunner extends CommandRunner {
    * install). Written even when tests fail; below Vitest 4, only files the
    * tests loaded (`all` would instrument the whole project).
    */
-  protected async coverageArgs(root: string, dir: string): Promise<string[] | undefined> {
+  /** The flags that make Vitest use the wrapper provider (Angular: its runner config reads the environment instead). */
+  protected perTestFileProviderArgs(module: string): string[] {
+    return ['--coverage.provider=custom', `--coverage.customProviderModule=${module}`];
+  }
+
+  protected async coverageArgs(root: string, dir: string): Promise<{ args: string[]; provider: string } | undefined> {
     const info = await readConfig(root, await this.requireAdapter().resolveConfig(root), this.workDir, this.logger);
     const provider = info?.coverageProvider ?? 'v8';
     if (!vitestCoverageInstalled(root, provider)) {
@@ -174,13 +212,16 @@ export class VitestRunner extends CommandRunner {
       }
       return undefined;
     }
-    return [
-      '--coverage.enabled=true',
-      '--coverage.reporter=json',
-      `--coverage.reportsDirectory=${dir}`,
-      '--coverage.reportOnFailure=true',
-      ...(this.vitestMajor() < 4 ? ['--coverage.all=false'] : []),
-    ];
+    return {
+      provider,
+      args: [
+        '--coverage.enabled=true',
+        '--coverage.reporter=json',
+        `--coverage.reportsDirectory=${dir}`,
+        '--coverage.reportOnFailure=true',
+        ...(this.vitestMajor() < 4 ? ['--coverage.all=false'] : []),
+      ],
+    };
   }
 
   protected detectAdapter(projectRoot: string): FrameworkAdapter {

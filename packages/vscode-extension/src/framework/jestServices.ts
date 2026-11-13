@@ -37,6 +37,8 @@ export function createJestServices(options: {
       fallbackLoss: 'slower; no coverage or smart reruns for these files',
     },
     features: { trace: true, timeline: true },
+    // Batches run in band: one process, one worker (the adaptive budget counts it so).
+    batchPolicy: { workersPerProcess: 1 },
     adapter: new JestAdapter(sessionDir),
     projectConfig,
     batchRunner: new JestBatchRunner(sessionDir, coverageStore, projectConfig),

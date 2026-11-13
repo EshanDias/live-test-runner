@@ -15,6 +15,7 @@ import { openGuide } from './views/GuidePanel';
 import * as fs from 'fs';
 import * as path from 'path';
 import { LTR_BASE_TMP_DIR, LTR_BASE_CACHE_DIR } from './constants';
+import { rememberVitestConfigIn, setSpeedLevel, setSpeedStrict, totalWorkers, parallelBatches, coreCount, adaptiveCeiling, primePhysicalCores } from '@live-test-runner/runner';
 import { ResultStore } from './store/ResultStore';
 import { ExecutionTraceStore } from './store/ExecutionTraceStore';
 import { SelectionState } from './store/SelectionState';
@@ -52,6 +53,18 @@ function isProcessAlive(pid: number): boolean {
   } catch (e: any) {
     return e.code === 'EPERM'; // Alive but no permission to signal
   }
+}
+
+/** `liveTestRunner.speed` + `speedStrict` → the shared budget (runner `utils/resources.ts`); read when a run starts. */
+function applySpeedSetting(changed: boolean): void {
+  const cfg = vscode.workspace.getConfiguration('liveTestRunner');
+  const level = setSpeedLevel(cfg.get('speed'));
+  const strict = setSpeedStrict(cfg.get('speedStrict'));
+  const line = strict
+    ? `Speed ${level} (strict): up to ${parallelBatches()} test process(es) at once, ${totalWorkers()} worker(s) in total`
+    : `Speed ${level}, adapting: from ${totalWorkers(coreCount(), 'light')} to ${adaptiveCeiling()} worker(s) in total, ` +
+      `as the machine's other programs leave cores free (${totalWorkers()} until measured)`;
+  if (changed) { log.info(`${line} — from the next run`); } else { log.debug(line); }
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -120,6 +133,12 @@ export function activate(context: vscode.ExtensionContext) {
   } catch (err) {
     log.warn('Cache pruning failed — continuing', err);
   }
+
+  // What Vitest's config resolves to, remembered between sessions (Start no longer waits for the probe).
+  rememberVitestConfigIn(LTR_BASE_TMP_DIR);
+  applySpeedSetting(false);
+  // Windows asks for its physical cores in the background (the adaptive ceiling stays below them, once known).
+  void primePhysicalCores().then(() => { if (process.platform === 'win32') { applySpeedSetting(false); } });
 
   // Create a unique isolated directory for THIS session.
   const sessionDirName = `session-${process.pid}-${Date.now()}`;
@@ -469,7 +488,7 @@ export function activate(context: vscode.ExtensionContext) {
       for (const [ctx, files] of byProject) { ctx.session.onFilesChangedOnDisk(files); }
     },
   });
-  const diskWatcher = vscode.workspace.createFileSystemWatcher('**/*', false, false, true);
+  const diskWatcher = vscode.workspace.createFileSystemWatcher('**/*');
 
   /** The active editor's file and cursor line (1-based); else a hint saying what to open. */
   const cursorOrHint = (what: string): { filePath: string; line: number } | undefined => {
@@ -749,11 +768,14 @@ export function activate(context: vscode.ExtensionContext) {
     diskWatcher,
     diskWatcher.onDidChange((uri) => externalChanges.fileChanged(uri.fsPath)),
     diskWatcher.onDidCreate((uri) => externalChanges.fileChanged(uri.fsPath)),
+    // A deleted file (or folder) leaves the coverage totals.
+    diskWatcher.onDidDelete((uri) => { if (!/[\\/](node_modules|\.git)([\\/]|$)/.test(uri.fsPath)) { owner(uri.fsPath)?.session.onFilesDeleted([uri.fsPath]); } }),
     { dispose: () => externalChanges.dispose() },
     vscode.workspace.onDidChangeWorkspaceFolders(() => { projects.refresh(); }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('liveTestRunner.projectRoot')) { projects.refresh(); }
       if (e.affectsConfiguration('liveTestRunner.pythonPath')) { pythons.invalidate(); }
+      if (e.affectsConfiguration('liveTestRunner.speed') || e.affectsConfiguration('liveTestRunner.speedStrict')) { applySpeedSetting(true); }
     }),
 
     outputChannel,

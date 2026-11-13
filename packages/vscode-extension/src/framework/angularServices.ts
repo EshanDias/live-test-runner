@@ -12,11 +12,30 @@ import { VitestBatchRunner } from '../session/VitestBatchRunner';
 import { AngularBatchRunner } from '../session/AngularBatchRunner';
 import { IProjectConfig } from '../session/IProjectConfig';
 import { CoverageStore } from '../coverage/CoverageStore';
+import { CoverageScope } from '../coverage/coverageScope';
 
 /** angular.json holds the test setup; no config file to resolve. */
 class AngularProjectConfig implements IProjectConfig {
   async get(): Promise<string | undefined> { return undefined; }
-  async coverageScope(): Promise<undefined> { return undefined; }
+  /**
+   * `ng test --coverage` lists only the files the tests load (Vitest 4+ adds
+   * files no test loads only for an include list: `coverageInclude`, which
+   * the provider's own untested pass then counts). So no source scan, and
+   * every file the builder's report lists counts (its `coverageInclude` /
+   * `coverageExclude` already applied; `app.config.ts` is the app's code, not
+   * a tool config): only files outside the project or in node_modules are left out.
+   */
+  async coverageScope(projectRoot: string): Promise<CoverageScope> {
+    return {
+      source: 'Angular (ng test --coverage)',
+      includesUntouched: false,
+      isDefault: false,
+      counts: (fp) => {
+        const rel = path.relative(projectRoot, fp);
+        return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel) && !/(^|[\\/])node_modules([\\/]|$)/.test(rel);
+      },
+    };
+  }
   /** Component templates (`templateUrl`): saving one reruns its component's tests. */
   async sourceExtensions(): Promise<string[]> { return ['html']; }
   reset(): void { /* nothing cached */ }
@@ -32,7 +51,7 @@ export function createAngularServices(options: {
   const projectConfig = new AngularProjectConfig();
   const newRunner = (logger: (msg: string) => void) =>
     runnerAdapter.createRunner({ logger, tmpDir: sessionDir }) as CommandRunner;
-  const batchRunner = new AngularBatchRunner(new VitestBatchRunner(newRunner, { store: coverageStore, sessionDir, projectConfig }));
+  const batchRunner = new AngularBatchRunner(new VitestBatchRunner(newRunner, { store: coverageStore, sessionDir, projectConfig, perTestFile: 'always' }));
   return {
     framework: FRAMEWORK_IDS.angular,
     displayName: 'Angular',
@@ -48,6 +67,10 @@ export function createAngularServices(options: {
       fallbackLoss: 'slower',
     },
     features: { trace: false, timeline: false },
+    // Each `ng test` builds its files before a test runs (~7 s): 588 files in 3 parallel batches took 41 s
+    // in 49-file batches, 18 s in 196-file ones; 2,500 files 98 s in 167-file batches, 71.5 s in one per
+    // process (plain `ng test --coverage`: 56 s). Results still stream per file.
+    batchPolicy: { maxFilesPerBatch: 1000 },
     traceOffReason: () => 'Angular runs without the execution trace for now',
     coverageOffReason: (projectRoot) => vitestCoverageInstalled(projectRoot, 'v8') || vitestCoverageInstalled(projectRoot, 'istanbul')
       ? undefined

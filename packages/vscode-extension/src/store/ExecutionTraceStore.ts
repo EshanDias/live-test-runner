@@ -52,10 +52,13 @@ export class ExecutionTraceStore {
 
   /**
    * Line → test reverse index.
-   * sourceFilePath → lineNumber (1-based) → array of { testFileId, fullName }
+   * sourceFilePath → lineNumber (1-based) → test file → full test names.
    * Used by CoverageHoverProvider to show "covered by N tests" on gutter hover.
+   * Kept per test file so adding or forgetting one costs only its own lines
+   * (a flat list per line made every batch scan every earlier test of a
+   * shared component: Sentry's 2,500 test files took 605 s on the extension host).
    */
-  private readonly _lineToTests = new Map<string, Map<number, LineTestEntry[]>>();
+  private readonly _lineToTests = new Map<string, Map<number, Map<string, string[]>>>();
 
   /**
    * Module graph (Vitest): file → the project files that import it, any
@@ -64,6 +67,9 @@ export class ExecutionTraceStore {
    * templates) rerun the test files that load it.
    */
   private readonly _importers = new Map<string, Set<string>>();
+
+  /** Test file → the source files its entries name (sourceToTests, lineToTests): what forgetTestFiles visits. */
+  private readonly _sourcesOfTestFile = new Map<string, Set<string>>();
 
   // ── Trace index ────────────────────────────────────────────────────────────
 
@@ -110,6 +116,15 @@ export class ExecutionTraceStore {
 
   setSourceMapping(sourceFilePath: string, mapping: SourceTestMapping): void {
     this._sourceToTests.set(sourceFilePath, mapping);
+    for (const tf of Object.keys(mapping)) { this._noteSource(tf, sourceFilePath); }
+  }
+
+  /** One test file's suites for a source file (the other test files' entries untouched). */
+  setSourceTests(sourceFilePath: string, testFilePath: string, suites: { [suiteName: string]: SuiteTraceInfo }): void {
+    let mapping = this._sourceToTests.get(sourceFilePath);
+    if (!mapping) { mapping = {}; this._sourceToTests.set(sourceFilePath, mapping); }
+    mapping[testFilePath] = suites;
+    this._noteSource(testFilePath, sourceFilePath);
   }
 
   getSourceMapping(sourceFilePath: string): SourceTestMapping | undefined {
@@ -166,29 +181,29 @@ export class ExecutionTraceStore {
 
   /**
    * Merge a per-file line→test mapping into the index.
-   * Called by the batch runner (JestBatchRunner) after each trace parse.
-   * Accumulates across reruns — entries are added, never removed mid-session.
+   * Called by the batch runners after each trace parse; a rerun test file's
+   * old entries were removed first (forgetTestFiles).
    */
   mergeLineToTests(
     sourceFilePath: string,
     testFileId: string,
     lineMap: Map<number, string[]>,  // line → array of fullName strings
   ): void {
+    this._noteSource(testFileId, sourceFilePath);
     let fileMap = this._lineToTests.get(sourceFilePath);
     if (!fileMap) {
       fileMap = new Map();
       this._lineToTests.set(sourceFilePath, fileMap);
     }
     for (const [line, names] of lineMap) {
-      const existing = fileMap.get(line) ?? [];
-      const existingNames = new Set(existing.map((e) => e.fullName));
+      let byFile = fileMap.get(line);
+      if (!byFile) { byFile = new Map(); fileMap.set(line, byFile); }
+      const existing = byFile.get(testFileId);
+      if (!existing) { byFile.set(testFileId, [...new Set(names)]); continue; }
+      const seen = new Set(existing);
       for (const fullName of names) {
-        if (!existingNames.has(fullName)) {
-          existing.push({ testFileId, fullName });
-          existingNames.add(fullName);
-        }
+        if (!seen.has(fullName)) { existing.push(fullName); seen.add(fullName); }
       }
-      fileMap.set(line, existing);
     }
   }
 
@@ -197,7 +212,13 @@ export class ExecutionTraceStore {
    * Returns an empty array if no data exists (line not covered or not yet traced).
    */
   getTestsForLine(sourceFilePath: string, line: number): LineTestEntry[] {
-    return this._lineToTests.get(sourceFilePath)?.get(line) ?? [];
+    const byFile = this._lineToTests.get(sourceFilePath)?.get(line);
+    if (!byFile) { return []; }
+    const out: LineTestEntry[] = [];
+    for (const [testFileId, names] of byFile) {
+      for (const fullName of names) { out.push({ testFileId, fullName }); }
+    }
+    return out;
   }
 
   // ── Debug ──────────────────────────────────────────────────────────────────
@@ -235,6 +256,47 @@ export class ExecutionTraceStore {
     return lines.join('\n');
   }
 
+  // ── Replacing a test file's entries ────────────────────────────────────────
+
+  /**
+   * The test files ran again (whole): what they ran before no longer counts.
+   * Called with every test file a batch finished, before its trace records
+   * are applied — a test that was deleted or renamed, or no longer reaches a
+   * line, leaves the index; a deleted test file is forgotten the same way.
+   */
+  forgetTestFiles(testFiles: Iterable<string>): void {
+    for (const tf of testFiles) {
+      const sources = this._sourcesOfTestFile.get(tf);
+      if (!sources) { continue; }
+      this._sourcesOfTestFile.delete(tf);
+      for (const src of sources) {
+        const mapping = this._sourceToTests.get(src);
+        if (mapping && mapping[tf]) {
+          delete mapping[tf];
+          if (Object.keys(mapping).length === 0) { this._sourceToTests.delete(src); }
+        }
+        const lines = this._lineToTests.get(src);
+        if (!lines) { continue; }
+        for (const [line, byFile] of lines) {
+          if (byFile.delete(tf) && byFile.size === 0) { lines.delete(line); }
+        }
+        if (lines.size === 0) { this._lineToTests.delete(src); }
+      }
+    }
+  }
+
+  /** Test files whose entries are under `deleted` (a deleted test file or folder). */
+  testFilesUnder(deleted: string, sep: string): string[] {
+    const prefix = deleted.endsWith(sep) ? deleted : deleted + sep;
+    return [...this._sourcesOfTestFile.keys()].filter((tf) => tf === deleted || tf.startsWith(prefix));
+  }
+
+  private _noteSource(testFile: string, sourceFile: string): void {
+    let set = this._sourcesOfTestFile.get(testFile);
+    if (!set) { set = new Set(); this._sourcesOfTestFile.set(testFile, set); }
+    set.add(sourceFile);
+  }
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   /**
@@ -247,5 +309,6 @@ export class ExecutionTraceStore {
     this._coverageIndex.clear();
     this._sourceToTests.clear();
     this._lineToTests.clear();
+    this._sourcesOfTestFile.clear();
   }
 }

@@ -9,9 +9,10 @@ import { AngularProject, AngularWorkspace, angularProjectOf, readAngularWorkspac
 import { vitestCoverageInstalled } from './framework/vitestProjects';
 import { vitestReporterFile } from './framework/vitestReporter';
 import { FRAMEWORK_IDS } from './types';
-import { VitestRunner, toVitestNamePattern } from './VitestRunner';
+import { VITEST_COVERAGE_MODULE_ENV, VitestRunner, toVitestNamePattern } from './VitestRunner';
 import { fromRunnerPath } from './resolution/RunnerPaths';
 import { createLogger } from './utils/logger';
+import { coreCount, workersPerBatch } from './utils/resources';
 
 const log = createLogger('AngularRunner');
 
@@ -133,7 +134,12 @@ export class AngularRunner extends VitestRunner {
    * environment) — when the project has @vitest/coverage-v8 (or -istanbul):
    * the builder prepares its build for the provider it finds there.
    */
-  protected override async coverageArgs(root: string, dir: string): Promise<string[] | undefined> {
+  /** No Vitest flags for `ng test`: the runner config names the provider (from the environment). */
+  protected override perTestFileProviderArgs(): string[] {
+    return [];
+  }
+
+  protected override async coverageArgs(root: string, dir: string): Promise<{ args: string[]; provider: string } | undefined> {
     if (!vitestCoverageInstalled(root, 'v8') && !vitestCoverageInstalled(root, 'istanbul')) {
       if (!toldNoCoverage.has(root)) {
         toldNoCoverage.add(root);
@@ -142,7 +148,7 @@ export class AngularRunner extends VitestRunner {
       return undefined;
     }
     void dir; // goes to the runner config through the environment (liveCommand)
-    return this.builderCoverageArgs();
+    return { args: this.builderCoverageArgs(), provider: vitestCoverageInstalled(root, 'v8') ? 'v8' : 'istanbul' };
   }
 
   private builderCoverageArgs(): string[] {
@@ -180,21 +186,29 @@ export class AngularRunner extends VitestRunner {
 
   /**
    * Our runner config, in the session folder: test line numbers, the
-   * snapshot update flag (the builder has no `-u`), and the coverage folder
-   * from the environment (json only, never the project's coverage folder).
+   * snapshot update flag (the builder has no `-u`), the coverage folder
+   * from the environment (json only, never the project's coverage folder),
+   * and Vitest's workers within the machine's budget (the builder has no
+   * flag for them; left to Vitest, every batch started a worker per core:
+   * 3 batches at once ran each twice as slowly).
    */
   private runnerConfig(update: boolean): string {
     const file = path.join(this.workDir, `ltr-ng-runner${update ? '-update' : ''}.config.mjs`);
     const source = [
       '// Live Test Runner: options for Angular\'s unit-test builder (ng test --runner-config).',
       'const coverageDir = process.env.' + ANGULAR_COVERAGE_DIR_ENV + ';',
+      '// Coverage per test file: the extension\'s wrapper provider (it loads the project\'s own), which Vite must be allowed to load.',
+      'const perFile = coverageDir ? process.env.' + VITEST_COVERAGE_MODULE_ENV + ' : undefined;',
+      'const fsAllow = perFile ? [process.cwd(), perFile.replace(/[\\\\/][^\\\\/]+$/, \'\')] : undefined;',
       'export default {',
       '  test: {',
       '    includeTaskLocation: true,',
+      `    maxWorkers: ${workersPerBatch(coreCount())},`,
       '    passWithNoTests: true,',
       ...(update ? ['    update: true,'] : []),
-      '    ...(coverageDir ? { coverage: { reportsDirectory: coverageDir, reportOnFailure: true } } : {}),',
+      '    ...(coverageDir ? { coverage: { reportsDirectory: coverageDir, reportOnFailure: true, ...(perFile ? { provider: \'custom\', customProviderModule: perFile } : {}) } } : {}),',
       '  },',
+      '  ...(fsAllow ? { server: { fs: { allow: fsAllow } } } : {}),',
       '};',
       '',
     ].join('\n');

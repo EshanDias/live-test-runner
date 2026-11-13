@@ -1,0 +1,2 @@
+def untested():
+    return "c"

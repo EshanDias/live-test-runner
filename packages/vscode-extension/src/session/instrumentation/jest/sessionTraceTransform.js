@@ -152,10 +152,72 @@ function transformerSetup(moduleName, options, transforms) {
   const transformerConfig = (entry && entry[2]) || undefined;
   const downstreamOptions = {
     ...options,
-    ...(transformerConfig !== undefined ? { transformerConfig } : {}),
+    // Its own options, never ours (Jest gives {} when an entry has none).
+    transformerConfig: transformerConfig !== undefined ? transformerConfig : {},
     config: { ...options.config, transform: transforms.filter(e => e[1] !== moduleName) },
   };
   return { resolvedPath, transformerConfig, downstreamOptions };
+}
+
+/** `instrumented`: the transformer added Jest's coverage itself (`canInstrument`, as babel-jest and @swc/jest do). */
+function withInstrumentFlag(result, transformer, options) {
+  if (result) { result.instrumented = !!(options && options.instrument && transformer && transformer.canInstrument); }
+  return result;
+}
+
+/**
+ * Jest's own coverage instrumentation of a transformer's output, exactly as
+ * Jest's ScriptTransformer._instrumentFile does it when the transformer does
+ * not instrument (ts-jest, vue-jest, no transform): babel-plugin-istanbul with
+ * the transformer's map as input, so the coverage maps back to the file.
+ */
+function instrumentLikeJest(compiled, sourcePath, options) {
+  const rootDir = options && options.config && options.config.rootDir;
+  const fromJest = (id) => {
+    const paths = [rootDir, __dirname].filter(Boolean);
+    for (const via of ['@jest/transform/package.json', 'jest/package.json']) {
+      try { paths.unshift(require('path').dirname(require.resolve(via, { paths: [rootDir] }))); } catch (_) { /* not there */ }
+    }
+    return require(require.resolve(id, { paths }));
+  };
+  const babel = fromJest('@babel/core');
+  const istanbul = fromJest('babel-plugin-istanbul');
+  const inputMap = compiled.map || inlineSourceMap(compiled.code) || null;
+  const result = babel.transformSync(compiled.code, {
+    auxiliaryCommentBefore: ' istanbul ignore next ',
+    babelrc: false,
+    caller: {
+      name: '@jest/transform',
+      supportsDynamicImport: options.supportsDynamicImport,
+      supportsExportNamespaceFrom: options.supportsExportNamespaceFrom,
+      supportsStaticESM: options.supportsStaticESM,
+      supportsTopLevelAwait: options.supportsTopLevelAwait,
+    },
+    configFile: false,
+    filename: sourcePath,
+    plugins: [[istanbul.default || istanbul, { compact: false, cwd: rootDir, exclude: [], extension: false, inputSourceMap: inputMap, useInlineSourceMaps: false }]],
+    sourceMaps: inputMap ? 'both' : false,
+  });
+  if (!result || result.code == null) { return compiled; }
+  // `map` leads to the transformer's output; `inputMap` from there to the file (see lookupOf).
+  return { code: result.code, map: result.map || null, inputMap, instrumented: true };
+}
+
+/**
+ * Generated → original positions for code a transformer produced: through its
+ * map, and when Jest's coverage was added afterwards (instrumentLikeJest), first
+ * through that step's map to the transformer's output.
+ */
+function lookupOf(compiled, sourcePath) {
+  const map = compiled.map || inlineSourceMap(compiled.code);
+  const own = map ? sourceMapLookup(map, sourcePath) : null;
+  if (!compiled.inputMap) { return own; }
+  const inner = sourceMapLookup(compiled.inputMap, sourcePath);
+  if (!own || !inner) { return null; }
+  return (line0, col) => {
+    const p = own(line0, col);
+    return p ? inner(p.line - 1, p.column) : undefined;
+  };
 }
 
 function resultOf(result) {
@@ -174,7 +236,7 @@ function invokeTransformer(moduleName, sourceCode, sourcePath, options, transfor
     return null;
   }
   if (!transformer || typeof transformer.process !== 'function') { return null; }
-  return resultOf(transformer.process(sourceCode, sourcePath, downstreamOptions));
+  return withInstrumentFlag(resultOf(transformer.process(sourceCode, sourcePath, downstreamOptions)), transformer, options);
 }
 
 /**
@@ -198,9 +260,9 @@ async function invokeTransformerAsync(moduleName, sourceCode, sourcePath, option
   }
   if (!transformer) { return null; }
   if (typeof transformer.processAsync === 'function') {
-    return resultOf(await transformer.processAsync(sourceCode, sourcePath, downstreamOptions));
+    return withInstrumentFlag(resultOf(await transformer.processAsync(sourceCode, sourcePath, downstreamOptions)), transformer, options);
   }
-  return typeof transformer.process === 'function' ? resultOf(transformer.process(sourceCode, sourcePath, downstreamOptions)) : null;
+  return typeof transformer.process === 'function' ? withInstrumentFlag(resultOf(transformer.process(sourceCode, sourcePath, downstreamOptions)), transformer, options) : null;
 }
 
 /**
@@ -687,6 +749,15 @@ function remapLocations(ast, lookup) {
  */
 function instrumentAST(code, sourcePath, lookup, extra) {
   const t = _t;
+  // Jest's v8 coverage measures this code: only the trace (plain statements, no new
+  // blocks) — no counters and no rewrites (optional chains, else arms) that V8
+  // would count as code of the file. A source map back to the file goes with it.
+  const V8 = !!(extra && (extra.v8 || extra.traceOnly));
+  // Our own map back to the file and the runtime as a node (extra.v8); traceOnly: the
+  // project's transformer instruments our output for Jest's coverage, its map stands.
+  const OWN_MAP = !!(extra && extra.v8);
+  // Jest's istanbul instrumentation runs on our output: the trace calls are not the file's statements.
+  const ignoreStep = (node) => { if (extra && extra.istanbulIgnore) { t.addComment(node, 'leading', ' istanbul ignore next '); } return node; };
   let ast;
   try {
     // TypeScript source (.ts / .mts / .cts) is not JSX: with the jsx plugin a
@@ -806,7 +877,11 @@ function instrumentAST(code, sourcePath, lookup, extra) {
         end:   { line: loc?.end?.line   ?? 0 },
       };
 
-      if (t.isBlockStatement(body)) {
+      if (V8) {
+        // The trace step of an expression body only: (x) => (step(line), expr)
+        const bodyLine = !t.isBlockStatement(body) ? (body.loc?.start?.line ?? 0) : 0;
+        if (bodyLine !== 0) { node.body = t.sequenceExpression([ignoreStep(makeStepCallExpr(bodyLine, sourcePath)), body]); }
+      } else if (t.isBlockStatement(body)) {
         // Block-body function — prepend counter to the body
         body.body.unshift(makeCovFn(fnId));
       } else {
@@ -837,7 +912,7 @@ function instrumentAST(code, sourcePath, lookup, extra) {
       if (parentType !== 'FunctionDeclaration' && parentType !== 'FunctionExpression' &&
           parentType !== 'ArrowFunctionExpression' && parentType !== 'ClassMethod' &&
           parentType !== 'ObjectMethod') { return; }
-      if (unmapped(nodePath.node)) { return; }
+      if (V8 || unmapped(nodePath.node)) { return; }
       const bId  = `b${bIdx++}`;
       const line = nodePath.node.loc?.start?.line ?? 0;
       manifest.branches[bId] = { type: 'default-arg', line, arms: 1 };
@@ -850,7 +925,7 @@ function instrumentAST(code, sourcePath, lookup, extra) {
     // Skips ConditionalExpression nodes we generated for optional-chaining (already counted).
     ConditionalExpression: {
       exit(nodePath) {
-        if (generatedCondExprs.has(nodePath.node)) { return; }
+        if (V8 || generatedCondExprs.has(nodePath.node)) { return; }
         const node = nodePath.node;
         if (unmapped(node)) { return; }
         const bId  = `b${bIdx++}`;
@@ -873,7 +948,7 @@ function instrumentAST(code, sourcePath, lookup, extra) {
     // replaceWith() Babel re-traverses the replacement and processes inner `?.`.
     OptionalMemberExpression: {
       enter(nodePath) {
-        if (!nodePath.node.optional) { return; } // non-optional continuations are handled by their `?.` ancestor
+        if (V8 || !nodePath.node.optional) { return; } // non-optional continuations are handled by their `?.` ancestor
         const node = nodePath.node;
         if (unmapped(node)) { return; }
         const topPath = findChainSegmentTop(nodePath);
@@ -910,7 +985,7 @@ function instrumentAST(code, sourcePath, lookup, extra) {
     OptionalCallExpression: {
       enter(nodePath) {
         const node = nodePath.node;
-        if (!node.optional) { return; }
+        if (V8 || !node.optional) { return; }
         if (t.isOptionalMemberExpression(node.callee)) { return; } // handled by OptionalMemberExpression visitor
         if (unmapped(node)) { return; }
         const topPath = findChainSegmentTop(nodePath);
@@ -956,6 +1031,7 @@ function instrumentAST(code, sourcePath, lookup, extra) {
       exit(nodePath) {
         const node = nodePath.node;
         // Skip inner nodes of a same-operator chain — the root handles the whole chain
+        if (V8) { return; }
         if (nodePath.parent?.type === 'LogicalExpression' &&
             nodePath.parent.operator === node.operator) { return; }
         if (unmapped(node)) { return; }
@@ -984,7 +1060,7 @@ function instrumentAST(code, sourcePath, lookup, extra) {
     SwitchStatement(nodePath) {
       const node = nodePath.node;
       const cases = node.cases;
-      if (!cases.length || unmapped(node)) { return; }
+      if (V8 || !cases.length || unmapped(node)) { return; }
       const bId = `b${bIdx++}`;
       manifest.branches[bId] = { type: 'switch', line: node.loc?.start?.line ?? 0, arms: cases.length };
       cases.forEach((switchCase, armIdx) => {
@@ -995,7 +1071,7 @@ function instrumentAST(code, sourcePath, lookup, extra) {
     // Branch coverage — if/else
     IfStatement(nodePath) {
       const node = nodePath.node;
-      if (unmapped(node)) { return; }
+      if (V8 || unmapped(node)) { return; }
       const bId  = `b${bIdx++}`;
       manifest.branches[bId] = { type: 'if', line: node.loc?.start?.line ?? 0, arms: 2 };
 
@@ -1074,7 +1150,7 @@ function instrumentAST(code, sourcePath, lookup, extra) {
         insertions.push({
           nodePath,
           stepNode: makeStepCall(lineNo, sourcePath),
-          covNode:  makeCovStmt(sId),
+          covNode:  V8 ? null : makeCovStmt(sId),
         });
       },
     },
@@ -1083,8 +1159,8 @@ function instrumentAST(code, sourcePath, lookup, extra) {
   for (let i = insertions.length - 1; i >= 0; i--) {
     const { nodePath, stepNode, covNode } = insertions[i];
     try {
-      nodePath.insertBefore(covNode);
-      nodePath.insertBefore(stepNode);
+      if (covNode) { nodePath.insertBefore(covNode); }
+      nodePath.insertBefore(ignoreStep(stepNode));
     } catch (_e) {}
   }
 
@@ -1099,7 +1175,14 @@ function instrumentAST(code, sourcePath, lookup, extra) {
   if (extra && extra.templateLines) { addTemplateSteps(ast, extra.templateLines, sourcePath); }
 
   // Inject coverage preamble at the top of the program body
-  const preamble = buildCovPreamble(fileHash, manifest);
+  let preamble = [];
+  if (!V8) { preamble = buildCovPreamble(fileHash, manifest); }
+  // The trace runtime, as a node of the program (withRuntime would shift line 1 under our source map).
+  else if (OWN_MAP) {
+    preamble = [extra.esm
+      ? t.importDeclaration([], t.stringLiteral(RUNTIME_PATH.replace(/\\/g, '/')))
+      : t.expressionStatement(t.callExpression(t.identifier('require'), [t.stringLiteral(RUNTIME_PATH)]))];
+  }
   if (ast.program && ast.program.body) {
     ast.program.body.unshift(...preamble);
   }
@@ -1123,7 +1206,15 @@ function instrumentAST(code, sourcePath, lookup, extra) {
     // retainLines: every statement stays on its line, so the line numbers in
     // stack traces, and the transformer's source map built on this code, stay
     // the original file's.
-    output = _generate(ast, { retainLines: true, compact: false }, code);
+    output = OWN_MAP
+      // A map from this code (where V8 measures) back to the file: the nodes already carry the
+      // file's own locations (remapLocations moved them through the transformer's map).
+      // Its sourcesContent is the file itself, as v8-to-istanbul counts the lines of the map's source.
+      // No retainLines: the map carries the lines, and keeping lines in code that holds Jest's
+      // coverage counters can leave a \`return\` alone on its line (it would return undefined).
+      ? _generate(ast, { retainLines: false, compact: false, sourceMaps: true, sourceFileName: sourcePath }, { [sourcePath]: extra.original !== undefined ? extra.original : code })
+      : _generate(ast, { retainLines: true, compact: false }, code);
+    if (OWN_MAP) { extra.map = output.map; }
   } catch (e) {
     _ltrLog('debug', `code generation failed for ${sourcePath}: ${e.message}`);
     return null;
@@ -1192,6 +1283,27 @@ function safeInstrument(code, sourcePath, lookup, extra) {
   }
 }
 
+/**
+ * Jest's v8 coverage is on (our transform entry's options, see the generated
+ * config): instrumentAST adds the trace only, loads the runtime itself and
+ * returns a source map back to the file in `.map`. Undefined otherwise.
+ */
+function v8Extra(options, original) {
+  const mode = options && options.transformerConfig && options.transformerConfig.coverage;
+  if (mode !== 'v8' && mode !== 'babel') { return undefined; }
+  return { v8: true, esm: !!options.supportsStaticESM, original, map: undefined };
+}
+
+/** Jest measures with istanbul (coverageProvider 'babel'): the code must carry Jest's own instrumentation before the trace is added. */
+function withJestCoverage(compiled, sourcePath, options) {
+  const mode = options && options.transformerConfig && options.transformerConfig.coverage;
+  if (mode !== 'babel' || !options.instrument || !compiled || compiled.instrumented) { return compiled; }
+  try { return instrumentLikeJest(compiled, sourcePath, options); } catch (e) {
+    _ltrLog('warn', `could not add Jest's coverage to ${sourcePath} (${e.message}) — it shows no coverage`);
+    return compiled;
+  }
+}
+
 /** Transformers seen rejecting instrumented code (they type-check): compiled first from then on. */
 const _rejectsInstrumented = new Set();
 
@@ -1216,10 +1328,11 @@ function inlineSourceMap(code) {
  * file's own.
  */
 function compileThenInstrument(sourceCode, sourcePath, options) {
-  const compiled = projectTransform(sourceCode, sourcePath, options) || { code: chainTransform(sourceCode, sourcePath, options) };
-  const map = compiled.map || inlineSourceMap(compiled.code);
-  const lookup = map ? sourceMapLookup(map, sourcePath) : null;
-  const instrumented = safeInstrument(compiled.code, sourcePath, lookup || undefined);
+  const compiled = withJestCoverage(projectTransform(sourceCode, sourcePath, options) || { code: chainTransform(sourceCode, sourcePath, options) }, sourcePath, options);
+  const lookup = lookupOf(compiled, sourcePath);
+  const v8 = v8Extra(options, sourceCode);
+  const instrumented = safeInstrument(compiled.code, sourcePath, lookup || undefined, v8);
+  if (instrumented && v8) { return { code: instrumented, map: v8.map }; }
   if (instrumented) { return { code: withRuntime(instrumented, options), map: compiled.map }; }
   // Instrumentation failed — return at least transpiled code so tests can run
   _ltrLog('warn', `could not instrument ${sourcePath} — it runs without coverage/trace (set log level to Debug for the parse error)`);
@@ -1259,18 +1372,22 @@ function directivePrologueEnd(code) {
  */
 function instrumentCompiled(compiled, sourceCode, sourcePath, options) {
   const rootDir = options && options.config && options.config.rootDir;
+  compiled = withJestCoverage(compiled, sourcePath, options);
   if (!compiled) {
     _ltrLog('warn', `no Jest transform compiled ${sourcePath} — it runs without coverage/trace`);
     return { code: sourceCode };
   }
-  const lookup = compiled.map ? sourceMapLookup(compiled.map, sourcePath) : null;
+  const lookup = lookupOf(compiled, sourcePath);
   if (!lookup) {
     _ltrLog('debug', `the transform of ${sourcePath} has no source map — it runs without coverage/trace`);
     return { code: compiled.code, map: compiled.map };
   }
   if (rootDir && loadBabel(rootDir)) {
-    const extra = /\.vue$/i.test(sourcePath) ? { templateLines: templateLinesOf(sourceCode) } : undefined;
+    const v8 = v8Extra(options, sourceCode);
+    const template = /\.vue$/i.test(sourcePath) ? { templateLines: templateLinesOf(sourceCode) } : undefined;
+    const extra = v8 ? Object.assign(v8, template) : template;
     const instrumented = safeInstrument(compiled.code, sourcePath, lookup, extra);
+    if (instrumented && v8) { return { code: instrumented, map: v8.map }; }
     if (instrumented) {
       return { code: withRuntime(instrumented, options), map: compiled.map };
     }
@@ -1279,6 +1396,9 @@ function instrumentCompiled(compiled, sourceCode, sourcePath, options) {
 }
 
 module.exports = {
+  // Jest's coverage (collectCoverage, coverageProvider 'babel'): the project's
+  // transformer instruments when it can, else instrumentLikeJest — Jest itself never does it twice.
+  canInstrument: true,
   /** Jest's ESM mode: components may need their transformer's processAsync (svelte-jester, Svelte 4+). */
   async processAsync(sourceCode, sourcePath, options) {
     if (isCompiledSource(sourcePath) && !IS_TEST_FILE_RE.test(sourcePath)) {
@@ -1325,7 +1445,20 @@ module.exports = {
 
     if (rootDir && loadBabel(rootDir)) {
       // Strict: transpile first with the project's own transformer, then instrument the JS output.
-      if (strict) { return compileThenInstrument(sourceCode, sourcePath, options); }
+      // v8 coverage too: the source map must lead from the code that runs back to the file.
+      const mode = options && options.transformerConfig && options.transformerConfig.coverage;
+      if (strict || mode === 'v8') { return compileThenInstrument(sourceCode, sourcePath, options); }
+      // Jest's istanbul coverage on a lenient transformer: the trace first (marked
+      // `istanbul ignore next`), then the transformer compiles and instruments it once.
+      if (mode === 'babel' && matchingEntry) {
+        const traced = safeInstrument(sourceCode, sourcePath, undefined, { traceOnly: true, istanbulIgnore: true });
+        const viaProject = traced ? projectTransform(traced, sourcePath, options, false, true) : null;
+        if (viaProject) {
+          const covered = viaProject.instrumented ? viaProject : withJestCoverage(viaProject, sourcePath, options);
+          return { code: withRuntime(covered.code, options), map: covered.map };
+        }
+        return compileThenInstrument(sourceCode, sourcePath, options);
+      }
 
       // Lenient path: instrument first, then transpile (original behaviour)
       const instrumented = safeInstrument(sourceCode, sourcePath);
