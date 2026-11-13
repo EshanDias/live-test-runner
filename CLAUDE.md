@@ -75,9 +75,13 @@ Patterns:
 | Extension feature, UI, command, setting | `packages/vscode-extension/README.md`, `CHANGELOG.md`, `ai-context.md` |
 | Dev setup, build, patterns | `developer-guide.md`, this file |
 | Anything stored/shared/sent | `PRIVACY.md` with a clear why for users (+ `noNetwork.test.ts` green); discuss with the owner first |
-| Any user-visible change | `CHANGELOG.md` (short technical bullets: Added / Fixed / Changed / Security & tooling, key file/test names, no paragraphs) + `packages/vscode-extension/CHANGELOG.md` (brief user summary) |
+| Any user-visible change | both changelogs, following **Changelogs** below |
 | Important for users/contributors | `docs/live-test-runner-guide.html` |
 | Headline features, frameworks, install/review links | `site/index.html` (+ `lastmod` in `site/sitemap.xml`), root `README.md` |
+
+**Changelogs: as short as possible** (every release; the more you write, the less anyone reads).
+- `packages/vscode-extension/CHANGELOG.md` (what users read in VS Code): only what a user notices, one plain line each, about 3–6 lines per release (a patch often fits in 3). No internals, no file/function/test names, no causes, no measurements beyond a headline speed-up ("pytest runs 2× faster"). Merge related items into one line; leave out fixes for things users never saw.
+- `CHANGELOG.md` (repo): one short line per change, a key file or setting name at most; no causes, numbers, test lists or sub-bullets. Tooling/CI only when it changes how contributors work. The how and why go in `docs/development/design/`, the detail in the commits.
 
 **Release prep (last step of every release, before the release PR):** bring all docs to a professional standard, not just the changed lines: features/requirements/design pages, architecture, developer guide (incl. Roadmap: shipped list + next list), guide HTML, website, READMEs, both changelogs, `PRIVACY.md`. Move anything still worth keeping out of `dev-personal-docs/` into the wiki, then delete the plans/notes that are finished or no longer needed. Check `--check` passes and no doc contradicts the code.
 

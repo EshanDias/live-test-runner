@@ -46,7 +46,7 @@ These keep the extension safe to install in anyone's project:
 
 - Work happens on a branch; `main` and `release/*` only change through pull requests.
 - PRs must pass the checks (`pnpm test`; PRs to `main` also need a version bump).
-- Update `CHANGELOG.md` (short bullets, one line each) and `packages/vscode-extension/CHANGELOG.md` (short, user-facing) for anything users notice.
+- Update both changelogs for anything users notice, as short as possible: `packages/vscode-extension/CHANGELOG.md` says only what a user notices (one plain line each, no internals, a few lines per release); `CHANGELOG.md` one short line per change (no causes, numbers or test lists).
 - Update the docs in the same pull request (see [Documentation](#documentation) below).
 - Add or update tests: unit tests next to the package, and an e2e scenario (`e2e/scenarios/`) for behaviour in the editor.
 
