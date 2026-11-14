@@ -29,6 +29,8 @@ async function aiBridgeScenario({ api, t, vscode, workspace }, cfg) {
   await h.waitForDiscovery(api);
   await vscode.commands.executeCommand('liveTestRunner.startTesting');
   await h.waitFor(() => api.session.isActive() && !api.session.isRunning(), { what: 'the full run', timeout: 240_000 });
+  // A late file-watcher event for the files written above may rerun them once more (older VS Code): let it finish.
+  await h.settle(api);
   const node = h.nodeByName(api, testRel, cfg.failing);
   t.eq('the test fails before the fix', node.status, 'failed');
 
@@ -45,8 +47,19 @@ async function aiBridgeScenario({ api, t, vscode, workspace }, cfg) {
   if (diags[0]) {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(testFile));
     await vscode.window.showTextDocument(doc);
-    const actions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', doc.uri, new vscode.Range(diags[0].range.start.line, 0, diags[0].range.start.line, 0));
-    t.check('…with a Fix with AI quick fix', (actions ?? []).some((a) => a.title === 'Fix with AI (Live Test Runner)'), JSON.stringify((actions ?? []).map((a) => a.title)));
+    // Asked at the diagnostic's start and over its range; a request can be cancelled when diagnostics refresh.
+    const start = new vscode.Range(diags[0].range.start, diags[0].range.start);
+    let titles = [];
+    for (let attempt = 0; attempt < 6 && !titles.includes('Fix with AI (Live Test Runner)'); attempt++) {
+      for (const args of [[doc.uri, start], [doc.uri, diags[0].range, vscode.CodeActionKind.QuickFix.value]]) {
+        try {
+          const actions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', ...args);
+          titles = [...new Set([...titles, ...(actions ?? []).map((a) => a.title)])];
+        } catch { /* cancelled: ask again */ }
+      }
+      if (!titles.includes('Fix with AI (Live Test Runner)')) { await new Promise((r) => setTimeout(r, 500)); }
+    }
+    t.check('…with a Fix with AI quick fix', titles.includes('Fix with AI (Live Test Runner)'), JSON.stringify(titles));
   }
   const how = await vscode.commands.executeCommand('liveTestRunner.fixWithAI', node.fileId, node.id);
   if (how === 'clipboard') {

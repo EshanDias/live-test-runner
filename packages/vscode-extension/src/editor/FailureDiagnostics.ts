@@ -1,9 +1,10 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { IResultObserver } from '../IResultObserver';
 import type { ResultStore } from '../store/ResultStore';
 import { parseFailure } from './failureInfo';
-import { linesIn, resolveFrameFile, samePath } from './FailureDecorations';
+import { linesIn, realPath, resolveFrameFile, samePath } from './FailureDecorations';
 
 const SOURCE = 'Live Test Runner';
 const SETTING = 'showFailuresInProblems';
@@ -58,8 +59,9 @@ export class FailureDiagnostics implements Partial<IResultObserver>, vscode.Code
           if (node.type !== 'test' || node.status !== 'failed' || node.failureMessages.length === 0) { continue; }
           const failure = parseFailure(node.failureMessages[0]);
           const message = `${node.fullName}: ${failure.summary || 'failed'}`;
-          const add = (target: string, line: number) => {
-            const d = new vscode.Diagnostic(new vscode.Range(line - 1, 0, line - 1, Number.MAX_SAFE_INTEGER), message, vscode.DiagnosticSeverity.Error);
+          const add = (spelled: string, line: number) => {
+            const target = workspaceSpelling(spelled);
+            const d = new vscode.Diagnostic(lineRange(target, line), message, vscode.DiagnosticSeverity.Error);
             d.source = SOURCE;
             d.code = 'failing test';
             byFile.set(target, [...(byFile.get(target) ?? []), d]);
@@ -99,6 +101,34 @@ export class FailureDiagnostics implements Partial<IResultObserver>, vscode.Code
     if (this._timer) { clearTimeout(this._timer); }
     for (const d of this._disposables) { d.dispose(); }
   }
+}
+
+/** The whole line (its text, from the open document or the file), so the editor's quick-fix menu finds the diagnostic. */
+function lineRange(file: string, line: number): vscode.Range {
+  const doc = vscode.workspace.textDocuments.find((d) => samePath(d.uri.fsPath, file));
+  let text = doc && line <= doc.lineCount ? doc.lineAt(line - 1).text : undefined;
+  if (text === undefined) {
+    try { text = fs.readFileSync(file, 'utf8').split(/\r?\n/)[line - 1]; } catch { /* gone */ }
+  }
+  const end = text ? text.length : 0;
+  const start = text ? text.length - text.trimStart().length : 0;
+  return new vscode.Range(line - 1, Math.min(start, end), line - 1, end);
+}
+
+/**
+ * The workspace's spelling of a path a framework printed as its real path
+ * (macOS: /private/var/… for /var/…), so the Problems list and the open editor agree.
+ */
+function workspaceSpelling(file: string): string {
+  const real = realPath(file);
+  for (const f of vscode.workspace.workspaceFolders ?? []) {
+    const root = f.uri.fsPath;
+    for (const base of [root, realPath(root)]) {
+      const r = path.relative(base, real);
+      if (r && !r.startsWith('..') && !path.isAbsolute(r)) { return path.join(root, r); }
+    }
+  }
+  return file;
 }
 
 function key(uri: vscode.Uri, line0: number, message: string): string {

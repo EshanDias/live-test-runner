@@ -208,6 +208,7 @@ export class AiTools {
   listTests(file?: string, status?: string, name?: string, limit = 100): Json {
     const out: Json[] = [];
     let matched = 0;
+    let shown = 0;
     const want = name?.toLowerCase();
     for (const p of this._host.projects()) {
       for (const f of this._sortedFiles(p)) {
@@ -219,7 +220,8 @@ export class AiTools {
           if (status && (n.type !== 'test' || statusOf(n) !== status)) { continue; }
           if (want && !n.fullName.toLowerCase().includes(want)) { continue; }
           matched++;
-          if (out.reduce((s, x) => s + (x.tests as Json[]).length, 0) + tests.length >= limit) { continue; }
+          if (shown >= limit) { continue; }
+          shown++;
           tests.push(n.isDynamicTemplate ? { id: this.ids.encode(n.id, n.fileId), name: n.fullName, kind: 'each-template', line: n.line } : this._testJson(n, false));
         }
         if (tests.length === 0 && (status || want)) { continue; }

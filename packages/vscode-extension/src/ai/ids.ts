@@ -18,11 +18,12 @@ export class IdCodec {
     const folders = this._folders();
     const inFolder = (f: string, p: string) => {
       const r = path.relative(f, p);
-      return r && !r.startsWith('..') && !path.isAbsolute(r) ? r : undefined;
+      return !r.startsWith('..') && !path.isAbsolute(r) ? r : undefined;
     };
     for (const f of folders) {
       // A framework may print the real path (macOS: /private/var/… for /var/…).
       const r = inFolder(f, absPath) ?? inFolder(realPath(f), absPath) ?? inFolder(realPath(f), realPath(absPath));
+      if (r === '') { return folders.length > 1 ? path.basename(f) : ''; }
       if (r) {
         const posix = r.split(path.sep).join('/');
         return folders.length > 1 ? `${path.basename(f)}/${posix}` : posix;

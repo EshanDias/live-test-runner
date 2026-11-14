@@ -68,11 +68,14 @@ export function mailboxDirs(sessionDir: string): { requests: string; responses: 
   return { requests: path.join(base, 'requests'), responses: path.join(base, 'responses') };
 }
 
-/** Writes JSON so readers never see a partial file (temp file + rename). */
+/**
+ * Writes JSON so readers never see a partial file (temp file + rename).
+ * Readable by the user only: on Linux the temp folder is shared between users.
+ */
 export function writeJsonAtomic(file: string, value: unknown): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value));
+  fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 });
   fs.renameSync(tmp, file);
 }
 

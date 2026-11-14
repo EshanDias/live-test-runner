@@ -41,8 +41,12 @@ export class MailboxServer {
 
   /** Announces the window (bridge.json) and starts answering. */
   start(): void {
-    fs.mkdirSync(this._dirs.requests, { recursive: true });
-    fs.mkdirSync(this._dirs.responses, { recursive: true });
+    // Only this user may ask or read answers (the temp folder may be shared between users).
+    fs.mkdirSync(this._dirs.requests, { recursive: true, mode: 0o700 });
+    fs.mkdirSync(this._dirs.responses, { recursive: true, mode: 0o700 });
+    for (const dir of [path.dirname(this._dirs.requests), this._dirs.requests, this._dirs.responses]) {
+      try { fs.chmodSync(dir, 0o700); } catch { /* Windows: per-user temp folder */ }
+    }
     writeJsonAtomic(path.join(this._sessionDir, BRIDGE_FILE), this._info);
     try {
       this._watcher = fs.watch(this._dirs.requests, () => this._queueScan());
