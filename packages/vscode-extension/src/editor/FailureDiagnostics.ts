@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { IResultObserver } from '../IResultObserver';
 import type { ResultStore } from '../store/ResultStore';
 import { parseFailure } from './failureInfo';
-import { linesIn, resolveFrameFile } from './FailureDecorations';
+import { linesIn, resolveFrameFile, samePath } from './FailureDecorations';
 
 const SOURCE = 'Live Test Runner';
 const SETTING = 'showFailuresInProblems';
@@ -57,28 +57,21 @@ export class FailureDiagnostics implements Partial<IResultObserver>, vscode.Code
         for (const node of store.getFileNodes(file.fileId)) {
           if (node.type !== 'test' || node.status !== 'failed' || node.failureMessages.length === 0) { continue; }
           const failure = parseFailure(node.failureMessages[0]);
-          const targets = new Set([file.fileId, ...failure.frames.slice(0, 1).map((f) => resolveFrameFile(f.file, file.fileId))]);
-          for (const target of targets) {
-            for (const line of linesIn(failure.frames, file.fileId, target)) {
-              const message = `${node.fullName}: ${failure.summary || 'failed'}`;
-              const d = new vscode.Diagnostic(new vscode.Range(line - 1, 0, line - 1, Number.MAX_SAFE_INTEGER), message, vscode.DiagnosticSeverity.Error);
-              d.source = SOURCE;
-              d.code = 'failing test';
-              const list = byFile.get(target) ?? [];
-              list.push(d);
-              byFile.set(target, list);
-              this._tests.set(key(vscode.Uri.file(target), line - 1, message), { fileId: file.fileId, nodeId: node.id });
-            }
-          }
-          // A failure with no location in the project (a timeout, a hook): on the test's own line.
-          if (failure.frames.length === 0 && node.line) {
-            const message = `${node.fullName}: ${failure.summary || 'failed'}`;
-            const d = new vscode.Diagnostic(new vscode.Range(node.line - 1, 0, node.line - 1, Number.MAX_SAFE_INTEGER), message, vscode.DiagnosticSeverity.Error);
+          const message = `${node.fullName}: ${failure.summary || 'failed'}`;
+          const add = (target: string, line: number) => {
+            const d = new vscode.Diagnostic(new vscode.Range(line - 1, 0, line - 1, Number.MAX_SAFE_INTEGER), message, vscode.DiagnosticSeverity.Error);
             d.source = SOURCE;
             d.code = 'failing test';
-            byFile.set(file.fileId, [...(byFile.get(file.fileId) ?? []), d]);
-            this._tests.set(key(vscode.Uri.file(file.fileId), node.line - 1, message), { fileId: file.fileId, nodeId: node.id });
-          }
+            byFile.set(target, [...(byFile.get(target) ?? []), d]);
+            this._tests.set(key(vscode.Uri.file(target), line - 1, message), { fileId: file.fileId, nodeId: node.id });
+          };
+          // Where it was thrown (a source file), and where the test failed.
+          const top = failure.frames[0] ? resolveFrameFile(failure.frames[0].file, file.fileId) : undefined;
+          if (top) { for (const line of linesIn(failure.frames, file.fileId, top)) { add(top, line); } }
+          const inTest = top && samePath(top, file.fileId) ? [] : linesIn(failure.frames, file.fileId, file.fileId);
+          // The test file always lists the failure: its failing line, else the test's own line (a stack that stops in the source, a timeout, a hook).
+          if (inTest.length > 0) { for (const line of inTest) { add(file.fileId, line); } }
+          else if (!(top && samePath(top, file.fileId)) && node.line) { add(file.fileId, node.line); }
         }
       }
     }

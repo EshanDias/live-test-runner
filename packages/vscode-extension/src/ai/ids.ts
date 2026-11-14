@@ -5,6 +5,7 @@
  * and they map straight back to store ids. In a multi-root workspace the
  * folder's name leads (`web/src/a.test.ts::…`).
  */
+import * as fs from 'fs';
 import * as path from 'path';
 
 const SEP = '::';
@@ -15,9 +16,14 @@ export class IdCodec {
   /** A path as the assistant sees it: relative to its workspace folder, `/`-separated. */
   rel(absPath: string): string {
     const folders = this._folders();
+    const inFolder = (f: string, p: string) => {
+      const r = path.relative(f, p);
+      return r && !r.startsWith('..') && !path.isAbsolute(r) ? r : undefined;
+    };
     for (const f of folders) {
-      const r = path.relative(f, absPath);
-      if (r && !r.startsWith('..') && !path.isAbsolute(r)) {
+      // A framework may print the real path (macOS: /private/var/… for /var/…).
+      const r = inFolder(f, absPath) ?? inFolder(realPath(f), absPath) ?? inFolder(realPath(f), realPath(absPath));
+      if (r) {
         const posix = r.split(path.sep).join('/');
         return folders.length > 1 ? `${path.basename(f)}/${posix}` : posix;
       }
@@ -50,6 +56,17 @@ export class IdCodec {
     }
     return out;
   }
+}
+
+const realCache = new Map<string, string>();
+function realPath(p: string): string {
+  let r = realCache.get(p);
+  if (r === undefined) {
+    try { r = fs.realpathSync.native(p); } catch { r = p; }
+    if (realCache.size > 2000) { realCache.clear(); }
+    realCache.set(p, r);
+  }
+  return r;
 }
 
 /** Compresses sorted line numbers into ranges: [1,2,3,7] → "1-3, 7". */

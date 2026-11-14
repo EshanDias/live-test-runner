@@ -72,6 +72,12 @@ export class AiTools {
     for (const f of own) { this._changes.set(f, now); }
   }
 
+  /** Start (or a restart): every result is new — earlier changes and their baseline no longer apply. */
+  sessionStarted(): void {
+    this._changes.clear();
+    this._baseline = undefined;
+  }
+
   /** A test file reported results. */
   noteFileResult(fileId: string): void {
     this.runs.noteFileResult(fileId);
@@ -339,7 +345,8 @@ export class AiTools {
     }
     const fw = p.frameworkOf(node.fileId);
     const parsed = parseFailure(node.failureMessages[0]);
-    const frames = parsed.frames.slice(0, 10).map((fr) => ({ file: this._frameFile(fr.file, p, node.fileId), line: fr.line }));
+    const frames = parsed.frames.slice(0, 10).map((fr) => ({ file: this._frameFile(fr.file, p, node.fileId), line: fr.line }))
+      .filter((fr, i, all) => i === 0 || fr.file !== all[i - 1].file || fr.line !== all[i - 1].line);
     const top = frames[0];
     const inTest = frames.find((fr) => samePathLoose(fr.file, node.fileId));
     const answer: Json = {
@@ -386,7 +393,9 @@ export class AiTools {
     const files = given.length > 0
       ? given.map((f) => this._resolvePath(f) ?? f)
       : [...this._changes.keys()];
-    const changedAt = new Map(files.map((f) => [f, this._changes.get(f) ?? Date.now()] as const));
+    // Files the assistant names changed just now (its latest write may not have reached the file watcher yet).
+    const now = Date.now();
+    const changedAt = new Map(files.map((f) => [f, given.length > 0 ? now : this._changes.get(f) ?? now] as const));
     if (files.length === 0) {
       const failing = this._failingScopes(projects);
       if (failing.length === 0) {

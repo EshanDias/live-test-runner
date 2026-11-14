@@ -114,6 +114,7 @@ export class AiBridge implements Partial<IResultObserver>, vscode.Disposable {
 
   onFileResult(filePath: string): void { this.tools.noteFileResult(filePath); }
   onSessionStopped(): void { this.tools.stopped(); }
+  onSessionStarted(): void { this.tools.sessionStarted(); }
 
   /** Saves and changes on disk (from extension.ts, the session's own events). */
   noteChanged(files: string[]): void { this.tools.noteChanged(files); }

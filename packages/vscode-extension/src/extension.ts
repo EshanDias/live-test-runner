@@ -807,6 +807,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (e.affectsConfiguration('liveTestRunner.projectRoot')) { projects.refresh(); }
       if (e.affectsConfiguration('liveTestRunner.pythonPath')) { pythons.invalidate(); }
       if (e.affectsConfiguration('liveTestRunner.speed') || e.affectsConfiguration('liveTestRunner.speedStrict')) { applySpeedSetting(true); }
+      if (e.affectsConfiguration('liveTestRunner.ai.fixWithAI')) { resultsView.sendAiSettings(); codeLensProvider.refresh(); }
     }),
 
     outputChannel,
