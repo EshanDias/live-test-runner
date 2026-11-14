@@ -1,6 +1,11 @@
 import * as vscode from 'vscode';
 import { FileStoresResolver } from './FileStores';
 
+/** "Fix with AI" lenses and buttons follow the AI setting (`liveTestRunner.ai.fixWithAI`). */
+export function fixWithAiShown(): boolean {
+  return vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('ai.fixWithAI', true);
+}
+
 /**
  * CodeLensProvider — shows inline Run / Debug / Results actions for
  * every test and suite in the active editor.
@@ -84,6 +89,18 @@ export class CodeLensProvider implements vscode.CodeLensProvider {
           arguments: [entry.fileId, entry.nodeId],
         }),
       );
+
+      // ✨ Fix with AI — a failing test: opens the user's AI chat with the failure (only on this click)
+      if (node.type === 'test' && node.status === 'failed' && fixWithAiShown()) {
+        lenses.push(
+          new vscode.CodeLens(range, {
+            title: '✨ Fix with AI',
+            tooltip: 'Ask your AI assistant to fix this failing test',
+            command: 'liveTestRunner.fixWithAI',
+            arguments: [entry.fileId, entry.nodeId],
+          }),
+        );
+      }
     }
 
     return lenses;

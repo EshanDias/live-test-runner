@@ -285,6 +285,37 @@ export class ExecutionTraceStore {
     }
   }
 
+  /** Every test that ran any line of the source file (optionally only lines from..to, 1-based). */
+  testsForFile(sourceFilePath: string, from = 1, to = Number.MAX_SAFE_INTEGER): LineTestEntry[] {
+    const byLine = this._lineToTests.get(sourceFilePath);
+    if (!byLine) { return []; }
+    const seen = new Set<string>();
+    const out: LineTestEntry[] = [];
+    for (const [line, byFile] of byLine) {
+      if (line < from || line > to) { continue; }
+      for (const [testFileId, names] of byFile) {
+        for (const fullName of names) {
+          const key = `${testFileId}\0${fullName}`;
+          if (!seen.has(key)) { seen.add(key); out.push({ testFileId, fullName }); }
+        }
+      }
+    }
+    return out;
+  }
+
+  /** The source lines one test ran, per source file (sorted, 1-based); empty when it was not traced. */
+  linesRunBy(testFileId: string, fullName: string): Map<string, number[]> {
+    const out = new Map<string, number[]>();
+    for (const src of this._sourcesOfTestFile.get(testFileId) ?? []) {
+      const lines: number[] = [];
+      for (const [line, byFile] of this._lineToTests.get(src) ?? []) {
+        if (byFile.get(testFileId)?.includes(fullName)) { lines.push(line); }
+      }
+      if (lines.length > 0) { out.set(src, lines.sort((a, b) => a - b)); }
+    }
+    return out;
+  }
+
   /** Test files whose entries are under `deleted` (a deleted test file or folder). */
   testFilesUnder(deleted: string, sep: string): string[] {
     const prefix = deleted.endsWith(sep) ? deleted : deleted + sep;

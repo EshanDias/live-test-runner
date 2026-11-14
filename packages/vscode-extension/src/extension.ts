@@ -43,6 +43,9 @@ import { logger } from './utils/logger';
 import { buildDiagnosticReport } from './utils/diagnostics';
 import { initPythonInterpreters } from './python/PythonInterpreters';
 import { pythonEnvChip } from './python/pythonEnvChip';
+import { AiBridge } from './ai/AiBridge';
+import { openConnectAi, connectModel } from './ai/ConnectAiPanel';
+import { FailureDiagnostics } from './editor/FailureDiagnostics';
 
 const log = logger.scope('Extension');
 
@@ -210,6 +213,14 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     failureDecorations,
     vscode.languages.registerHoverProvider({ scheme: 'file' }, failureDecorations),
+  );
+
+  // ── Failures in the Problems list (the editor's own AI quick fixes, + Fix with AI) ──
+  const failureDiagnostics = new FailureDiagnostics(() => projects.contexts.map((c) => c.store));
+  editorObservers.push(failureDiagnostics);
+  context.subscriptions.push(
+    failureDiagnostics,
+    vscode.languages.registerCodeActionsProvider({ scheme: 'file' }, failureDiagnostics, { providedCodeActionKinds: FailureDiagnostics.providedCodeActionKinds }),
   );
 
   // ── Projects ───────────────────────────────────────────────────────────────
@@ -403,6 +414,33 @@ export function activate(context: vscode.ExtensionContext) {
   projects.refresh();
   refreshPythonChip();
 
+  /** The Copy diagnostic report (also what an AI assistant's LTR_get_diagnostics reads). */
+  const diagnosticReport = (): string => {
+    const ctx = sel();
+    return buildDiagnosticReport({
+      extensionVersion: extVersion,
+      projectRoot:      ctx?.root,
+      sessionActive:    !!ctx?.session.isActive(),
+      sessionDir:       ctx?.sessionDir ?? LTR_SESSION_TMP_DIR,
+      summary:          currentStore().getSummary(),
+      logLevel:         logger.level,
+      recentLogLines:   logger.recentLines(),
+      projects:         projects.contexts.map((c) => `${c.name} · ${c.frameworkLabel} · ${c.runState} · ${c.root}`),
+    });
+  };
+
+  // ── AI assistants: live results and runs for Copilot / Cursor / terminal agents ──
+  const aiBridge = new AiBridge({
+    context,
+    projects,
+    sessionDir: LTR_SESSION_TMP_DIR,
+    extensionVersion: extVersion,
+    diagnostics: diagnosticReport,
+    frameworkOf: (testFile) => resultsView.frameworkOf?.(testFile),
+  });
+  editorObservers.push(aiBridge);
+  context.subscriptions.push(aiBridge);
+
   _releaseDiscoveryLock = () => { for (const c of projects.contexts) { c.discoveryCache?.releaseLock(); } };
   _cleanTraceDir = () => { for (const c of projects.contexts) { c.cleanTraceDir(); } };
   // The window closes: its session folder goes with it (a crash leaves it for the next start's cleanup).
@@ -480,6 +518,7 @@ export function activate(context: vscode.ExtensionContext) {
   const externalChanges = new ExternalChanges({
     isDirtyInEditor: (filePath) => vscode.workspace.textDocuments.some((d) => d.isDirty && d.uri.fsPath === filePath),
     onChanged: (filePaths) => {
+      aiBridge.noteChanged(filePaths);
       const byProject = new Map<ProjectContext, string[]>();
       for (const f of filePaths) {
         const ctx = owner(f);
@@ -577,18 +616,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('liveTestRunner.showOutput',         () => outputChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.showLogs',           () => logChannel.show()),
     vscode.commands.registerCommand('liveTestRunner.openGuide',          () => openGuide(context.extensionUri)),
+    vscode.commands.registerCommand('liveTestRunner.connectAI',          (tab?: unknown) => openConnectAi(() => connectModel(aiBridge), typeof tab === 'string' ? tab : undefined)),
     vscode.commands.registerCommand('liveTestRunner.copyDiagnostics',    async () => {
-      const ctx = sel();
-      const report = buildDiagnosticReport({
-        extensionVersion: extVersion,
-        projectRoot:      ctx?.root,
-        sessionActive:    !!ctx?.session.isActive(),
-        sessionDir:       ctx?.sessionDir ?? LTR_SESSION_TMP_DIR,
-        summary:          currentStore().getSummary(),
-        logLevel:         logger.level,
-        recentLogLines:   logger.recentLines(),
-        projects:         projects.contexts.map((c) => `${c.name} · ${c.frameworkLabel} · ${c.runState} · ${c.root}`),
-      });
+      const report = diagnosticReport();
       await vscode.env.clipboard.writeText(report);
       const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: report });
       await vscode.window.showTextDocument(doc, { preview: false });
@@ -762,6 +792,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onWillSaveTextDocument((e) => externalChanges.noteSave(e.document.uri.fsPath)),
     vscode.workspace.onDidSaveTextDocument((doc) => {
       externalChanges.noteSave(doc.uri.fsPath);
+      aiBridge.noteChanged([doc.uri.fsPath]);
       owner(doc.uri.fsPath)?.session.onSave(doc);
     }),
     // Files changed outside the editor (git pull, branch switch, generators) rerun like a save.
@@ -797,7 +828,7 @@ export function activate(context: vscode.ExtensionContext) {
       get sessionDir() { return sel()?.sessionDir ?? LTR_SESSION_TMP_DIR; },
       projects,
       observers, editorObservers, decorationManager, failureDecorations, setSnapshotDialogAnswerForE2E, codeLensProvider, statusBar, instrumentedRunner, logger, rawOutput: e2eRawOutput,
-      explorerView, coverageDecorations: coverageDecoMgr,
+      explorerView, coverageDecorations: coverageDecoMgr, aiBridge, failureDiagnostics,
       storagePaths: (root: string) => ({ runnableFiles: runnableFilesPath(root), transformCache: transformCacheDir(root) }),
     };
   }

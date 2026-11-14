@@ -483,6 +483,69 @@ export class SessionManager {
     }
   }
 
+  /**
+   * ▶ Run on several whole test files (an AI assistant's run of a project's
+   * files, or of everything): one run, sharing the budget like any other.
+   * Works with or without a session. `cancelled` stops it before the next batch.
+   * @returns the files that were run (runnable ones only).
+   */
+  async runFiles(filePaths: string[], label: string, cancelled?: () => boolean): Promise<string[]> {
+    const projectRoot = this._getProjectRoot();
+    const files = filePaths.filter((fp) => this._isRunnable(fp));
+    if (!projectRoot || files.length === 0) { return []; }
+    const run = this._beginRun(label);
+    try {
+      await this._runFiles(files, projectRoot, this._token, { cancelled });
+    } finally {
+      this._endRun(run, files);
+    }
+    return files;
+  }
+
+  /**
+   * Reruns what changed files affect, the way a save does in a session (a
+   * test file runs itself; a source file its traced tests, else the
+   * framework's related run) — but now, without the debounce, and with or
+   * without a session: an explicit request (an AI assistant's "verify fix").
+   * @returns the test files that were run.
+   */
+  async runChangedFiles(filePaths: string[], label: string): Promise<string[]> {
+    const projectRoot = this._getProjectRoot();
+    if (!projectRoot) { return []; }
+    const token = this._token;
+    const run = this._beginRun(label);
+    const ran = new Set<string>();
+    try {
+      for (const filePath of filePaths) {
+        if (token !== this._token) { break; }
+        const key = this._store.findFileKey(filePath) ?? filePath;
+        const isTestFile = !!this._store.getFile(key) || this._adapterFor(filePath).isTestFile(filePath);
+        if (isTestFile) {
+          if (this._isRunnable(key)) { await this._runFiles([key], projectRoot, token); ran.add(key); }
+          continue;
+        }
+        if (!this._isProjectSource(filePath)) { continue; }
+        this._lastSourceChangeAt = Date.now();
+        this._coverageStore.markFileStale(filePath);
+        try {
+          for (const fp of await this._runAffectedBySourceFile(filePath, projectRoot, token)) { ran.add(fp); }
+        } finally {
+          if (token === this._token) { this._coverageStore.clearStale(filePath); }
+        }
+      }
+    } catch (error) {
+      log.error(`Rerun of changed files failed (${describeFiles(filePaths)})`, error);
+    } finally {
+      this._endRun(run, [...ran], undefined, ran.size === 0);
+    }
+    return [...ran];
+  }
+
+  /** When the latest runs started (0: none yet) — results are older than a change made after it. */
+  get runsStartedAt(): number {
+    return this._runsStartedAt;
+  }
+
   // ── Editor commands ───────────────────────────────────────────────────────
 
   /** @returns the launch configuration used, or undefined when nothing was started. */

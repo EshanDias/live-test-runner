@@ -4,7 +4,7 @@ import { IResultObserver, RunStartedPayload, RunFinishedPayload } from '../IResu
 import { CoverageStore } from '../coverage/CoverageStore';
 import { FileStoresResolver } from './FileStores';
 import { Manifest, LiveCov } from '../coverage/types';
-import { statementLines } from '../coverage/statementLines';
+import { lineStates } from '../coverage/lineStates';
 import { LineMapping, MeasuredLines } from './MeasuredLines';
 
 /** Setting that shows or hides coverage in the editor (bars, stale tint, hover). */
@@ -204,40 +204,11 @@ export class CoverageDecorationManager implements IResultObserver {
 
   /** Each executable measured line's bar, moved to where that line is now (edited lines get none). */
   private _classifyLines(manifest: Manifest, counters: LiveCov, lines: LineMapping, lineCount: number): DrawnCoverage {
-    // Line → max statement hit count across all statements on that line
-    // (a statement spanning lines marks each of them: statementLines)
-    const lineHits = new Map<number, number>();
-    for (const [line1, ids] of statementLines(manifest)) {
-      lineHits.set(line1 - 1, Math.max(...ids.map((id) => counters.s[id] ?? 0)));
-    }
-
-    // Line → { total branch arms, covered arms } — only for lines that have branches
-    const lineBranches = new Map<number, { total: number; covered: number }>();
-    for (const [id, branch] of Object.entries(manifest.branches)) {
-      const arms    = counters.b[id] ?? [];
-      const covArms = arms.filter((n) => n > 0).length;
-      const line    = branch.line - 1; // 0-based
-      const existing = lineBranches.get(line) ?? { total: 0, covered: 0 };
-      lineBranches.set(line, {
-        total:   existing.total   + branch.arms,
-        covered: existing.covered + covArms,
-      });
-    }
-
     const drawn: DrawnCoverage = { covered: [], partial: [], uncovered: [] };
-    for (const [line, hits] of lineHits) {
-      const now = lines.toCurrent(line);
+    for (const [line1, state] of lineStates(manifest, counters)) {
+      const now = lines.toCurrent(line1 - 1);
       if (now < 0 || now >= lineCount) { continue; }
-      if (hits === 0) {
-        drawn.uncovered.push(now);
-      } else {
-        const branches = lineBranches.get(line);
-        if (branches && branches.covered < branches.total) {
-          drawn.partial.push(now);
-        } else {
-          drawn.covered.push(now);
-        }
-      }
+      drawn[state].push(now);
     }
     return drawn;
   }
