@@ -28,6 +28,8 @@ export interface AgentRun {
   scope: Array<{ project: BridgeProject; fileId: string; nodeId?: string }>;
   /** Test files that reported results while the run was in flight (verify runs count these). */
   touched: Set<string>;
+  /** Said in the answer (results reused from the session's own rerun, …). */
+  notes: string[];
   cancelled: boolean;
   error?: string;
   done: Promise<void>;
@@ -72,6 +74,7 @@ export class AgentRuns {
       baseline,
       scope,
       touched: new Set(),
+      notes: [],
       cancelled: false,
       done: Promise.resolve(),
     };

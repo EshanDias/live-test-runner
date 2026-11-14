@@ -23,7 +23,7 @@ let coverage: CoverageStore;
 let trace: ExecutionTraceStore;
 let calls: string[];
 let allow: AllowRuns;
-let session: { active: boolean; running: boolean; startedAt: number };
+let session: { active: boolean; running: boolean; startedAt: number; alreadyRerun?: boolean };
 /** What a run sets each test to (by name): the fake framework. */
 let outcome: Record<string, TestStatus>;
 /** Whole-file runs wait for this (a run in flight, for the queue tests). */
@@ -65,9 +65,10 @@ function project(): BridgeProject {
       return files;
     },
     runChangedFiles: async (files) => {
+      if (session.alreadyRerun) { calls.push(`reused ${files.map((f) => path.basename(f)).join(',')}`); return { ran: [], reused: [TEST], reusedFor: files }; }
       calls.push(`changed ${files.map((f) => path.basename(f)).join(',')}`);
       for (const [name, st] of Object.entries(outcome)) { setStatus(name, st, st === 'failed' ? FAILURE() : []); }
-      return [TEST];
+      return { ran: [TEST], reused: [], reusedFor: [] };
     },
   };
 }
@@ -296,6 +297,34 @@ describe('runs', () => {
     const r = await parse(tools, 'LTR_verify_fix');
     expect(calls).toContain('changed math.js');
     expect(r.fixed.map((t: { name: string }) => t.name)).toEqual(['Math adds']);
+  });
+
+  it('verify_fix reuses the session\'s own rerun of the change instead of running it twice', async () => {
+    const tools = new AiTools(host());
+    session.active = true;
+    tools.noteChanged([SRC]);
+    // The session's on-save rerun already ran and fixed the test.
+    setStatus('adds', 'passed');
+    session.alreadyRerun = true;
+    const r = await parse(tools, 'LTR_verify_fix', { files: ['src/math.js'] });
+    expect(calls).toContain('reused math.js');
+    expect(calls.some((c) => c.startsWith('changed'))).toBe(false);
+    expect(r.state).toBe('finished');
+    expect(r.fixed.map((t: { name: string }) => t.name)).toEqual(['Math adds']);
+    expect(r.tests.passed).toBe(2);
+    expect(r.note).toMatch(/already rerun.*not run twice/);
+  }, 10_000);
+
+  it('runs wait for the tests in flight (the session\'s rerun) instead of running alongside them', async () => {
+    const tools = new AiTools(host());
+    session.running = true;
+    const r = await parse(tools, 'LTR_run_tests', { ids: ['src/math.test.js'] });
+    await new Promise((res) => setTimeout(res, 600));
+    expect(calls.some((c) => c.startsWith('files'))).toBe(false);
+    session.running = false;
+    const done = await parse(tools, 'LTR_get_run', { runId: r.runId, wait: 5 });
+    expect(done.state).toBe('finished');
+    expect(calls.some((c) => c.startsWith('files math.test.js'))).toBe(true);
   });
 
   it('run_failed reruns only the failing tests', async () => {

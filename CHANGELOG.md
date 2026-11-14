@@ -10,6 +10,7 @@ Repo changelog: one line per change. What users see is in [the extension's chang
 - **Connect Your AI Assistant** page with setup commands; a stable launcher in the extension's storage folder.
 - Failing tests in the Problems list (`FailureDiagnostics`); **Fix with AI** (CodeLens, Errors pane, quick fix).
 - Settings `liveTestRunner.ai.bridge`, `ai.allowRuns`, `ai.fixWithAI`, `showFailuresInProblems`.
+- An assistant's verify reuses the session's own rerun of a change, and the session skips a change verify already reran (`SessionManager._rerunVersions`).
 - `PRIVACY.md`: what an assistant can read and run, and the files the bridge keeps.
 
 ### Tooling

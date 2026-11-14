@@ -49,8 +49,11 @@ export interface BridgeProject {
   runScope(args: { scope: 'test' | 'suite' | 'file'; fileId: string; nodeId?: string; fullName?: string }): Promise<void>;
   /** ▶ Run on whole test files (none = nothing). */
   runFiles(fileIds: string[], label: string, cancelled: () => boolean): Promise<string[]>;
-  /** What a save of these files would rerun, now. */
-  runChangedFiles(filePaths: string[], label: string): Promise<string[]>;
+  /**
+   * What a save of these files would rerun, now — except files whose current
+   * version the live session already reran: their tests' results are reused.
+   */
+  runChangedFiles(filePaths: string[], label: string): Promise<{ ran: string[]; reused: string[]; reusedFor: string[] }>;
 }
 
 export type AllowRuns = 'always' | 'ask' | 'never';

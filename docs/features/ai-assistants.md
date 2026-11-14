@@ -70,6 +70,7 @@ You ask Claude Code: *"fix the failing tests"*. It calls `LTR_get_failures` (one
 ## Good to know
 
 - **It never starts or stops testing.** That stays with you. Runs the assistant starts behave like ▶ Run: they share the machine's budget, show in the panels, and the status bar says who started them.
+- **With a live session on**, the assistant's edits rerun their tests by themselves, like your saves. `LTR_verify_fix` uses that rerun's results instead of running the same tests again, and the assistant's other runs wait for a run in progress rather than running alongside it.
 - **Without a live session**, results don't update on save; the assistant can still read them and run tests. `LTR_get_status` tells it so.
 - **The assistant and the editor must run on the same computer.** With Remote-SSH, WSL or containers, run the assistant where the extension runs.
 - **Same folder in two windows:** a terminal assistant talks to the newest one; `LTR_get_status` names the other.

@@ -422,12 +422,15 @@ export class AiTools {
       // The session's own rerun of a just-saved file starts after its debounce: let it, then wait for it.
       const settle = latestChange + SETTLE_MS - Date.now();
       if (settle > 0 && [...byProject.keys()].some((p) => p.sessionActive())) { await sleep(settle); }
-      while (!r.cancelled && [...byProject.keys()].some((p) => p.running())) { await sleep(250); }
+      await this._whileRunning([...byProject.keys()], r);
       for (const [p, fs_] of byProject) {
         if (r.cancelled) { break; }
-        // A session already reran what changed before its latest runs started: no second run.
-        const pending = p.sessionActive() ? fs_.filter((f) => (changedAt.get(f) ?? 0) >= p.runsStartedAt()) : fs_;
-        if (pending.length > 0) { await p.runChangedFiles(pending, `AI assistant: ${label}`); }
+        // A change the session already reran (its own on-save / disk-change rerun) is not run twice: its results count.
+        const out = await p.runChangedFiles(fs_, `AI assistant: ${label}`);
+        for (const fp of out.reused) { r.touched.add(fp); }
+        if (out.reusedFor.length > 0) {
+          r.notes.push(`The live session had already rerun the tests for ${out.reusedFor.map((f) => this.ids.rel(f)).join(', ')} after the change: these are its results (not run twice).`);
+        }
       }
     });
     await this.runs.wait(run, VERIFY_WAIT_MS);
@@ -715,6 +718,8 @@ export class AiTools {
     const run = this.runs.start(label, baseline, scope, async (r) => {
       const byProject = new Map<BridgeProject, AgentRun['scope']>();
       for (const s of scope) { byProject.set(s.project, [...(byProject.get(s.project) ?? []), s]); }
+      // Runs in flight (the session's rerun of a save, a full run) finish first: the same tests never run twice at once.
+      await this._whileRunning([...byProject.keys()], r);
       for (const [p, items] of byProject) {
         const wholeFiles = items.filter((s) => !s.nodeId).map((s) => s.fileId);
         if (wholeFiles.length > 0 && !r.cancelled) { await p.runFiles(wholeFiles, `AI assistant: ${label}`, () => r.cancelled); }
@@ -728,6 +733,11 @@ export class AiTools {
     });
     if (waitMs > 0) { await this.runs.wait(run, waitMs); }
     return this._runAnswer(run);
+  }
+
+  /** Waits while any of the projects runs tests (or the run is cancelled). */
+  private async _whileRunning(projects: BridgeProject[], r: AgentRun): Promise<void> {
+    while (!r.cancelled && projects.some((p) => p.running())) { await sleep(250); }
   }
 
   /** Failing tests as run scopes: each test, or its whole file when a file has many. */
@@ -793,7 +803,7 @@ export class AiTools {
       ...head,
       durationMs: run.startedAt && run.finishedAt ? run.finishedAt - run.startedAt : undefined,
       ...(run.error ? { error: run.error } : {}),
-      ...(counted.length === 0 ? { note: 'No test results were recorded for this run (nothing runnable, or nothing depends on the changed files).' } : {}),
+      ...(counted.length === 0 ? { note: 'No test results were recorded for this run (nothing runnable, or nothing depends on the changed files).' } : run.notes.length > 0 ? { note: run.notes.join(' ') } : {}),
       tests: counts,
       failing,
       fixed: fixed.slice(0, 20),

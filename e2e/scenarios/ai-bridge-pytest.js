@@ -16,6 +16,7 @@ module.exports = {
       'from shop.ai_cart import total\n\n\ndef test_totals_prices():\n    assert total([{"price": 2}, {"price": 3}]) == 5\n\n\ndef test_empty_cart():\n    assert total([]) == 0\n',
     ],
     failing: 'test_totals_prices',
+    comment: '#',
     trace: true,
   }),
 };

@@ -102,12 +102,31 @@ async function aiBridgeScenario({ api, t, vscode, workspace }, cfg) {
     t.check('get_coverage: the source file is measured', !!cov.percent || /not run/.test(cov.coverage ?? ''), JSON.stringify(cov));
 
     // ── The agent fixes the code on disk and verifies ─────────────────────
-    fs.writeFileSync(srcFile, fixed);
-    const verify = await mcp.finish(await mcp.call('LTR_verify_fix', { files: [srcRel] }));
-    t.eq('verify_fix: finished', verify.state, 'finished');
-    t.check('verify_fix: reports the test fixed', (verify.fixed ?? []).some((x) => x.name === cfg.failing) || api.store.getNode(node.id)?.status === 'passed', JSON.stringify(verify));
-    t.eq('verify_fix: no regressions', (verify.newlyFailing ?? []).map((x) => x.name), []);
-    t.eq('the store agrees: the test passes', api.store.getNode(node.id)?.status, 'passed');
+    // The session reruns the change by itself; verify must reuse that, never run the tests a second time.
+    const reruns = countReruns(api, node.fileId);
+    try {
+      fs.writeFileSync(srcFile, fixed);
+      const verify = await mcp.finish(await mcp.call('LTR_verify_fix', { files: [srcRel] }));
+      t.eq('verify_fix: finished', verify.state, 'finished');
+      t.check('verify_fix: reports the test fixed', (verify.fixed ?? []).some((x) => x.name === cfg.failing) || api.store.getNode(node.id)?.status === 'passed', JSON.stringify(verify));
+      t.eq('verify_fix: no regressions', (verify.newlyFailing ?? []).map((x) => x.name), []);
+      t.eq('the store agrees: the test passes', api.store.getNode(node.id)?.status, 'passed');
+      await h.settle(api);
+      t.eq('the change ran once: the session\'s rerun, reused by verify_fix', reruns.count, 1);
+
+      // The other order: verify runs before the session's (slow) debounce ends — the session then skips that write.
+      await vscode.workspace.getConfiguration('liveTestRunner').update('onSaveDebounceMs', 4000, vscode.ConfigurationTarget.Workspace);
+      reruns.count = 0;
+      fs.writeFileSync(srcFile, `${fixed}\n${cfg.comment ?? '//'} edited\n`);
+      const again = await mcp.finish(await mcp.call('LTR_verify_fix', { files: [srcRel] }));
+      t.eq('verify_fix before the session\'s rerun: finished', again.state, 'finished');
+      await new Promise((r) => setTimeout(r, 5000));
+      await h.settle(api);
+      t.eq('…and the session did not rerun the same change again', reruns.count, 1);
+    } finally {
+      reruns.dispose();
+      await vscode.workspace.getConfiguration('liveTestRunner').update('onSaveDebounceMs', undefined, vscode.ConfigurationTarget.Workspace);
+    }
 
     const run = await mcp.finish(await mcp.call('LTR_run_tests', { ids: [f.id] }));
     t.check('run_tests: ran like ▶ Run, one test passed', run.state === 'finished' && run.tests?.passed === 1 && run.tests?.failed === 0, JSON.stringify(run));
@@ -142,6 +161,17 @@ async function aiBridgeScenario({ api, t, vscode, workspace }, cfg) {
   }
 
   await vscode.commands.executeCommand('liveTestRunner.stopTesting');
+}
+
+/** Counts how often a test file starts running (any run: the session's, ▶ Run, an assistant's). */
+function countReruns(api, fileId) {
+  const counter = {
+    count: 0,
+    onFilesRerunning(files) { if (files.includes(fileId)) { counter.count++; } },
+    dispose() { const i = api.observers.indexOf(counter); if (i >= 0) { api.observers.splice(i, 1); } },
+  };
+  api.observers.push(counter);
+  return counter;
 }
 
 module.exports = { aiBridgeScenario };

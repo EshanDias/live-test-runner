@@ -95,7 +95,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'LTR_verify_fix',
     title: 'Verify a fix',
-    description: 'After you changed code: reruns the tests affected by the changed files and answers with the difference — fixed, still failing, newly failing (regressions). Without `files` it uses the files changed since the last run. Waits up to ~50 s; if the run is longer, it returns a runId for LTR_get_run.',
+    description: 'After you changed code: reruns the tests affected by the changed files and answers with the difference — fixed, still failing, newly failing (regressions). Without `files` it uses the files changed since the last run. In a live session the change was usually rerun already on save: then its results are reused, not run twice. Waits up to ~50 s; if the run is longer, it returns a runId for LTR_get_run.',
     inputSchema: { type: 'object', properties: { files: { type: 'array', items: { type: 'string' }, description: 'Files you changed (paths). Default: the files changed since the last run.' } } },
     acts: true,
     timeoutMs: 70_000,

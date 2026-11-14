@@ -121,6 +121,13 @@ export class SessionManager {
   /** The files the last queued disk rerun ran for (loop guard). */
   private _lastDiskRerun = new Set<string>();
   /**
+   * Which version (modified time) of a changed file has had its rerun, and by
+   * whom: the session's own rerun on save / disk change, or an assistant's
+   * {@link runChangedFiles}. One write is rerun once — each side skips a
+   * version the other already reran (or is rerunning) and reuses its results.
+   */
+  private readonly _rerunVersions = new Map<string, { mtimeMs: number; by: 'session' | 'assistant'; ran: string[] }>();
+  /**
    * Coverage refresh: when each test file was last rerun whole because its
    * coverage was measured before a change (at most once per change, so a
    * refresh that measures nothing new does not loop).
@@ -212,6 +219,7 @@ export class SessionManager {
     const token = ++this._token;
     this._activeRuns = 0;
     this._foregroundRuns = 0;
+    this._rerunVersions.clear();
     this._fullSuiteStartedAt = undefined;
     this._clearSaveTimers();
 
@@ -364,6 +372,7 @@ export class SessionManager {
     this._token++;
     this._diskQueue.clear();
     this._lastDiskRerun.clear();
+    this._rerunVersions.clear();
     this._clearSaveTimers();
     this._clearCoverageRefresh();
     this._killBatches();
@@ -507,28 +516,47 @@ export class SessionManager {
    * test file runs itself; a source file its traced tests, else the
    * framework's related run) — but now, without the debounce, and with or
    * without a session: an explicit request (an AI assistant's "verify fix").
-   * @returns the test files that were run.
+   * A file whose current version the session already reran (its save or
+   * disk change) is not run again: its results are reused (`reused`).
+   * @returns the test files that were run, and those the session had already rerun.
    */
-  async runChangedFiles(filePaths: string[], label: string): Promise<string[]> {
+  async runChangedFiles(filePaths: string[], label: string): Promise<{ ran: string[]; reused: string[]; reusedFor: string[] }> {
     const projectRoot = this._getProjectRoot();
-    if (!projectRoot) { return []; }
+    if (!projectRoot) { return { ran: [], reused: [], reusedFor: [] }; }
     const token = this._token;
+    const reused = new Set<string>();
+    const reusedFor: string[] = [];
+    const todo: string[] = [];
+    for (const filePath of filePaths) {
+      const done = this._rerunOf(filePath, 'session');
+      if (done) {
+        reusedFor.push(filePath);
+        for (const fp of done.ran) { reused.add(fp); }
+      } else {
+        todo.push(filePath);
+      }
+    }
+    if (reusedFor.length > 0) {
+      log.info(`${label}: ${describeFiles(reusedFor)} already rerun by the session after ${reusedFor.length === 1 ? 'its' : 'their'} latest change — using those results`);
+    }
+    if (todo.length === 0) { return { ran: [], reused: [...reused], reusedFor }; }
     const run = this._beginRun(label);
     const ran = new Set<string>();
     try {
-      for (const filePath of filePaths) {
+      for (const filePath of todo) {
         if (token !== this._token) { break; }
+        const version = this._noteRerun(filePath, 'assistant');
         const key = this._store.findFileKey(filePath) ?? filePath;
         const isTestFile = !!this._store.getFile(key) || this._adapterFor(filePath).isTestFile(filePath);
         if (isTestFile) {
-          if (this._isRunnable(key)) { await this._runFiles([key], projectRoot, token); ran.add(key); }
+          if (this._isRunnable(key)) { await this._runFiles([key], projectRoot, token); ran.add(key); version?.ran.push(key); }
           continue;
         }
         if (!this._isProjectSource(filePath)) { continue; }
         this._lastSourceChangeAt = Date.now();
         this._coverageStore.markFileStale(filePath);
         try {
-          for (const fp of await this._runAffectedBySourceFile(filePath, projectRoot, token)) { ran.add(fp); }
+          for (const fp of await this._runAffectedBySourceFile(filePath, projectRoot, token)) { ran.add(fp); version?.ran.push(fp); }
         } finally {
           if (token === this._token) { this._coverageStore.clearStale(filePath); }
         }
@@ -538,7 +566,29 @@ export class SessionManager {
     } finally {
       this._endRun(run, [...ran], undefined, ran.size === 0);
     }
-    return [...ran];
+    return { ran: [...ran], reused: [...reused].filter((fp) => !ran.has(fp)), reusedFor };
+  }
+
+  /** The file's modified time (undefined: gone or unreadable). */
+  private _mtimeOf(filePath: string): number | undefined {
+    try { return fs.statSync(filePath).mtimeMs; } catch { return undefined; }
+  }
+
+  /** The rerun `by` already started for the file's current version, if any. */
+  private _rerunOf(filePath: string, by: 'session' | 'assistant'): { ran: string[] } | undefined {
+    const entry = this._rerunVersions.get(runnableKey(filePath));
+    if (!entry || entry.by !== by) { return undefined; }
+    const mtimeMs = this._mtimeOf(filePath);
+    return mtimeMs !== undefined && mtimeMs === entry.mtimeMs ? entry : undefined;
+  }
+
+  /** A rerun of the file's current version begins; `ran` fills in as it goes. */
+  private _noteRerun(filePath: string, by: 'session' | 'assistant'): { ran: string[] } | undefined {
+    const mtimeMs = this._mtimeOf(filePath);
+    if (mtimeMs === undefined) { return undefined; }
+    const entry = { mtimeMs, by, ran: [] as string[] };
+    this._rerunVersions.set(runnableKey(filePath), entry);
+    return entry;
   }
 
   /** When the latest runs started (0: none yet) — results are older than a change made after it. */
@@ -804,6 +854,12 @@ export class SessionManager {
         log.debug(`${verb} ${path.basename(filePath)} — not run by this project's ${this._terms(projectRoot).config}, ignoring`);
         return;
       }
+      // An AI assistant's verify already reran this very write (it may run before the debounce ends): not twice.
+      if (this._rerunOf(filePath, 'assistant')) {
+        log.debug(`${verb} ${path.basename(filePath)} — this change was already rerun by an AI assistant's verify, not rerunning it`);
+        return;
+      }
+      const version = this._noteRerun(filePath, 'session');
       const run = this._beginRun(`${verb === 'Saved' ? 'save' : 'disk change'} ${path.basename(filePath)}`);
       let ran: string[] = [];
       try {
@@ -829,6 +885,7 @@ export class SessionManager {
         if (ran.length === 0) {
           log.info(`Run #${run.id} ${run.label} — no tests depend on this file`);
         }
+        if (version) { version.ran = ran; }
         this._endRun(run, ran, undefined, ran.length === 0);
       }
     }, debounceMs);

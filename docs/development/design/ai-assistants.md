@@ -43,6 +43,7 @@ Everything is answered by one class, `AiTools`, over one catalog. The two ways i
 4. **Answers** are built when asked (rule 6) and kept small: every list has a limit and a "truncated" note, long text is capped, and each answer carries `running` and `stale` (A9). `stale` = a file changed after the project's latest runs started.
 5. **Runs** (A5) queue in `AgentRuns`. `LTR_run_tests` calls `rerunScope` per test / suite and `runFiles` for whole files; `LTR_verify_fix` calls `runChangedFiles`, which reruns what a save would (the trace, else the framework's related run). Each run snapshots every test's status first; its answer counts the tests in its scope plus files that reported during it, and diffs all projects against the snapshot (fixed, newly failing, still failing).
 6. **Changes.** Saves and on-disk changes (the session's own events) are noted with a status snapshot taken before the first one. `verify_fix` without files uses them; Start clears them.
+7. **One change, one rerun** (A6a). In a session the agent's edit already triggers the session's own rerun. `SessionManager` records which version (modified time) of each changed file was rerun and by whom (`_rerunVersions`): `runChangedFiles` skips a version the session reran and returns its test files as `reused` (they count in the answer, with a note), and the on-save / disk-change rerun skips a version an assistant's verify already reran. A second save of the same version by the user still reruns (only the other side's version is skipped). `verify_fix` first waits briefly so the session's debounced rerun starts, then for runs in flight; `run_tests` / `run_failed` also wait for runs in flight, so the same tests never run twice at once.
 
 ## Design decisions
 
@@ -58,6 +59,7 @@ Everything is answered by one class, `AiTools`, over one catalog. The two ways i
 | Readable ids (`src/a.test.js::Suite::test`) | Agents read and repeat them; they map straight back to store ids, and file paths work as ids | Opaque short ids (`t42`) |
 | Runs need no extra confirmation by default | The extension already runs tests on its own; agents ask the user per tool call. `allowRuns` covers stricter needs | A dialog per run (noise) |
 | Tasks as tools, not raw rows | Agents choose tools by description and do better with fewer, whole-task tools (`explain_failure` in one call) | One tool per store query |
+| Reuse the session's rerun by file version (modified time) | The edit an agent verifies is the one the watcher already reran; a time window would misjudge slow watchers and long debounces, the version is exact | Comparing against when runs started (failed when the agent named files, or a run was already going); always rerunning (duplicate, parallel runs) |
 | Failures as Diagnostics | Every editor's AI already offers fixes for Problems; we get Copilot's and Cursor's for free | Only our own button |
 
 ## Testing
