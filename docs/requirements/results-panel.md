@@ -16,6 +16,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | R8 | Filter output by level (log, info, warn, error) and offer a copy button per line | ⚠️ no test yet |
 | R10 | Copy buttons that are always visible (dimmed until hovered or focused): per output line, per failure, **Copy all** for the output and the errors shown | ⚠️ no test yet (the webview's buttons; the texts are checked by R11) |
 | R11 | **Copy for AI**: the failures shown with framework, test name, file and line, error, the test's source (up to the next test) and the lines it was thrown from, as Markdown; **Copy Failing Test Names**: `file › test` per failing test. Clipboard only | `failure-on-line`; unit: `copyText` |
+| R12 | **✨ Fix with AI** in the Errors pane: the first failure shown goes to the AI chat, else to the clipboard (see [AI assistants](ai-assistants.md), A15); hidden when `liveTestRunner.ai.fixWithAI` is off | ⚠️ no test of the button itself (`ai-bridge*` cover the command) |
 | R9 | Write each run's raw framework output to the Test Output channel, separated by run number | `vitest-output` (output reaches the channel) |
 
 ⚠️ marks a requirement no automated test checks yet.

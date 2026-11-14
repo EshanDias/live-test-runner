@@ -17,6 +17,7 @@ A VS Code extension for **Jest** (including Create React App), **Vitest** and **
 - **Test tree before you run anything** — every file, suite and test, with `▶ Run` / `▷ Debug` above each one.
 - **Failures on the failing line** — the reason after the line, the full message and a side-by-side diff in the hover; **Update snapshot** for a changed snapshot (Jest, Vitest, Angular; asks first).
 - **Results panel** — test list, per-test console output, failures with the diff and location, and **Copy for AI** (the failure plus the test's code, clipboard only).
+- **AI assistants use it** — Copilot, Cursor, Claude Code, Codex and Gemini CLI read failures, output and coverage and rerun what their change affects through `LTR_` tools (no setup for Copilot and Cursor, one command for terminal agents); **✨ Fix with AI** on any failure. No AI service called, no port opened.
 - **Coverage in the editor** — green / amber / red bars per line, the same numbers as your own coverage command; hover a line to see the tests that ran it.
 - **Fast on big projects** — runs use what your machine has free and give way to your other apps (`speed`: Full / Balanced / Light).
 - **Angular 21+** — runs through Angular's own `ng test` builder: apps and libraries, coverage, debugging.
@@ -27,7 +28,7 @@ A VS Code extension for **Jest** (including Create React App), **Vitest** and **
 
 ## Privacy
 
-No telemetry. No accounts. Live Test Runner makes no network calls: it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with **Clear All Cached Data**). It is MIT-licensed and open source, so your security team can review it. Links, such as those in the built-in guide, open in your browser only when you click them.
+No telemetry. No accounts. Live Test Runner makes no network calls and calls no AI service (your AI assistant reads results only when it asks): it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with **Clear All Cached Data**). It is MIT-licensed and open source, so your security team can review it. Links, such as those in the built-in guide, open in your browser only when you click them.
 
 Your own tests, and VS Code itself, may use the network; that is not the extension. What it keeps, and what it shares only when you click: [PRIVACY.md](PRIVACY.md).
 

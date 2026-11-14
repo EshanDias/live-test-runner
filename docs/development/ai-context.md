@@ -540,6 +540,10 @@ All in `packages/vscode-extension/package.json`:
 - `liveTestRunner.openTimelineDebugger` — opens the Timeline Debugger for a specific test
 - `liveTestRunner.addToWatch` — adds a variable to the sidebar Watch panel (used by hover command links)
 - `liveTestRunner.copyValue` — copies an inline variable value to the clipboard (used by hover command links)
+- `liveTestRunner.connectAI` — "Connect Your AI Assistant": setup page per assistant (`ai/ConnectAiPanel.ts`); also a sparkle icon on the Results panel title and a command link in the `ai.bridge` setting
+- `liveTestRunner.fixWithAI` — "Fix Failing Test with AI" (`AiBridge.fixWithAI`): opens the chat with a request naming the tools, else copies the failure; from the ✨ CodeLens, the Results panel's Errors pane and the Problems quick fix
+
+**Language-model tools:** `contributes.languageModelTools` — the 23 `LTR_` tools, generated from `src/ai/catalog.ts` (`UPDATE_LM_TOOLS=1 npx jest test/aiCatalog.test.ts`), `when: config.liveTestRunner.ai.bridge`. Tool names are a public API (renames need a changelog line).
 
 **Views:**
 - `liveTestRunner.explorerView` — sidebar, Activity Bar (beaker icon)
@@ -566,6 +570,10 @@ All in `packages/vscode-extension/package.json`:
 | `liveTestRunner.onSaveDebounceMs` | `300` | Debounce delay (ms) |
 | `liveTestRunner.speed` | `balanced` | Where the budget starts: `full` 3/4 of the cores, `balanced` half, `light` one process ≤ 2 workers (`setSpeedLevel`); adapts per process (`workersNow`) unless `speedStrict` |
 | `liveTestRunner.speedStrict` | `false` | Keep the budget at the level (`setSpeedStrict`) |
+| `liveTestRunner.ai.bridge` | `true` | AI assistants get the `LTR_` tools (LM tools in VS Code, MCP in Cursor, the mailbox for terminal agents) |
+| `liveTestRunner.ai.allowRuns` | `"always"` | `always` / `ask` (modal per run) / `never` (read-only) for assistant runs |
+| `liveTestRunner.ai.fixWithAI` | `true` | ✨ Fix with AI on failing tests (CodeLens, Errors pane, Problems quick fix) |
+| `liveTestRunner.showFailuresInProblems` | `true` | Failing tests as Diagnostics (`editor/FailureDiagnostics.ts`) |
 | `liveTestRunner.durationThresholds.testAmberMs` | `100` | Test amber threshold |
 | `liveTestRunner.durationThresholds.testRedMs` | `500` | Test red threshold |
 | `liveTestRunner.durationThresholds.suiteAmberMs` | `500` | Suite amber threshold |
@@ -632,6 +640,7 @@ All in `packages/vscode-extension/package.json`:
 | Framework detection | `packages/runner/src/framework/FrameworkDetector.ts` |
 | CRA config extraction | `packages/runner/src/framework/adapters/CRAAdapter.ts` |
 | Source save → which tests rerun | `SessionManager._runAffectedBySourceFile`, `store/ExecutionTraceStore.ts` |
+| AI assistants: tools, handlers, transport | `src/ai/catalog.ts` (tools, prompts), `src/ai/tools.ts` (`AiTools`), `src/ai/AiBridge.ts` (LM tools, Cursor, Fix with AI), `src/ai/mailbox.ts` + `protocol.ts` (file mailbox), `src/ai/mcp/` (stdio relay → `out/mcp.js`), `src/ai/launcher.ts` (globalStorage launcher) |
 | All user settings | `packages/vscode-extension/package.json` → `contributes.configuration` |
 | Per-feature docs (what it does · requirements with their tests · design) | `docs/features/`, `docs/requirements/`, `docs/development/design/`, listed in `docs/README.md` — update them with every behaviour change |
 
@@ -657,3 +666,4 @@ All in `packages/vscode-extension/package.json`:
 15. **`scope-logs` and `scope-changed` are always separate messages.** They have different lifecycles.
 16. **Logging goes through the logger, never `console.*` or the Test Output channel.** Extension: `logger.scope('Area')`. runner/core: `createLogger('Area')`. Instrumentation inside Jest: `[LTR:<level>] msg` on stderr. One `info` summary per run; per-file detail at `debug`/`trace`. See developer-guide → Logging.
 17. **Session Jest runs pass `--verbose=false`.** Jest auto-enables verbose for single-file runs, which stops console buffering and empties `testResult.console` (Results panel shows no logs).
+19. **AI assistants never Start / Stop and never reach the network.** `AiTools` acts only through `SessionManager` (`rerunScope`, `runFiles`, `runChangedFiles`) and existing commands (Clear Cache and Restart while on, the Update snapshot dialog). The relay talks to the window through files only; `noNetwork.test.ts` scans `out/mcp.js`. New tools go in `ai/catalog.ts` and regenerate package.json's `languageModelTools`.

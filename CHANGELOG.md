@@ -2,6 +2,19 @@
 
 Repo changelog: one line per change. What users see is in [the extension's changelog](packages/vscode-extension/CHANGELOG.md); the how and why in [docs/development/design](docs/development/design/).
 
+## [3.5.0] - Unreleased
+
+### Added
+- AI assistants: 23 `LTR_` tools and 6 ready-made tasks (`src/ai/catalog.ts`) answered from the stores (`src/ai/tools.ts`).
+- Copilot gets them as VS Code language-model tools; Cursor and terminal agents through a stdio MCP relay (`out/mcp.js`) and a file mailbox in the session folder.
+- **Connect Your AI Assistant** page with setup commands; a stable launcher in the extension's storage folder.
+- Failing tests in the Problems list (`FailureDiagnostics`); **Fix with AI** (CodeLens, Errors pane, quick fix).
+- Settings `liveTestRunner.ai.bridge`, `ai.allowRuns`, `ai.fixWithAI`, `showFailuresInProblems`.
+- `PRIVACY.md`: what an assistant can read and run, and the files the bridge keeps.
+
+### Tooling
+- e2e `ai-bridge`, `ai-bridge-vitest`, `ai-bridge-pytest` drive the relay with a scripted MCP client; `noNetwork.test.ts` scans the relay bundle.
+
 ## [3.4.1] - 2026-11-13
 
 ### Added

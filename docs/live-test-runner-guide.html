@@ -135,6 +135,7 @@
     <a href="#pytest">pytest</a>
     <a href="#monorepos">Monorepos</a>
     <a href="#mixed">Mixed projects</a>
+    <a href="#ai-assistants">AI assistants</a>
     <a href="#timeline">Timeline Debugger</a>
     <div class="group">Reference</div>
     <a href="#commands">Commands</a>
@@ -236,6 +237,39 @@
     <li><b>Copy for AI</b> (Errors column) copies the failures with the framework, file and line, the test's source and the lines the error was thrown from, ready to paste into an AI chat. It goes to your clipboard only. <b>Copy Failing Test Names</b> (title bar icon, or the Command Palette) copies <code>file › test</code> for every failing test.</li>
   </ul>
   <p><img src="https://raw.githubusercontent.com/EshanDias/live-test-runner/main/packages/vscode-extension/resources/images/results-panel.png" alt="A pytest test selected: its printed output in the middle column, no failures on the right" style="max-width:100%;border-radius:8px"></p>
+</section>
+
+<!-- ───────────────────────── AI assistants ───────────────────────── -->
+<section id="ai-assistants">
+  <h2>AI assistants</h2>
+  <p>Your AI assistant can use Live Test Runner while it works: it reads which tests fail and why, which tests a change affects, what coverage misses, and reruns the tests its change affects to check the fix. It no longer has to run the whole test command in a terminal and read pages of output.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Assistant</th><th>Setup</th></tr>
+    <tr><td>GitHub Copilot (VS Code 1.95 or newer, agent mode)</td><td>None: Copilot sees the tools</td></tr>
+    <tr><td>Cursor</td><td>None: Cursor's agent sees the tools</td></tr>
+    <tr><td>Claude Code, Codex CLI, Gemini CLI</td><td>Run one command, once. <b>Live Test Runner: Connect Your AI Assistant</b> shows it with a Copy button (also the ✨ icon in the Results panel's title bar)</td></tr>
+    <tr><td>Windsurf, Cline, other MCP assistants</td><td>Paste the snippet from the same page into the assistant's global MCP settings</td></tr>
+  </table></div>
+  <p>Then just ask, for example: <i>"use Live Test Runner to fix the failing tests"</i>, <i>"which tests cover this function?"</i>, <i>"write tests for the untested code in src/cart.ts"</i>. Claude Code also lists ready-made tasks under <code>/</code> (fix failing tests, explain a failure, check my change, write tests, speed up slow tests, troubleshoot).</p>
+  <h3>What the assistant can do</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Tool</th><th>Gives the assistant</th></tr>
+    <tr><td><code>LTR_get_status</code>, <code>LTR_get_failures</code></td><td>Whether results are current, and what fails</td></tr>
+    <tr><td><code>LTR_explain_failure</code></td><td>One failure in one answer: the error, the failing line, the test's code, its output, the source lines it ran</td></tr>
+    <tr><td><code>LTR_verify_fix</code></td><td>Reruns what its changed files affect; answers what got fixed and what broke</td></tr>
+    <tr><td><code>LTR_get_affected_tests</code>, <code>LTR_get_test_path</code></td><td>Which tests run a file or lines, and which lines a test runs</td></tr>
+    <tr><td><code>LTR_get_coverage</code>, <code>LTR_find_untested</code>, <code>LTR_check_change_coverage</code></td><td>Coverage, untested code with its source, whether a change is tested</td></tr>
+    <tr><td><code>LTR_run_tests</code>, <code>LTR_run_failed</code>, <code>LTR_get_run</code>, <code>LTR_cancel_run</code></td><td>Runs, exactly like ▶ Run</td></tr>
+    <tr><td>and more</td><td><code>LTR_find_tests</code>, <code>LTR_list_tests</code>, <code>LTR_get_output</code>, <code>LTR_get_slow_tests</code>, <code>LTR_get_skipped</code>, <code>LTR_get_project_info</code>, <code>LTR_get_diagnostics</code>, <code>LTR_clear_cache_and_restart</code>, <code>LTR_update_snapshot</code> (you still confirm), <code>LTR_show</code></td></tr>
+  </table></div>
+  <ul>
+    <li><b>✨ Fix with AI</b> appears above a failing test, in the Results panel's Errors column, and as a quick fix in the <b>Problems</b> panel. It opens Copilot Chat with the request; where no chat can be opened it copies the failure for you to paste.</li>
+    <li>Failing tests are listed in the <b>Problems</b> panel, so your editor's own AI quick fixes work on them too (setting <code>showFailuresInProblems</code>).</li>
+    <li>The assistant <b>never starts or stops testing</b>; that stays with you. Its runs share your machine's budget like any other, and the status bar says when it started one. To let it only read, set <code>ai.allowRuns</code> to <code>never</code> (or <code>ask</code> to confirm each run).</li>
+    <li>The assistant and VS Code must run on the <b>same computer</b> (with Remote-SSH, WSL or containers, run the assistant where the extension runs). A sandboxed assistant must be allowed to write to the system temp folder.</li>
+    <li>To make your assistant always use it in a project, the setup page has two lines to paste into your own <code>CLAUDE.md</code>, <code>AGENTS.md</code> or <code>.github/copilot-instructions.md</code>. Live Test Runner never writes them for you.</li>
+    <li>The extension calls no AI service and opens no network port. What your assistant reads goes to its own service; see <a href="#privacy">Privacy</a>.</li>
+  </ul>
 </section>
 
 <!-- ───────────────────────── Coverage ───────────────────────── -->
@@ -403,6 +437,8 @@
     <tr><td>Rerun / Debug Test at Line</td><td>Runs or debugs the test under the cursor (the CodeLens ▶ Run / ▷ Debug)</td></tr>
     <tr><td>Focus Test in Results Panel</td><td>Shows the test under the cursor in the Results panel</td></tr>
     <tr><td>Hide / Show Coverage in Editor</td><td>Turns the coverage bars and hover off or on (also the eye button in the editor title)</td></tr>
+    <tr><td>Connect Your AI Assistant</td><td>Set up Copilot, Cursor, Claude Code, Codex, Gemini CLI or another assistant (see <a href="#ai-assistants">AI assistants</a>)</td></tr>
+    <tr><td>Fix Failing Test with AI</td><td>Asks your AI assistant to fix the failing test under the cursor (else the first failure)</td></tr>
     <tr><td>Open Settings</td><td>Opens Settings filtered to Live Test Runner (also the gear in the Test Explorer title)</td></tr>
     <tr><td>Dump Trace Store <span class="muted">(devMode)</span></td><td>Prints the internal trace indexes</td></tr>
   </table></div>
@@ -424,6 +460,10 @@
     <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
     <tr><td><code>showFailuresInEditor</code></td><td><code>true</code></td><td>A failed test's message on the failing line, and its hover</td></tr>
     <tr><td><code>showCoverageInEditor</code></td><td><code>true</code></td><td>Coverage bars and the coverage hover in the editor</td></tr>
+    <tr><td><code>showFailuresInProblems</code></td><td><code>true</code></td><td>Failing tests in the Problems panel (your editor's AI quick fixes work on them)</td></tr>
+    <tr><td><code>ai.bridge</code></td><td><code>true</code></td><td>Gives your AI assistant the <code>LTR_</code> tools (see <a href="#ai-assistants">AI assistants</a>)</td></tr>
+    <tr><td><code>ai.allowRuns</code></td><td><code>always</code></td><td>Whether your assistant can run tests: <code>always</code>, <code>ask</code> (a dialog per run), <code>never</code> (read only)</td></tr>
+    <tr><td><code>ai.fixWithAI</code></td><td><code>true</code></td><td>Shows ✨ Fix with AI on failing tests</td></tr>
     <tr><td><code>speed</code></td><td><code>balanced</code></td><td>Where test runs start: <code>full</code> (about three quarters of the CPU cores), <code>balanced</code> (about half), <code>light</code> (one test process with at most 2 workers: cool and quiet). Runs then adapt: more when your other apps leave the cores free, less when they need them. Applies from the next run.</td></tr>
     <tr><td><code>speedStrict</code></td><td><code>false</code></td><td>Keep runs exactly at the <code>speed</code> level instead of adapting.</td></tr>
     <tr><td><code>hangTimeoutSeconds</code></td><td><code>300</code></td><td>Stops a single test that runs longer than this (an infinite loop) and marks its file failed, so the rest of the run continues. Loading a file does not count. <code>0</code> turns the limit off.</td></tr>
@@ -502,8 +542,8 @@
 <!-- ───────────────────────── Privacy ───────────────────────── -->
 <section id="privacy">
   <h2>Privacy</h2>
-  <p><b>No telemetry. No accounts.</b> Live Test Runner makes no network calls: it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with <b>Clear All Cached Data</b>). It is MIT-licensed and open source, so your security team can review it. This guide, inside VS Code, loads nothing from the internet either: its pictures are links to the online guide, and links open in your browser only when you click them.</p>
-  <p>Your own tests, and VS Code itself, may use the network; that is not the extension. What it keeps on your machine, and what it shares only when you click (copy buttons, and later tools for your AI assistant): the <a href="https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>.</p>
+  <p><b>No telemetry. No accounts.</b> Live Test Runner makes no network calls and calls no AI service: it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with <b>Clear All Cached Data</b>). It is MIT-licensed and open source, so your security team can review it. This guide, inside VS Code, loads nothing from the internet either: its pictures are links to the online guide, and links open in your browser only when you click them.</p>
+  <p>Your own tests, and VS Code itself, may use the network; that is not the extension. What it keeps on your machine, what it shares only when you click (copy buttons), and what your AI assistant can read when it asks (turn it off with <code>ai.bridge</code>): the <a href="https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>.</p>
   <p><b>How to verify:</b> every pull request runs <code>packages/vscode-extension/test/noNetwork.test.ts</code> (part of <code>pnpm test</code>). It scans the source and the built extension for network modules (<code>http</code>, <code>https</code>, <code>net</code>, <code>tls</code>, <code>dns</code>…), network APIs (<code>fetch</code>, <code>XMLHttpRequest</code>, <code>WebSocket</code>…) and telemetry packages, and checks that no view's content security policy allows another origin.</p>
 </section>
 

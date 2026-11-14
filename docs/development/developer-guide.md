@@ -442,6 +442,16 @@ Verification:
 
 ---
 
+## Adding an AI-assistant tool
+
+1. Add the tool to `TOOLS` in `src/ai/catalog.ts`: an `LTR_` name, a description that says *when* to use it (agents choose tools by it), an input schema, `acts: true` if it starts or changes anything.
+2. Answer it in `AiTools._dispatch` (`src/ai/tools.ts`). Read through `BridgeHost` / `BridgeProject` (`src/ai/host.ts`); act only through the session's own methods or existing commands. Keep the answer small (limits, caps, ids) and include `this._freshFlags()`.
+3. Regenerate package.json's `languageModelTools`: `UPDATE_LM_TOOLS=1 npx jest test/aiCatalog.test.ts` (from `packages/vscode-extension`).
+4. Test it in `test/aiTools.test.ts` (real stores, fake host); the relay needs no change (it lists the catalog).
+5. Tool names are a public API: a rename or removal needs a changelog line. Anything new it shares goes in `PRIVACY.md`.
+
+To try the relay by hand: build, open a project in the Extension Development Host, then from that project's folder run `node <globalStorage>/mcp/live-test-runner-mcp.js` and type `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"LTR_get_status","arguments":{}}}`. The launcher path is on the **Connect Your AI Assistant** page.
+
 ## Adding a new observer (panel, decoration, etc.)
 
 1. Implement `IResultObserver` from `src/IResultObserver.ts`
@@ -700,15 +710,15 @@ Planned work and ideas are tracked as [GitHub Issues](https://github.com/EshanDi
 
 Next, in order (details and status in the GitHub Issues):
 
-1. AI-agent bridge: VS Code language-model tools and a local stdio MCP server (never a network port)
-2. More frameworks, each with results and coverage: Mocha, Playwright, node:test, Cypress
-3. Coverage: file detail page, function-level stale marking, sole-coverage warnings
-4. Mirroring results into VS Code's Testing view (optional); the Timeline debugger rewrite comes last
+1. More frameworks, each with results and coverage: Mocha, Playwright, node:test, Cypress
+2. Coverage: file detail page, function-level stale marking, sole-coverage warnings
+3. Mirroring results into VS Code's Testing view (optional, gives Copilot its native "Fix test failure" too); the Timeline debugger rewrite comes last
 
 Measured and not planned: tracing only some test files on large projects, and a lighter discovery parser (reasons in [Test runs: design](design/test-runs.md#design-decisions)).
 
 Shipped:
 
+- **3.5.0** — AI assistants: Copilot, Cursor and terminal agents (Claude Code, Codex, Gemini CLI) read live results and run tests through `LTR_` tools (VS Code language-model tools and a local stdio MCP relay, no network port); failing tests in the Problems list; Fix with AI
 - **3.4.1** — large projects much faster for every framework, a `speed` setting with a budget that adapts to free CPU and memory, coverage equal to the project's own coverage command and correct after any test change
 - **3.4.0** — Angular (`ng test`), failures on the failing line with a diff, Update snapshot, Copy for AI, no network / privacy policy, minimum VS Code 1.82
 - **3.3.0** — Python monorepos (uv workspaces, one `.venv` per service), JS + Python in one folder, a framework router for any number of frameworks, open test files first, coverage-off notes

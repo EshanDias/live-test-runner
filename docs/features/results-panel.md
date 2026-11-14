@@ -27,6 +27,7 @@ The panel opens at the bottom of VS Code and has three columns:
 - Selection is shared: picking a test in the sidebar picks it in the panel, and `◈ Results` above a test in the editor jumps to it.
 - Results update live while tests run.
 - **Copy for AI** puts on your clipboard what an AI assistant needs to explain a failure: the framework, the test's name and file, the error, the test's code and the lines of your code the error came from. It only goes to the clipboard; you decide where to paste it. **Copy Failing Test Names** (the copy icon in the panel's title bar, or the Command Palette) copies `file › test` for every failing test.
+- **✨ Fix with AI** opens your AI assistant's chat with a request to fix the first failure shown, or copies it where no chat can be opened. The sparkle icon in the panel's title bar opens **Connect Your AI Assistant**. See [AI assistants](ai-assistants.md).
 
 ### Which output a test shows
 
