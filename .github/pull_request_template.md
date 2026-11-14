@@ -11,7 +11,7 @@
 ## Checklist
 
 - [ ] Branch name starts with `feat/`, `bugfix/`, `hotfix/` or `release/`, and targets the right branch (see [CONTRIBUTING.md](../CONTRIBUTING.md))
-- [ ] `CHANGELOG.md` (short bullets) and `packages/vscode-extension/CHANGELOG.md` (short, user-facing) updated for user-visible changes
+- [ ] Both changelogs updated for user-visible changes, as short as possible (extension: one plain line per thing a user notices; repo: one short line per change)
 - [ ] Docs updated in this PR where behaviour changed: the feature's pages in `docs/features/`, `docs/requirements/` (new tests named, ⚠️ dropped) and `docs/development/design/`, the user guide, the README (see [Documentation](../CONTRIBUTING.md#documentation))
 - [ ] `node scripts/build-wiki.js --check` passes
 - [ ] No network calls or telemetry added; anything new the extension stores or shares is in [PRIVACY.md](../PRIVACY.md)

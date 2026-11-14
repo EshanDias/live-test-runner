@@ -41,7 +41,7 @@
 - 🌳 **Test tree** — every file, suite and test on open. Score cards (Total · Passed · Failed, plus **Running** while tests run) filter it with one click.
 - 🎨 **In the editor** — ✓ / ✗ gutter icons, inline durations, `▶ Run` · `▷ Debug` · `◈ Results` above every test.
 - ❌ **Failures where they happen** — the reason on the failing line (`✗ Expected 3, received 2`); hover for the full message, **Show diff**, and **Update snapshot** for a changed Jest, Vitest or Angular snapshot (asks first).
-- 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it. The bars never shift your code and follow your edits; hide them with the 👁 button in the editor title.
+- 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it. Always the current numbers: delete a test or a file and they follow. The bars never shift your code and follow your edits; hide them with the 👁 button in the editor title.
 - 🔍 **Results panel** — test list · console output (per test) · failures with the diff and location · **Copy for AI** (the failure with the test's code, for pasting into a chat).
 - 🗂 **Monorepos and multi-root workspaces** — every package (or Python service / uv workspace member) is a project, each with its own `.venv` or the shared one; switch between them, run several at once.
 - ⏱ **Timeline Debugger** *(planned, not available yet)* — step through a finished test line by line.
@@ -111,6 +111,8 @@ All settings under `liveTestRunner.*`.
 | `pythonPath` | `""` | pytest: the Python that runs the tests; empty = automatic (selected interpreter, the project's venv, the Python extension's, PATH) |
 | `pytestArgs` | `[]` | pytest: extra arguments for every run, e.g. `["-m", "not slow"]` (your `addopts` already apply) |
 | `onSaveDebounceMs` | `300` | Debounce delay after save (ms) |
+| `speed` | `balanced` | Where test runs start: `full`, `balanced`, `light` (cool and quiet); runs adapt to how busy your machine is |
+| `speedStrict` | `false` | Keep runs exactly at the `speed` level |
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
 | `testFilePatterns` | `["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]` | Which files appear in the test tree. Jest's own config still decides what runs, and files it runs are added even when no pattern matches |
 | `showFailuresInEditor` | `true` | A failed test's message after the line where it failed, with Show diff in the hover |
@@ -134,7 +136,7 @@ All settings under `liveTestRunner.*`.
 | ▶ Run / ▷ Debug one test or suite | ✅ | ✅ | ✅ | ✅ | ✅ by node id; Debug needs the Python Debugger extension |
 | Rerun a saved test file | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Logs / console output | ✅ per file | ✅ per file | ✅ per test | ✅ per test | ✅ per test (stdout, stderr, logging) |
-| Coverage (gutter, hover) | ✅ | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) | ✅ needs `@vitest/coverage-v8` | ✅ needs `coverage` (pytest-cov not needed) |
+| Coverage (gutter, hover) — the numbers your own coverage command reports | ✅ Babel or `coverageProvider: 'v8'` | ✅ | ✅ needs `@vitest/coverage-v8` (or `-istanbul`) | ✅ needs `@vitest/coverage-v8` | ✅ needs `coverage` (pytest-cov not needed) |
 | Live per-file progress | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Rerun tests related to a saved source file | ✅ | ✅ | ✅ only the tests that ran it (execution trace); `vitest related` when the trace is off | ✅ the test files that import it (relative imports); all of its project otherwise | ✅ only the tests that ran it (coverage contexts); importing test files before that |
 | Monorepo / multi-project (project switcher) | ✅ one project per package; a root `projects` config stays one | 🟡 a CRA app is detected as a package (not e2e-tested) | ✅ one project per package; `test.projects` stays one, grouped by name | ✅ one project per workspace; its apps and libraries run with `ng test <name>`, grouped by name | ✅ one project per uv workspace member with tests; a root pytest config stays one |

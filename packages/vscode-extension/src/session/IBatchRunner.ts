@@ -59,6 +59,13 @@ export interface IBatchRunner {
    */
   runRelated?(options: RelatedRunOptions): Promise<{ ran: string[]; missing: string[] }>;
 
+  /**
+   * Optional: counts source files that were created or edited and that no
+   * test has run (zero hits) into the coverage store — for languages the
+   * extension's own source scan cannot read (pytest: coverage.py does it).
+   */
+  countSources?(files: string[], projectRoot: string): Promise<void>;
+
   /** Vitest: the root has type-check files (no trace) — a source save also type-checks the related ones. */
   hasTypecheckFiles?(projectRoot: string): boolean;
 

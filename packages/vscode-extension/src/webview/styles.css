@@ -1209,3 +1209,6 @@ body {
 .log-tabs .col-actions { padding-right: 6px; }
 /* The failure's copy button is always visible: keep the message text clear of it. */
 .error-message-wrapper > .error-message { padding-right: 28px; }
+/* Test lists: the browser skips layout and paint of file rows off screen (a run of 2,500 files with their
+   tests expanded laid out the whole list on every update; the panel took a CPU core all run). */
+[data-file-wrapper] { content-visibility: auto; contain-intrinsic-size: auto 22px; }

@@ -230,6 +230,22 @@ export class PytestRunner extends CommandRunner {
     };
   }
 
+  /**
+   * The command that counts source files no test has run (statements,
+   * branches, functions; zero hits) with the project's coverage.py and its
+   * settings — nothing is run. Writes coverage-final.json-shaped JSON to `out`.
+   */
+  countFilesCommand(files: string[], out: string): ExecutorCommand {
+    return {
+      binary: this.resolveBinary(),
+      args: ['-c', 'import sys, ltr_pytest; ltr_pytest.count_files(sys.argv[1:-1], sys.argv[-1])', ...files, out],
+      cwd: this.requireProjectRoot(),
+      extraEnv: this.pythonEnv(),
+      label: this.processLabel,
+      jsEnv: false,
+    };
+  }
+
   /** `-m pytest` arguments for a debug launch of these tests (no plugin: a plain pytest run). */
   debugArgs(filePath: string, names: string[] | undefined, isTestSuite: boolean): string[] {
     const info = pythonFor(this.requireProjectRoot());

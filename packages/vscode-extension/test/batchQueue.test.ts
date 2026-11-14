@@ -1,4 +1,4 @@
-import { buildBatchQueue, promoteInQueue } from '../src/session/batchQueue';
+import { BatchSlots, batchSize, buildBatchQueue, promoteInQueue } from '../src/session/batchQueue';
 
 const files = (n: number, dir = '/p') => Array.from({ length: n }, (_, i) => `${dir}/t${i + 1}.test.js`);
 const batches = (q: { batch: string[]; services: string }[]) => q.map((b) => `${b.services}:${b.batch.map((f) => f.replace(/^.*\//, '')).join(',')}`);
@@ -34,5 +34,78 @@ describe('promoteInQueue', () => {
     expect(batches(q)).toEqual(['jest:t3.test.js', 'jest:t1.test.js,t2.test.js']);
     expect(promoteInQueue(q, '/p/t3.test.js')).toBe(false);
     expect(promoteInQueue(q, '/p/gone.test.js')).toBe(false);
+  });
+});
+
+describe('batchSize', () => {
+  const batches = (total: number, parallel: number) => Math.ceil(total / batchSize(total, parallel));
+
+  it('small runs: one batch per parallel slot, never below the minimum', () => {
+    expect(batchSize(9, 3)).toBe(5);
+    expect(batchSize(100, 3)).toBe(34);
+    expect(batchSize(3, 1)).toBe(5);
+  });
+
+  it('never above the maximum', () => {
+    for (const total of [151, 999, 2500, 10_000]) { expect(batchSize(total, 3)).toBeLessThanOrEqual(50); }
+  });
+
+  it('fills whole rounds: 500 files, 3 at a time → 12 batches, not 10 (a last round of one)', () => {
+    expect(batches(500, 3)).toBe(12);
+    expect(batches(500, 3) % 3).toBe(0);
+    expect(batches(1200, 4) % 4).toBe(0);
+  });
+
+  it('one batch at a time (budget 1): plain chunks of the maximum', () => {
+    expect(batchSize(500, 1)).toBe(50);
+    expect(batchSize(0, 3)).toBe(5);
+  });
+
+  it('a framework\'s own largest batch (Angular 200, pytest 300 one at a time), still in whole rounds', () => {
+    expect(batchSize(2500, 3, 200)).toBe(167);
+    expect(Math.ceil(2500 / batchSize(2500, 3, 200)) % 3).toBe(0);
+    expect(batchSize(100, 3, 200)).toBe(34);
+    expect(batchSize(2500, 1, 300)).toBe(278);
+    expect(batchSize(2500, 3, 1)).toBe(5);
+  });
+});
+
+describe('BatchSlots', () => {
+  it('two runs sharing the slots never have more batches going than the budget', async () => {
+    const slots = new BatchSlots(3);
+    let running = 0;
+    let peak = 0;
+    const tick = () => new Promise<void>((r) => setImmediate(r));
+    const run = async (batches: number, workers: number) => {
+      let next = 0;
+      await Promise.all(Array.from({ length: workers }, async () => {
+        while (next < batches) {
+          await slots.acquire();
+          if (next >= batches) { slots.release(); break; }
+          next++;
+          running++; peak = Math.max(peak, running);
+          await tick(); await tick();
+          running--;
+          slots.release();
+        }
+      }));
+    };
+    // The early run (1 batch) and the rest (12 batches, 3 workers of its own), started together.
+    await Promise.all([run(1, 3), run(12, 3)]);
+    expect(peak).toBe(3);
+    expect(running).toBe(0);
+  });
+
+  it('a released slot goes to the longest waiter first', async () => {
+    const slots = new BatchSlots(1);
+    const order: string[] = [];
+    await slots.acquire();
+    const a = slots.acquire().then(() => order.push('a'));
+    const b = slots.acquire().then(() => order.push('b'));
+    slots.release();
+    await a;
+    slots.release();
+    await b;
+    expect(order).toEqual(['a', 'b']);
   });
 });

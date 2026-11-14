@@ -3,8 +3,53 @@
  * Full run on the basic fixture: everything that must be true once "Start
  * Testing" completes.
  */
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const h = require('../lib/harness');
+
+const runner = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'utils', 'resources.js'));
+
+/**
+ * The extension's transform-cache folders whose generated Jest configs name
+ * this workspace: { dir, configs, caches } (caches = Jest's own
+ * jest-transform-cache-<id> folders inside), counting only what was written
+ * since `sinceMs` (earlier e2e runs may have left older ones).
+ */
+function transformCachesFor(workspace, sinceMs) {
+  const base = path.join(os.tmpdir(), 'com.eshLabs', 'live-test-runner');
+  const real = fs.realpathSync(workspace);
+  const out = [];
+  for (const d of fs.existsSync(base) ? fs.readdirSync(base).filter((n) => n.startsWith('transform-cache-')) : []) {
+    const dir = path.join(base, d);
+    const recent = (n) => fs.statSync(path.join(dir, n)).mtimeMs >= sinceMs - 1000;
+    const names = fs.readdirSync(dir);
+    const configs = names.filter((n) => /^ltr-jest-config-.*\.js$/.test(n))
+      .filter((n) => {
+        // Windows paths ignore case (the config may spell the drive c: or C:).
+        const fold = (x) => (process.platform === 'win32' ? x.toLowerCase() : x);
+        const text = fold(fs.readFileSync(path.join(dir, n), 'utf8'));
+        return text.includes(fold(JSON.stringify(workspace))) || text.includes(fold(JSON.stringify(real)));
+      });
+    if (configs.length > 0) { out.push({ dir, configs: configs.length, caches: names.filter((n) => n.startsWith('jest-transform-cache-') && recent(n)).length }); }
+  }
+  return out;
+}
+
+/** Files written to this workspace's Jest transform caches since `sinceMs`. */
+function cacheFilesSince(workspace, sinceMs) {
+  const out = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p); } else if (fs.statSync(p).mtimeMs >= sinceMs) { out.push(path.basename(p)); }
+    }
+  };
+  for (const c of transformCachesFor(workspace, 0)) {
+    for (const n of fs.readdirSync(c.dir).filter((n) => n.startsWith('jest-transform-cache-'))) { walk(path.join(c.dir, n)); }
+  }
+  return out;
+}
 
 module.exports = {
   workspace: 'fixture:basic',
@@ -14,6 +59,7 @@ module.exports = {
     await h.waitForDiscovery(api);
     const rec = h.recordEvents(api);
     const since = h.isoNow();
+    const startedMs = Date.now();
 
     await vscode.commands.executeCommand('liveTestRunner.startTesting');
     await h.sleep(500); // let trailing observer notifications land
@@ -82,6 +128,18 @@ module.exports = {
     const missing = logs.filter((l) => /0\/\d+ file\(s\) reported|No result for/.test(l));
     t.check('every file in a batch reported a result', missing.length === 0, missing.join('\n'));
 
+    // Every batch shares one config file, so one Jest transform cache: a config
+    // path per batch made each batch compile every file again (and left one
+    // cache folder per batch on disk). A second folder is Jest's own count of the
+    // files no test loads (the project's config, once per session).
+    const batches = new Set(logs.map((l) => /\b(b\d+): running \d+ file/.exec(l)?.[1]).filter(Boolean));
+    const caches = transformCachesFor(workspace, startedMs);
+    // A small or busy machine (the adaptive budget allows one process) runs the fixture as one batch.
+    const minBatches = 1;
+    t.check(`${batches.size} batches share one generated config and one transform cache`,
+      batches.size >= minBatches && caches.length === 1 && caches[0].configs >= 1 && caches[0].caches <= 2,
+      `batches ${[...batches].join(', ')}; caches ${JSON.stringify(caches)}`);
+
     // Per-test trace recorded → source files map to the tests using them.
     const mathSrc = path.join(workspace, 'src', 'math.js');
     const affected = api.traceStore.getAffectedTestFiles(mathSrc)
@@ -100,8 +158,15 @@ module.exports = {
     // A second Start with no test or config file changed does not wait for
     // `jest --listTests` again (20 s on a 200-file CRA project).
     const since2 = h.isoNow();
+    const startedMs2 = Date.now();
     await vscode.commands.executeCommand('liveTestRunner.startTesting');
     const logs2 = h.logsSince(api, since2);
+    // Nothing changed, so nothing is compiled again: a per-session value in the generated
+    // config (coverageDirectory) changed every file's transform cache key, every Start.
+    const ran2 = logs2.some((l) => /\bb\d+: running \d+ file/.test(l));
+    const recompiled = cacheFilesSince(workspace, startedMs2);
+    t.check('second Start compiles nothing again (Jest\'s transform cache is reused)', ran2 && recompiled.length === 0,
+      `batches ran: ${ran2}; written again: ${recompiled.slice(0, 10).join(', ')}`);
     t.check('second Start reuses the runnable-file list', logs2.some((l) => /remembered from the last session/.test(l)) &&
       !logs2.some((l) => /jest --listTests: \d+ file/.test(l)), logs2.filter((l) => /listTests|Runnable/.test(l)).join('\n'));
     t.eq('second Start: same results', h.statusCounts(api, 'src/math.test.js'), { passed: 5, skipped: 2 });

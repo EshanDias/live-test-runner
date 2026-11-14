@@ -75,8 +75,15 @@ module.exports = {
     const logs2 = h.logsSince(api, since2);
     t.check('config.js save used --findRelatedTests (no trace data)', logs2.some((l) => /No trace data for config\.js/.test(l)),
       logs2.join('\n'));
-    t.eq('coverage of config.js is not left "stale" after the --findRelatedTests rerun',
+    // The related run measures nothing: the test files that measured config.js
+    // before the change run again whole in the background, then it is current.
+    await h.waitFor(() => api.coverageStore.getEntry(configKey)?.state === 'measured' && api.session._activeRuns === 0,
+      { what: 'config.js coverage to be measured again', timeout: 60_000 }).catch(() => {});
+    t.eq('coverage of config.js is measured again after the --findRelatedTests rerun (background refresh)',
       api.coverageStore.getEntry(configKey)?.state, 'measured');
+    t.check('the refresh reran the test files that measured config.js', h.logsSince(api, since2).some((l) => /Coverage refresh: \d+ test file/.test(l)),
+      h.logsSince(api, since2).join('\n'));
+    t.eq('nothing outdated after the refresh', api.coverageStore.outdatedContributors(), []);
     // Jest --json names the file `name`; reading only testFilePath put these
     // results on a nameless entry, so the tree never updated and the total grew.
     const orphans = [...api.store.nodes.values()].filter((n) => !n.fileId || !api.store.getFile(n.fileId));

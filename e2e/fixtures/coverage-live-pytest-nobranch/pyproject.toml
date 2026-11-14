@@ -1,0 +1,11 @@
+[project]
+name = "coverage-live-pytest-nobranch-fixture"
+version = "0.0.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+# Every source file counts, tested or not (files no test loads show 0%).
+source = ["src"]

@@ -51,6 +51,8 @@ function yieldToEventLoop(): Promise<void> {
  *  3. FileSystemWatcher — re-discovers individual files on change/create
  *     (only while no session is active, so live results are never clobbered).
  */
+const EMPTY_SET: ReadonlySet<string> = new Set();
+
 export class TestDiscoveryService {
   private _watchers: vscode.FileSystemWatcher[] = [];
   private _discoveryPromise: Promise<void> = Promise.resolve();
@@ -61,6 +63,8 @@ export class TestDiscoveryService {
   private _callbacks: DiscoveryCallbacks | undefined;
   private _cache: DiscoveryCache | undefined;
   private _stats: DiscoveryStats = { cacheHits: 0, parsed: 0, noTests: 0, failed: 0 };
+  /** Per test file: the suites (node ids) whose tests share a variable — rerun whole, never test by test. */
+  private readonly _sharedSuites = new Map<string, Set<string>>();
   /** The framework's file patterns and parser (Babel for JS, the line scanner for pytest). */
   private _discoverer: TestFileDiscoverer = jsDiscoverer;
 
@@ -176,6 +180,11 @@ export class TestDiscoveryService {
    * Returns a promise that resolves when the current discovery pass is complete.
    * Used by SessionManager to gate "Start Testing" until the store is populated.
    */
+  /** The suites (node ids) of a test file whose tests share a describe- or file-scope variable. */
+  sharedSuiteIds(filePath: string): ReadonlySet<string> {
+    return this._sharedSuites.get(filePath) ?? EMPTY_SET;
+  }
+
   awaitDiscovery(): Promise<void> {
     return this._discoveryPromise;
   }
@@ -358,6 +367,7 @@ export class TestDiscoveryService {
 
     const relativeName = path.relative(projectRoot, filePath);
     store.fileDiscovered(filePath, filePath, relativeName);
+    this._sharedSuites.delete(filePath);
 
     // Rebuild the line map from fresh AST data on every pass so edits are
     // reflected immediately (the watcher calls this on every save).
@@ -407,6 +417,11 @@ export class TestDiscoveryService {
     for (const suite of suites) {
       const isDynamic = suite.name.match(/…|%[isdjpxofc]/);
       const suiteId = makeNodeId(filePath, ancestorNames, suite.name);
+      if (suite.isSharedVars) {
+        const set = this._sharedSuites.get(filePath) ?? new Set<string>();
+        set.add(suiteId);
+        this._sharedSuites.set(filePath, set);
+      }
       store.nodeDiscovered(
         filePath,
         suiteId,

@@ -28,6 +28,8 @@ export abstract class BaseWebviewProvider
   protected _running: ProjectViewState['running'];
 
   private _pendingFileResults: string[] = [];
+  /** Files started since the last flush: sent with the results, before them (a file that started and finished in between shows its result). */
+  private _pendingRunning = new Set<string>();
   private _resultFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -45,6 +47,7 @@ export abstract class BaseWebviewProvider
   bindProject(state: ProjectViewState): void {
     if (this._resultFlushTimer !== null) { clearTimeout(this._resultFlushTimer); this._resultFlushTimer = null; }
     this._pendingFileResults = [];
+    this._pendingRunning.clear();
     this.store           = state.store;
     this._sessionActive  = state.sessionActive;
     this._isDiscovering  = state.isDiscovering;
@@ -141,6 +144,9 @@ export abstract class BaseWebviewProvider
   onSessionStopped(): void {
     this._sessionActive = false;
     this._running = undefined;
+    // Results already in stay; files that only started are not running any more.
+    this._pendingRunning.clear();
+    if (this._resultFlushTimer !== null) { this._flushFileResults(); }
     this.postMessage({ type: 'session-stopped', runningTests: this.store.getSummary().running });
   }
 
@@ -149,20 +155,42 @@ export abstract class BaseWebviewProvider
     this.postMessage({ type: 'run-started', fileCount: payload.fileCount, files: payload.files });
   }
 
+  /**
+   * Whole files starting (a batch: one per file) are batched like their
+   * results: one message per 50 ms, not one per file (each one redrew the
+   * list; 2,500 files kept the panel's renderer at a full core all run).
+   * A single test's rerun goes at once.
+   */
   onFilesRerunning(fileIds: string[], nodeId?: string): void {
-    this.postMessage({ type: 'files-rerunning', fileIds, nodeId, runningTests: this.store.getSummary().running });
+    if (nodeId) {
+      this._flushFileResults();
+      this.postMessage({ type: 'files-rerunning', fileIds, nodeId, runningTests: this.store.getSummary().running });
+      return;
+    }
+    for (const id of fileIds) { this._pendingRunning.add(id); }
+    this._scheduleFlush();
   }
 
-  onFileResult(filePath: string): void {
-    if (!this.store.getFile(filePath)) { return; }
-    this._pendingFileResults.push(filePath);
+  private _scheduleFlush(): void {
     if (this._resultFlushTimer === null) {
       this._resultFlushTimer = setTimeout(() => this._flushFileResults(), 50);
     }
   }
 
+  onFileResult(filePath: string): void {
+    if (!this.store.getFile(filePath)) { return; }
+    this._pendingFileResults.push(filePath);
+    this._scheduleFlush();
+  }
+
   protected _flushFileResults(): void {
+    if (this._resultFlushTimer !== null) { clearTimeout(this._resultFlushTimer); }
     this._resultFlushTimer = null;
+    if (this._pendingRunning.size > 0) {
+      const fileIds = [...this._pendingRunning];
+      this._pendingRunning.clear();
+      this.postMessage({ type: 'files-rerunning', fileIds, runningTests: this.store.getSummary().running });
+    }
     const paths = this._pendingFileResults.splice(0);
     if (paths.length === 0) { return; }
     const summary = this.store.getSummary();

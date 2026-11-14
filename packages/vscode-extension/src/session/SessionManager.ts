@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { totalmem } from 'os';
 import * as vscode from 'vscode';
 import { TestSession } from '@live-test-runner/core';
-import { FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath, parallelBatches } from '@live-test-runner/runner';
+import { FrameworkDetector, LTR_BASE_TMP_DIR, registerProjectRoot, fromRunnerPath, memoryLow, availableMemory, maxBatchSlots, workersNow, workersPerBatch, machineBusyCores, machineLoad, largestTestProcessMemory } from '@live-test-runner/runner';
 import { ResultStore } from '../store/ResultStore';
 import { ExecutionTraceStore } from '../store/ExecutionTraceStore';
 import { SelectionState } from '../store/SelectionState';
@@ -15,7 +16,7 @@ import { ResultsView } from '../views/ResultsView';
 import { TestDiscoveryService } from './TestDiscoveryService';
 import type { IBatchRunner } from './IBatchRunner';
 import { RunnableFilesCache, runnableCacheKey, runnableKey } from './RunnableFiles';
-import { buildBatchQueue, promoteInQueue } from './batchQueue';
+import { BatchSlots, batchSize, buildBatchQueue, promoteInQueue } from './batchQueue';
 import { CoverageStore } from '../coverage/CoverageStore';
 import { SourceCounter } from '../coverage/SourceCounter';
 import { coverageScopeOf } from '../coverage/coverageScope';
@@ -51,6 +52,8 @@ interface RunHandle {
   id: number;
   label: string;
   startedAt: number;
+  /** The coverage refresh: not one of "our runs" for files changed on disk. */
+  background?: boolean;
   /** The session token at start — a run from before Stop never closes the current state. */
   token: number;
 }
@@ -73,6 +76,8 @@ import { extensionOf, isSourceFile, NON_SOURCE_EXTENSIONS } from './sourceFiles'
  */
 /** More files than this changed on disk at once restart the session instead of one rerun per file. */
 const MAX_DISK_CHANGES_PER_FILE = 20;
+/** Wait after the last run ends before the coverage refresh starts (a burst of saves settles first). */
+const COVERAGE_REFRESH_DELAY_MS = 750;
 
 /** `a.ts`, `a.ts and b.ts`, `a.ts and 3 more` — for log lines. */
 function describeFiles(files: string[]): string {
@@ -80,6 +85,9 @@ function describeFiles(files: string[]): string {
   if (names.length <= 2) { return names.join(' and '); }
   return `${names[0]} and ${names.length - 1} more`;
 }
+
+/** How long the open files' batches run alone at the start of a full run before the rest start. */
+const OPEN_FILES_HEAD_START_MS = 1500;
 
 export class SessionManager {
   private _session: TestSession | undefined;
@@ -99,11 +107,32 @@ export class SessionManager {
   private _activeRuns = 0;
   /** The queues of the runs in flight: each moves a waiting test file to its front. */
   private readonly _promoters = new Set<(filePath: string) => boolean>();
+  /** Test processes this window runs now, every run together (the memory check counts them). */
+  private _batchesRunning = 0;
+  /** Workers the running batches keep busy (BatchPolicy.workersPerProcess each): what the adaptive budget counts as ours. */
+  private _workersRunning = 0;
+  /** When the machine was first too busy for another batch (0: not waiting). */
+  private _busyWaitSince = 0;
+  /** When memory last held a batch back (logged once per stretch of waiting). */
+  private _memoryWaitSince = 0;
 
   /** Files changed on disk during a run: rerun when the runs finish. */
   private readonly _diskQueue = new Set<string>();
   /** The files the last queued disk rerun ran for (loop guard). */
   private _lastDiskRerun = new Set<string>();
+  /**
+   * Coverage refresh: when each test file was last rerun whole because its
+   * coverage was measured before a change (at most once per change, so a
+   * refresh that measures nothing new does not loop).
+   */
+  private _coverageRefreshedAt = new Map<string, number>();
+  /** When a source file last changed (save or disk), for the refresh guard. */
+  private _lastSourceChangeAt = 0;
+  private _coverageRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The coverage refresh in flight: a background run that steps aside for changes on disk. */
+  private _coverageRefresh: { cancelled: boolean } | undefined;
+  /** Runs other than the coverage refresh in flight (the ones whose writes are the tests' own, see _writtenDuringLastRuns). */
+  private _foregroundRuns = 0;
   /** When our last runs started and ended (see _writtenDuringLastRuns). */
   private _runsStartedAt = 0;
   private _runsEndedAt = 0;
@@ -182,6 +211,7 @@ export class SessionManager {
     }
     const token = ++this._token;
     this._activeRuns = 0;
+    this._foregroundRuns = 0;
     this._fullSuiteStartedAt = undefined;
     this._clearSaveTimers();
 
@@ -240,8 +270,31 @@ export class SessionManager {
       // (in parallel) how it resolves that config — re-read every session.
       services.projectConfig.reset();
       void services.projectConfig.get(projectRoot);
+
+      // The framework's own list of the files it runs (jest --listTests, pytest
+      // --collect-only, …) can take half a minute on a large project. When it is
+      // not remembered from the last session, the test files on screen start
+      // now; a file the list then leaves out loses its results again. Not in a
+      // mixed project (the lists also say which framework runs a file), and only
+      // when the budget allows two processes at once (the list is one of them).
+      const early = !this._services.isMixed() && maxBatchSlots() > 1 && !this._runnableIsRemembered(projectRoot, discovered)
+        ? this._onScreenTestFiles(discovered) : [];
+      let run: ReturnType<SessionManager['_beginRun']> | undefined;
+      let earlyRun: Promise<void> | undefined;
+      // The early run and the rest share one budget: the rest starts no more processes than the slots left.
+      const slots = new BatchSlots(maxBatchSlots());
+      if (early.length > 0) {
+        this._startSessionState(projectRoot, services, discovered);
+        run = this._beginRun('full suite', { fullSuite: true });
+        log.debug(`Running the ${early.length} test file(s) open in the editor while ${this._terms(projectRoot).name} lists the files it runs`);
+        earlyRun = this._runFiles(early, projectRoot, token, { openFirst: true, slots });
+      }
       const runnableList = await this._runnableFiles(projectRoot, discovered);
-      if (token !== this._token) { return; }
+      if (token !== this._token) {
+        // Stopped while the list was made: the early run ends as a stopped full run does.
+        if (run) { await earlyRun; this._endRun(run, early); }
+        return;
+      }
       // A mixed project's second framework: its config is re-read too.
       for (const s of this._services.all()) {
         if (s !== services) { s.projectConfig.reset(); void s.projectConfig.get(projectRoot); }
@@ -259,49 +312,43 @@ export class SessionManager {
         }
       }
       const testFiles = discovered.filter((fp) => this._isRunnable(fp));
-      this._markExcluded(discovered.filter((fp) => !this._isRunnable(fp)));
+      const startedEarly = new Set(early.map(runnableKey));
+      // Files started early are marked once their run is over (below).
+      this._markExcluded(discovered.filter((fp) => !this._isRunnable(fp) && !startedEarly.has(runnableKey(fp))));
       // A config with several Vitest projects groups the Explorer by project name.
       this._store.setFileGroups(runnableList ? this._groups : undefined);
       log.info(`Session started — ${testFiles.length} test file(s) · framework: ${framework} · root: ${projectRoot}`);
+
+      if (earlyRun) {
+        // The files started early that the list leaves out: their results, coverage and trace go.
+        const dropped = early.filter((fp) => !this._isRunnable(fp));
+        if (dropped.length > 0) {
+          await earlyRun;
+          if (token !== this._token) { this._endRun(run!, early); return; }
+          for (const fp of dropped) {
+            this._coverageStore.removePath(fp);
+            this._traceStore.forgetTestFiles([fp]);
+          }
+          this._markExcluded(dropped);
+          for (const fp of dropped) { this._notify('onFileResult', fp); }
+        }
+      }
 
       if (testFiles.length === 0) {
         log.warn(`No test files found — nothing to run. ${this._terms(projectRoot).name} listed no test files, and none match the liveTestRunner.testFilePatterns setting`);
         this._updateStatusBar('✅ Ready');
         this._session.activate();
+        if (run) { await earlyRun; this._endRun(run, []); }
         return;
       }
 
-      this._session.activate();
-      for (const s of this._services.all()) { s.batchRunner.reset(); }
-      this._notify('onSessionStarted');
-
-      // Background source scan — runs in parallel with test execution.
-      this._coverageStore.clear();
-      // A framework that cannot measure here says so in the Coverage tab (the tests still run).
-      const off = this._services.all().map((s) => s.coverageOffReason?.(projectRoot)).filter((r): r is string => !!r);
-      if (off.length > 0) { this._coverageStore.setOffReasons(off); }
-      this._sourceCounter?.cancel();
-      const sourceCounter = new SourceCounter(projectRoot, this._coverageStore, coverageScopeOf(services.projectConfig, projectRoot));
-      this._sourceCounter = sourceCounter;
-      sourceCounter.on('progress', (scanned: number, total: number) => {
-        this._observers.forEach((o) => o.onSourceScanProgress?.(scanned, total));
-      });
-      sourceCounter.on('done', () => {
-        this._observers.forEach((o) => o.onSourceScanDone?.());
-      });
-      void sourceCounter.run();
-
-      // Push the discovered (pending) tree to the UI so the run-started state
-      // shows all tests before the first result arrives.
-      this._notify('onRunStarted', {
-        fileCount: testFiles.length,
-        files: (this._store.toJSON() as { files: unknown[] }).files,
-      });
+      if (!run) { this._startSessionState(projectRoot, services, testFiles); }
 
       // ── Run the tests ──────────────────────────────────────────────────────
-      const run = this._beginRun('full suite', { fullSuite: true });
+      const rest = testFiles.filter((fp) => !startedEarly.has(runnableKey(fp)));
+      run ??= this._beginRun('full suite', { fullSuite: true });
       try {
-        await this._runFiles(testFiles, projectRoot, token, { openFirst: true });
+        await Promise.all([earlyRun, this._runFiles(rest, projectRoot, token, { openFirst: true, slots })]);
       } finally {
         this._endRun(run, testFiles);
       }
@@ -318,6 +365,7 @@ export class SessionManager {
     this._diskQueue.clear();
     this._lastDiskRerun.clear();
     this._clearSaveTimers();
+    this._clearCoverageRefresh();
     this._killBatches();
     if (this._session) {
       this._session.stop();
@@ -326,6 +374,7 @@ export class SessionManager {
     // Nothing may keep spinning after Stop.
     const touched = this._store.resetRunning();
     this._activeRuns = 0;
+    this._foregroundRuns = 0;
     this._fullSuiteStartedAt = undefined;
     this._store.clearAllLineMaps();
     this._coverageStore.clear();
@@ -498,13 +547,28 @@ export class SessionManager {
    * would otherwise rerun themselves forever. Many files at once
    * (a branch switch) restart the session instead of one rerun per file.
    */
+  /**
+   * Files or folders were deleted: their coverage leaves the totals (source
+   * files) or stops counting (test files). Discovery removes deleted test
+   * files from the tree itself.
+   */
+  onFilesDeleted(filePaths: string[]): void {
+    if (!this._session?.isTestingActive()) { return; }
+    for (const fp of filePaths) {
+      this._coverageStore.removePath(fp);
+      this._traceStore.forgetTestFiles(this._traceStore.testFilesUnder(fp, path.sep));
+    }
+  }
+
   onFilesChangedOnDisk(filePaths: string[]): void {
     if (!this._session?.isTestingActive()) { return; }
     const root = this._getProjectRoot();
     if (!root) { return; }
     let relevant = filePaths.filter((f) => this._isWatchedFile(f, root));
     if (relevant.length === 0) { return; }
-    if (this.isRunning()) {
+    // Only the coverage refresh runs: what it measures is outdated by this change — it steps aside.
+    if (this._coverageRefresh && this._foregroundRuns === 0) { this._cancelCoverageRefresh('files changed on disk'); }
+    if (this._foregroundRuns > 0) {
       // Rerun once the runs in flight finish (see _runQueuedDiskChanges).
       for (const f of relevant) { this._diskQueue.add(f); }
       log.info(`${describeFiles(relevant)} changed on disk during a run — queued, reruns when the run finishes`);
@@ -684,7 +748,11 @@ export class SessionManager {
           ran = [filePath];
           await this._runFiles(ran, projectRoot, token);
         } else {
+          this._lastSourceChangeAt = Date.now();
           this._coverageStore.markFileStale(filePath);
+          // Counted from its new content: a new file no test loads shows as 0%, an edited one keeps its totals right.
+          void this._sourceCounter?.countFile(filePath);
+          void this._services.servicesFor(filePath).batchRunner.countSources?.([filePath], projectRoot);
           ran = await this._runAffectedBySourceFile(filePath, projectRoot, token);
         }
       } catch (error) {
@@ -710,6 +778,7 @@ export class SessionManager {
     if (this._session) {
       this._token++;
       this._activeRuns = 0;
+      this._foregroundRuns = 0;
       this._clearSaveTimers();
       this._killBatches();
       this._session.stop();
@@ -738,6 +807,7 @@ export class SessionManager {
     this._session?.stop();
     this._session = undefined;
     this._activeRuns = 0;
+    this._foregroundRuns = 0;
     this._fullSuiteStartedAt = undefined;
     this._store.clear();
   }
@@ -867,8 +937,16 @@ export class SessionManager {
         continue;
       }
 
+      // A test inside a suite whose tests share a variable (discovery): the whole file.
+      const shared = this._discovery.sharedSuiteIds(testFilePath);
+      const inSharedSuite = (fullName: string) => {
+        for (let n = this._store.findNodeByFullName(testFilePath, fullName); n; n = n.parentId ? this._store.getNode(n.parentId) : undefined) {
+          if (shared.has(n.id)) { return true; }
+        }
+        return false;
+      };
       for (const [suiteName, suite] of Object.entries(suiteInfo)) {
-        if (suite.isSharedVars) {
+        if (suite.isSharedVars || (shared.size > 0 && suite.testCases.some(inSharedSuite))) {
           // Shared state — must run the whole file to get correct results
           if (!filesToRunFull.includes(testFilePath)) {
             filesToRunFull.push(testFilePath);
@@ -1025,8 +1103,8 @@ export class SessionManager {
   ): Promise<void> {
     // The budget, and no more than any involved framework runs at once (pytest: one process).
     const CONCURRENCY = Math.max(1, Math.min(
-      parallelBatches(),
-      ...cases.map((c) => this._services.servicesFor(c.filePath).batchPolicy?.maxParallel ?? Number.MAX_SAFE_INTEGER),
+      maxBatchSlots(),
+      ...cases.map((c) => maxParallelOf(this._services.servicesFor(c.filePath), projectRoot) ?? Number.MAX_SAFE_INTEGER),
     ));
 
     // Group by file — one Jest invocation per file with combined pattern
@@ -1119,6 +1197,8 @@ export class SessionManager {
             if (!run) {
               break;
             }
+            const workers = this._workersOf(this._services.servicesFor(run.filePath));
+            if (!(await this._memoryForAnotherBatch(() => queue.unshift(run), undefined, workers))) { continue; }
 
             const names = run.names;
 
@@ -1138,6 +1218,9 @@ export class SessionManager {
               );
             } catch (err) {
               log.error(`Could not run ${names.length} test(s) in ${path.basename(run.filePath)} `, err);
+            } finally {
+              this._batchesRunning--;
+              this._workersRunning -= workers;
             }
             if (token !== this._token) { break; }
             // No result: put the spinning tests back to pending.
@@ -1154,20 +1237,85 @@ export class SessionManager {
 
   // ── Private: run execution ─────────────────────────────────────────────────
 
+  /**
+   * Whether another test process may start now. The first always may; another
+   * waits while memory is low (`memoryLow`), so a large project never pushes
+   * the machine into swap, or while its `workers` do not fit what the budget
+   * allows now (`workersNow`: by default what the machine's other programs
+   * leave free, between Light's and Full's budget; strict: the speed level),
+   * until a running one ends or 2 s pass.
+   * @param putBack returns the batch to its queue (and its slot) when it has to wait
+   * @param waiters the run's wake-ups, called when one of its batches ends
+   * @returns true: the process and its workers are counted as running (the
+   *   caller takes them off when it ends); false after waiting: the caller
+   *   takes the next batch again
+   */
+  private async _memoryForAnotherBatch(putBack: () => void, waiters?: (() => void)[], workers = 1): Promise<boolean> {
+    // What another process will take: the largest running one with its workers (measured with the load).
+    machineLoad();
+    const another = this._batchesRunning > 0 ? largestTestProcessMemory() ?? 0 : 0;
+    const lowMemory = this._batchesRunning > 0 && memoryLow(availableMemory(), totalmem(), another);
+    // The adaptive budget (liveTestRunner.speed + speedStrict): what other programs leave free now.
+    const allowed = workersNow(this._workersRunning);
+    const busy = this._batchesRunning > 0 && !lowMemory && this._workersRunning + workers > allowed;
+    if (!lowMemory && !busy) {
+      if (this._memoryWaitSince > 0) {
+        log.debug(`Memory freed up after ${secondsSince(this._memoryWaitSince)}: starting the next batch`);
+        this._memoryWaitSince = 0;
+      }
+      if (this._busyWaitSince > 0) {
+        log.debug(`Cores freed up after ${secondsSince(this._busyWaitSince)}: starting the next batch (${allowed} worker(s) now)`);
+        this._busyWaitSince = 0;
+      }
+      // Reserved here, in the same step as the check: the run's other slots ask before this caller resumes.
+      this._batchesRunning++;
+      this._workersRunning += workers;
+      return true;
+    }
+    if (lowMemory && this._memoryWaitSince === 0) {
+      this._memoryWaitSince = Date.now();
+      const free = availableMemory();
+      log.info(`Memory is low (${free !== undefined ? `${(free / 1024 ** 3).toFixed(1)} GB` : '?'} free` +
+        `${another > 0 ? `, another test process takes about ${(another / 1024 ** 3).toFixed(1)} GB` : ''}): ` +
+        `${this._batchesRunning} test process(es) running, the next waits for memory`);
+    }
+    if (busy && this._busyWaitSince === 0) {
+      this._busyWaitSince = Date.now();
+      const others = Math.max(0, (machineBusyCores() ?? 0) - this._workersRunning);
+      log.debug(`The machine is busy (other programs use about ${others.toFixed(1)} core(s)): ` +
+        `${this._workersRunning} test worker(s) running of ${allowed} allowed now, the next batch waits`);
+    } else if (busy) {
+      log.trace(`Still waiting for cores: ${this._workersRunning} + ${workers} worker(s) of ${allowed} allowed now`);
+    }
+    putBack();
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 2000);
+      waiters?.push(() => { clearTimeout(timer); resolve(); });
+    });
+    return false;
+  }
+
+  /** Workers one batch of this framework keeps busy (BatchPolicy.workersPerProcess; default the budget's per batch). */
+  private _workersOf(s: FrameworkServices): number {
+    return s.batchPolicy?.workersPerProcess ?? workersPerBatch();
+  }
+
+  /** How many of this framework's batches the budget allows side by side now (for batch sizes). */
+  private _processesThatFit(s: FrameworkServices): number {
+    return Math.max(1, Math.floor(workersNow(this._workersRunning) / this._workersOf(s)));
+  }
+
   private async _runFiles(
     filePaths: string[],
     projectRoot: string,
     token: number,
     /** openFirst (the full run): the test files on screen run first, in batches of their own. */
-    opts: { openFirst?: boolean } = {},
+    opts: { openFirst?: boolean; cancelled?: () => boolean; slots?: BatchSlots } = {},
   ): Promise<void> {
-    const CONCURRENCY = parallelBatches();
+    const CONCURRENCY = maxBatchSlots();
     const totalFiles  = filePaths.length;
     if (totalFiles === 0 || token !== this._token) { return; }
 
-    // Batch heuristic: amortise Jest startup across multiple files while keeping
-    // batches small enough that the UI stays responsive (results stream per file).
-    const BATCH_SIZE = Math.max(5, Math.min(50, Math.ceil(totalFiles / CONCURRENCY)));
 
     // Files are NOT marked running here: in a batch Jest runs its files one
     // after another, so a queued file only shows ⟳ once Jest starts it.
@@ -1180,7 +1328,7 @@ export class SessionManager {
 
     const totalStart = Date.now();
     const rawLog = (msg: string) => this._outputChannel.appendLine(msg);
-    const live = () => token === this._token;
+    const live = () => token === this._token && !opts.cancelled?.();
     const hangTimeoutMs = 1000 * (vscode.workspace
       .getConfiguration('liveTestRunner')
       .get<number>('hangTimeoutSeconds') ?? 300);
@@ -1219,6 +1367,8 @@ export class SessionManager {
           this._store.fileResult(fp, 'failed');
         }
       }
+      // A plain run measures no coverage: the Coverage tab says so.
+      this._coverageStore.markUnmeasured(fp);
       onFileDone(fp, status);
     };
 
@@ -1285,7 +1435,7 @@ export class SessionManager {
           `(${terms.fallbackLoss}). Files: ${shortList(batch)}`,
         );
         const fallbackQueue = [...missing];
-        const fallbackParallel = Math.min(CONCURRENCY, this._services.servicesFor(batch[0]).batchPolicy?.maxParallel ?? CONCURRENCY);
+        const fallbackParallel = Math.min(CONCURRENCY, maxParallelOf(this._services.servicesFor(batch[0]), projectRoot) ?? CONCURRENCY);
         await Promise.all(
           Array.from({ length: Math.min(fallbackParallel, fallbackQueue.length) }, async () => {
             while (live()) {
@@ -1324,11 +1474,21 @@ export class SessionManager {
     // The test files on screen run first (full run), and a test file opened
     // while it waits moves to the front (promote()).
     const onScreen = new Set(opts.openFirst ? vscode.window.visibleTextEditors.map((e) => runnableKey(e.document.uri.fsPath)) : []);
-    const batchQueue = buildBatchQueue(byFramework, (s) => s.batchPolicy?.maxFilesPerBatch ?? BATCH_SIZE, onScreen);
+    // Share a process's startup across files, keep batches small enough that a
+    // crash or hang retries little, and fill whole rounds of each framework's parallel batches.
+    const sizeOf = new Map([...byFramework].map(([s, files]) => [s,
+      batchSize(files.length, Math.min(CONCURRENCY, maxParallelOf(s, projectRoot) ?? CONCURRENCY, this._processesThatFit(s)), s.batchPolicy?.maxFilesPerBatch)]));
+    const batchQueue = buildBatchQueue(byFramework, (s) => sizeOf.get(s)!, onScreen);
     const first = batchQueue.filter((q) => q.batch.every((f) => onScreen.has(runnableKey(f))));
     if (first.length > 0) {
       log.debug(`Running the ${first.reduce((n, q) => n + q.batch.length, 0)} test file(s) open in the editor first`);
     }
+    // The open files' batches get a head start: started together with every other
+    // process (the adaptive budget allows more on an idle machine), the open file's
+    // first result came later (Jest: 2.5 s → 4.5 s).
+    const headStart = first.length > 0 && batchQueue.length > first.length
+      ? new Promise<void>((resolve) => setTimeout(resolve, OPEN_FILES_HEAD_START_MS))
+      : undefined;
     const promote = (filePath: string) => promoteInQueue(batchQueue, filePath);
     this._promoters.add(promote);
     const batchCount = batchQueue.length;
@@ -1337,26 +1497,44 @@ export class SessionManager {
     const wakeAll = () => { for (const w of waiters.splice(0)) { w(); } };
     /** The next batch whose framework is below its own limit (undefined: none can start now). */
     const nextBatch = () => {
-      const i = batchQueue.findIndex((q) => (runningOf.get(q.services) ?? 0) < (q.services.batchPolicy?.maxParallel ?? CONCURRENCY));
+      const i = batchQueue.findIndex((q) => (runningOf.get(q.services) ?? 0) < (maxParallelOf(q.services, projectRoot) ?? CONCURRENCY));
       return i < 0 ? undefined : batchQueue.splice(i, 1)[0];
     };
 
     await Promise.all(
       Array.from(
         { length: Math.min(CONCURRENCY, batchQueue.length) },
-        async () => {
+        async (_, slot) => {
+          // Slots beyond the open files' batches start after their head start.
+          if (headStart && slot >= first.length) { await headStart; }
           while (live() && batchQueue.length > 0) {
-            const next = nextBatch();
+            // A slot shared with a run going on at the same time (the budget is for both).
+            if (opts.slots) { await opts.slots.acquire(); }
+            const next = live() ? nextBatch() : undefined;
             if (!next) {
+              opts.slots?.release();
+              if (!live() || batchQueue.length === 0) { break; }
               // Every queued batch's framework is at its limit: wait for one of its batches to end.
               await new Promise<void>((resolve) => waiters.push(resolve));
               continue;
             }
+            // Counted before any await: the other slots' nextBatch() must see it (a framework's
+            // maxParallel was exceeded: pytest, one process at a time, ran three side by side).
             runningOf.set(next.services, (runningOf.get(next.services) ?? 0) + 1);
+            const putBack = () => {
+              runningOf.set(next.services, (runningOf.get(next.services) ?? 1) - 1);
+              batchQueue.unshift(next);
+              opts.slots?.release();
+            };
+            const workers = this._workersOf(next.services);
+            if (!(await this._memoryForAnotherBatch(putBack, waiters, workers))) { continue; }
             try {
               await runBatch(next.batch);
             } finally {
+              this._batchesRunning--;
+              this._workersRunning -= workers;
               runningOf.set(next.services, (runningOf.get(next.services) ?? 1) - 1);
+              opts.slots?.release();
               wakeAll();
             }
           }
@@ -1453,6 +1631,48 @@ export class SessionManager {
       log.warn(`Could not ask ${terms.name} which files it runs (${terms.listCommand}) — running every discovered test file`, err);
       return undefined;
     }
+  }
+
+  /** The session is on: batch runners reset, coverage cleared and source files counted, the pending tree shown. */
+  private _startSessionState(projectRoot: string, services: FrameworkServices, files: string[]): void {
+    this._session?.activate();
+    for (const s of this._services.all()) { s.batchRunner.reset(); }
+    this._notify('onSessionStarted');
+
+    // Background source scan — runs in parallel with test execution.
+    this._clearCoverageRefresh();
+    this._coverageStore.clear();
+    // A framework that cannot measure here says so in the Coverage tab (the tests still run).
+    const off = this._services.all().map((s) => s.coverageOffReason?.(projectRoot)).filter((r): r is string => !!r);
+    if (off.length > 0) { this._coverageStore.setOffReasons(off); }
+    this._sourceCounter?.cancel();
+    const sourceCounter = new SourceCounter(projectRoot, this._coverageStore, coverageScopeOf(services.projectConfig, projectRoot));
+    this._sourceCounter = sourceCounter;
+    sourceCounter.on('progress', (scanned: number, total: number) => {
+      this._observers.forEach((o) => o.onSourceScanProgress?.(scanned, total));
+    });
+    sourceCounter.on('done', () => {
+      this._observers.forEach((o) => o.onSourceScanDone?.());
+    });
+    void sourceCounter.run();
+
+    // Push the discovered (pending) tree to the UI so the run-started state
+    // shows all tests before the first result arrives.
+    this._notify('onRunStarted', {
+      fileCount: files.length,
+      files: (this._store.toJSON() as { files: unknown[] }).files,
+    });
+  }
+
+  /** Start can use the last session's list of runnable files (no test or config file changed since). */
+  private _runnableIsRemembered(projectRoot: string, discovered: string[]): boolean {
+    return !!this._runnableCache.readEntry(projectRoot, runnableCacheKey(projectRoot, discovered, this._runnerSettings(projectRoot)));
+  }
+
+  /** The discovered test files open in an editor on screen. */
+  private _onScreenTestFiles(discovered: string[]): string[] {
+    const onScreen = new Set(vscode.window.visibleTextEditors.map((e) => runnableKey(e.document.uri.fsPath)));
+    return discovered.filter((fp) => onScreen.has(runnableKey(fp)));
   }
 
   /**
@@ -1584,17 +1804,17 @@ export class SessionManager {
    * Opens a run: allocates "Run #N", writes a separator into the raw Jest
    * output and registers it as in flight. Every _beginRun needs an _endRun.
    */
-  private _beginRun(label: string, opts: { fullSuite?: boolean } = {}): RunHandle {
+  private _beginRun(label: string, opts: { fullSuite?: boolean; background?: boolean } = {}): RunHandle {
     const id = ++this._runSeq;
     this._outputChannel.appendLine('');
     this._outputChannel.appendLine(`──── Run #${id} · ${label} · ${new Date().toLocaleTimeString()} ────`);
     log.debug(`Run #${id} started: ${label}`);
     if (this._activeRuns++ === 0) {
-      this._runsStartedAt = Date.now();
       this._progress = { completed: 0, total: 0, failed: 0 };
     }
+    if (!opts.background && this._foregroundRuns++ === 0) { this._runsStartedAt = Date.now(); }
     if (opts.fullSuite) { this._fullSuiteStartedAt = Date.now(); }
-    return { id, label, startedAt: Date.now(), token: this._token };
+    return { id, label, startedAt: Date.now(), token: this._token, background: !!opts.background };
   }
 
   /**
@@ -1615,11 +1835,70 @@ export class SessionManager {
     }
     if (!quiet) { this._logRunSummary(run, fileIds, nodeId); }
     this._activeRuns = Math.max(0, this._activeRuns - 1);
+    if (!run.background) {
+      this._foregroundRuns = Math.max(0, this._foregroundRuns - 1);
+      if (this._foregroundRuns === 0) { this._runsEndedAt = Date.now(); }
+    }
     if (this._activeRuns === 0) {
-      this._runsEndedAt = Date.now();
       this._finishRuns();
       this._runQueuedDiskChanges();
+      this._scheduleCoverageRefresh();
     }
+  }
+
+  /**
+   * Once nothing else runs: test files whose coverage was measured before a
+   * file they cover changed (single tests reran by name, a related run
+   * without coverage, a test file that only loads the changed file) run
+   * again whole, so coverage — and their results — are current. Only in a
+   * session; Stop cancels it (a new token).
+   */
+  /** Stops the coverage refresh in flight (its batches are killed; runs are allowed again at once). */
+  private _cancelCoverageRefresh(why: string): void {
+    const refresh = this._coverageRefresh;
+    if (!refresh || refresh.cancelled) { return; }
+    refresh.cancelled = true;
+    log.debug(`Coverage refresh stopped: ${why}`);
+    for (const services of this._services.all()) { services.batchRunner.kill(); services.batchRunner.reset(); }
+  }
+
+  private _clearCoverageRefresh(): void {
+    if (this._coverageRefreshTimer) { clearTimeout(this._coverageRefreshTimer); this._coverageRefreshTimer = undefined; }
+    this._coverageRefreshedAt.clear();
+    this._lastSourceChangeAt = 0;
+    if (this._coverageRefresh) { this._coverageRefresh.cancelled = true; this._coverageRefresh = undefined; }
+  }
+
+  private _scheduleCoverageRefresh(): void {
+    if (this._coverageRefreshTimer || !this._session?.isTestingActive()) { return; }
+    const token = this._token;
+    this._coverageRefreshTimer = setTimeout(() => {
+      this._coverageRefreshTimer = undefined;
+      if (token !== this._token || this._activeRuns > 0 || !this._session?.isTestingActive()) { return; }
+      const projectRoot = this._getProjectRoot();
+      if (!projectRoot) { return; }
+      // A contributor is a test file (or, Vitest with isolate: false, several joined by newlines).
+      const files = [...new Set(this._coverageStore.outdatedContributors().flatMap((c) => c.split('\n')))].filter((fp) =>
+        (this._coverageRefreshedAt.get(fp) ?? 0) < this._lastSourceChangeAt && this._isRunnable(fp) && fs.existsSync(fp));
+      if (files.length === 0) { return; }
+      const at = Date.now();
+      for (const fp of files) { this._coverageRefreshedAt.set(fp, at); }
+      log.info(`Coverage refresh: ${files.length} test file(s) measured before a change run again whole`);
+      const run = this._beginRun(`coverage refresh (${files.length} file(s))`, { background: true });
+      const refresh = { cancelled: false };
+      this._coverageRefresh = refresh;
+      void this._runFiles(files, projectRoot, token, { cancelled: () => refresh.cancelled })
+        .catch((err) => log.error('Coverage refresh failed', err))
+        .finally(() => {
+          if (this._coverageRefresh === refresh) { this._coverageRefresh = undefined; }
+          if (refresh.cancelled) {
+            // Its files may still show running; the next change refreshes them again.
+            for (const fp of files) { if (this._store.getFile(fp)?.status === 'running') { this._store.cleanupStaleNodes(fp, false); this._notify('onFileResult', fp); } }
+            for (const fp of files) { this._coverageRefreshedAt.delete(fp); }
+          }
+          this._endRun(run, files);
+        });
+    }, COVERAGE_REFRESH_DELAY_MS);
   }
 
   private _logRunSummary(run: RunHandle, fileIds: string[], nodeId?: string): void {
@@ -1699,4 +1978,10 @@ function referencingSources(filePath: string): string[] {
     } catch { /* unreadable */ }
   }
   return out;
+}
+
+/** How many of a framework's processes may run at once in this project (BatchPolicy.maxParallel); undefined: the budget's. */
+function maxParallelOf(s: FrameworkServices, projectRoot: string): number | undefined {
+  const max = s.batchPolicy?.maxParallel;
+  return typeof max === 'function' ? max(projectRoot) : max;
 }

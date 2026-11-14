@@ -19,19 +19,18 @@ module.exports = {
     const slowVitest = path.join(workspace, 'src', 'slow.vitest.js');
     fs.writeFileSync(slowJest, "test('slow (Jest)', () => new Promise((r) => setTimeout(r, 60000)), 90000);\n");
     fs.writeFileSync(slowVitest, "import { test } from 'vitest';\ntest('slow (Vitest)', () => new Promise((r) => setTimeout(r, 60000)), 90000);\n");
-    const ctx = api.projects.contexts[0];
     try {
       await h.waitForDiscovery(api);
       void vscode.commands.executeCommand('liveTestRunner.startTesting');
       // Batch concurrency is cores / 4: on small CI runners one batch runs at a time.
-      await h.waitFor(() => h.jestProcesses(ctx.sessionDir).length > 0 || h.vitestProcesses(workspace).length > 0,
+      await h.waitFor(() => h.jestProcesses(workspace).length > 0 || h.vitestProcesses(workspace).length > 0,
         { what: 'Jest or Vitest to run', timeout: 120_000 });
-      const both = h.jestProcesses(ctx.sessionDir).length > 0 && h.vitestProcesses(workspace).length > 0;
+      const both = h.jestProcesses(workspace).length > 0 && h.vitestProcesses(workspace).length > 0;
       t.check(`a framework runs (${both ? 'both at once' : 'one batch at a time'})`, true);
 
       await vscode.commands.executeCommand('liveTestRunner.stopTesting');
       await h.sleep(4000);
-      const jestLeft = h.jestProcesses(ctx.sessionDir).concat(h.jestProcesses(workspace));
+      const jestLeft = h.jestProcesses(workspace);
       const vitestLeft = h.vitestProcesses(workspace);
       t.check('no Jest process left after Stop', jestLeft.length === 0, jestLeft.join('\n'));
       t.check('no Vitest process left after Stop', vitestLeft.length === 0, vitestLeft.join('\n'));
@@ -39,7 +38,7 @@ module.exports = {
       t.check('the session is off', !api.session.isActive() && !api.session.isRunning());
 
       await h.sleep(4000);
-      const later = h.jestProcesses(workspace).concat(h.jestProcesses(ctx.sessionDir), h.vitestProcesses(workspace));
+      const later = h.jestProcesses(workspace).concat(h.vitestProcesses(workspace));
       t.check('no new process after Stop (no retry, no fallback)', later.length === 0, later.join('\n'));
     } finally {
       await vscode.commands.executeCommand('liveTestRunner.stopTesting');

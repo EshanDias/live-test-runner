@@ -60,17 +60,26 @@ module.exports = {
         api.traceStore.getAffectedTestFiles(key(text)).map((f) => path.basename(f)).sort(), ['counter.test.js', 'text.test.js']);
       t.eq('Counter.vue template line 2 (<button …>) by both counter tests — the render function ran it', names(counter, 2), ['counter counts', 'counter starts at zero']);
       const hover = await hoverText(vscode, counter, 21);
-      t.check('hover on Counter.vue line 22: "Covered by 1 test" naming it', /Covered by 1 test/.test(hover) && /counter counts/.test(hover), hover);
+      // Jest's own report (vue-jest's map) counts no statement on this line: no verdict, the test that ran it is named.
+      t.check('hover on Counter.vue line 22: the 1 test that ran it, named, never "Not covered"',
+        /(Covered|Run) by 1 test/.test(hover) && /counter counts/.test(hover) && !/Not covered/.test(hover), hover);
 
       // ── Coverage ──
       await h.waitFor(() => api.coverageStore.isScanComplete(), { what: 'the source scan', timeout: 60_000 });
       const cov = api.coverageStore.getEntry(key(counter));
-      t.check('Counter.vue is measured: its script statements and functions, all covered',
-        cov && cov.state === 'measured' && cov.pct.statements.total >= 3 && cov.pct.statements.covered === cov.pct.statements.total && cov.pct.functions.covered === 3,
+      t.check('Counter.vue is measured: its script statements all covered',
+        cov && cov.state === 'measured' && cov.pct.statements.total >= 3 && cov.pct.statements.covered === cov.pct.statements.total,
         JSON.stringify(cov && { state: cov.state, pct: cov.pct }));
       const un = api.coverageStore.getEntry(key(unused));
-      t.check('the untested Unused.vue counts with 0 coverage (from its <script> block)',
-        un && un.state === 'counted' && un.statements > 0, JSON.stringify(un));
+      t.check('the untested Unused.vue counts with 0 coverage',
+        un && (un.state === 'counted' ? un.statements > 0 : un.pct.statements.total > 0 && un.pct.statements.covered === 0), JSON.stringify(un));
+      // The numbers Jest itself reports for the components (vue-jest + Jest's own instrumentation).
+      const plain = h.plainCoverage(workspace, 'jest');
+      const four = (p) => p && ['statements', 'branches', 'functions', 'lines'].map((m) => `${p[m].covered}/${p[m].total}`).join(' ');
+      for (const [file, abs] of [['Counter.vue', counter], ['Unused.vue', unused]]) {
+        const rel = [...plain.keys()].find((k) => k.endsWith(file));
+        t.eq(`${file}: the numbers of a plain Jest run`, four(api.coverageStore.getEntry(key(abs))?.pct), four(plain.get(rel)));
+      }
 
       // ── Saving the component reruns only its test file ──
       const rec = h.recordEvents(api);

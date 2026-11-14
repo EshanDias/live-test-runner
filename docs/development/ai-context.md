@@ -56,7 +56,7 @@ src/
 │   ├── BinaryResolver.ts             Finds jest binary in project node_modules
 │   └── RunnerPaths.ts                Symlinked roots: editor path ↔ the test runner's realpath
 ├── execution/
-│   └── Executor.ts                   Spawns the runner, reads its result file (flag from adapter.outputFileArg) on exit
+│   └── Executor.ts                   Spawns the runner (below normal priority), reads its result file (flag from adapter.outputFileArg) on exit
 └── parsing/
     ├── ResultParser.ts               Parses Jest JSON output → RunResult (adapter.parseResult for Jest/CRA)
     ├── VitestResultParser.ts         parseVitestResult: Vitest 1–5 json reporter → RunResult (fixtures: test/fixtures/vitest)
@@ -69,13 +69,14 @@ src/
 **Batch run command (JestBatchRunner — initial run and on-save file reruns):**
 ```sh
 node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
-     --config <ltr-temp-config.js> --cacheDirectory <per-project transform cache> \
+     --config <transform cache>/ltr-jest-config-<hash>.js --cacheDirectory <per-project transform cache> \
      --maxWorkers=1 --testLocationInResults --verbose=false
 ```
-The temp config starts from the project's config as Jest resolves it (`JestProjectConfig`: `jest --showConfig` / `react-scripts test --showConfig`, once per session, JSON in the session dir) plus:
-- `sessionTraceTransform.js` at the front of the transform chain (light trace: line hit maps + coverage counters)
+The generated config starts from the project's config as Jest resolves it (`JestProjectConfig`: `jest --showConfig` / `react-scripts test --showConfig`, once per session, JSON in the session dir, path passed as `LTR_JEST_RESOLVED_CONFIG`) plus the items below. Its text is the same for every batch and session (`writeStableConfig`, file named by content hash): Jest keys its transform cache and file map on the config path, so a per-batch path meant no reuse at all.
+- Jest's own coverage on (`collectCoverage`, the project's `coverageProvider`, `coverageReporters: ['none']`, empty `collectCoverageFrom`): the numbers are what `jest --coverage` reports
+- `sessionTraceTransform.js` at the front of the transform chain (light trace only, on the output of the project's transformer, which instruments for Jest's coverage — or `instrumentLikeJest` does when it cannot; a source map back to the file)
 - `ltrCoverageSetup.js` as the **first** `setupFilesAfterEnv` entry — coverage flush, per-test trace context (`beginTest` / `endTest`), test-start/end heartbeats for the hang watchdog
-- `liveReporter.js` as an extra reporter that appends a `start` record and one result record per file to a JSONL file
+- `liveReporter.js` as an extra reporter that appends a `start` record and one result record per file to a JSONL file, and each test file's coverage as Jest reports it (`jestCoverage.perTestFile`) to `LTR_JEST_COVERAGE_FILE`
 
 The parent process polls that JSONL file at 200 ms intervals via `Executor.runWithReporterPolling`, firing a callback per record so the UI updates while Jest is still running. Reported and traced paths are mapped back to store keys.
 
@@ -124,18 +125,18 @@ src/
 │                                   onDiscoveryStarted/Progress/Complete (optional)
 ├── store/
 │   ├── ResultStore.ts              In-memory File→Node tree (recursive) + LineMap + ScopedOutput
-│   ├── ExecutionTraceStore.ts      Trace indexes: traceIndex, coverageIndex, sourceToTests
+│   ├── ExecutionTraceStore.ts      Trace indexes: traceIndex, coverageIndex, sourceToTests, lineToTests; forgetTestFiles() before a whole-file rerun's records
 │   └── SelectionState.ts           Tracks selected row; broadcasts scope-changed
 ├── coverage/
 │   ├── types.ts                    Manifest, FileCov, LiveCov, CoveragePct, CoverageTotals, CoverageEntry
-│   ├── CoverageStore.ts            In-memory store: 'counted' → 'measured' → 'measured-stale' lifecycle
-│   ├── SourceCounter.ts            Background scan at session start; populates CoverageStore with 'counted' entries
+│   ├── CoverageStore.ts            One contribution per test file (latest run, on disk in coverage-contrib/), summed per source version and replaced on rerun; 'counted' → 'measured' → 'measured-stale' (changed, its tests not rerun yet); outdatedContributors() drives SessionManager's coverage refresh
+│   ├── SourceCounter.ts            Background scan at session start; populates CoverageStore with 'counted' entries; countFile() for files created / edited later
 │   ├── coverageScope.ts            Which files count toward coverage, from the project's coverage config (IProjectConfig.coverageScope)
 │   └── CoverageReport.ts           Stateless metric calculation (statements/branches/functions/lines)
 ├── cache/
 │   └── DiscoveryCache.ts           Persistent Babel parse cache (mtime-keyed, per-project, LRU rotation)
 ├── session/
-│   ├── SessionManager.ts           Session lifecycle, batched run pool (parallelBatches(): cpus/4), on-save, rerun
+│   ├── SessionManager.ts           Session lifecycle, batched run pool (parallelBatches(): cpus/4; another batch waits while memoryLow()), on-save, rerun
 │   ├── batchQueue.ts               A run's batch queue: per framework, open test files first (full run), promote a file opened while it waits
 │   ├── ExternalChanges.ts          Files changed on disk outside the editor (git pull, branch switch): drops the editor's own saves, batches 500 ms → SessionManager.onFilesChangedOnDisk (>20 files restart, never for changes from our own runs; changes during our runs — by queue, or by modified time when reported late — rerun once when they end; files no test loaded and unrun test fixtures are dropped)
 │   (cache/Storage.ts)              Every cached path in one place: per-project clear (Stop and Clear Cache), Clear All Cached Data, 30-day pruning on activation
@@ -149,14 +150,17 @@ src/
 │   │   │   ├── sourceMapLookup.js      reads a source map back (generated → original line/column) — Jest + Vitest transforms (TS, components)
 │   │   │   └── testDiscovery.js        Static AST test discovery (bundled; used by TestDiscoveryService)
 │   │   ├── jest/
-│   │   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) + __cov counters (coverage) + writes manifest; components via the project's transformer + its map; processAsync (ESM)
-│   │   │   ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush on exit, heartbeats
-│   │   │   └── liveReporter.js           Custom Jest reporter: appends one JSON record per completed file to a JSONL file
+│   │   │   ├── sessionTraceTransform.js  Jest transform: injects __strace.step() (trace) on the project transformer's output (which carries Jest's coverage); a source map back to the file; components via the project's transformer + its map; processAsync (ESM). Own __cov counters only without Jest's coverage
+│   │   │   ├── ltrCoverageSetup.js       setupFilesAfterEnv: trace context per test, __cov flush per test file (tagged `tf`), heartbeats
+│   │   │   ├── liveReporter.js           Custom Jest reporter: one JSON record per completed file, and its coverage as Jest reports it
+│   │   │   ├── jestCoverage.js           Jest's coverage per test file, converted as Jest's CoverageReporter does (babel / v8); files no test loads via Jest's generateEmptyCoverage
+│   │   │   └── jestCoverageCount.js      child process: counts files no test loads with jestCoverage.countUntested
 │   │   └── vitest/                    Vitest execution trace
 │   │       ├── vitestTraceConfig.js      wrapper-config helper: project config via its own Vite + plugin into every test.projects / Vitest 3 workspace entry
 │   │       ├── vitestTracePlugin.js      Vite plugin: setup file first, enforce:'post' transform of project sources (JS/TS + .vue/.svelte/.astro/.marko)
 │   │       ├── vitestTraceTransform.js   splices globalThis.__strace?.step(L,F) (lines via the incoming source map); withoutTrace()
-│   │       └── vitestTraceSetup.mjs      per-test context (beforeEach/afterEach), F record, Function.prototype.toString without the calls
+│   │       ├── vitestTraceSetup.mjs      per-test context (beforeEach/afterEach), F record, Function.prototype.toString without the calls
+│   │       └── vitestCoverageProvider.mjs coverage.provider=custom: the project's own v8 / istanbul provider, plus coverage per test file (its generateCoverage per coverageFiles entry); Vitest via the trace wrapper, Angular via its runner config
 │   ├── VitestBatchRunner.ts        IBatchRunner for Vitest: one process per batch, results streamed per file (reporter events), per-test hang limit, Vitest coverage → CoverageStore, execution trace (per-worker trace files → traceRecords)
 │   ├── VitestTrace.ts              Vitest trace on/off per root + the wrapper config (ltr.vitest.config.mjs → instrumentation/vitest/)
 │   ├── sourceFiles.ts              which files are source code: JS/TS + components (.vue/.svelte/.astro/.marko); scriptOf() for the coverage scan
@@ -242,8 +246,8 @@ src/
 3. `onRunStarted` pushed to UI with the already-populated pending tree
 4. `_runFiles` builds a batch queue: `BATCH_SIZE = clamp(ceil(N / CONCURRENCY), 5, 50)` files per batch; `CONCURRENCY = max(1, floor(cpuCount / 4))` parallel Jest processes
 5. Each batch: files marked `running` in store → single Jest process via `JestBatchRunner.runFiles` with combined test+trace+coverage instrumentation; `liveReporter.js` streams per-file results as they complete; `onFileDone` notifies observers after each file
-6. After Jest exits: `JestBatchRunner` parses (a) the light-trace JSONL → updates `ExecutionTraceStore`; (b) the coverage counters JSONL → promotes `CoverageStore` entries from `'counted'` to `'measured'` using manifests on disk
-7. In parallel with step 5: `SourceCounter` AST-scans the source files that count toward coverage (the framework's `CoverageScope` — Vitest `coverage.include`/`exclude`, Jest `collectCoverageFrom`/`coveragePathIgnorePatterns`; built-in rules + git-ignore when the config is unreadable) and populates `CoverageStore` with `'counted'` (0-hit) entries so untouched files are included in coverage denominators. Skipped when the config has no include list (the CLI then reports only loaded files)
+6. After Jest exits: `JestBatchRunner` parses (a) the light-trace JSONL → updates `ExecutionTraceStore`; (b) Jest's per-test-file coverage → each test file's contribution in `CoverageStore` (`_parseJestCoverage`). Once the batches are done, `jestCoverageCount.js` has Jest count the files no test loads (also for files created or edited later, `countSources`)
+7. In parallel with step 5: `SourceCounter` AST-scans the source files that count toward coverage (the framework's `CoverageScope` — Vitest `coverage.include`/`exclude`, Jest `collectCoverageFrom`/`coveragePathIgnorePatterns`; built-in rules + git-ignore when the config is unreadable) and populates `CoverageStore` with `'counted'` (0-hit) entries so untouched files are included in coverage denominators — a placeholder until the framework counts them its own way (Jest: generateEmptyCoverage; Vitest: the first batch's untested pass through the provider wrapper; pytest: coverage.py). Skipped when the config has no include list (the CLI then reports only loaded files)
 7. On-save listener enabled
 
 **On save (debounced 300ms):**
@@ -560,6 +564,8 @@ All in `packages/vscode-extension/package.json`:
 | `liveTestRunner.runMode` | `"auto"` | `"auto"`: extension calls Jest directly (full structured output). `"npm"`: delegates to `npm test --` from your package.json scripts (limited structured output — see below). |
 | `liveTestRunner.jestCommand` | `""` | Override Jest binary/command. Only used when `runMode` is `"auto"`. |
 | `liveTestRunner.onSaveDebounceMs` | `300` | Debounce delay (ms) |
+| `liveTestRunner.speed` | `balanced` | Where the budget starts: `full` 3/4 of the cores, `balanced` half, `light` one process ≤ 2 workers (`setSpeedLevel`); adapts per process (`workersNow`) unless `speedStrict` |
+| `liveTestRunner.speedStrict` | `false` | Keep the budget at the level (`setSpeedStrict`) |
 | `liveTestRunner.durationThresholds.testAmberMs` | `100` | Test amber threshold |
 | `liveTestRunner.durationThresholds.testRedMs` | `500` | Test red threshold |
 | `liveTestRunner.durationThresholds.suiteAmberMs` | `500` | Suite amber threshold |

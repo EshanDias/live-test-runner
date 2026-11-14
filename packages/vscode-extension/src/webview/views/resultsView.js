@@ -280,7 +280,7 @@
           break;
 
         case 'batch-file-results':
-          for (const file of (msg.files ?? [])) { _list.updateFile(file); }
+          _list.updateFiles(msg.files ?? []);
           updateListCount();
           break;
 

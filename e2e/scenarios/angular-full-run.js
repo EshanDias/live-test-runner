@@ -36,6 +36,15 @@ module.exports = {
     const cart = api.coverageStore.getEntry(key(path.join(workspace, 'src', 'app', 'cart.ts')));
     t.eq('coverage: src/app/cart.ts is measured', cart?.state, 'measured');
     t.check('…most of it covered', cart && cart.pct.statements.covered > 0 && cart.pct.statements.covered <= cart.pct.statements.total, JSON.stringify(cart?.pct));
+    // Every number equals plain `ng test <project> --coverage` (run in a copy: it writes coverage/ and .angular/).
+    const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
+    const plain = h.plainCoverage(workspace, 'angular');
+    const four = (p) => p && ['statements', 'branches', 'functions', 'lines'].map((m) => `${m[0]} ${p[m].covered}/${p[m].total}`).join(', ');
+    const got = new Map(api.coverageStore.getFileRows().map((r) => [path.relative(real(workspace), real(r.filePath)).split(path.sep).join('/'), r.pct]));
+    const diffs = [...new Set([...plain.keys(), ...got.keys()])].sort()
+      .filter((f) => four(got.get(f)) !== four(plain.get(f)))
+      .map((f) => `${f}: extension ${four(got.get(f)) ?? '(none)'} · plain ng test ${four(plain.get(f)) ?? '(none)'}`);
+    t.check(`every file's statements, branches, functions and lines equal plain ng test --coverage (${plain.size} files)`, plain.size > 0 && diffs.length === 0, diffs.join('\n'));
 
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(workspace, CART_SPEC)));
     const marks = api.failureDecorations.marks(doc);

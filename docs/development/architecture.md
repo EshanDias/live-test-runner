@@ -125,10 +125,10 @@ Two different command shapes are used depending on context:
 **Batch run — `JestBatchRunner` (initial run + on-save file reruns):**
 ```sh
 node jest.js --watchAll=false --forceExit --no-bail --runTestsByPath <file1> [file2 …] \
-     --config <ltr-temp-cfg.js> --cacheDirectory <per-project transform cache> \
+     --config <transform cache>/ltr-jest-config-<hash>.js --cacheDirectory <per-project transform cache> \
      --maxWorkers=1 --testLocationInResults --verbose=false
 ```
-The temp config starts from the project's config **as Jest resolves it** — `JestProjectConfig` runs `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session, so every config format, preset and multi-project setup works — and layers on `sessionTraceTransform.js` (light trace transform), `ltrCoverageSetup.js` (first `setupFilesAfterEnv` entry: coverage flush, per-test trace context, test heartbeats) and `liveReporter.js` (streaming reporter). Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
+The temp config starts from the project's config **as Jest resolves it** — `JestProjectConfig` runs `jest --showConfig` (CRA: `react-scripts test --showConfig`) once per session, so every config format, preset and multi-project setup works — and layers on `sessionTraceTransform.js` (light trace transform), `ltrCoverageSetup.js` (first `setupFilesAfterEnv` entry: coverage flush, per-test trace context, test heartbeats) and `liveReporter.js` (streaming reporter). The generated config is one file per content hash in the project's transform-cache folder (`writeStableConfig`), and its text holds nothing per batch or session (the reporter file and the resolved-config JSON come through `LTR_REPORTER_FILE` / `LTR_JEST_RESOLVED_CONFIG`): Jest names its transform cache and file map after the config's path, so every batch and later session reuses the compiled files instead of re-instrumenting the whole project. Results are polled from the reporter JSONL file every 200 ms while Jest runs — the UI updates per file rather than waiting for the whole batch.
 
 Reported paths are mapped back to the store's own keys. A file shows ⟳ only once Jest starts it (reporter `start` record). The newest run of a file owns it: an older batch still running the same file is not killed, its result for that file is ignored. A single test running longer than `hangTimeoutSeconds` (setup-file heartbeats) stops the batch; that file is failed and the rest retried.
 
@@ -136,52 +136,25 @@ Reported paths are mapped back to the store's own keys. A file shows ⟳ only on
 
 #### Transform pipeline — how `sessionTraceTransform.js` works
 
-Every source file passes through a two-stage pipeline before Jest executes it. The order of the two stages depends on what transformer the project uses:
+Coverage is Jest's own, with the project's provider: every batch runs with `collectCoverage` on (`coverageProvider` from the project, `coverageReporters: ['none']`, an empty `collectCoverageFrom`, so Jest does no untested-file pass per batch). Our transform adds only the trace on top:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    sessionTraceTransform.js  (Jest transform)           │
-│                                                                         │
-│  Detect project transformer from jest.config transform map              │
-│           │                                                             │
-│           ▼                                                             │
-│   ┌───────────────────┐         ┌──────────────────────────────┐        │
-│   │  Lenient?         │         │  Strict?                     │        │
-│   │  (babel-jest,     │         │  (ts-jest, @swc/jest,        │        │
-│   │   CRA, default)   │         │   esbuild-jest, …)           │        │
-│   └────────┬──────────┘         └──────────────┬───────────────┘        │
-│            │                                   │                        │
-│   Stage 1  ▼  our Babel AST instrumentation    │  Stage 1               │
-│   ┌──────────────────────────────┐             │  Project transformer   │
-│   │ Raw TS/JS source             │             │  (TS → clean JS)       │
-│   │   → inject __strace.step()  │             ▼                        │
-│   │   → inject __covF counters  │  ┌──────────────────────────────┐    │
-│   │   → write coverage manifest │  │ Raw TS source                │    │
-│   └──────────────┬───────────── ┘  │   → ts-jest / swc runs tsc   │    │
-│                  │                 │   → outputs clean CJS/JS      │    │
-│   Stage 2        ▼                 └──────────────┬───────────────┘    │
-│   Project transformer                             │  Stage 2            │
-│   (babel-jest strips TS types)                    ▼  our Babel AST     │
-│   ┌──────────────────────────────┐  ┌──────────────────────────────┐   │
-│   │ Pre-instrumented TS/JS       │  │ Clean JS output              │   │
-│   │   → babel strips types       │  │   → inject __strace.step()   │   │
-│   │   → outputs CJS              │  │   → inject __covF counters   │   │
-│   └──────────────┬───────────── ┘  │   → write coverage manifest   │   │
-│                  │                 └──────────────┬───────────────┘    │
-│                  └──────────────┬─────────────────┘                    │
-│                                 ▼                                       │
-│              prepend: require('sessionTraceRuntime.js')                 │
-│                                 │                                       │
-└─────────────────────────────────┼───────────────────────────────────────┘
-                                  ▼
-                      Jest executes instrumented CJS
+source file
+  → the project's transformer (babel-jest, ts-jest, @swc/jest, vue-jest, …)
+      'babel' provider: it instruments when it can (canInstrument), else we add
+      Jest's instrumentation the way ScriptTransformer._instrumentFile does
+      (babel-plugin-istanbul with the transformer's map as input)
+  → our Babel pass on its output: __strace.step(line, file) before each statement
+      (locations moved back to the file through the maps; no counters, no rewrites)
+  → generated with a source map back to the file (no retainLines: the map carries
+      the lines, and Jest's counters could leave a `return` alone on its line)
+  → Jest runs it; 'v8' provider: V8 measures this code, mapped back through our map
 ```
 
-**Why two orders?**
-- `babel-jest` (lenient) strips TypeScript types without type-checking, so it tolerates our injected `__strace`/`__covF` globals in the input.
-- `ts-jest` / `@swc/jest` (strict) run the real TypeScript compiler, which rejects unknown globals with type errors. They must receive clean source first; we then instrument the plain JS they produce.
-
-**`jest.mock` hoisting guard:** Babel's `jest-hoist` plugin automatically moves every `jest.mock()` call to the top of the file — before the `__covF` preamble that initialises the coverage counter variable. If a `jest.mock()` factory arrow function contains a counter increment (`__covF.f["f0"]++`), it will throw `ReferenceError: __covF is not defined` at runtime. `sessionTraceTransform.js` detects this pattern and skips counter injection for any arrow function that is the direct factory argument of `jest.mock()`.
+- `liveReporter.js` keeps each test file's coverage as Jest would report it (`jestCoverage.perTestFile`: istanbul data remapped through input maps, or `testResult.v8Coverage` through v8-to-istanbul, Jest's module wrapper left out as Jest's own map leaves it out), one line per test file, and empties the test result's copy so Jest's own coverage reporter has nothing to merge.
+- Files no test loads: `jestCoverageCount.js` (a child process, once per session when the batches are done, and for files created or edited later) runs Jest's own `generateEmptyCoverage` with the project's resolved config.
+- Test files are never instrumented (`jest.mock` factories hoisted above our code would break).
+- Without a coverage file (`LTR_JEST_COVERAGE_FILE` unset) the transform falls back to its own counters (`__covF`, manifests, `ltrCoverageSetup.js` flush).
 
 `--maxWorkers=1` keeps each Jest process single-threaded so batches can run in parallel without competing for CPU.
 
@@ -374,6 +347,11 @@ ExecutionTraceStore
   │     Every source line executed by any test in the session.
   │     Accumulates across runs — never resets mid-session.
   │
+  ├── lineToTests: Map<sourceFilePath, Map<line, Map<testFilePath, fullName[]>>>
+  │     The tests that ran each line (coverage hover). Per test file, so a
+  │     batch adds or forgets only its own files' entries: a flat list per
+  │     line made each batch scan every earlier test of a shared component.
+  │
   └── sourceToTests: Map<sourceFilePath, SourceTestMapping>
         {
           [testFilePath]: {
@@ -384,7 +362,7 @@ ExecutionTraceStore
             }
           }
         }
-        Populated by JestBatchRunner after each file run.
+        Populated after each batch (applyTraceRecords; setSourceTests updates one test file's entry in place).
         Used by SessionManager._runAffectedBySourceFile() for smart on-save reruns.
 ```
 
@@ -437,7 +415,7 @@ Entry lifecycle:
 3. `'measured-stale'` — set by `SessionManager` when the file is saved and a rerun is pending
 4. Back to `'measured'` — when the rerun completes and `_parseCoverage()` fires again
 
-**`CoverageReport`** (`src/coverage/CoverageReport.ts`): Stateless `calculate(manifest, counters): CoveragePct` function. Reads a coverage manifest (statement/branch/function IDs with location) and a live counter snapshot, and returns the four-metric `CoveragePct`. Called by `JestBatchRunner._parseCoverage()` — not a class; no side effects.
+**`CoverageReport`** (`src/coverage/CoverageReport.ts`): Stateless `calculate(manifest, counters): CoveragePct` function. Reads a coverage manifest (statement/branch/function IDs with location) and a live counter snapshot, and returns the four-metric `CoveragePct`. Called wherever an entry is built (the store, the batch runners) — not a class; no side effects. When test files measured one file with different maps (Vitest 3's v8 maps depend on what ran), `mergeIstanbul` (`coverageRules.ts`) merges them as istanbul-lib-coverage does, so the numbers equal the framework's merged report.
 
 **`CoverageDecorationManager`** (`src/editor/CoverageDecorationManager.ts`): Implements `IResultObserver`. Subscribes to `CoverageStore.onDidChange` and refreshes all visible editors on every change. For each editor it reads the `CoverageStore` entry and — for `measured` or `measured-stale` entries — loads the manifest from disk to classify every line into one of four states:
 
@@ -533,7 +511,7 @@ Runs on extension activate — before the user clicks Start Testing.
 
 ### Storage (`cache/Storage.ts`)
 
-Everything cached lives outside the project: the user cache folder (`<folder>-<hash8>/` discovery caches with a `session.lock`, `ltr-cra-config-*.json`) and the temp folder (`session-<pid>-<time>/` per window, `runnable-files-*.json`, `transform-cache-*/` with coverage manifests). `Storage.ts` knows every path: **Stop Testing and Clear Cache** deletes all of a project's entries; **Clear All Cached Data** deletes everything except other live windows' session folders and locked discovery caches; on activation `pruneUnused` deletes entries unused for 30 days (transform caches and runnable lists are touched on use). A window's session folder is deleted in `deactivate`, dead windows' on activation; **Open Cached Data Folder** opens both base folders; discovery caches are also capped at 10 projects / 500 MB (LRU, on Start).
+Everything cached lives outside the project: the user cache folder (`<folder>-<hash8>/` discovery caches with a `session.lock`, `ltr-cra-config-*.json`) and the temp folder (`session-<pid>-<time>/` per window, `runnable-files-*.json`, `vitest-config-*.json` (what the Vitest config probe read), `transform-cache-*/` with coverage manifests). `Storage.ts` knows every path: **Stop Testing and Clear Cache** deletes all of a project's entries; **Clear All Cached Data** deletes everything except other live windows' session folders and locked discovery caches; on activation `pruneUnused` deletes entries unused for 30 days (transform caches, runnable lists and Vitest config answers are touched on use). A window's session folder is deleted in `deactivate`, dead windows' on activation; **Open Cached Data Folder** opens both base folders; discovery caches are also capped at 10 projects / 500 MB (LRU, on Start).
 
 ### Session management (`SessionManager`)
 
@@ -544,7 +522,7 @@ Everything cached lives outside the project: the user cache folder (`<folder>-<h
 
 After each file batch, `JestBatchRunner` parses the light-trace JSONL (updates `ExecutionTraceStore`) and then parses the coverage counters JSONL (promotes `CoverageStore` entries from `'counted'` to `'measured'`). Both happen in the same post-Jest-exit phase — no extra process or phase needed.
 
-Parallel batches are limited to a quarter of the CPU cores (`CONCURRENCY` in `SessionManager._runFiles`), Vitest's workers per batch so that all batches together use at most half the cores (`workersPerBatch`, runner `utils/resources.ts`), and per framework by its `batchPolicy` (pytest: one process). See [test runs](design/test-runs.md).
+The budget starts at `liveTestRunner.speed` (`setSpeedLevel` / `totalWorkers`, runner `utils/resources.ts`; balanced = half the cores) and, unless `liveTestRunner.speedStrict`, adapts before each test process to what the machine's other programs leave free (`workersNow`, between Light's budget and `adaptiveCeiling`, gated per process by its workers in `SessionManager._memoryForAnotherBatch`): parallel batches up to `maxBatchSlots()` (`CONCURRENCY` in `SessionManager._runFiles`), Vitest's workers per batch so that all batches together stay within it (`workersPerBatch`), and per framework by its `batchPolicy` (pytest: one process). Another batch starts only while memory is not low (`memoryLow`, `SessionManager._memoryForAnotherBatch`), and every test process runs below normal priority (`lowerPriority` in `Executor`). See [test runs](design/test-runs.md).
 
 ### Framework adapter layer (extension side)
 
@@ -596,7 +574,7 @@ A pytest project (`DetectedProject.framework === 'pytest'`) gets the same `Frame
 | `adapter` | `framework/PytestAdapter.ts` — `RunnerBackedAdapter` with `runNamed` → node ids, `buildDebugConfig` (`type: debugpy`, `module: pytest`, the project's interpreter; `getDebugConfig` adds the Python Debugger check) |
 | `projectConfig` | `session/PytestProjectConfig.ts` — the config file pytest uses; coverage scope = what coverage.py reports minus test files / `conftest.py`; `sourceExtensions` `py`, `pyi` |
 | `batchRunner` | `session/PytestBatchRunner.ts` — one pytest process per batch, the plugin's events polled (`file-start` / heartbeats / `file-end` with a ready `FileRunResult`), per-test hang limit, coverage → `applyIstanbulCoverage`, per-test contexts (`trace.jsonl`) → `applyTraceRecords`; `runRelated` = static import graph (`session/pythonImports.ts`) |
-| `batchPolicy` | `{ maxParallel: 1, maxFilesPerBatch: 300 }` — one pytest process at a time (`SessionManager._runFiles` scheduler) |
+| `batchPolicy` | `{ maxParallel, maxFilesPerBatch: 300, workersPerProcess: 1 }` — one pytest process at a time unless the project runs pytest-xdist itself (`-n` in its pytest config: then the budget's); batches sized up to 300 files |
 | `whyNotReady` | no usable interpreter → `SessionManager.start` runs nothing |
 | `configFileNames` | pytest config files + `conftest.py` pass the save filter → `isConfigFile` restarts the session |
 

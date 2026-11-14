@@ -8,9 +8,10 @@
  * bypasses process.on('exit') handlers entirely.  Running inside afterAll
  * guarantees we flush while the worker is still alive and in a clean state.
  *
- * globalThis.__cov accumulates across all test files in the same worker, so
- * each flush contains the superset of coverage up to that point.
- * _parseCoverage merges records with Math.max so duplicate flushes are safe.
+ * Jest gives every test file a fresh global, so globalThis.__cov holds only
+ * this test file's counters: one record per test file (`tf`), which the
+ * extension stores as that file's coverage contribution and replaces when
+ * the file runs again.
  */
 
 // The real fs, taken before the test file loads: tests often jest.mock('fs'),
@@ -99,7 +100,7 @@ afterAll(() => {
   try {
     _realFs.appendFileSync(
       covOutputFile,
-      JSON.stringify({ workerPid: process.pid, cov: globalThis.__cov }) + '\n',
+      JSON.stringify({ workerPid: process.pid, tf: _ltrTestPath, cov: globalThis.__cov }) + '\n',
       'utf8',
     );
     _ltrLog('trace', `coverage: flushed ${covEntries} file(s) (pid ${process.pid})`);

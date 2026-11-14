@@ -118,6 +118,9 @@ function logsSince(api, sinceIso) {
  * check that Stop really killed everything.
  */
 function jestProcesses(marker) {
+  // Jest is started with the real path (Windows: long names, not RUNNER~1): match that spelling too.
+  let real = marker;
+  try { real = require('fs').realpathSync.native(marker.replace(/[\\/]+$/, '')) + marker.slice(marker.replace(/[\\/]+$/, '').length); } catch { /* keep marker */ }
   try {
     if (process.platform === 'win32') {
       const out = execFileSync('powershell', [
@@ -127,11 +130,12 @@ function jestProcesses(marker) {
       // Paths may differ in drive-letter case and separators — compare loosely.
       const norm = (s) => s.toLowerCase().replace(/\\\\/g, '\\').replace(/\//g, '\\');
       const m = norm(marker);
-      return out.split(/\r?\n/).filter((l) => norm(l).includes(m) && isJest(l));
+      const r = norm(real);
+      return out.split(/\r?\n/).filter((l) => (norm(l).includes(m) || norm(l).includes(r)) && isJest(l));
     }
     // -A / -o args= work with both BSD (macOS) and procps (Linux) ps.
     const out = execFileSync('ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-    return out.split('\n').filter((l) => l.includes(marker) && isJest(l));
+    return out.split('\n').filter((l) => (l.includes(marker) || l.includes(real)) && isJest(l));
   } catch {
     return [];
   }
@@ -523,7 +527,146 @@ function checkMatchesPlainPytest(api, t, workspace, label = 'results match plain
   t.check(`${label} (${results.size} files)`, results.size > 0 && diffs.length === 0, diffs.slice(0, 25).join('\n') || 'no files');
 }
 
+/**
+ * Waits until the session is idle including the coverage refresh: the runs,
+ * the refresh delay (750 ms after the last run), then the refresh's own runs.
+ */
+async function settle(api, { timeout = 120_000 } = {}) {
+  await waitFor(() => api.session._activeRuns === 0, { what: 'runs to finish', timeout });
+  await sleep(1200);
+  await waitFor(() => api.session._activeRuns === 0, { what: 'the coverage refresh to finish', timeout });
+}
+
+/** The raw output since `mark` without the coverage refresh runs (the lines between their "──── Run #N · coverage refresh" header and the next header). */
+function rawSinceWithoutRefresh(api, mark) {
+  const out = [];
+  let inRefresh = false;
+  for (const l of rawSince(api, mark)) {
+    if (/^──── Run #\d+ · /.test(l)) { inRefresh = /· coverage refresh/.test(l); }
+    if (!inRefresh) { out.push(l); }
+  }
+  return out;
+}
+
+/**
+ * The framework's own coverage from a plain full run of the project (reports in
+ * a temp folder, nothing written into the project), per source file the four
+ * numbers the extension shows: Map<path relative to the workspace (forward
+ * slashes), { statements, branches, functions, lines: { covered, total } }>.
+ * Counted as the extension counts (CoverageReport.calculate): Jest / Vitest from
+ * coverage-final.json (lines = start lines of statements); pytest from
+ * coverage.py's JSON report (statements = lines, branches = arcs, functions =
+ * regions with lines).
+ * @param framework 'jest' | 'vitest' | 'pytest'
+ */
+function plainCoverage(workspace, framework) {
+  const { spawnSync } = require('child_process');
+  const fs = require('fs');
+  const os = require('os');
+  const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
+  // The real spelling (Windows: long names, not RUNNER~1): Vitest started from an 8.3 path loads itself twice and finds no tests (RunnerPaths.toSpawnPath).
+  const dir = real(fs.mkdtempSync(path.join(os.tmpdir(), 'ltr-e2e-plaincov-')));
+  const root = real(workspace);
+  const rel = (abs) => path.relative(root, real(abs)).split(path.sep).join('/');
+  const env = { ...process.env, CI: 'true', PYTHONIOENCODING: 'utf-8' };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const node = process.platform === 'win32' ? 'node.exe' : 'node';
+  const opts = { cwd: root, env, encoding: 'utf8', timeout: 10 * 60_000, maxBuffer: 1 << 30 };
+  const out = new Map();
+  try {
+    if (framework === 'pytest') {
+      const python = workspacePython(workspace);
+      const data = path.join(dir, '.coverage');
+      spawnSync(python, ['-m', 'coverage', 'run', `--data-file=${data}`, '-m', 'pytest', '-p', 'no:cacheprovider', '--continue-on-collection-errors', '-q'], opts);
+      const file = path.join(dir, 'coverage.json');
+      const r = spawnSync(python, ['-m', 'coverage', 'json', `--data-file=${data}`, '-o', file], opts);
+      if (!fs.existsSync(file)) { throw new Error(`coverage.py wrote no report: ${(r.stderr || r.stdout || '').slice(-1500)}`); }
+      const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+      for (const [name, f] of Object.entries(json.files)) {
+        const lines = { covered: f.summary.covered_lines, total: f.summary.num_statements };
+        const fns = Object.entries(f.functions || {}).filter(([n, r]) => n && r.summary.num_statements > 0);
+        out.set(rel(path.join(root, name)), {
+          statements: lines,
+          lines,
+          branches: { covered: f.summary.covered_branches ?? 0, total: f.summary.num_branches ?? 0 },
+          functions: { covered: fns.filter(([, r]) => r.summary.covered_lines > 0).length, total: fns.length },
+        });
+      }
+      return out;
+    }
+    if (framework === 'angular') {
+      // `ng test <project> --coverage` for each project, in a copy (it writes coverage/ and .angular/ into the folder it runs in).
+      const copy = path.join(dir, 'ws');
+      fs.cpSync(root, copy, { recursive: true, filter: (src) => !/[\\/](node_modules|\.angular|coverage)$/.test(src) });
+      fs.symlinkSync(path.join(root, 'node_modules'), path.join(copy, 'node_modules'), 'junction');
+      const ng = require.resolve('@angular/cli/bin/ng.js', { paths: [root] });
+      const projects = Object.entries(JSON.parse(fs.readFileSync(path.join(root, 'angular.json'), 'utf8')).projects || {})
+        .filter(([, p]) => p.architect && p.architect.test).map(([name]) => name);
+      const copyRoot = real(copy);
+      // reportOnFailure: a project with failing tests still gets its report (as the extension's runs do; like the Vitest run below).
+      const runnerConfig = path.join(dir, 'runner.config.mjs');
+      fs.writeFileSync(runnerConfig, 'export default { test: { coverage: { reportOnFailure: true } } };\n');
+      for (const name of projects) {
+        const r = spawnSync(node, [ng, 'test', name, '--watch=false', '--coverage', '--coverage-reporters=json', '--runner-config', runnerConfig], { ...opts, cwd: copy });
+        const reports = fs.readdirSync(path.join(copy, 'coverage'), { recursive: true }).filter((f) => String(f).endsWith('coverage-final.json'));
+        if (reports.length === 0) { throw new Error(`plain ng test ${name} wrote no coverage (exit ${r.status}): ${(r.stderr || r.stdout || '').slice(-1500)}`); }
+        for (const f of reports) {
+          countIstanbul(JSON.parse(fs.readFileSync(path.join(copy, 'coverage', String(f)), 'utf8')), (abs) => path.relative(copyRoot, real(abs)).split(path.sep).join('/'), out);
+        }
+        fs.rmSync(path.join(copy, 'coverage'), { recursive: true, force: true });
+      }
+      return out;
+    }
+    let args;
+    if (framework === 'jest') {
+      const { testScriptJestArgs, jestNodeEnv } = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'framework', 'jestConfig.js'));
+      Object.assign(env, jestNodeEnv(workspace));
+      const entry = path.join(path.dirname(require.resolve('jest/package.json', { paths: [workspace] })), 'bin', 'jest.js');
+      args = [entry, ...testScriptJestArgs(workspace), '--watchAll=false', '--coverage', '--coverageReporters=json', `--coverageDirectory=${dir}`];
+    } else {
+      const runner = require(path.join(__dirname, '..', '..', 'packages', 'runner', 'dist', 'index.js'));
+      const adapter = new runner.VitestAdapter();
+      args = [real(adapter.findInstall(workspace).entry), 'run', ...adapter.getExtraArgs(workspace),
+        // reportOnFailure: a project with failing tests still gets its report (as the extension's runs do).
+        '--coverage.enabled=true', '--coverage.reporter=json', `--coverage.reportsDirectory=${dir}`, '--coverage.reportOnFailure=true'];
+    }
+    const r = spawnSync(node, args, opts);
+    const file = path.join(dir, 'coverage-final.json');
+    if (!fs.existsSync(file)) { throw new Error(`plain ${framework} wrote no coverage (exit ${r.status}): ${(r.stderr || '').slice(-1500)}`); }
+    countIstanbul(JSON.parse(fs.readFileSync(file, 'utf8')), rel, out);
+    return out;
+  } finally {
+    // The Angular copy's node_modules is a link to the workspace's: remove the link itself first
+    // (a recursive delete through a Windows junction empties the workspace's node_modules).
+    const link = path.join(dir, 'ws', 'node_modules');
+    try { fs.unlinkSync(link); } catch { try { fs.rmdirSync(link); } catch { /* none */ } }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** An istanbul coverage-final.json → the four metrics per file (relative path via `rel`), counted as `calculate` counts them. */
+function countIstanbul(json, rel, out) {
+  for (const [abs, fc] of Object.entries(json)) {
+    const sIds = Object.keys(fc.statementMap);
+    const hit = sIds.filter((id) => fc.s[id] > 0);
+    let bTotal = 0;
+    let bCov = 0;
+    for (const [id, b] of Object.entries(fc.branchMap)) { bTotal += b.locations.length; bCov += (fc.b[id] || []).filter((n) => n > 0).length; }
+    const fIds = Object.keys(fc.fnMap);
+    const line = (id) => fc.statementMap[id].start.line;
+    out.set(rel(fc.path || abs), {
+      statements: { covered: hit.length, total: sIds.length },
+      branches: { covered: bCov, total: bTotal },
+      functions: { covered: fIds.filter((id) => fc.f[id] > 0).length, total: fIds.length },
+      lines: { covered: new Set(hit.map(line)).size, total: new Set(sIds.map(line)).size },
+    });
+  }
+  return out;
+}
+
 module.exports = {
+  plainCoverage,
+  settle, rawSinceWithoutRefresh,
   workspacePython, plainPytestResults, checkMatchesPlainPytest, sortedCounts, pytestProcesses,
   Tester, sleep, waitFor, waitForDiscovery, allNodes, nodesWithStatus, fileBySuffix, nodeByName,
   recordEvents, rawMark, rawSince, jestTestSummaries, logsSince, jestProcesses, editAndSave,

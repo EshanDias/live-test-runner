@@ -26,7 +26,7 @@ import { EventEmitter } from 'events';
 import { CoverageStore } from './CoverageStore';
 import { CoverageScope } from './coverageScope';
 import { logger } from '../utils/logger';
-import { scriptOf, sourceFileGlob } from '../session/sourceFiles';
+import { isSourceFile, scriptOf, sourceFileGlob } from '../session/sourceFiles';
 
 const log = logger.scope('Coverage');
 
@@ -61,25 +61,7 @@ export class SourceCounter extends EventEmitter {
     }
 
     const include = new vscode.RelativePattern(this._projectRoot, sourceFileGlob());
-    // Flattened — no nested braces, VS Code glob doesn't support them reliably.
-    // With the project's own rules, only what can never count is left out here; the scope decides the rest.
-    const defaultExcludeParts = scope.isDefault ? [
-      '**/node_modules/**',
-      '**/*.test.js', '**/*.test.ts', '**/*.test.jsx', '**/*.test.tsx',
-      '**/*.spec.js', '**/*.spec.ts', '**/*.spec.jsx', '**/*.spec.tsx',
-      '**/__tests__/**', '**/__mocks__/**',
-      '**/tests/**', '**/test/**', '**/specs/**', '**/spec/**',
-      '**/*.config.js', '**/*.config.ts', '**/*.config.mjs', '**/*.config.cjs',
-      '**/*.d.ts',
-      'dist/**', 'build/**', 'out/**', '.next/**', 'coverage/**',
-    ] : ['**/node_modules/**', '**/.git/**'];
-    const userExclude = vscode.workspace
-      .getConfiguration('liveTestRunner')
-      .get<string[]>('coverageExclude', []);
-    const allExcludeParts = userExclude.length > 0
-      ? [...defaultExcludeParts, ...userExclude]
-      : defaultExcludeParts;
-    const excludeGlob = `{${allExcludeParts.join(',')}}`;
+    const excludeGlob = excludeGlobOf(scope);
 
     let files: string[];
     try {
@@ -122,6 +104,28 @@ export class SourceCounter extends EventEmitter {
     log.debug(`Source scan: ${scanned} file(s) counted in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
     this._store.markScanComplete();
     this.emit('done');
+  }
+
+  /**
+   * One file created or changed after Start (a new source no test loads yet
+   * shows as 0% right away; an edited one is counted again from its new
+   * content): the scan's rules — the project's coverage settings, the
+   * default excludes, `coverageExclude`, git-ignore.
+   */
+  async countFile(filePath: string): Promise<void> {
+    const scope = await this._scope;
+    if (this._cancelled || !scope.includesUntouched) { return; }
+    if (!isSourceFile(filePath) || !fs.existsSync(filePath) || !scope.counts(filePath)) { return; }
+    const rel = path.relative(this._projectRoot, filePath);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) { return; }
+    try {
+      // The scan's exclude globs, by VS Code's own matcher.
+      const found = await vscode.workspace.findFiles(new vscode.RelativePattern(this._projectRoot, rel.split(path.sep).join('/')), excludeGlobOf(scope), 1);
+      if (found.length === 0) { return; }
+    } catch { return; }
+    if (scope.isDefault && (await gitIgnored(this._projectRoot, [filePath])).size > 0) { return; }
+    if (this._cancelled) { return; }
+    this._store.setCountedEntry(filePath, this._countFile(filePath));
   }
 
   private _countFile(filePath: string): {
@@ -229,6 +233,29 @@ export class SourceCounter extends EventEmitter {
 
     return { statements, branches, functions, lines: executableLines.size };
   }
+}
+
+/** The scan's exclude glob: what never counts (without project rules, the usual test / build folders too) plus `coverageExclude`. */
+function excludeGlobOf(scope: CoverageScope): string {
+  // Flattened — no nested braces, VS Code glob doesn't support them reliably.
+  // With the project's own rules, only what can never count is left out here; the scope decides the rest.
+  const defaultExcludeParts = scope.isDefault ? [
+    '**/node_modules/**',
+    '**/*.test.js', '**/*.test.ts', '**/*.test.jsx', '**/*.test.tsx',
+    '**/*.spec.js', '**/*.spec.ts', '**/*.spec.jsx', '**/*.spec.tsx',
+    '**/__tests__/**', '**/__mocks__/**',
+    '**/tests/**', '**/test/**', '**/specs/**', '**/spec/**',
+    '**/*.config.js', '**/*.config.ts', '**/*.config.mjs', '**/*.config.cjs',
+    '**/*.d.ts',
+    'dist/**', 'build/**', 'out/**', '.next/**', 'coverage/**',
+  ] : ['**/node_modules/**', '**/.git/**'];
+  const userExclude = vscode.workspace
+    .getConfiguration('liveTestRunner')
+    .get<string[]>('coverageExclude', []);
+  const allExcludeParts = userExclude.length > 0
+    ? [...defaultExcludeParts, ...userExclude]
+    : defaultExcludeParts;
+  return `{${allExcludeParts.join(',')}}`;
 }
 
 function _countStmt(node: any, lines: Set<number>): void {

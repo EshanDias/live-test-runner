@@ -49,7 +49,7 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
     const line = measuredLine + 1; // VS Code is 0-indexed; our stores are 1-based
 
     if (entry.state === 'measured-stale') {
-      const md = new vscode.MarkdownString('$(warning) **Coverage data is stale** — save the file to rerun', true);
+      const md = new vscode.MarkdownString('$(sync) **Coverage is updating** — measured before this file last changed; its tests are running again', true);
       md.supportThemeIcons = true;
       return new vscode.Hover(md);
     }
@@ -57,14 +57,22 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
     if (entry.state !== 'measured') { return undefined; }
 
     const manifest = _readManifest(entry.manifestPath);
-    const traceLines = traceStore.getCoveredLines(filePath);
-    const isLineCovered = traceLines.has(line);
-
-    // Fallback: trace store may be empty (e.g. Jest exited before flushing trace).
-    // Check Istanbul counters so a green bar never shows "not covered" in the hover.
-    const isCounterCovered = !isLineCovered && manifest
+    // A line the framework's report counts no statement on (Jest + vue-jest maps a component's
+    // code to other lines) gets no verdict, as it gets no bar; the tests the trace saw run it are listed.
+    const noStatement = !!manifest && (statementLines(manifest).get(line) ?? []).length === 0;
+    if (noStatement) {
+      const ran = traceStore.getTestsForLine(filePath, line);
+      if (ran.length === 0) { return undefined; }
+    }
+    // The counters decide (the same as the bar): each test file's latest run, never an old one.
+    const counterCovered = noStatement || (manifest
       ? (statementLines(manifest).get(line) ?? []).some((id) => (entry.counters.s[id] ?? 0) > 0)
-      : false;
+      : traceStore.getCoveredLines(filePath).has(line));
+    // The trace knows the file: a covered line it lists no test for ran while a module loaded.
+    const traceKnowsFile = traceStore.getCoveredLines(filePath).size > 0;
+    const isLineCovered = counterCovered && traceKnowsFile;
+    // Covered, but no trace for this framework / root.
+    const isCounterCovered = counterCovered && !traceKnowsFile;
 
     // ── Partial branch analysis ────────────────────────────────────────────────
     const missedBranches = manifest ? _getMissedBranchesForLine(manifest, entry.counters, line) : [];
@@ -109,7 +117,13 @@ export class CoverageHoverProvider implements vscode.HoverProvider {
 
     // ── Test list ──────────────────────────────────────────────────────────────
     const icon = isPartial ? '$(circle-filled)' : '$(pass-filled)';
-    md.appendMarkdown(`${icon} **Covered by ${tests.length} test${tests.length !== 1 ? 's' : ''}**\n\n`);
+    if (tests.length === 0) {
+      md.appendMarkdown(`${icon} **Covered** — runs when the file is loaded (module-level code), not inside a single test`);
+      return new vscode.Hover(md);
+    }
+    md.appendMarkdown(noStatement
+      ? `$(info) **Run by ${tests.length} test${tests.length !== 1 ? 's' : ''}** — the coverage report counts no statement on this line\n\n`
+      : `${icon} **Covered by ${tests.length} test${tests.length !== 1 ? 's' : ''}**\n\n`);
 
     const shown = tests.slice(0, MAX_TESTS_SHOWN);
     for (const { testFileId, fullName } of shown) {

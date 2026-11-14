@@ -52,8 +52,18 @@ export interface FrameworkFeatures {
  */
 export interface BatchPolicy {
   /** Most processes of this framework at once (default: the machine's budget). */
-  maxParallel?: number;
-  /** Most files in one process (default: sized from the run and the budget). */
+  maxParallel?: number | ((projectRoot: string) => number | undefined);
+  /**
+   * Workers one process of this framework keeps busy (Jest's batches run in
+   * band, pytest's with `-n 0`: 1). Default: the budget's workers per batch
+   * (Vitest, Angular). The adaptive budget counts them before starting another.
+   */
+  workersPerProcess?: number;
+  /**
+   * Largest batch (default MAX_BATCH_FILES, 50); batches are sized from the
+   * run and the budget up to it. Higher where each process costs seconds before
+   * a test runs (Angular builds every batch first).
+   */
   maxFilesPerBatch?: number;
 }
 

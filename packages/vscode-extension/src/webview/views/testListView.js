@@ -419,11 +419,25 @@
     const off = (totals && totals.off) || [];
     el.classList.toggle('hidden', off.length === 0);
     el.textContent = '';
+    const unmeasured = (totals && totals.unmeasuredTestFiles) || 0;
+    el.classList.toggle('hidden', off.length === 0 && unmeasured === 0);
     for (const reason of off) {
       const line = document.createElement('div');
       line.textContent = 'Coverage is off — ' + reason + '. Tests still run.';
       el.appendChild(line);
     }
+    if (unmeasured > 0) {
+      const line = document.createElement('div');
+      line.textContent = unmeasured + ' test file' + (unmeasured === 1 ? '' : 's') + ' ran without coverage (a plain retry) and ' + (unmeasured === 1 ? 'is' : 'are') + ' left out of the totals until ' + (unmeasured === 1 ? 'it runs' : 'they run') + ' again.';
+      el.appendChild(line);
+    }
+  }
+
+  /** Status next to the totals: not final while the source scan runs or files wait for their tests to rerun. */
+  function _covStatusText(totals) {
+    if (!totals) { return ''; }
+    if (totals.updating) { return 'Updating coverage (' + totals.updating + ' file' + (totals.updating === 1 ? '' : 's') + ')…'; }
+    return totals.scanComplete ? '' : 'Updating…';
   }
 
   function updateCoverage(totals, files) {
@@ -445,12 +459,12 @@
         const el = _q(id); if (el) { el.textContent = '—'; el.className = 'value'; }
       });
     } else {
-      if (st) { st.textContent = totals.scanComplete ? '' : 'Updating…'; }
+      if (st) { st.textContent = _covStatusText(totals); }
       const empty = _nothingMeasured(totals);
-      _setCovCell('covStmts',  totals.statements, false, empty);
-      _setCovCell('covBranch', totals.branches,   false, empty);
-      _setCovCell('covFns',    totals.functions,  false, empty);
-      _setCovCell('covLines',  totals.lines,      false, empty);
+      _setCovCell('covStmts', totals.statements, !!totals.updating, empty);
+      _setCovCell('covBranch', totals.branches,   !!totals.updating, empty);
+      _setCovCell('covFns', totals.functions,  !!totals.updating, empty);
+      _setCovCell('covLines', totals.lines,      !!totals.updating, empty);
     }
 
     // ── project totals row in Coverage panel ────────────────────────────────
@@ -460,10 +474,10 @@
       });
     } else {
       const empty = _nothingMeasured(totals);
-      _setCovCell('covTotalStmts',  totals.statements, false, empty);
-      _setCovCell('covTotalBranch', totals.branches,   false, empty);
-      _setCovCell('covTotalFns',    totals.functions,  false, empty);
-      _setCovCell('covTotalLines',  totals.lines,      false, empty);
+      _setCovCell('covTotalStmts', totals.statements, !!totals.updating, empty);
+      _setCovCell('covTotalBranch', totals.branches,   !!totals.updating, empty);
+      _setCovCell('covTotalFns', totals.functions,  !!totals.updating, empty);
+      _setCovCell('covTotalLines', totals.lines,      !!totals.updating, empty);
     }
 
     _renderCovFiles(_lastCovFiles);
@@ -952,7 +966,7 @@
           // Progress is NOT counted here: the extension sends 'run-progress'
           // with totals across every run in flight (a save during the full
           // suite used to push this past 100%, e.g. "61 / 58").
-          for (const file of msg.files ?? []) { _list.updateFile(file); }
+          _list.updateFiles(msg.files ?? []);
           updateSummary(msg.total, msg.passed, msg.failed, null);
           _setRunningCount(msg.runningTests);
           break;
