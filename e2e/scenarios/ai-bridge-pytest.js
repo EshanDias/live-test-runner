@@ -17,6 +17,7 @@ module.exports = {
     ],
     failing: 'test_totals_prices',
     comment: '#',
+    addCase: ['\n\ndef test_one_more():\n    assert total([{"price": 1}]) == 1\n', 'test_one_more'],
     trace: true,
   }),
 };

@@ -13,7 +13,11 @@ Repo changelog: one line per change. What users see is in [the extension's chang
 - An assistant's verify reuses the session's own rerun of a change, and the session skips a change verify already reran (`SessionManager._rerunVersions`).
 - `PRIVACY.md`: what an assistant can read and run, and the files the bridge keeps.
 
+### Fixed
+- ▶ Run after Stop ran nothing (batch runners stayed stopped); a test file created since Start is asked about before an explicit run.
+
 ### Tooling
+- e2e `new-tests-and-stop` (Jest, Vitest, pytest).
 - e2e `ai-bridge`, `ai-bridge-vitest`, `ai-bridge-pytest` drive the relay with a scripted MCP client; `noNetwork.test.ts` scans the relay bundle.
 
 ## [3.4.1] - 2026-11-13

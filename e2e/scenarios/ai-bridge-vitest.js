@@ -16,6 +16,7 @@ module.exports = {
       "import { describe, test, expect } from 'vitest';\nimport { total } from './aiCart.js';\n\ndescribe('cart', () => {\n  test('totals prices', () => {\n    expect(total([{ price: 2 }, { price: 3 }])).toBe(5);\n  });\n  test('empty cart', () => {\n    expect(total([])).toBe(0);\n  });\n});\n",
     ],
     failing: 'cart totals prices',
+    addCase: ["\ntest('one more', () => {\n  expect(total([{ price: 1 }])).toBe(1);\n});\n", 'one more'],
     trace: true,
   }),
 };

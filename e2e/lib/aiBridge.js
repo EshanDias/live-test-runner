@@ -144,6 +144,37 @@ async function aiBridgeScenario({ api, t, vscode, workspace }, cfg) {
     } finally {
       await cfgSection.update('ai.allowRuns', undefined, vscode.ConfigurationTarget.Workspace);
     }
+
+    // ── The agent adds tests: a new case in the test file, then a new test file ──
+    await h.settle(api);
+    const before = countReruns(api, node.fileId);
+    try {
+      fs.appendFileSync(testFile, cfg.addCase[0]);
+      const added = await mcp.finish(await mcp.call('LTR_verify_fix', { files: [testRel] }));
+      await h.settle(api);
+      t.check('new test case: verify_fix ran it', added.state === 'finished' && added.tests?.passed === 3 && added.tests?.failed === 0, JSON.stringify(added));
+      t.check('…it is in the results', (() => { try { return h.nodeByName(api, testRel, cfg.addCase[1]).status === 'passed'; } catch { return false; } })(), cfg.addCase[1]);
+      t.eq('…and its file ran once', before.count, 1);
+    } finally {
+      before.dispose();
+    }
+    for (const sessionOn of [true, false]) {
+      if (!sessionOn) {
+        await vscode.commands.executeCommand('liveTestRunner.stopTesting');
+        await h.waitFor(() => !api.session.isActive() && !api.session.isRunning(), { what: 'Stop' });
+      }
+      const newRel = testRel.replace(/(\.test)?\.(js|py)$/, (m) => `${sessionOn ? '_on' : '_off'}${m}`);
+      const newFile = path.join(workspace, ...newRel.split('/'));
+      const label = `new test file (session ${sessionOn ? 'on' : 'off'})`;
+      const logsFrom = h.isoNow();
+      fs.writeFileSync(newFile, testText);
+      const res = await mcp.finish(await mcp.call('LTR_verify_fix', { files: [newRel] }));
+      await h.settle(api);
+      t.check(`${label}: verify_fix ran it`, res.state === 'finished' && res.tests?.passed === 2 && res.tests?.failed === 0, `${JSON.stringify(res)}\n${h.logsSince(api, logsFrom).join('\n')}`);
+      t.check(`${label}: its tests are in the store`, api.store.getTestNodesForFiles([api.store.findFileKey(newFile) ?? newFile]).filter((n) => n.status === 'passed').length === 2);
+      const found = await mcp.call('LTR_find_tests', { query: newRel });
+      t.check(`${label}: find_tests knows it`, (found.matches ?? []).length >= 2, JSON.stringify(found));
+    }
   } finally {
     mcp.close();
   }

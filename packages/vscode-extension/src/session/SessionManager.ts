@@ -118,6 +118,8 @@ export class SessionManager {
 
   /** Files changed on disk during a run: rerun when the runs finish. */
   private readonly _diskQueue = new Set<string>();
+  /** Stop (or a restart) stopped the batch runners; the next explicit run without a session starts them again. */
+  private _runnersStopped = false;
   /** The files the last queued disk rerun ran for (loop guard). */
   private _lastDiskRerun = new Set<string>();
   /**
@@ -200,6 +202,7 @@ export class SessionManager {
   /** Stop every framework's running batches (final until a new session). */
   private _killBatches(): void {
     for (const services of this._services.all()) { services.batchRunner.kill(); }
+    this._runnersStopped = true;
     // The background source scan (coverage totals) parses every source file — Stop ends it too.
     this._sourceCounter?.cancel();
     this._sourceCounter = undefined;
@@ -445,6 +448,7 @@ export class SessionManager {
       }
     }
 
+    if (this._mayBeNewTestFile(args.fileId)) { await this._askAboutNewTestFile(args.fileId, projectRoot, 'Run:'); }
     if (!this._isRunnable(args.fileId)) {
       const terms = this._terms(args.fileId);
       log.info(`${path.basename(args.fileId)} is not run by this project's ${terms.config} (${terms.configRulesShort}) — nothing to run`);
@@ -500,8 +504,11 @@ export class SessionManager {
    */
   async runFiles(filePaths: string[], label: string, cancelled?: () => boolean): Promise<string[]> {
     const projectRoot = this._getProjectRoot();
+    if (!projectRoot) { return []; }
+    const unlisted = filePaths.find((fp) => this._mayBeNewTestFile(fp));
+    if (unlisted) { await this._askAboutNewTestFile(unlisted, projectRoot, 'Run:'); }
     const files = filePaths.filter((fp) => this._isRunnable(fp));
-    if (!projectRoot || files.length === 0) { return []; }
+    if (files.length === 0) { return []; }
     const run = this._beginRun(label);
     try {
       await this._runFiles(files, projectRoot, this._token, { cancelled });
@@ -545,14 +552,22 @@ export class SessionManager {
     try {
       for (const filePath of todo) {
         if (token !== this._token) { break; }
-        const version = this._noteRerun(filePath, 'assistant');
         const key = this._store.findFileKey(filePath) ?? filePath;
-        const isTestFile = !!this._store.getFile(key) || this._adapterFor(filePath).isTestFile(filePath);
+        const isTestFile = !!this._store.getFile(key) || this._adapterFor(filePath).isTestFile(filePath) || !!this._runnable?.has(runnableKey(filePath));
         if (isTestFile) {
-          if (this._isRunnable(key)) { await this._runFiles([key], projectRoot, token); ran.add(key); version?.ran.push(key); }
+          // A test file the assistant just created: the framework's list may not have it yet.
+          if (this._mayBeNewTestFile(key)) {
+            await this._askAboutNewTestFile(key, projectRoot, 'Changed:');
+            if (token !== this._token) { break; }
+          }
+          if (!this._isRunnable(key)) { continue; }
+          if (!this._store.getFile(key)) { this._store.fileDiscovered(key, key, vscode.workspace.asRelativePath(key)); }
+          const version = this._noteRerun(filePath, 'assistant');
+          await this._runFiles([key], projectRoot, token); ran.add(key); version?.ran.push(key);
           continue;
         }
         if (!this._isProjectSource(filePath)) { continue; }
+        const version = this._noteRerun(filePath, 'assistant');
         this._lastSourceChangeAt = Date.now();
         this._coverageStore.markFileStale(filePath);
         try {
@@ -567,6 +582,29 @@ export class SessionManager {
       this._endRun(run, [...ran], undefined, ran.size === 0);
     }
     return { ran: [...ran], reused: [...reused].filter((fp) => !ran.has(fp)), reusedFor };
+  }
+
+  /** A test file the framework's file list (asked at Start) does not have, and not known to be excluded: created since. */
+  private _mayBeNewTestFile(filePath: string): boolean {
+    return !this._isRunnable(filePath) && !this._store.getFile(filePath)?.excluded &&
+      (this._adapterFor(filePath).isTestFile(filePath) || !!this._store.getFile(filePath));
+  }
+
+  /**
+   * A test file created after Start is not in the framework's file list yet —
+   * ask again (a file already known to be excluded is not asked about every
+   * save); a file the config does not run is marked excluded.
+   */
+  private async _askAboutNewTestFile(filePath: string, projectRoot: string, verb: string): Promise<void> {
+    const token = this._token;
+    const name = this._terms(projectRoot).name;
+    log.debug(`${verb} ${path.basename(filePath)} — not in ${name}'s file list yet, asking ${name} again`);
+    const files = this._store.getAllFiles().map((f) => f.filePath);
+    if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
+    const runnable = toRunnableSet(await this._askForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings(projectRoot)), files));
+    if (token !== this._token) { return; }
+    this._runnable = runnable;
+    if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
   }
 
   /** The file's modified time (undefined: gone or unreadable). */
@@ -840,15 +878,8 @@ export class SessionManager {
       // Jest's own list also knows tests named by a custom testRegex/testMatch.
       const isTestFile = this._adapterFor(filePath).isTestFile(filePath) || !!this._runnable?.has(runnableKey(filePath));
       if (isTestFile && !this._isRunnable(filePath) && !this._store.getFile(filePath)?.excluded) {
-        // A test file created after Start is not in Jest's list yet — ask again
-        // (a file already known to be excluded is not asked about every save).
-        const name = this._terms(projectRoot).name;
-        log.debug(`${verb} ${path.basename(filePath)} — not in ${name}'s file list yet, asking ${name} again`);
-        const files = this._store.getAllFiles().map((f) => f.filePath);
-        if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
-        this._runnable = toRunnableSet(await this._askForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings(projectRoot)), files));
+        await this._askAboutNewTestFile(filePath, projectRoot, verb);
         if (token !== this._token) { return; }
-        if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
       }
       if (isTestFile && !this._isRunnable(filePath)) {
         log.debug(`${verb} ${path.basename(filePath)} — not run by this project's ${this._terms(projectRoot).config}, ignoring`);
@@ -1757,6 +1788,7 @@ export class SessionManager {
   private _startSessionState(projectRoot: string, services: FrameworkServices, files: string[]): void {
     this._session?.activate();
     for (const s of this._services.all()) { s.batchRunner.reset(); }
+    this._runnersStopped = false;
     this._notify('onSessionStarted');
 
     // Background source scan — runs in parallel with test execution.
@@ -1929,6 +1961,12 @@ export class SessionManager {
     this._outputChannel.appendLine('');
     this._outputChannel.appendLine(`──── Run #${id} · ${label} · ${new Date().toLocaleTimeString()} ────`);
     log.debug(`Run #${id} started: ${label}`);
+    // An explicit run after Stop (▶ Run, rerun, an assistant's run): Stop ended what was in
+    // flight; this new run needs the batch runners working again.
+    if (this._runnersStopped && !this._session?.isTestingActive()) {
+      for (const s of this._services.all()) { s.batchRunner.reset(); }
+      this._runnersStopped = false;
+    }
     if (this._activeRuns++ === 0) {
       this._progress = { completed: 0, total: 0, failed: 0 };
     }
