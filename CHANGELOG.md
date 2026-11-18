@@ -2,7 +2,7 @@
 
 Repo changelog: one line per change. What users see is in [the extension's changelog](packages/vscode-extension/CHANGELOG.md); the how and why in [docs/development/design](docs/development/design/).
 
-## [3.5.0] - Unreleased
+## [3.5.0] - 2026-11-18
 
 ### Added
 - AI assistants: 23 `LTR_` tools and 6 ready-made tasks (`src/ai/catalog.ts`) answered from the stores (`src/ai/tools.ts`).
