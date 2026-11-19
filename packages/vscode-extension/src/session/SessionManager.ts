@@ -118,8 +118,17 @@ export class SessionManager {
 
   /** Files changed on disk during a run: rerun when the runs finish. */
   private readonly _diskQueue = new Set<string>();
+  /** Stop (or a restart) stopped the batch runners; the next explicit run without a session starts them again. */
+  private _runnersStopped = false;
   /** The files the last queued disk rerun ran for (loop guard). */
   private _lastDiskRerun = new Set<string>();
+  /**
+   * Which version (modified time) of a changed file has had its rerun, and by
+   * whom: the session's own rerun on save / disk change, or an assistant's
+   * {@link runChangedFiles}. One write is rerun once — each side skips a
+   * version the other already reran (or is rerunning) and reuses its results.
+   */
+  private readonly _rerunVersions = new Map<string, { mtimeMs: number; by: 'session' | 'assistant'; ran: string[] }>();
   /**
    * Coverage refresh: when each test file was last rerun whole because its
    * coverage was measured before a change (at most once per change, so a
@@ -193,6 +202,7 @@ export class SessionManager {
   /** Stop every framework's running batches (final until a new session). */
   private _killBatches(): void {
     for (const services of this._services.all()) { services.batchRunner.kill(); }
+    this._runnersStopped = true;
     // The background source scan (coverage totals) parses every source file — Stop ends it too.
     this._sourceCounter?.cancel();
     this._sourceCounter = undefined;
@@ -212,6 +222,7 @@ export class SessionManager {
     const token = ++this._token;
     this._activeRuns = 0;
     this._foregroundRuns = 0;
+    this._rerunVersions.clear();
     this._fullSuiteStartedAt = undefined;
     this._clearSaveTimers();
 
@@ -364,6 +375,7 @@ export class SessionManager {
     this._token++;
     this._diskQueue.clear();
     this._lastDiskRerun.clear();
+    this._rerunVersions.clear();
     this._clearSaveTimers();
     this._clearCoverageRefresh();
     this._killBatches();
@@ -436,6 +448,7 @@ export class SessionManager {
       }
     }
 
+    if (this._mayBeNewTestFile(args.fileId)) { await this._askAboutNewTestFile(args.fileId, projectRoot, 'Run:'); }
     if (!this._isRunnable(args.fileId)) {
       const terms = this._terms(args.fileId);
       log.info(`${path.basename(args.fileId)} is not run by this project's ${terms.config} (${terms.configRulesShort}) — nothing to run`);
@@ -481,6 +494,144 @@ export class SessionManager {
     } finally {
       this._endRun(run, [args.fileId]);
     }
+  }
+
+  /**
+   * ▶ Run on several whole test files (an AI assistant's run of a project's
+   * files, or of everything): one run, sharing the budget like any other.
+   * Works with or without a session. `cancelled` stops it before the next batch.
+   * @returns the files that were run (runnable ones only).
+   */
+  async runFiles(filePaths: string[], label: string, cancelled?: () => boolean): Promise<string[]> {
+    const projectRoot = this._getProjectRoot();
+    if (!projectRoot) { return []; }
+    const unlisted = filePaths.find((fp) => this._mayBeNewTestFile(fp));
+    if (unlisted) { await this._askAboutNewTestFile(unlisted, projectRoot, 'Run:'); }
+    const files = filePaths.filter((fp) => this._isRunnable(fp));
+    if (files.length === 0) { return []; }
+    const run = this._beginRun(label);
+    try {
+      await this._runFiles(files, projectRoot, this._token, { cancelled });
+    } finally {
+      this._endRun(run, files);
+    }
+    return files;
+  }
+
+  /**
+   * Reruns what changed files affect, the way a save does in a session (a
+   * test file runs itself; a source file its traced tests, else the
+   * framework's related run) — but now, without the debounce, and with or
+   * without a session: an explicit request (an AI assistant's "verify fix").
+   * A file whose current version the session already reran (its save or
+   * disk change) is not run again: its results are reused (`reused`).
+   * @returns the test files that were run, and those the session had already rerun.
+   */
+  async runChangedFiles(filePaths: string[], label: string): Promise<{ ran: string[]; reused: string[]; reusedFor: string[] }> {
+    const projectRoot = this._getProjectRoot();
+    if (!projectRoot) { return { ran: [], reused: [], reusedFor: [] }; }
+    const token = this._token;
+    const reused = new Set<string>();
+    const reusedFor: string[] = [];
+    const todo: string[] = [];
+    for (const filePath of filePaths) {
+      const done = this._rerunOf(filePath, 'session');
+      if (done) {
+        reusedFor.push(filePath);
+        for (const fp of done.ran) { reused.add(fp); }
+      } else {
+        todo.push(filePath);
+      }
+    }
+    if (reusedFor.length > 0) {
+      log.info(`${label}: ${describeFiles(reusedFor)} already rerun by the session after ${reusedFor.length === 1 ? 'its' : 'their'} latest change — using those results`);
+    }
+    if (todo.length === 0) { return { ran: [], reused: [...reused], reusedFor }; }
+    const run = this._beginRun(label);
+    const ran = new Set<string>();
+    try {
+      for (const filePath of todo) {
+        if (token !== this._token) { break; }
+        const key = this._store.findFileKey(filePath) ?? filePath;
+        const isTestFile = !!this._store.getFile(key) || this._adapterFor(filePath).isTestFile(filePath) || !!this._runnable?.has(runnableKey(filePath));
+        if (isTestFile) {
+          // A test file the assistant just created: the framework's list may not have it yet.
+          if (this._mayBeNewTestFile(key)) {
+            await this._askAboutNewTestFile(key, projectRoot, 'Changed:');
+            if (token !== this._token) { break; }
+          }
+          if (!this._isRunnable(key)) { continue; }
+          if (!this._store.getFile(key)) { this._store.fileDiscovered(key, key, vscode.workspace.asRelativePath(key)); }
+          const version = this._noteRerun(filePath, 'assistant');
+          await this._runFiles([key], projectRoot, token); ran.add(key); version?.ran.push(key);
+          continue;
+        }
+        if (!this._isProjectSource(filePath)) { continue; }
+        const version = this._noteRerun(filePath, 'assistant');
+        this._lastSourceChangeAt = Date.now();
+        this._coverageStore.markFileStale(filePath);
+        try {
+          for (const fp of await this._runAffectedBySourceFile(filePath, projectRoot, token)) { ran.add(fp); version?.ran.push(fp); }
+        } finally {
+          if (token === this._token) { this._coverageStore.clearStale(filePath); }
+        }
+      }
+    } catch (error) {
+      log.error(`Rerun of changed files failed (${describeFiles(filePaths)})`, error);
+    } finally {
+      this._endRun(run, [...ran], undefined, ran.size === 0);
+    }
+    return { ran: [...ran], reused: [...reused].filter((fp) => !ran.has(fp)), reusedFor };
+  }
+
+  /** A test file the framework's file list (asked at Start) does not have, and not known to be excluded: created since. */
+  private _mayBeNewTestFile(filePath: string): boolean {
+    return !this._isRunnable(filePath) && !this._store.getFile(filePath)?.excluded &&
+      (this._adapterFor(filePath).isTestFile(filePath) || !!this._store.getFile(filePath));
+  }
+
+  /**
+   * A test file created after Start is not in the framework's file list yet —
+   * ask again (a file already known to be excluded is not asked about every
+   * save); a file the config does not run is marked excluded.
+   */
+  private async _askAboutNewTestFile(filePath: string, projectRoot: string, verb: string): Promise<void> {
+    const token = this._token;
+    const name = this._terms(projectRoot).name;
+    log.debug(`${verb} ${path.basename(filePath)} — not in ${name}'s file list yet, asking ${name} again`);
+    const files = this._store.getAllFiles().map((f) => f.filePath);
+    if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
+    const runnable = toRunnableSet(await this._askForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings(projectRoot)), files));
+    if (token !== this._token) { return; }
+    this._runnable = runnable;
+    if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
+  }
+
+  /** The file's modified time (undefined: gone or unreadable). */
+  private _mtimeOf(filePath: string): number | undefined {
+    try { return fs.statSync(filePath).mtimeMs; } catch { return undefined; }
+  }
+
+  /** The rerun `by` already started for the file's current version, if any. */
+  private _rerunOf(filePath: string, by: 'session' | 'assistant'): { ran: string[] } | undefined {
+    const entry = this._rerunVersions.get(runnableKey(filePath));
+    if (!entry || entry.by !== by) { return undefined; }
+    const mtimeMs = this._mtimeOf(filePath);
+    return mtimeMs !== undefined && mtimeMs === entry.mtimeMs ? entry : undefined;
+  }
+
+  /** A rerun of the file's current version begins; `ran` fills in as it goes. */
+  private _noteRerun(filePath: string, by: 'session' | 'assistant'): { ran: string[] } | undefined {
+    const mtimeMs = this._mtimeOf(filePath);
+    if (mtimeMs === undefined) { return undefined; }
+    const entry = { mtimeMs, by, ran: [] as string[] };
+    this._rerunVersions.set(runnableKey(filePath), entry);
+    return entry;
+  }
+
+  /** When the latest runs started (0: none yet) — results are older than a change made after it. */
+  get runsStartedAt(): number {
+    return this._runsStartedAt;
   }
 
   // ── Editor commands ───────────────────────────────────────────────────────
@@ -727,20 +878,19 @@ export class SessionManager {
       // Jest's own list also knows tests named by a custom testRegex/testMatch.
       const isTestFile = this._adapterFor(filePath).isTestFile(filePath) || !!this._runnable?.has(runnableKey(filePath));
       if (isTestFile && !this._isRunnable(filePath) && !this._store.getFile(filePath)?.excluded) {
-        // A test file created after Start is not in Jest's list yet — ask again
-        // (a file already known to be excluded is not asked about every save).
-        const name = this._terms(projectRoot).name;
-        log.debug(`${verb} ${path.basename(filePath)} — not in ${name}'s file list yet, asking ${name} again`);
-        const files = this._store.getAllFiles().map((f) => f.filePath);
-        if (!files.some((f) => runnableKey(f) === runnableKey(filePath))) { files.push(filePath); }
-        this._runnable = toRunnableSet(await this._askForRunnable(projectRoot, runnableCacheKey(projectRoot, files, this._runnerSettings(projectRoot)), files));
+        await this._askAboutNewTestFile(filePath, projectRoot, verb);
         if (token !== this._token) { return; }
-        if (!this._isRunnable(filePath)) { this._markExcluded([filePath]); }
       }
       if (isTestFile && !this._isRunnable(filePath)) {
         log.debug(`${verb} ${path.basename(filePath)} — not run by this project's ${this._terms(projectRoot).config}, ignoring`);
         return;
       }
+      // An AI assistant's verify already reran this very write (it may run before the debounce ends): not twice.
+      if (this._rerunOf(filePath, 'assistant')) {
+        log.debug(`${verb} ${path.basename(filePath)} — this change was already rerun by an AI assistant's verify, not rerunning it`);
+        return;
+      }
+      const version = this._noteRerun(filePath, 'session');
       const run = this._beginRun(`${verb === 'Saved' ? 'save' : 'disk change'} ${path.basename(filePath)}`);
       let ran: string[] = [];
       try {
@@ -766,6 +916,7 @@ export class SessionManager {
         if (ran.length === 0) {
           log.info(`Run #${run.id} ${run.label} — no tests depend on this file`);
         }
+        if (version) { version.ran = ran; }
         this._endRun(run, ran, undefined, ran.length === 0);
       }
     }, debounceMs);
@@ -1637,6 +1788,7 @@ export class SessionManager {
   private _startSessionState(projectRoot: string, services: FrameworkServices, files: string[]): void {
     this._session?.activate();
     for (const s of this._services.all()) { s.batchRunner.reset(); }
+    this._runnersStopped = false;
     this._notify('onSessionStarted');
 
     // Background source scan — runs in parallel with test execution.
@@ -1809,6 +1961,12 @@ export class SessionManager {
     this._outputChannel.appendLine('');
     this._outputChannel.appendLine(`──── Run #${id} · ${label} · ${new Date().toLocaleTimeString()} ────`);
     log.debug(`Run #${id} started: ${label}`);
+    // An explicit run after Stop (▶ Run, rerun, an assistant's run): Stop ended what was in
+    // flight; this new run needs the batch runners working again.
+    if (this._runnersStopped && !this._session?.isTestingActive()) {
+      for (const s of this._services.all()) { s.batchRunner.reset(); }
+      this._runnersStopped = false;
+    }
     if (this._activeRuns++ === 0) {
       this._progress = { completed: 0, total: 0, failed: 0 };
     }

@@ -60,6 +60,7 @@
       <span class="col-actions">
         <button class="text-btn copy-btn" id="btnCopyErrors" title="Copy every failure shown here" disabled>Copy all</button>
         <button class="text-btn copy-btn" id="btnCopyForAI" title="Copy the failures with the test source, for pasting into an AI assistant (to your clipboard only)" disabled>Copy for AI</button>
+        <button class="text-btn copy-btn" id="btnFixWithAI" title="Ask your AI assistant to fix the first failure shown here (opens its chat, or copies the failure)" disabled>✨ Fix with AI</button>
       </span>
     </div>
     <div class="error-content" id="errorContent">
@@ -108,7 +109,7 @@
     if (!errorContent) { return; }
     ErrorPanel.update(errorContent, { sections });
     _errorNodeIds = (sections || []).flatMap((s) => s.errors.map((e) => e.nodeId)).filter(Boolean);
-    for (const id of ['btnCopyErrors', 'btnCopyForAI']) {
+    for (const id of ['btnCopyErrors', 'btnCopyForAI', 'btnFixWithAI']) {
       const b = _q(id);
       if (b) { b.disabled = _errorNodeIds.length === 0; }
     }
@@ -197,6 +198,9 @@
           if (_errorNodeIds.length) { _vscode.postMessage({ type: 'copy-failures', mode, nodeIds: _errorNodeIds }); }
         });
       }
+      _q('btnFixWithAI').addEventListener('click', () => {
+        if (_errorNodeIds.length) { _vscode.postMessage({ type: 'fix-with-ai', nodeIds: _errorNodeIds }); }
+      });
 
       // ── Search ──────────────────────────────────────────────────────────────
       const searchInput = _q('searchInput');
@@ -293,6 +297,12 @@
           renderLogSections(msg.payload.logSections);
           renderErrorSections(msg.payload.errorSections);
           break;
+
+        case 'ai-settings': {
+          const b = _q('btnFixWithAI');
+          if (b) { b.hidden = !msg.fixWithAI; }
+          break;
+        }
 
         case 'copied': {
           const b = _q(msg.mode === 'ai' ? 'btnCopyForAI' : 'btnCopyErrors');

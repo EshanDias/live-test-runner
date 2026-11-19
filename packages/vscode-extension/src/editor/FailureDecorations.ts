@@ -202,7 +202,7 @@ export function linesIn(frames: FailureFrame[], testFile: string, filePath: stri
 }
 
 /** An absolute path as is; a relative one (Vitest, pytest) from the folder above the test file that has it. */
-function resolveFrameFile(file: string, testFile: string): string {
+export function resolveFrameFile(file: string, testFile: string): string {
   if (path.isAbsolute(file)) { return file; }
   let dir = path.dirname(testFile);
   for (;;) {

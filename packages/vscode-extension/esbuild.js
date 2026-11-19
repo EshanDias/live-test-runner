@@ -72,6 +72,24 @@ function copyGuide() {
   fs.writeFileSync(path.join(dest, 'guide.html'), offlineGuide(html));
 }
 
+/**
+ * The MCP relay for agents outside the editor (src/ai/mcp): its own small
+ * bundle, out/mcp.js — no VS Code API, nothing but Node's fs / os / path /
+ * crypto. Agents start it through the launcher in the extension's storage
+ * folder (src/ai/launcher.ts).
+ */
+const mcpConfig = {
+  entryPoints: ['src/ai/mcp/main.ts'],
+  bundle: true,
+  outfile: 'out/mcp.js',
+  format: 'cjs',
+  platform: 'node',
+  target: 'node18',
+  sourcemap: false,
+  minify,
+  define: { LTR_VERSION: JSON.stringify(require('./package.json').version) },
+};
+
 const config = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
@@ -98,15 +116,15 @@ if (watch) {
   };
   esbuild
     .context({ ...config, plugins: [onRebuild] })
-    .then(ctx => {
+    .then(async ctx => {
       copyInstrumentationFiles();
       copyVendorFiles(); copyGuide();
+      await (await esbuild.context(mcpConfig)).watch();
       return ctx.watch();
     })
     .catch(e => { console.error(e); process.exit(1); });
 } else {
-  esbuild
-    .build(config)
+  Promise.all([esbuild.build(config), esbuild.build(mcpConfig)])
     .then(() => { copyInstrumentationFiles(); copyVendorFiles(); copyGuide(); })
     .catch(e => { console.error(e); process.exit(1); });
 }

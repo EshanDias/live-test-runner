@@ -43,6 +43,7 @@
 - ❌ **Failures where they happen** — the reason on the failing line (`✗ Expected 3, received 2`); hover for the full message, **Show diff**, and **Update snapshot** for a changed Jest, Vitest or Angular snapshot (asks first).
 - 📊 **Coverage** — green / amber / red bars per line; hover a line to see which tests ran it. Always the current numbers: delete a test or a file and they follow. The bars never shift your code and follow your edits; hide them with the 👁 button in the editor title.
 - 🔍 **Results panel** — test list · console output (per test) · failures with the diff and location · **Copy for AI** (the failure with the test's code, for pasting into a chat).
+- 🤖 **Your AI assistant uses it** — Copilot, Cursor, Claude Code, Codex and Gemini CLI read failures, output and coverage themselves and rerun the tests their change affects. **✨ Fix with AI** on any failing test; failures also show in the Problems panel.
 - 🗂 **Monorepos and multi-root workspaces** — every package (or Python service / uv workspace member) is a project, each with its own `.venv` or the shared one; switch between them, run several at once.
 - ⏱ **Timeline Debugger** *(planned, not available yet)* — step through a finished test line by line.
 
@@ -64,6 +65,22 @@
 
 ---
 
+## AI assistants
+
+Your assistant gets `LTR_` tools: what fails and why (error, failing line, test code, output, the lines it ran), which tests a change affects, coverage gaps, and runs that report what a fix fixed and what it broke. It never starts or stops testing; that stays with you.
+
+| Assistant | Setup |
+|---|---|
+| GitHub Copilot (VS Code 1.95+), Cursor | None |
+| Claude Code, Codex CLI, Gemini CLI | One command, from **Connect Your AI Assistant** |
+| Windsurf, Cline, other MCP clients | A snippet for their global MCP settings (same page) |
+
+Then just ask: *"use Live Test Runner to fix the failing tests"*. The extension calls no AI service and opens no port; your assistant reads only what it asks for ([privacy](https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md#your-ai-assistant)).
+
+<!-- [TODO: USER_INPUT_NEEDED] a short GIF of an assistant fixing a failing test with the LTR_ tools (Copilot agent mode or Claude Code) -->
+
+---
+
 ## Commands
 
 | Command | What it does |
@@ -81,6 +98,8 @@
 | `Show Test Output` | Open the raw test-runner output |
 | `Copy Diagnostic Report` | Copy versions, setup and recent logs for a bug report |
 | `Open Guide` | Open the user guide in an editor tab |
+| `Connect Your AI Assistant` | Set up Copilot, Cursor, Claude Code, Codex, Gemini CLI and others |
+| `Fix Failing Test with AI` | Ask your AI assistant to fix the failing test under the cursor |
 
 > **Tip:** Shift-click **⏹ Stop** to stop and clear cache in one click.
 
@@ -116,6 +135,10 @@ All settings under `liveTestRunner.*`.
 | `hangTimeoutSeconds` | `300` | Stop a single test running longer than this (e.g. an infinite loop) and mark it failed; `0` = no limit |
 | `testFilePatterns` | `["**/*.test.*", "**/*.spec.*", "**/__tests__/**/*.*"]` | Which files appear in the test tree. Jest's own config still decides what runs, and files it runs are added even when no pattern matches |
 | `showFailuresInEditor` | `true` | A failed test's message after the line where it failed, with Show diff in the hover |
+| `showFailuresInProblems` | `true` | List failing tests in the Problems panel (your editor's AI quick fixes work on them) |
+| `ai.bridge` | `true` | Give your AI assistant the `LTR_` tools (read results, run tests) |
+| `ai.allowRuns` | `"always"` | Whether your assistant can run tests: `always`, `ask` (a dialog per run) or `never` (read only) |
+| `ai.fixWithAI` | `true` | Show ✨ Fix with AI on failing tests |
 | `showCoverageInEditor` | `true` | Coverage bars and hover in the editor (also the 👁 button in the editor title) |
 | `coverageExclude` | `[]` | Extra globs left out of the coverage totals (which otherwise follow your Vitest `coverage.include` / `exclude` or Jest `collectCoverageFrom`) |
 | `durationThresholds.testAmberMs` | `100` | Test turns amber |
@@ -164,7 +187,7 @@ Vitest 3+ is fully supported (1–2: results only). Jest's ESM mode is picked up
 
 ## Privacy
 
-No telemetry. No accounts. Live Test Runner makes no network calls: it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with **Clear All Cached Data**). It is MIT-licensed and open source, so your security team can review it. Links, such as those in the built-in guide, open in your browser only when you click them.
+No telemetry. No accounts. Live Test Runner makes no network calls and calls no AI service (your AI assistant reads results only when it asks, see the policy): it runs your own Jest, Vitest, Angular or pytest locally and keeps its cache on your machine (clear it any time with **Clear All Cached Data**). It is MIT-licensed and open source, so your security team can review it. Links, such as those in the built-in guide, open in your browser only when you click them.
 
 Your own tests, and VS Code itself, may use the network; that is not the extension. What it keeps, and what it shares only when you click: the [privacy policy](https://github.com/EshanDias/live-test-runner/blob/main/PRIVACY.md).
 

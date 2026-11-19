@@ -21,7 +21,7 @@ Per package: `cd packages/<core|runner> && pnpm run build`, `cd packages/vscode-
 Monorepo, strict dependency direction: `vscode-extension` → `core` → `runner`. runner/core never import VS Code; no cycles.
 - `runner` — framework-agnostic execution (CommandRunner → per-framework Runner, `FrameworkAdapter`, BinaryResolver, Executor, ResultParser). Adapters: Jest, CRA, Vitest, Angular (Vitest via `ng test`), pytest.
 - `core` — `TestSession` (session on/off + its runner).
-- `vscode-extension` — UI: `extension.ts` (entry), `session/` (SessionManager, batch runners, trace), `editor/`, `views/`, `store/`, `timeline/` (dormant), `framework/`, `webview/`.
+- `vscode-extension` — UI: `extension.ts` (entry), `session/` (SessionManager, batch runners, trace), `editor/`, `views/`, `store/`, `timeline/` (dormant), `framework/`, `webview/`, `ai/` (AI-assistant tools: one catalog for VS Code LM tools and the stdio MCP relay `out/mcp.js`, file mailbox in the session folder).
 
 Patterns:
 1. **Observers**: results flow one way, `SessionManager` → `IResultObserver`s (`onSessionStart/onRunStart/onFileResult/onSessionStop`). Never pull from the manager. New feature = new observer added in `extension.ts`.
@@ -65,7 +65,7 @@ Patterns:
 
 ## Docs (the wiki is the source of truth)
 
-**A change is not done until its docs match it, in the same PR.** Each feature has three pages (listed in `docs/README.md`): `docs/features/<f>.md` (plain language), `docs/requirements/<f>.md` (what it must do; each requirement names its tests, ⚠️ = none yet), `docs/development/design/<f>.md` (key files, flow, decisions). Features: test runs, Test Explorer and editor, on-save reruns, Results panel, coverage, debugging, monorepos and mixed frameworks. The GitHub Wiki is generated from `docs/`; never edit it directly. Run `node scripts/build-wiki.js --check`.
+**A change is not done until its docs match it, in the same PR.** Each feature has three pages (listed in `docs/README.md`): `docs/features/<f>.md` (plain language), `docs/requirements/<f>.md` (what it must do; each requirement names its tests, ⚠️ = none yet), `docs/development/design/<f>.md` (key files, flow, decisions). Features: test runs, Test Explorer and editor, on-save reruns, Results panel, coverage, debugging, monorepos and mixed frameworks, AI assistants. The GitHub Wiki is generated from `docs/`; never edit it directly. Run `node scripts/build-wiki.js --check`.
 
 | Change | Update |
 |---|---|

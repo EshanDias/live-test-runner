@@ -14,6 +14,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | T6 | Retry the files of a crashed batch in smaller batches, then on their own with a plain run; log a warning | ⚠️ no test yet (scenarios only check that no fallback runs when none is needed) |
 | T7 | Retry a batch once when a file vanished while the framework scanned the project (tests that create and delete files) | unit: `vanishedFile` |
 | T8 | On Stop, end every framework process and its children; start no retry, fallback or queued batch; leave nothing spinning | `basic-stop`, `vitest-stop`, `pytest-stop`, `mixed-stop` |
+| T8a | After Stop, explicit runs (▶ Run, rerun, an AI assistant's run) still run: Stop ends what was in flight, not later clicks; a test file the framework's list (asked at Start) lacks is asked about again before it is run | `new-tests-and-stop`, `new-tests-and-stop-vitest`, `new-tests-and-stop-pytest` |
 | T9 | Announce "finished" once, after the last run in flight; progress never above 100% | `basic-full-run`, `basic-save-during-run` |
 | T10 | Run the project's own framework with its config, setup files and test-script flags (`--config`, `--resetMocks`, Node options) | `basic-full-run`, `esm-fn-config`, `ts-config`, `jest-svelte-esm` |
 | T11 | Pass names to the framework intact: spaces, `^`, `\|`, `&` | `basic-scoped-run` |
