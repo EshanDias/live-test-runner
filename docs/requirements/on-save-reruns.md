@@ -13,7 +13,7 @@ What the feature must do, and how we check it does. For the plain-language descr
 | S5 | When no test has executed the saved source file yet, rerun the test files that import it (the framework's related search) | `vitest-related`, `pytest-related` |
 | S6 | When a non-code file is used by code (an Angular `templateUrl`, a `?raw` import, a CSS module), rerun the tests of the code that uses it | `repo-components`, `vitest-components` |
 | S7 | When a framework **config** is saved, restart the session: re-read the config, the list of test files and every result | `basic-config-save` |
-| S8 | When a test file created after Start is saved, ask the framework whether it runs that file, and rerun it if so | `basic-on-save` |
+| S8 | When a test file created after Start is saved or written on disk, ask the framework whether it runs that file, and run it if so; a test case added to it runs too | `basic-on-save`, `new-tests-and-stop`, `new-tests-and-stop-vitest`, `new-tests-and-stop-pytest` |
 | S9 | Wait `onSaveDebounceMs` (default 300 ms) after a save, and run once for several quick saves of the same file | ⚠️ no test yet |
 | S10 | In a mixed project, rerun each framework's own dependent tests with that framework only | `mixed-on-save`, `mixed-js-python` |
 | S11 | Treat files changed **outside the editor** (pull, branch switch, generator, a coding assistant writing to disk, closed or open in the editor) like saves while testing is on | `disk-changes`, `pytest-disk-changes` |

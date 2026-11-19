@@ -1,0 +1,208 @@
+'use strict';
+/**
+ * The AI-assistant bridge end to end, for one framework: a real VS Code, the
+ * real framework, and an agent's view of it — the MCP relay started through
+ * the launcher, driven by a scripted client. The agent finds the failure,
+ * explains it, "fixes" the source on disk, verifies the fix and reruns a test;
+ * VS Code's own language-model tool API answers the same; failures reach the
+ * Problems list with a Fix with AI quick fix.
+ */
+const fs = require('fs');
+const path = require('path');
+const h = require('./harness');
+const { startMcp } = require('./mcpClient');
+
+/**
+ * @param cfg.source      [rel, buggy content, fixed content]
+ * @param cfg.test        [rel, content]
+ * @param cfg.failing     full name of the test that fails until the fix
+ * @param cfg.trace       the framework has the per-test trace (lines run, affected tests)
+ */
+async function aiBridgeScenario({ api, t, vscode, workspace }, cfg) {
+  const [srcRel, buggy, fixed] = cfg.source;
+  const [testRel, testText] = cfg.test;
+  const srcFile = path.join(workspace, ...srcRel.split('/'));
+  const testFile = path.join(workspace, ...testRel.split('/'));
+  fs.writeFileSync(srcFile, buggy);
+  fs.writeFileSync(testFile, testText);
+
+  await h.waitForDiscovery(api);
+  await vscode.commands.executeCommand('liveTestRunner.startTesting');
+  await h.waitFor(() => api.session.isActive() && !api.session.isRunning(), { what: 'the full run', timeout: 240_000 });
+  // A late file-watcher event for the files written above may rerun them once more (older VS Code): let it finish.
+  await h.settle(api);
+  const node = h.nodeByName(api, testRel, cfg.failing);
+  t.eq('the test fails before the fix', node.status, 'failed');
+
+  // ── The window announces itself ─────────────────────────────────────────
+  const bridge = api.aiBridge;
+  t.check('bridge.json in the session folder', fs.existsSync(path.join(api.sessionDir, 'bridge.json')));
+  t.check('the launcher is in the extension\'s storage folder', fs.existsSync(bridge.launcherPath), bridge.launcherPath);
+
+  // ── Problems list + Fix with AI ─────────────────────────────────────────
+  api.failureDiagnostics.refresh();
+  const diags = vscode.languages.getDiagnostics(vscode.Uri.file(testFile)).filter((d) => d.source === 'Live Test Runner');
+  const all = vscode.languages.getDiagnostics().flatMap(([u, ds]) => ds.filter((d) => d.source === 'Live Test Runner').map((d) => `${u.fsPath}:${d.range.start.line + 1} ${d.message}`));
+  t.check('the failure is in the Problems list, on the test file', diags.some((d) => d.message.startsWith(cfg.failing)), JSON.stringify({ testFile, all }));
+  if (diags[0]) {
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(testFile));
+    await vscode.window.showTextDocument(doc);
+    // Asked at the diagnostic's start and over its range; a request can be cancelled when diagnostics refresh.
+    const start = new vscode.Range(diags[0].range.start, diags[0].range.start);
+    let titles = [];
+    for (let attempt = 0; attempt < 6 && !titles.includes('Fix with AI (Live Test Runner)'); attempt++) {
+      for (const args of [[doc.uri, start], [doc.uri, diags[0].range, vscode.CodeActionKind.QuickFix.value]]) {
+        try {
+          const actions = await vscode.commands.executeCommand('vscode.executeCodeActionProvider', ...args);
+          titles = [...new Set([...titles, ...(actions ?? []).map((a) => a.title)])];
+        } catch { /* cancelled: ask again */ }
+      }
+      if (!titles.includes('Fix with AI (Live Test Runner)')) { await new Promise((r) => setTimeout(r, 500)); }
+    }
+    t.check('…with a Fix with AI quick fix', titles.includes('Fix with AI (Live Test Runner)'), JSON.stringify(titles));
+  }
+  const how = await vscode.commands.executeCommand('liveTestRunner.fixWithAI', node.fileId, node.id);
+  if (how === 'clipboard') {
+    const clip = await vscode.env.clipboard.readText();
+    t.check('Fix with AI without a chat: the failure is copied', clip.includes(cfg.failing) && clip.includes('Explain why'), clip.slice(0, 200));
+  } else {
+    t.eq('Fix with AI opened the chat', how, 'chat');
+  }
+
+  // ── An agent connects ───────────────────────────────────────────────────
+  const mcp = startMcp(bridge.launcherPath, workspace);
+  try {
+    const init = await mcp.initialize();
+    t.check('initialize: the server and its instructions', init?.serverInfo?.name === 'live-test-runner' && /LTR_get_failures/.test(init.instructions ?? ''), JSON.stringify(init).slice(0, 300));
+    const list = await mcp.request('tools/list');
+    t.check('tools/list: the LTR_ tools', (list.result?.tools ?? []).length >= 20, JSON.stringify(list).slice(0, 200));
+
+    const status = await mcp.call('LTR_get_status');
+    t.check('get_status: session on, the failure counted', status.projects?.[0]?.session === 'on' && status.projects[0].tests.failed >= 1, JSON.stringify(status));
+    t.check('get_status: says which window answered', (status.window?.folders ?? []).length > 0, JSON.stringify(status.window));
+
+    const failures = await mcp.call('LTR_get_failures');
+    const f = (failures.failures ?? []).find((x) => x.name === cfg.failing);
+    t.check('get_failures: the failing test with an id', !!f?.id, JSON.stringify(failures));
+    if (!f) { return; }
+
+    const ex = await mcp.call('LTR_explain_failure', { id: f.id });
+    t.check('explain_failure: the error', !!ex.error?.summary, JSON.stringify(ex.error));
+    t.check('explain_failure: the source line it was thrown from', ex.thrownAt?.file === srcRel || (ex.error?.stack ?? []).some((s) => s.startsWith(srcRel)), JSON.stringify({ thrownAt: ex.thrownAt, stack: ex.error?.stack }));
+    t.check('explain_failure: the test\'s code', typeof ex.testCode?.code === 'string' && ex.testCode.code.length > 0, JSON.stringify(ex.testCode));
+    t.check('explain_failure: no machine paths', !JSON.stringify(ex).includes(workspace), '');
+    if (cfg.trace) {
+      t.check('explain_failure: the source lines the test ran (trace)', Array.isArray(ex.linesRun) && ex.linesRun.some((l) => l.file === srcRel), JSON.stringify(ex.linesRun));
+      const affected = await mcp.call('LTR_get_affected_tests', { file: srcRel });
+      t.check('get_affected_tests: the traced test', (affected.tests ?? []).some((x) => x.name === cfg.failing), JSON.stringify(affected));
+    }
+    const found = await mcp.call('LTR_find_tests', { query: cfg.failing });
+    t.eq('find_tests: the same id', found.matches?.[0]?.id, f.id);
+    const cov = await mcp.call('LTR_get_coverage', { file: srcRel });
+    t.check('get_coverage: the source file is measured', !!cov.percent || /not run/.test(cov.coverage ?? ''), JSON.stringify(cov));
+
+    // ── The agent fixes the code on disk and verifies ─────────────────────
+    // The session reruns the change by itself; verify must reuse that, never run the tests a second time.
+    const reruns = countReruns(api, node.fileId);
+    try {
+      fs.writeFileSync(srcFile, fixed);
+      const verify = await mcp.finish(await mcp.call('LTR_verify_fix', { files: [srcRel] }));
+      t.eq('verify_fix: finished', verify.state, 'finished');
+      t.check('verify_fix: reports the test fixed', (verify.fixed ?? []).some((x) => x.name === cfg.failing) || api.store.getNode(node.id)?.status === 'passed', JSON.stringify(verify));
+      t.eq('verify_fix: no regressions', (verify.newlyFailing ?? []).map((x) => x.name), []);
+      t.eq('the store agrees: the test passes', api.store.getNode(node.id)?.status, 'passed');
+      await h.settle(api);
+      t.eq('the change ran once: the session\'s rerun, reused by verify_fix', reruns.count, 1);
+
+      // The other order: verify runs before the session's (slow) debounce ends — the session then skips that write.
+      await vscode.workspace.getConfiguration('liveTestRunner').update('onSaveDebounceMs', 4000, vscode.ConfigurationTarget.Workspace);
+      reruns.count = 0;
+      fs.writeFileSync(srcFile, `${fixed}\n${cfg.comment ?? '//'} edited\n`);
+      const again = await mcp.finish(await mcp.call('LTR_verify_fix', { files: [srcRel] }));
+      t.eq('verify_fix before the session\'s rerun: finished', again.state, 'finished');
+      await new Promise((r) => setTimeout(r, 5000));
+      await h.settle(api);
+      t.eq('…and the session did not rerun the same change again', reruns.count, 1);
+    } finally {
+      reruns.dispose();
+      await vscode.workspace.getConfiguration('liveTestRunner').update('onSaveDebounceMs', undefined, vscode.ConfigurationTarget.Workspace);
+    }
+
+    const run = await mcp.finish(await mcp.call('LTR_run_tests', { ids: [f.id] }));
+    t.check('run_tests: ran like ▶ Run, one test passed', run.state === 'finished' && run.tests?.passed === 1 && run.tests?.failed === 0, JSON.stringify(run));
+    const out = await mcp.call('LTR_get_output', { id: f.id });
+    t.check('get_output: an answer for the scope (output or why none)', typeof out.captured === 'boolean', JSON.stringify(out));
+
+    // ── Runs off: reads only ──────────────────────────────────────────────
+    const cfgSection = vscode.workspace.getConfiguration('liveTestRunner');
+    await cfgSection.update('ai.allowRuns', 'never', vscode.ConfigurationTarget.Workspace);
+    try {
+      const r2 = await mcp.call('LTR_run_tests', { ids: [f.id] });
+      t.check('allowRuns never: runs refused', r2.isError && /allowRuns/.test(r2.error ?? ''), JSON.stringify(r2));
+      const read = await mcp.call('LTR_get_failures');
+      t.check('…reads still answer', !read.isError && typeof read.failing === 'number', JSON.stringify(read));
+    } finally {
+      await cfgSection.update('ai.allowRuns', undefined, vscode.ConfigurationTarget.Workspace);
+    }
+
+    // ── The agent adds tests: a new case in the test file, then a new test file ──
+    await h.settle(api);
+    const before = countReruns(api, node.fileId);
+    try {
+      fs.appendFileSync(testFile, cfg.addCase[0]);
+      const added = await mcp.finish(await mcp.call('LTR_verify_fix', { files: [testRel] }));
+      await h.settle(api);
+      t.check('new test case: verify_fix ran it', added.state === 'finished' && added.tests?.passed === 3 && added.tests?.failed === 0, JSON.stringify(added));
+      t.check('…it is in the results', (() => { try { return h.nodeByName(api, testRel, cfg.addCase[1]).status === 'passed'; } catch { return false; } })(), cfg.addCase[1]);
+      t.eq('…and its file ran once', before.count, 1);
+    } finally {
+      before.dispose();
+    }
+    for (const sessionOn of [true, false]) {
+      if (!sessionOn) {
+        await vscode.commands.executeCommand('liveTestRunner.stopTesting');
+        await h.waitFor(() => !api.session.isActive() && !api.session.isRunning(), { what: 'Stop' });
+      }
+      const newRel = testRel.replace(/(\.test)?\.(js|py)$/, (m) => `${sessionOn ? '_on' : '_off'}${m}`);
+      const newFile = path.join(workspace, ...newRel.split('/'));
+      const label = `new test file (session ${sessionOn ? 'on' : 'off'})`;
+      const logsFrom = h.isoNow();
+      fs.writeFileSync(newFile, testText);
+      const res = await mcp.finish(await mcp.call('LTR_verify_fix', { files: [newRel] }));
+      await h.settle(api);
+      t.check(`${label}: verify_fix ran it`, res.state === 'finished' && res.tests?.passed === 2 && res.tests?.failed === 0, `${JSON.stringify(res)}\n${h.logsSince(api, logsFrom).join('\n')}`);
+      t.check(`${label}: its tests are in the store`, api.store.getTestNodesForFiles([api.store.findFileKey(newFile) ?? newFile]).filter((n) => n.status === 'passed').length === 2);
+      const found = await mcp.call('LTR_find_tests', { query: newRel });
+      t.check(`${label}: find_tests knows it`, (found.matches ?? []).length >= 2, JSON.stringify(found));
+    }
+  } finally {
+    mcp.close();
+  }
+
+  // ── Copilot's way in: VS Code's language-model tools ────────────────────
+  const lm = vscode.lm;
+  if (lm && typeof lm.invokeTool === 'function') {
+    const names = (lm.tools ?? []).map((x) => x.name);
+    t.check('VS Code lists the LTR_ tools', names.includes('LTR_get_status') && names.includes('LTR_verify_fix'), JSON.stringify(names.filter((n) => n.startsWith('LTR_'))));
+    const res = await lm.invokeTool('LTR_get_failures', { input: {}, toolInvocationToken: undefined });
+    const text = (res?.content ?? []).map((p) => p.value ?? '').join('');
+    t.check('invokeTool answers from the same stores', /"failing":\d+/.test(text) && !text.includes(cfg.failing), text.slice(0, 300));
+  } else {
+    t.info(`VS Code ${vscode.version} has no vscode.lm.invokeTool — language-model tools not checked`);
+  }
+
+  await vscode.commands.executeCommand('liveTestRunner.stopTesting');
+}
+
+/** Counts how often a test file starts running (any run: the session's, ▶ Run, an assistant's). */
+function countReruns(api, fileId) {
+  const counter = {
+    count: 0,
+    onFilesRerunning(files) { if (files.includes(fileId)) { counter.count++; } },
+    dispose() { const i = api.observers.indexOf(counter); if (i >= 0) { api.observers.splice(i, 1); } },
+  };
+  api.observers.push(counter);
+  return counter;
+}
+
+module.exports = { aiBridgeScenario };

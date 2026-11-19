@@ -442,6 +442,16 @@ Verification:
 
 ---
 
+## Adding an AI-assistant tool
+
+1. Add the tool to `TOOLS` in `src/ai/catalog.ts`: an `LTR_` name, a description that says *when* to use it (agents choose tools by it), an input schema, `acts: true` if it starts or changes anything.
+2. Answer it in `AiTools._dispatch` (`src/ai/tools.ts`). Read through `BridgeHost` / `BridgeProject` (`src/ai/host.ts`); act only through the session's own methods or existing commands. Keep the answer small (limits, caps, ids) and include `this._freshFlags()`.
+3. Regenerate package.json's `languageModelTools`: `UPDATE_LM_TOOLS=1 npx jest test/aiCatalog.test.ts` (from `packages/vscode-extension`).
+4. Test it in `test/aiTools.test.ts` (real stores, fake host); the relay needs no change (it lists the catalog).
+5. Tool names are a public API: a rename or removal needs a changelog line. Anything new it shares goes in `PRIVACY.md`.
+
+To try the relay by hand: build, open a project in the Extension Development Host, then from that project's folder run `node <globalStorage>/mcp/live-test-runner-mcp.js` and type `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"LTR_get_status","arguments":{}}}`. The launcher path is on the **Connect Your AI Assistant** page.
+
 ## Adding a new observer (panel, decoration, etc.)
 
 1. Implement `IResultObserver` from `src/IResultObserver.ts`
@@ -639,6 +649,8 @@ unzip -q /tmp/ltr.vsix -d /tmp/ltr-vsix && LTR_E2E_EXTENSION_DIR=/tmp/ltr-vsix/e
 - `diag-screenshots`, `diag-screenshots-monorepo` — the mixed-project and monorepo-switcher screenshots.
 - `diag-demo-jest` / `-vitest` / `-pytest` (`e2e/lib/demo.js`) — the same story on the clean `fixture:demo-*` shop projects: Start (live tree, Running card, gutter icons), a source edit + save rerunning only its tests (red, then green), the coverage hover, ▶ Run on one test and its output. Each step is a clip of screenshots taken in a loop (`recorder`: Page.startScreencast leaves webviews blank) plus stills (`<fw>-coverage-hover.png`, `<fw>-results.png`).
 - `diag-perf` — performance numbers on a large project of any framework (discovery cold / warm, first result of the open file, full run, trace and coverage parse time, memory, extension-host CPU, one save rerun). Run it through `node scripts/perf-measure.js <project> [--label name] [--open file] [--no-plain] [--no-save] [--in-place]`, which also times the plain framework run (Jest, Vitest, Angular `ng test` or pytest) at the same parallelism the extension uses and adds both to `e2e/baselines/perf.json` (local); the project is copied to the temp folder first. `LTR_E2E_PERF_PROFILE=<file>.cpuprofile` records a CPU profile of the extension host during the full run, `LTR_E2E_PERF_LOG=<file>` keeps its whole log. `node scripts/perf-project.js <dir> [--framework jest|vitest|pytest|angular] --install` writes the same synthetic 2.5k-file project for each framework (pytest: Python 3.12 through `uv` when installed; Angular: the e2e Angular fixture's app project, TypeScript).
+- `diag-screenshots-ai` — the AI-assistant features (Fix with AI, Problems and its quick fix, the Connect page, an agent's answers). `diag-demo-ai` — the clip `ai-fix` plus stills: a terminal agent (a scripted MCP client: fixed steps, real answers from the relay) printed in a terminal tab reads a failure, fixes the source and verifies while the Explorer turns green.
+- `diag-screenshots-console` — console output in the Results panel at every level (log, info, warn, error) for a passing and a failing test and for the whole file.
 - `diag-demo-failure` — `failure-on-line.png`: a failed test on `fixture:demo-jest` with its message after the line and the hover open. It captures the whole window (a clipped capture closes the hover first); crop it with the `sips` command in the scenario's header.
 - Scenes the GIF zooms into (the hover, the Results panel) are recorded at full size (`record(name, true)`); `SCENES` in `scripts/demo-gifs.js` gives them a zoom (`{ at, dur, z, cx, cy }`: eased into `z`× around a point, then held). The README / site coverage image is `<fw>-coverage-hover.png` cropped to the editor.
 - `scripts/demo-gifs.js` turns the clips into `resources/gifs/demo.gif` (README hero: five captioned scenes, ~40 s, ~1 MB) and `scene-*.gif` (the website slider, uncaptioned). It needs an ffmpeg with `drawtext`, which is not a dependency of the repo — e.g. `npm i ffmpeg-static` in a temp folder.
@@ -700,15 +712,15 @@ Planned work and ideas are tracked as [GitHub Issues](https://github.com/EshanDi
 
 Next, in order (details and status in the GitHub Issues):
 
-1. AI-agent bridge: VS Code language-model tools and a local stdio MCP server (never a network port)
-2. More frameworks, each with results and coverage: Mocha, Playwright, node:test, Cypress
-3. Coverage: file detail page, function-level stale marking, sole-coverage warnings
-4. Mirroring results into VS Code's Testing view (optional); the Timeline debugger rewrite comes last
+1. More frameworks, each with results and coverage: Mocha, Playwright, node:test, Cypress
+2. Coverage: file detail page, function-level stale marking, sole-coverage warnings
+3. Mirroring results into VS Code's Testing view (optional, gives Copilot its native "Fix test failure" too); the Timeline debugger rewrite comes last
 
 Measured and not planned: tracing only some test files on large projects, and a lighter discovery parser (reasons in [Test runs: design](design/test-runs.md#design-decisions)).
 
 Shipped:
 
+- **3.5.0** — AI assistants: Copilot, Cursor and terminal agents (Claude Code, Codex, Gemini CLI) read live results and run tests through `LTR_` tools (VS Code language-model tools and a local stdio MCP relay, no network port); failing tests in the Problems list; Fix with AI
 - **3.4.1** — large projects much faster for every framework, a `speed` setting with a budget that adapts to free CPU and memory, coverage equal to the project's own coverage command and correct after any test change
 - **3.4.0** — Angular (`ng test`), failures on the failing line with a diff, Update snapshot, Copy for AI, no network / privacy policy, minimum VS Code 1.82
 - **3.3.0** — Python monorepos (uv workspaces, one `.venv` per service), JS + Python in one folder, a framework router for any number of frameworks, open test files first, coverage-off notes

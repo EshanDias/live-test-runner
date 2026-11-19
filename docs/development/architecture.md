@@ -700,6 +700,15 @@ Both views extend `BaseWebviewProvider`, which handles webview lifecycle, `postM
 | Suite row | Suite section always (placeholder if empty). Test sections only if individually rerun. | All failures in the suite |
 | Test row | Test section always (placeholder if empty). | That test's failure, or "No failures" |
 
+### AI assistants (`src/ai/`)
+
+Copilot, Cursor and terminal agents (Claude Code, Codex, Gemini CLI…) read results and run tests through one set of `LTR_` tools: `ai/catalog.ts` defines them, `ai/tools.ts` (`AiTools`) answers them from the stores and acts through `SessionManager` (`rerunScope`, `runFiles`, `runChangedFiles`). Two ways in:
+
+- **VS Code language-model tools** (Copilot): `AiBridge` registers each catalog tool with `vscode.lm.registerTool` (feature-detected; package.json's `languageModelTools` is generated from the catalog). In-process, no transport.
+- **MCP** (Cursor, terminal agents): `out/mcp.js`, a stateless stdio relay bundled on its own (only `fs` / `os` / `path` / `crypto`), forwards each `tools/call` through a **file mailbox** in the window's session folder (`bridge.json`, `bridge/requests/`, `bridge/responses/`). Cursor registers it with `vscode.cursor.mcp.registerServer` and the exact session folder; terminal agents start it through a launcher in the extension's `globalStorage` (stable across updates), which finds the window whose folders hold the agent's folder.
+
+`AiBridge` is an editor observer (results, Start, Stop); nothing is built before a request arrives. No socket, no port, no AI call (rule 11). Failing tests are also published as Diagnostics (`editor/FailureDiagnostics.ts`), so editors' own AI quick fixes apply; **Fix with AI** opens the chat (`workbench.action.chat.open`) or copies the failure. Details: [AI assistants: design](design/ai-assistants.md).
+
 ### Webview messaging
 
 | Type | Direction | Purpose |
@@ -856,4 +865,5 @@ User stops session
 | `step-changed` boundary: playback in webview, editor in host | `PlaybackEngine` drives the timeline UI inside the webview sandbox. The extension host only reacts to `step-changed` — it never drives playback. This keeps the playback loop fast (no round-trips) and the editor highlight authoritative. |
 | `TimelineDecorationManager` separate from `DecorationManager` | Timeline decorations (whole-line highlight, ghost text, hover) never touch pass/fail gutter icons. Two completely independent `TextEditorDecorationType` sets. |
 | Webview router instead of new tabs | Both `ResultsView` and `ExplorerView` implement an internal JS router. Timeline mode is a view swap inside an existing panel — no new VS Code panel is registered. |
+| AI assistants: a file mailbox, not a socket; a stateless stdio relay; one handler class for LM tools and MCP | Keeps "no `net` module" absolute; all logic stays in the window; tools cannot drift between Copilot and MCP agents ([design](design/ai-assistants.md#design-decisions)) |
 | `logPanel.js` / `errorPanel.js` as shared components | Same rendering code in both normal and timeline modes. Extracted from `resultsView.js` and consumed by `timelineView.js` without modification. |

@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { guideHtml, GUIDE_URL } from '../src/views/GuidePanel';
+import { connectAiHtml } from '../src/ai/ConnectAiPanel';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { remoteResources, GUIDE_URL: BUILD_GUIDE_URL } = require('../src/guide/offlineGuide');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -84,7 +85,7 @@ function remoteCspSources(csp: string): string[] {
 const cspOf = (html: string) => /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(html)?.[1];
 
 beforeAll(() => {
-  if (!fs.existsSync(path.join(OUT, 'extension.js')) || !fs.existsSync(path.join(OUT, 'guide', 'guide.html'))) {
+  if (!fs.existsSync(path.join(OUT, 'extension.js')) || !fs.existsSync(path.join(OUT, 'mcp.js')) || !fs.existsSync(path.join(OUT, 'guide', 'guide.html'))) {
     const r = spawnSync(process.execPath, ['esbuild.js'], { cwd: EXT, encoding: 'utf8' });
     if (r.status !== 0) { throw new Error(`build failed: ${r.stderr || r.stdout}`); }
   }
@@ -96,6 +97,14 @@ describe('no network calls, no telemetry', () => {
     const required = [...new Set([...bundle.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1].replace(/^node:/, '')))];
     expect(required.filter((m) => !BUNDLE_MODULES.includes(m))).toEqual([]);
     expect(bundle.split('\n').filter((l) => NET_API.test(l)).map((l) => l.trim().slice(0, 120))).toEqual([]);
+  });
+
+  it('the MCP relay (out/mcp.js) talks to the editor through files only', () => {
+    // An agent starts it; it reads stdin, writes stdout and the window's mailbox files. No socket, no port.
+    const relay = fs.readFileSync(path.join(OUT, 'mcp.js'), 'utf8');
+    const required = [...new Set([...relay.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1].replace(/^node:/, '')))];
+    expect(required.filter((m) => !['crypto', 'fs', 'os', 'path'].includes(m))).toEqual([]);
+    expect(relay.split('\n').filter((l) => NET_API.test(l)).map((l) => l.trim().slice(0, 120))).toEqual([]);
   });
 
   it('first-party sources use no network module or API and no telemetry package', () => {
@@ -145,6 +154,7 @@ describe('webviews load nothing from another origin', () => {
       'explorer.html': cspOf(fs.readFileSync(path.join(EXT, 'src/webview/explorer.html'), 'utf8')),
       'results.html': cspOf(fs.readFileSync(path.join(EXT, 'src/webview/results.html'), 'utf8')),
       guide: cspOf(guideHtml('<html><head></head><body></body></html>', 'CSP_SOURCE', 'N')),
+      connectAi: cspOf(connectAiHtml({ editor: 'Visual Studio Code', bridgeOn: true, builtIn: 'copilot', node: '/usr/bin/node', launcher: '/x/l.js', platform: 'linux' }, 'N')),
     };
     for (const [name, csp] of Object.entries(csps)) {
       expect([name, csp && csp.includes("default-src 'none'")]).toEqual([name, true]);

@@ -99,6 +99,10 @@ export class ResultsView extends BaseWebviewProvider {
     if (msg.type === 'copy-failures' && Array.isArray(msg.nodeIds)) {
       void this.copyFailures(msg.nodeIds, msg.mode === 'ai' ? 'ai' : 'all');
     }
+    if (msg.type === 'fix-with-ai' && Array.isArray(msg.nodeIds)) {
+      const node = msg.nodeIds.map((id) => this.store.getNode(id)).find((n) => n?.type === 'test' && n.status === 'failed');
+      if (node) { void vscode.commands.executeCommand('liveTestRunner.fixWithAI', node.fileId, node.id); }
+    }
   }
 
   /** Framework name and project root of a test file (set by extension.ts). */
@@ -120,6 +124,11 @@ export class ResultsView extends BaseWebviewProvider {
     return text;
   }
 
+  /** Shows / hides "Fix with AI" (liveTestRunner.ai.fixWithAI). */
+  sendAiSettings(): void {
+    this.postMessage({ type: 'ai-settings', fixWithAI: vscode.workspace.getConfiguration('liveTestRunner').get<boolean>('ai.fixWithAI', true) });
+  }
+
   protected _sendInit(): void {
     const sel     = this.selection.get();
     const summary = this.store.getSummary();
@@ -133,6 +142,7 @@ export class ResultsView extends BaseWebviewProvider {
       passed:     hasData ? summary.passed : null,
       failed:     hasData ? summary.failed : null,
     });
+    this.sendAiSettings();
   }
 
   // ── Scoped log builders ────────────────────────────────────────────────────

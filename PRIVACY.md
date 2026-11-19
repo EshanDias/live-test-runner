@@ -1,6 +1,6 @@
 # Privacy policy
 
-_Last updated: 2026-11-13 (reads how busy your machine is to size test runs; the start cache also keeps what your Vitest config resolves to). Applies to Live Test Runner 3.4.0 and later._
+_Last updated: 2026-11-14 (your AI assistant can read results and run tests; see [Your AI assistant](#your-ai-assistant)). Applies to Live Test Runner 3.5.0 and later._
 
 **In short:** Live Test Runner collects nothing and sends nothing. It runs your own test framework on your machine, and everything it keeps stays on your machine.
 
@@ -18,6 +18,8 @@ _Last updated: 2026-11-13 (reads how busy your machine is to size test runs; the
 | Test lists, test results, coverage and traces of the current session | Your system's temp folder, `com.eshLabs/live-test-runner/` | Removed once its VS Code window is closed (at the latest when VS Code next starts); **Clear All Cached Data** removes everything |
 | A cache that makes the next start faster (test lists, Jest's transform cache, what your Vitest config resolves to: project names, coverage include / exclude patterns, worker limit) | Your system's cache and temp folders, `com.eshLabs/live-test-runner/` | **Clear All Cached Data**; anything unused for 30 days is deleted automatically |
 | The Python interpreter you picked for a project | VS Code's workspace storage | **Select Python Interpreter** again, or remove the workspace's storage |
+| For your AI assistant: a note saying which folders this window has open (`bridge.json`), and each question and answer while it is being passed on (deleted as soon as it is read) | The window's session folder in your temp folder | Removed with the session folder when the window closes |
+| For AI assistants outside the editor: a small start script (`mcp/live-test-runner-mcp.js`), where the installed extension is, and one note per open window saying which folders it has open | The extension's own storage folder in VS Code | Each window's note is removed when it closes; uninstalling the extension removes the folder |
 
 Nothing is kept anywhere else.
 
@@ -34,7 +36,18 @@ Some actions hand data over only because you asked:
 
 - **Copy buttons** (an error, output, a diagnostic report, failing test names, and **Copy for AI**, which includes your test's code and the lines it failed in) put text on your clipboard. Where it goes next is your choice. Check it for anything private before you paste it somewhere.
 - **Links** (the online guide, GitHub, the marketplace) open in your browser only when you click them.
-- **Planned: tools for your AI assistant.** Live Test Runner may offer its results (failing tests, output, coverage) to an AI assistant you already use in VS Code, such as Copilot through VS Code's language-model tools, or a local MCP server for agents on your machine. Those tools answer only when your assistant asks for them. The extension still makes no network call itself, and opens no network port. Your assistant then sends what it read to its own AI service, under that service's privacy policy.
+- **Fix with AI** (on a failing test) opens your AI assistant's chat with a request to fix that test, or copies the failure to your clipboard where no chat can be opened.
+
+## Your AI assistant
+
+Live Test Runner gives the AI assistant you use (GitHub Copilot, Cursor, Claude Code, Codex, Gemini CLI and others) tools to read your live test results and run tests while it works. This is on by default; the setting `liveTestRunner.ai.bridge` turns it off.
+
+- **What your assistant can read:** test names and results, error messages, console output, coverage, and lines of your tests and source code, the same as **Copy for AI**.
+- **When:** only when your assistant asks, and only that assistant. Assistants ask you before they use a tool (each has its own setting for this).
+- **Who can ask:** in VS Code, Copilot finds the tools without setup, and so does Cursor's agent in Cursor. An assistant outside the editor (Claude Code, Codex, Gemini CLI…) can ask only after you add Live Test Runner to it yourself, with the command on the **Connect Your AI Assistant** page. The extension never changes other programs' settings.
+- **What it can do:** run tests, the same as clicking ▶ Run, and **Clear Cache and Restart** while testing is on. It can never start or stop testing; that stays with you. To let it only read, set `liveTestRunner.ai.allowRuns` to `never` (or `ask` to confirm each run). Updating a snapshot still needs your yes in the usual dialog.
+- **How it gets there:** inside the editor through VS Code's language-model tools; to assistants outside the editor through a small program that the assistant starts on your computer and that passes questions and answers through files in the window's session folder. The extension makes no network call and opens no network port.
+- **What happens next:** your assistant sends what it read to its own AI service, under that service's privacy policy. Test output can contain anything your tests print, so leave the feature off for projects whose test output must not leave your machine.
 
 ## What else may use the network
 

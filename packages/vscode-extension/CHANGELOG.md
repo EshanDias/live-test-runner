@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.0] - 2026-11-19
+
+- **Your AI assistant can use Live Test Runner**: Copilot, Cursor, Claude Code, Codex and Gemini CLI read failures, output and coverage, and rerun tests to check their fixes. Set it up with **Connect Your AI Assistant**.
+- **✨ Fix with AI** on failing tests.
+- Failing tests are listed in the Problems panel.
+- ▶ Run works again after you press Stop, including on test files created since.
+
 ## [3.4.1] - 2026-11-13
 
 - New **Speed** setting (`liveTestRunner.speed`): tests use what your machine has free, and your editor stays responsive.

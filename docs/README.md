@@ -22,13 +22,14 @@ What each feature is for, how it behaves, and its limits. No code knowledge need
 - [Coverage](features/coverage.md): bars on every line, and the tests that ran it
 - [Debugging](features/debugging.md): `▷ Debug` one test with breakpoints
 - [Monorepos and mixed frameworks](features/projects.md): many projects in one window, Jest + Vitest + pytest side by side
+- [AI assistants](features/ai-assistants.md): Copilot, Cursor and terminal agents read live results and rerun tests themselves
 
 ## Requirements
 
 What the extension must do, each requirement linked to the tests that check it.
 
 - [Project-wide requirements](requirements/project-rules.md): rules every feature follows (zero config, never touch the user's project, the resource budget…)
-- [Test runs](requirements/test-runs.md) · [Test Explorer and editor](requirements/test-explorer.md) · [On-save reruns](requirements/on-save-reruns.md) · [Results panel](requirements/results-panel.md) · [Coverage](requirements/coverage.md) · [Debugging](requirements/debugging.md) · [Monorepos and mixed frameworks](requirements/projects.md)
+- [Test runs](requirements/test-runs.md) · [Test Explorer and editor](requirements/test-explorer.md) · [On-save reruns](requirements/on-save-reruns.md) · [Results panel](requirements/results-panel.md) · [Coverage](requirements/coverage.md) · [Debugging](requirements/debugging.md) · [Monorepos and mixed frameworks](requirements/projects.md) · [AI assistants](requirements/ai-assistants.md)
 
 Requirements marked ⚠️ have no automated test yet.
 
@@ -39,7 +40,7 @@ How the code is organised and how to work on it.
 - [Developer guide](development/developer-guide.md): setup, build, logging, adding a framework, tests, releases
 - [Architecture](development/architecture.md): packages, data model, execution flow, key decisions
 - Feature designs:
-  - [Test runs](development/design/test-runs.md) · [Test Explorer and editor](development/design/test-explorer.md) · [On-save reruns](development/design/on-save-reruns.md) · [Results panel](development/design/results-panel.md) · [Coverage](development/design/coverage.md) · [Debugging](development/design/debugging.md) · [Monorepos and mixed frameworks](development/design/projects.md)
+  - [Test runs](development/design/test-runs.md) · [Test Explorer and editor](development/design/test-explorer.md) · [On-save reruns](development/design/on-save-reruns.md) · [Results panel](development/design/results-panel.md) · [Coverage](development/design/coverage.md) · [Debugging](development/design/debugging.md) · [Monorepos and mixed frameworks](development/design/projects.md) · [AI assistants](development/design/ai-assistants.md)
 - [Framework feature matrix](development/framework-features.md): what each framework supports
 - [AI context](development/ai-context.md): a dense summary of the codebase for AI coding assistants
 
