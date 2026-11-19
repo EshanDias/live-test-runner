@@ -92,7 +92,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Windows takes ~65 min for every scenario (Angular included); headroom for slow runners.
+    timeout-minutes: 90
     # The runner context (runner.temp) is only available inside steps, so
     # LTR_E2E_RUNS_DIR is set on the steps that use it.
     env:
