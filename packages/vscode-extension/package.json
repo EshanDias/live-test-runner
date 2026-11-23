@@ -1132,12 +1132,12 @@
     "@live-test-runner/runner": "workspace:*"
   },
   "devDependencies": {
-    "@babel/parser": "7.29.12",
+    "@babel/parser": "7.29.14",
     "@types/node": "18.x",
     "@types/picomatch": "^4.0.3",
     "@types/vscode": "1.82.0",
     "esbuild": "^0.28.2",
-    "eslint": "^10.14.0",
+    "eslint": "^10.15.0",
     "istanbul-lib-coverage": "3.2.2",
     "picomatch": "^4.0.7",
     "typescript": "~6.0.3"
